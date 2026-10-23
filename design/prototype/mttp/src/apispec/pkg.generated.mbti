@@ -1,0 +1,81 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/apispec"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct Components {
+  schemas : Map[String, Json]
+  securitySchemes : Map[String, SecurityScheme]
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct HeaderObject {
+  required : Bool
+  schema : Json
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct Info {
+  title : String
+  version : String
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct MediaTypeObject {
+  schema : Json
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct OpenApi {
+  openapi : String
+  info : Info
+  servers : Array[Server]
+  paths : Map[String, Map[String, Operation]]
+  components : Components
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct Operation {
+  operationId : String?
+  summary : String?
+  parameters : Array[Parameter]
+  requestBody : RequestBody?
+  responses : Map[String, ResponseObject]
+  security : Array[Map[String, Array[String]]]
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct Parameter {
+  name : String
+  in_ : String
+  required : Bool
+  schema : Json
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct RequestBody {
+  required : Bool
+  content : Map[String, MediaTypeObject]
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct ResponseObject {
+  description : String
+  headers : Map[String, HeaderObject]
+  content : Map[String, MediaTypeObject]
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct SecurityScheme {
+  type_ : String
+  scheme : String?
+  name : String?
+  in_ : String?
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+pub(all) struct Server {
+  url : String
+} derive(Eq, ToJson, @debug.Debug, @json.FromJson)
+
+// Type aliases
+
+// Traits

@@ -1,0 +1,23 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/clock/fake"
+
+import {
+  "gaato/mttp/clock",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct FakeClock {
+  // private fields
+}
+pub fn FakeClock::advance(Self, Int32) -> Unit
+pub fn FakeClock::new(start_unix_ms? : Int64) -> Self
+pub fn FakeClock::slept(Self) -> Array[Int32]
+pub impl @clock.Clock for FakeClock
+
+// Type aliases
+
+// Traits

@@ -1,0 +1,67 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "example/app/api"
+
+import {
+  "gaato/mttp/endpoint",
+  "gaato/mttp/schema",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub let create_user : @endpoint.Endpoint[String, NewUser, ApiError, (User, String)]
+
+pub let get_team : @endpoint.Endpoint[String, String, ApiError, Team]
+
+pub let get_user : @endpoint.Endpoint[String, GetUser, ApiError, User]
+
+pub let new_user_json : @schema.JsonCodec[NewUser]
+
+pub let secured : @endpoint.Endpoint[String, Unit, ApiError, Unit]
+
+pub let team_json : @schema.JsonCodec[Team]
+
+pub let tree_json : @schema.JsonCodec[Tree]
+
+pub let user_events : @endpoint.Endpoint[Unit, Unit, @endpoint.NoError, @endpoint.EventStream[User]]
+
+pub let user_json : @schema.JsonCodec[User]
+
+pub let webhook : @endpoint.Endpoint[(String, Bytes), NewUser, ApiError, Unit]
+
+pub let whoami : @endpoint.Endpoint[Unit, String?, @endpoint.NoError, Tree]
+
+// Errors
+pub(all) suberror ApiError {
+  NotFound(Int32)
+  Forbidden
+  NoTeam(String)
+} derive(@debug.Debug)
+
+// Types and methods
+pub(all) struct GetUser {
+  id : Int32
+  fields : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct NewUser {
+  name : String
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Team {
+  name : String
+  lead : User
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Tree {
+  label : String
+  children : Array[Tree]
+} derive(Eq, @debug.Debug)
+
+pub(all) struct User {
+  id : Int32
+  name : String
+} derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits

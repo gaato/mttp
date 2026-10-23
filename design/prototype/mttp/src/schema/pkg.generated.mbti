@@ -1,0 +1,107 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/schema"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn[T] array(JsonCodec[T]) -> JsonCodec[Array[T]]
+
+pub fn[T, A] field(String, JsonCodec[A], (T) -> A) -> Field[T, A]
+
+pub let int : TextCodec[Int32]
+
+pub let jint : JsonCodec[Int32]
+
+pub fn[T : @json.FromJson + ToJson + JsonSchema] json() -> JsonCodec[T]
+
+pub let jstring : JsonCodec[String]
+
+pub let jvalue : JsonCodec[Json]
+
+pub fn max_length(Int32) -> Validator[String]
+
+pub fn minimum(Int32) -> Validator[Int32]
+
+pub fn[T, A, B] object2(String, Field[T, A], Field[T, B], (A, B) -> T) -> JsonCodec[T]
+
+pub let raw_bytes : BodyCodec[Bytes]
+
+pub fn[T] recursive(String, (JsonCodec[T]) -> JsonCodec[T]) -> JsonCodec[T]
+
+pub let string : TextCodec[String]
+
+pub let text_body : BodyCodec[String]
+
+// Errors
+pub(all) suberror DecodeFailure {
+  Missing
+  Multiple(Int32)
+  Malformed(String)
+  Invalid(Array[Issue])
+  Mismatch(expected~ : String, actual~ : String)
+  TooLarge(limit~ : Int32)
+  UnsupportedMediaType(String)
+} derive(@debug.Debug)
+pub fn DecodeFailure::message(Self) -> String
+
+// Types and methods
+pub struct BodyCodec[T] {
+  // private fields
+}
+pub fn[T] BodyCodec::decode(Self[T], Bytes) -> T raise DecodeFailure
+pub fn[T] BodyCodec::encode(Self[T], T) -> Bytes
+pub fn[T] BodyCodec::media_type(Self[T]) -> String
+pub fn[T] BodyCodec::schema(Self[T]) -> Schema
+
+pub struct Field[T, A] {
+  // private fields
+}
+
+pub(all) struct Issue {
+  path : String
+  code : String
+  message : String
+} derive(Eq, ToJson, @debug.Debug)
+
+pub struct JsonCodec[T] {
+  // private fields
+}
+pub fn[T] JsonCodec::body(Self[T]) -> BodyCodec[T]
+pub fn[T : @json.FromJson + ToJson] JsonCodec::derived(Schema) -> Self[T]
+pub fn[T] JsonCodec::from_json(Self[T], Json) -> T raise DecodeFailure
+pub fn[T] JsonCodec::schema(Self[T]) -> Schema
+pub fn[T] JsonCodec::to_json(Self[T], T) -> Json
+
+pub(all) struct Schema {
+  name : String?
+  json : Json
+  defs : Map[String, Json]
+} derive(Eq, @debug.Debug)
+pub fn Schema::named(Self, String) -> Self
+pub fn Schema::of(Json) -> Self
+pub fn Schema::patch(Self, Map[String, Json]) -> Self
+pub fn Schema::reference(Self, Map[String, Json]) -> Json
+
+pub struct TextCodec[T] {
+  // private fields
+}
+pub fn[T] TextCodec::decode(Self[T], String) -> T raise DecodeFailure
+pub fn[T] TextCodec::encode(Self[T], T) -> String
+pub fn[T, U] TextCodec::map(Self[T], (T) -> U raise DecodeFailure, (U) -> T) -> Self[U]
+pub fn[T] TextCodec::new((String) -> T raise DecodeFailure, (T) -> String, Schema) -> Self[T]
+pub fn[T] TextCodec::schema(Self[T]) -> Schema
+pub fn[T] TextCodec::validate(Self[T], Validator[T]) -> Self[T]
+
+pub struct Validator[T] {
+  // private fields
+}
+
+// Type aliases
+
+// Traits
+pub(open) trait JsonSchema {
+  fn json_schema(Self?) -> Schema
+}

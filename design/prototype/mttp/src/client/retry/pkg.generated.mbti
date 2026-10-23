@@ -1,0 +1,43 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/client/retry"
+
+import {
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) enum AttemptOutcome {
+  Response(status~ : Int32, headers~ : @model.Headers)
+  Failure(@model.TransportError)
+} derive(@debug.Debug)
+
+pub(all) enum Decision {
+  Wait(Int32)
+  Stop(StopReason)
+} derive(Eq, @debug.Debug)
+
+pub(all) struct RetryRule {
+  max_retries : Int32
+  statuses : Array[Int32]
+  unsent_failures : Bool
+  base_delay_ms : Int32
+} derive(Eq, @debug.Debug)
+pub fn RetryRule::decide(Self, AttemptOutcome, @model.Request, attempt~ : Int32, random~ : Double, replayable? : Bool) -> Decision
+pub fn RetryRule::never() -> Self
+
+#non_exhaustive
+pub(all) enum StopReason {
+  Exhausted
+  NotRetryable
+  MethodNotAllowed
+  NotReplayable
+} derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits

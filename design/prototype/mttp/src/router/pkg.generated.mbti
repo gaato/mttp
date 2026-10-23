@@ -1,0 +1,44 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/router"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/model",
+}
+
+// Values
+pub fn cors(Array[String]) -> async (@model.Request, async (@model.Request) -> @model.Response noraise) -> @model.Response noraise
+
+pub fn default_decode_failure(@endpoint.FailureContext) -> @model.Response
+
+pub fn problem(Int32, String, errors? : Json) -> @model.Response
+
+// Errors
+
+// Types and methods
+pub struct Router {
+  // private fields
+}
+pub async fn Router::dispatch(Self, @model.Request) -> @model.Response noraise
+pub fn Router::docs(Self) -> Array[@endpoint.EndpointDoc]
+pub fn Router::handler(Self) -> async (@model.Request) -> @model.Response noraise
+pub fn Router::new(Array[@endpoint.ServerEndpoint], options? : ServerOptions) -> Self raise @endpoint.DefinitionError
+pub impl @client.Backend for Router
+
+pub(all) struct ServerOptions {
+  max_body_bytes : Int32
+  max_issues : Int32
+  decode_failure : (@endpoint.FailureContext) -> @model.Response?
+  reject : (@model.Request, Array[@model.Method]) -> @model.Response
+  on_unhandled : (@model.Request, Error) -> @model.Response?
+  middleware : Array[async (@model.Request, async (@model.Request) -> @model.Response noraise) -> @model.Response noraise]
+}
+pub fn ServerOptions::default() -> Self
+
+// Type aliases
+pub using @endpoint {type FailureContext}
+
+pub type Middleware = async (@model.Request, async (@model.Request) -> @model.Response noraise) -> @model.Response noraise
+
+// Traits

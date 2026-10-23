@@ -1,0 +1,30 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/testing"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn[X] run_sync(async () -> X) -> X raise
+
+// Errors
+pub(all) suberror RunSyncError {
+  Suspended
+  Cancelled
+} derive(@debug.Debug)
+
+// Types and methods
+pub struct BackendStub {
+  // private fields
+}
+pub fn BackendStub::new() -> Self
+pub fn BackendStub::sent(Self) -> Array[@model.Request]
+pub fn BackendStub::when(Self, (@model.Request) -> Bool, async (@model.Request, @client.RequestOptions) -> @model.Response raise @model.TransportError) -> Self
+pub impl @client.Backend for BackendStub
+
+// Type aliases
+
+// Traits

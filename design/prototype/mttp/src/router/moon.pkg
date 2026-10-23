@@ -1,0 +1,8 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/schema",
+  "gaato/mttp/client",
+  "gaato/mttp/endpoint",
+  "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
+}

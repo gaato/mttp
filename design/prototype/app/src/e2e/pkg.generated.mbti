@@ -1,0 +1,28 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "example/app/e2e"
+
+import {
+  "example/app/api",
+  "gaato/mttp/client",
+  "gaato/mttp/clock/fake",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/model",
+  "gaato/mttp/router",
+}
+
+// Values
+pub fn app(Map[Int32, @api.User], Array[String], middleware? : Array[async (@model.Request, async (@model.Request) -> @model.Response noraise) -> @model.Response noraise]) -> @router.Router raise @endpoint.DefinitionError
+
+pub fn client(&@client.Backend, clock? : @fake.FakeClock, retry? : &@client.RetryDecider) -> @client.Client
+
+pub async fn client_usage(@client.Client) -> String
+
+pub fn store() -> Map[Int32, @api.User]
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
