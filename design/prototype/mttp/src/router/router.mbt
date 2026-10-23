@@ -260,8 +260,25 @@ pub fn cors(allow_origins : Array[String]) -> Middleware {
     let origin = req.headers.get("origin")
     let r = next(req)
     match origin {
-      Some(o) if allow_origins.contains(o) || allow_origins.contains("*") =>
-        { ..r, headers: r.headers.add("access-control-allow-origin", o) }
+      Some(o) if allow_origins.contains(o) || allow_origins.contains("*") => {
+        let headers = r.headers.add("access-control-allow-origin", o)
+        // A preflight also needs the methods (the router's own Allow for
+        // this path) and the request headers the browser asked to send.
+        let preflight = req.meth is Options &&
+          req.headers.get("access-control-request-method") is Some(_)
+        if !preflight {
+          return { ..r, headers, }
+        }
+        let headers = match r.headers.get("allow") {
+          Some(allow) => headers.add("access-control-allow-methods", allow)
+          None => headers
+        }
+        let headers = match req.headers.get("access-control-request-headers") {
+          Some(asked) => headers.add("access-control-allow-headers", asked)
+          None => headers
+        }
+        { ..r, headers, }
+      }
       _ => r
     }
   }

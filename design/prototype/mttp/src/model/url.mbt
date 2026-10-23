@@ -18,10 +18,15 @@ pub fn percent_encode_path(value : String) -> String {
 }
 
 ///|
-/// Appends an encoded query pair, using ampersand if the URL contains `?`.
+/// Appends an encoded query pair, using ampersand if the URL already has a
+/// query. A fragment stays last: the pair goes before `#`.
 pub fn append_query(url : String, name : String, value : String) -> String {
-  let separator = if url.contains("?") { "&" } else { "?" }
-  url + separator + percent_encode(name) + "=" + percent_encode(value)
+  let (base, fragment) = match url.find("#") {
+    Some(i) => (url.view(end_offset=i).to_string(), url.view(start_offset=i).to_string())
+    None => (url, "")
+  }
+  let separator = if base.contains("?") { "&" } else { "?" }
+  base + separator + percent_encode(name) + "=" + percent_encode(value) + fragment
 }
 
 // The URI reference below follows RFC 3986. Its split, `remove_dot_segments`

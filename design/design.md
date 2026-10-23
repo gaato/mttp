@@ -6,7 +6,7 @@ This draft revises the first synthesized architecture using six adversarial revi
 
 > **Note on paths.** The prototypes cited below were built in a temporary session directory. The main one, `wf3/rev`
 > (31/31 tests on wasm-gc, js, native and wasm), is copied to `design/prototype/`, where review fixes
-> (with regression tests) and the moved `sse` parser (with its own tests) bring it to 62/62. The other cited prototypes (`wf2/*`,
+> (with regression tests) and the moved `sse` parser (with its own tests) bring it to 64/64. The other cited prototypes (`wf2/*`,
 > `v4/*`) are not kept; their results are recorded in §10.
 
 | Prototype | Path (under `/tmp/claude-0/-home-user/a088a40a-4430-5968-a906-ca92585d97e4/scratchpad/`) | Result |

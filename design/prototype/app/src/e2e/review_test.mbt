@@ -315,3 +315,29 @@ test "max_length counts code points, as the JSON Schema keyword does" {
   let one = @schema.string.validate(@schema.max_length(1))
   assert_eq(one.decode("\u{1F600}"), "\u{1F600}")
 }
+
+///|
+test "query parameters go before the URL fragment" {
+  let r = @model.Request::get("https://h/p#top").query("q", "x")
+  assert_eq(r.url, "https://h/p?q=x#top")
+}
+
+///|
+test "a CORS preflight gets the allowed methods and the requested headers" {
+  let ep = @endpoint.endpoint.post("/api").input(@endpoint.body(@schema.jstring.body())).output(@endpoint.no_content())
+  let router = @router.Router::new(
+    [ep.serve_public(async fn(_) { () })],
+    options={ ..@router.ServerOptions::default(), middleware: [@router.cors(["https://a.example"])] },
+  )
+  let r = @testing.run_sync(async fn() {
+    router.dispatch(req(Options, "/api", headers=[
+      ("origin", "https://a.example"),
+      ("access-control-request-method", "POST"),
+      ("access-control-request-headers", "content-type"),
+    ]))
+  })
+  assert_eq(r.status, 204)
+  assert_eq(r.headers.get("access-control-allow-origin"), Some("https://a.example"))
+  assert_eq(r.headers.get("access-control-allow-methods"), Some("POST, OPTIONS"))
+  assert_eq(r.headers.get("access-control-allow-headers"), Some("content-type"))
+}
