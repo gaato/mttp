@@ -43,8 +43,22 @@ pub fn Schema::patch(self : Schema, keywords : Map[String, Json]) -> Schema {
       for k, v in m {
         out[k] = v
       }
+      // Validators combine conjunctively: a keyword that is already set to
+      // another value goes into allOf, so neither bound is lost.
+      let conflicts = Map::new()
       for k, v in keywords {
-        out[k] = v
+        match out.get(k) {
+          Some(old) if old != v => conflicts[k] = v
+          _ => out[k] = v
+        }
+      }
+      if !conflicts.is_empty() {
+        let all_of = match out.get("allOf") {
+          Some(Array(xs)) => xs.copy()
+          _ => []
+        }
+        all_of.push(Json::object(conflicts))
+        out["allOf"] = Json::array(all_of)
       }
       { ..self, json: Json::object(out) }
     }

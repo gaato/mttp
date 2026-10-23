@@ -341,3 +341,14 @@ test "a CORS preflight gets the allowed methods and the requested headers" {
   assert_eq(r.headers.get("access-control-allow-methods"), Some("POST, OPTIONS"))
   assert_eq(r.headers.get("access-control-allow-headers"), Some("content-type"))
 }
+
+///|
+test "stacked validators keep every bound in the schema" {
+  let c = @schema.int.validate(@schema.minimum(10)).validate(@schema.minimum(0))
+  assert_true((try Some(c.decode("5")) catch { _ => None }) is None)
+  let json = c.schema().json
+  guard json is { "minimum": Number(first, ..), "allOf": Array([{ "minimum": Number(second, ..), .. }]), .. } else {
+    fail("schema: \{json.stringify()}")
+  }
+  assert_eq((first, second), (10.0, 0.0))
+}
