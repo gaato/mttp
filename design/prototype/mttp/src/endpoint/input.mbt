@@ -230,7 +230,12 @@ pub fn raw_body() -> Input[Bytes] {
 fn content_type_matches(head : Head, media_type : String) -> Bool {
   match head.request.headers.get("content-type") {
     None => false
-    Some(ct) => ct == media_type || ct.has_prefix("\{media_type};")
+    Some(ct) => {
+      // media types are case-insensitive; parameters may follow
+      let c = ct.to_lower()
+      let m = media_type.to_lower()
+      c == m || c.has_prefix(m + ";") || c.has_prefix(m + " ")
+    }
   }
 }
 

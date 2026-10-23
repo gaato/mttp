@@ -332,6 +332,30 @@ fn SseReader::event_end(self : SseReader) -> (Int, Int)? {
 }
 
 ///|
+/// The joined `data` fields of one event, or None if it has none. Comments
+/// and other fields (event, id, retry) are skipped.
+fn sse_data(event : String) -> String? {
+  let lines = event.replace_all(old="\r\n", new="\n").replace_all(old="\r", new="\n")
+  let data = []
+  for line in lines.split("\n") {
+    if line.has_prefix(":") {
+      continue
+    }
+    let (field, value) = match line.find(":") {
+      Some(i) => {
+        let v = line.view(start_offset=i + 1)
+        (line.view(end_offset=i).to_string(), if v.has_prefix(" ") { v.view(start_offset=1) } else { v })
+      }
+      None => (line.to_string(), "")
+    }
+    if field == "data" {
+      data.push(value.to_string())
+    }
+  }
+  if data.is_empty() { None } else { Some(data.join("\n")) }
+}
+
+///|
 async fn SseReader::next_data(self : SseReader) -> String? raise @model.TransportError {
   while true {
     match self.event_end() {
@@ -340,8 +364,8 @@ async fn SseReader::next_data(self : SseReader) -> String? raise @model.Transpor
         let rest = self.pending[i + delimiter:].to_array()
         self.pending.clear()
         self.pending.append(rest)
-        if event.has_prefix("data: ") {
-          return Some(event.view(start_offset=6).to_string())
+        if sse_data(event) is Some(data) {
+          return Some(data)
         }
       }
       None =>

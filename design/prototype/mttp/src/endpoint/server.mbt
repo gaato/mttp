@@ -67,7 +67,11 @@ async fn read_body(body : @model.Body, limit : Int) -> Bytes raise @schema.Decod
         s.close()
         raise TooLarge(limit~)
       }
-      @model.read_bounded(s, limit) catch { _ => raise TooLarge(limit~) }
+      @model.read_bounded(s, limit) catch {
+        @model.TransportError(kind=TooLarge(..), ..) => raise TooLarge(limit~)
+        // a reset or timeout while reading is not an oversized body
+        e => raise Malformed("request body could not be read: \{e.message()}")
+      }
     }
     _ => b""
   }

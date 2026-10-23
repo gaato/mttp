@@ -226,3 +226,46 @@ test "HEAD responses are bodyless when the router rejects them" {
   assert_eq(missing.status, 404)
   assert_true(missing.body is Empty)
 }
+
+///|
+test "a request body that fails to read is a 400, not a 413" {
+  let ep = @endpoint.endpoint.post("/r").input(@endpoint.body(@schema.jstring.body())).output(@endpoint.no_content())
+  let router = @router.Router::new([ep.serve_public(async fn(_) { () })])
+  let r = @testing.run_sync(async fn() {
+    router.dispatch(req(Post, "/r", headers=[("content-type", "application/json")], body=Stream(FailingStream::{ closed: false }, length=None)))
+  })
+  assert_eq(r.status, 400)
+}
+
+///|
+test "request media types are compared case-insensitively" {
+  let ep = @endpoint.endpoint.post("/r").input(@endpoint.body(@schema.jstring.body())).output(@endpoint.no_content())
+  let router = @router.Router::new([ep.serve_public(async fn(_) { () })])
+  let r = @testing.run_sync(async fn() {
+    router.dispatch(req(Post, "/r", headers=[("content-type", "Application/JSON; charset=utf-8")], body=Bytes(@utf8.encode("\"x\""))))
+  })
+  assert_eq(r.status, 204)
+}
+
+///|
+test "SSE data fields are read around other fields and without a space" {
+  let backend = @client.from_fn((_, _) => @model.Response::new(
+    200,
+    headers=@model.Headers::of([("content-type", "text/event-stream")]),
+    body=Stream(
+      @model.BytesStream::new([
+        @utf8.encode(": comment\nevent: update\ndata: {\"id\":1,\"name\":\"a\"}\nid: 7\n\n"),
+        @utf8.encode("data:{\"id\":2,\"name\":\"b\"}\n\nevent: ping\n\n"),
+      ]),
+      length=None,
+    ),
+  ))
+  let names = @testing.run_sync(async fn() {
+    @api.user_events.call_with(@e2e.client(backend), (), (), async fn(es) {
+      let names = []
+      es.each(async fn(u) { names.push(u.name) })
+      names
+    })
+  })
+  assert_eq(names, ["a", "b"])
+}
