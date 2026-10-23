@@ -269,3 +269,26 @@ test "SSE data fields are read around other fields and without a space" {
   })
   assert_eq(names, ["a", "b"])
 }
+
+///|
+test "the NewUser schema lists each required field once" {
+  let schema = @api.new_user_json.schema().json
+  guard schema is { "required": Array(required), .. } else { fail("no required list") }
+  assert_eq(required, [Json::string("name")])
+}
+
+///|
+test "an optional body round-trips None, and a body without Content-Type is still 415" {
+  let ep = @endpoint.endpoint
+    .post("/o")
+    .input(@endpoint.body(@schema.jstring.body()).optional())
+    .output(@endpoint.json_out(@schema.jstring.body()))
+  let router = @router.Router::new([ep.serve_public(async fn(o) { o.unwrap_or("none") })])
+  let c = @e2e.client(router)
+  let got = @testing.run_sync(async fn() { (ep.call(c, (), None), ep.call(c, (), Some("x"))) })
+  assert_eq(got, ("none", "x"))
+  let r = @testing.run_sync(async fn() {
+    router.dispatch(req(Post, "/o", body=Bytes(@utf8.encode("\"x\""))))
+  })
+  assert_eq(r.status, 415)
+}

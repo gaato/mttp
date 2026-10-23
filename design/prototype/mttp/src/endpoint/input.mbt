@@ -246,6 +246,13 @@ pub fn[T] body(codec : @schema.BodyCodec[T]) -> Input[T] {
   {
     atoms: [a],
     decode: head => {
+      // No body and no Content-Type is an absent body (Missing), which an
+      // optional() body turns into None; a body of the wrong type is 415.
+      let absent = head.request.headers.get("content-type") is None &&
+        (head.request.body is Empty || head.request.body is Bytes(b) && b.length() == 0)
+      if absent {
+        raise fail(a, Missing)
+      }
       if !content_type_matches(head, media_type) {
         raise fail(a, UnsupportedMediaType(
           head.request.headers.get("content-type").unwrap_or(""),

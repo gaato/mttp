@@ -275,6 +275,37 @@ fn[T, A] Field::decode(
 
 ///|
 /// No variadic generics: fixed arities (codegen emits object1..object16).
+pub fn[T, A] object1(name : String, a : Field[T, A], make : (A) -> T) -> JsonCodec[T] {
+  {
+    from_: (j, path) => {
+      guard j is Object(obj) else {
+        raise Invalid([{ path, code: "type", message: "expected object" }])
+      }
+      let issues = []
+      match a.decode(obj, path, issues) {
+        Some(x) if issues.is_empty() => make(x)
+        _ => raise Invalid(issues)
+      }
+    },
+    to_: v => {
+      let m = Map::new()
+      m[a.name] = (a.codec.to_)((a.get)(v))
+      Json::object(m)
+    },
+    schema_: {
+      let defs : Map[String, Json] = Map::new()
+      let props = Map::new()
+      props[a.name] = a.codec.schema_.reference(defs)
+      {
+        name: Some(name),
+        json: { "type": "object", "required": [a.name], "properties": Json::object(props) },
+        defs,
+      }
+    },
+  }
+}
+
+///|
 pub fn[T, A, B] object2(
   name : String,
   a : Field[T, A],

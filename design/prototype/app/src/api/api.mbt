@@ -54,11 +54,10 @@ pub(all) struct NewUser {
 } derive(Eq, Debug)
 
 ///|
-pub let new_user_json : @schema.JsonCodec[NewUser] = @schema.object2(
+pub let new_user_json : @schema.JsonCodec[NewUser] = @schema.object1(
   "NewUser",
   @schema.field("name", @schema.jstring, (u : NewUser) => u.name),
-  @schema.field("name", @schema.jstring, (u : NewUser) => u.name),
-  (name, _) => { name, },
+  name => { name, },
 )
 
 ///|
