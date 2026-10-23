@@ -216,7 +216,8 @@ pub fn[T : FromJson + ToJson + JsonSchema] json() -> JsonCodec[T] {
 ///|
 pub let jint : JsonCodec[Int] = {
   from_: (j, path) => match j {
-    Number(n, ..) => n.to_int()
+    Number(n, ..) if n == n.floor() && n >= -2147483648.0 && n <= 2147483647.0 =>
+      n.to_int()
     _ => raise Invalid([{ path, code: "type", message: "expected integer" }])
   },
   to_: i => i.to_json(),

@@ -109,7 +109,18 @@ pub fn[T, H] Variant::and_header(self : Variant[T], name : String, codec : @sche
         })
       None => None
     },
-    decode_stream: None,
+    decode_stream: match self.decode_stream {
+      Some(f) =>
+        Some(async fn(h, s) {
+          guard h.headers.get(name) is Some(raw) else {
+            s.close()
+            raise @client.Deserialization(h, message="missing header \{name}", body=b"")
+          }
+          let header = codec.decode(raw)
+          (f(h, s), header)
+        })
+      None => None
+    },
   }
 }
 
@@ -293,16 +304,30 @@ impl @model.BodyStream for EventBody with close(self) {
 ///|
 priv struct SseReader {
   stream : &@model.BodyStream
-  mut pending : String
+  // Raw bytes, decoded only once a whole event has arrived, so a UTF-8
+  // sequence split across chunks is reassembled before decoding.
+  pending : Array[Byte]
+}
+
+///|
+fn SseReader::event_end(self : SseReader) -> Int? {
+  for i in 0..<(self.pending.length() - 1) {
+    if self.pending[i] == b'\n' && self.pending[i + 1] == b'\n' {
+      return Some(i)
+    }
+  }
+  None
 }
 
 ///|
 async fn SseReader::next_data(self : SseReader) -> String? raise @model.TransportError {
   while true {
-    match self.pending.find("\n\n") {
+    match self.event_end() {
       Some(i) => {
-        let event = self.pending.view(end_offset=i).to_string()
-        self.pending = self.pending.view(start_offset=i + 2).to_string()
+        let event = @utf8.decode_lossy(Bytes::from_array(self.pending[0:i]))
+        let rest = self.pending[i + 2:].to_array()
+        self.pending.clear()
+        self.pending.append(rest)
         if event.has_prefix("data: ") {
           return Some(event.view(start_offset=6).to_string())
         }
@@ -310,7 +335,7 @@ async fn SseReader::next_data(self : SseReader) -> String? raise @model.Transpor
       None =>
         match self.stream.read_some() {
           None => return None
-          Some(chunk) => self.pending = self.pending + @utf8.decode_lossy(chunk)
+          Some(chunk) => for byte in chunk { self.pending.push(byte) }
         }
     }
   }
@@ -341,7 +366,7 @@ pub fn[T] sse_out(codec : @schema.JsonCodec[T]) -> Out[EventStream[T]] {
     },
     decode_bytes: None,
     decode_stream: Some(async fn(h, stream) {
-      let reader = SseReader::{ stream, pending: "" }
+      let reader = SseReader::{ stream, pending: [] }
       EventStream::from_pull(
         async fn() {
           match reader.next_data() {
