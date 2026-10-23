@@ -2,6 +2,7 @@ import {
   "gaato/mttp/model",
   "gaato/mttp/schema",
   "gaato/mttp/client",
+  "gaato/mttp/sse",
   "moonbitlang/core/json",
   "moonbitlang/core/encoding/utf8",
 }

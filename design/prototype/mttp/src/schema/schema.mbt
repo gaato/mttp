@@ -145,7 +145,8 @@ pub fn minimum(n : Int) -> Validator[Int] {
 ///|
 pub fn max_length(n : Int) -> Validator[String] {
   {
-    check: v => if v.length() > n { Some("longer than \{n}") } else { None },
+    // JSON Schema counts code points; length() would count UTF-16 units
+    check: v => if v.iter().count() > n { Some("longer than \{n}") } else { None },
     keywords: { "maxLength": n.to_json() },
   }
 }

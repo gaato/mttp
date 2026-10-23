@@ -302,80 +302,26 @@ impl @model.BodyStream for EventBody with close(self) {
 }
 
 ///|
+/// Reads `data` payloads through the moved, conformance-tested SseParser,
+/// so line endings, fields, comments and split chunks follow the SSE spec.
 priv struct SseReader {
   stream : &@model.BodyStream
-  // Raw bytes, decoded only once a whole event has arrived, so a UTF-8
-  // sequence split across chunks is reassembled before decoding.
-  pending : Array[Byte]
-}
-
-///|
-/// The end of the first event and the length of the blank line after it.
-/// Lines may end in LF, CRLF or CR (the SSE grammar allows all three).
-fn SseReader::event_end(self : SseReader) -> (Int, Int)? {
-  let p = self.pending
-  let n = p.length()
-  for i in 0..<n {
-    if p[i] == b'\n' && i + 1 < n && p[i + 1] == b'\n' {
-      return Some((i, 2))
-    }
-    if p[i] == b'\r' && i + 3 < n && p[i + 1] == b'\n' && p[i + 2] == b'\r' && p[i + 3] == b'\n' {
-      return Some((i, 4))
-    }
-    // a lone CR line ending: CR CR not followed by LF; wait for more bytes
-    // when the second CR is the last byte, since it may begin a CRLF
-    if p[i] == b'\r' && i + 2 < n && p[i + 1] == b'\r' && p[i + 2] != b'\n' {
-      return Some((i, 2))
-    }
-  }
-  None
-}
-
-///|
-/// The joined `data` fields of one event, or None if it has none. Comments
-/// and other fields (event, id, retry) are skipped.
-fn sse_data(event : String) -> String? {
-  let lines = event.replace_all(old="\r\n", new="\n").replace_all(old="\r", new="\n")
-  let data = []
-  for line in lines.split("\n") {
-    if line.has_prefix(":") {
-      continue
-    }
-    let (field, value) = match line.find(":") {
-      Some(i) => {
-        let v = line.view(start_offset=i + 1)
-        (line.view(end_offset=i).to_string(), if v.has_prefix(" ") { v.view(start_offset=1) } else { v })
-      }
-      None => (line.to_string(), "")
-    }
-    if field == "data" {
-      data.push(value.to_string())
-    }
-  }
-  if data.is_empty() { None } else { Some(data.join("\n")) }
+  parser : @sse.SseParser
+  ready : Array[String]
 }
 
 ///|
 async fn SseReader::next_data(self : SseReader) -> String? raise @model.TransportError {
-  while true {
-    match self.event_end() {
-      Some((i, delimiter)) => {
-        let event = @utf8.decode_lossy(Bytes::from_array(self.pending[0:i]))
-        let rest = self.pending[i + delimiter:].to_array()
-        self.pending.clear()
-        self.pending.append(rest)
-        if sse_data(event) is Some(data) {
-          return Some(data)
-        }
+  while self.ready.is_empty() {
+    match self.stream.read_some() {
+      Some(chunk) => for e in self.parser.feed(chunk) { self.ready.push(e.data) }
+      None => {
+        ignore(self.parser.finish())
+        return None
       }
-      None =>
-        match self.stream.read_some() {
-          None => return None
-          Some(chunk) => for byte in chunk { self.pending.push(byte) }
-        }
     }
   }
-  None
+  Some(self.ready.remove(0))
 }
 
 ///|
@@ -402,7 +348,7 @@ pub fn[T] sse_out(codec : @schema.JsonCodec[T]) -> Out[EventStream[T]] {
     },
     decode_bytes: None,
     decode_stream: Some(async fn(h, stream) {
-      let reader = SseReader::{ stream, pending: [] }
+      let reader = SseReader::{ stream, parser: @sse.SseParser::new(), ready: [] }
       EventStream::from_pull(
         async fn() {
           match reader.next_data() {

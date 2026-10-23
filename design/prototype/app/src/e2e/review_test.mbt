@@ -292,3 +292,26 @@ test "an optional body round-trips None, and a body without Content-Type is stil
   })
   assert_eq(r.status, 415)
 }
+
+///|
+test "an SSE event ended by CR CR is delivered when the stream then closes" {
+  let backend = @client.from_fn((_, _) => @model.Response::new(
+    200,
+    headers=@model.Headers::of([("content-type", "text/event-stream")]),
+    body=Stream(@model.BytesStream::new([@utf8.encode("data: {\"id\":1,\"name\":\"a\"}\r\r")]), length=None),
+  ))
+  let names = @testing.run_sync(async fn() {
+    @api.user_events.call_with(@e2e.client(backend), (), (), async fn(es) {
+      let names = []
+      es.each(async fn(u) { names.push(u.name) })
+      names
+    })
+  })
+  assert_eq(names, ["a"])
+}
+
+///|
+test "max_length counts code points, as the JSON Schema keyword does" {
+  let one = @schema.string.validate(@schema.max_length(1))
+  assert_eq(one.decode("\u{1F600}"), "\u{1F600}")
+}
