@@ -116,3 +116,56 @@ test "call_with tries every buffered variant that shares a status and media type
   })
   assert_eq(got, AText("hello"))
 }
+
+///|
+test "a mapped head input is checked before the body is read" {
+  let positive = @endpoint.query("n", @schema.int).map(
+    n => if n > 0 { n } else { raise @schema.Malformed("n must be positive") },
+    n => n,
+  )
+  let ep = @endpoint.endpoint
+    .post("/m")
+    .input(@endpoint.pair(positive, @endpoint.body(@schema.jstring.body())))
+    .output(@endpoint.no_content())
+    .max_body_bytes(8)
+  let router = @router.Router::new([ep.serve_public(async fn(_) { () })])
+  let big = @utf8.encode("\"" + "x".repeat(100) + "\"")
+  let body = @model.BytesStream::new([big])
+  let r = @testing.run_sync(async fn() {
+    router.dispatch(req(Post, "/m?n=-1", headers=[("content-type", "application/json")], body=Stream(body, length=None)))
+  })
+  // 400 for the query, not 413 for the body, and the body was never read
+  assert_eq((r.status, body.reads()), (400, 0))
+}
+
+///|
+test "an explicit HEAD endpoint is preferred over GET" {
+  let head = @endpoint.endpoint.with_method(Head, "/health").output(@endpoint.no_content())
+  let only_head = @router.Router::new([head.serve_public(async fn(_) { () })])
+  let r = @testing.run_sync(async fn() { only_head.dispatch(req(Head, "/health")) })
+  assert_eq(r.status, 204)
+  let get = @endpoint.endpoint.get("/health").output(@endpoint.json_out(@schema.jstring.body()))
+  let calls = []
+  let both = @router.Router::new([
+    get.serve_public(async fn(_) { calls.push("get"); "ok" }),
+    head.serve_public(async fn(_) { calls.push("head") }),
+  ])
+  ignore(@testing.run_sync(async fn() { both.dispatch(req(Head, "/health")) }))
+  assert_eq(calls, ["head"])
+  let opt = @testing.run_sync(async fn() { both.dispatch(req(Options, "/health")) })
+  assert_eq(opt.headers.get("allow"), Some("GET, HEAD, OPTIONS"))
+}
+
+///|
+test "templates with empty path segments are refused" {
+  let trailing = @endpoint.endpoint.get("/health/").output(@endpoint.no_content())
+  let doubled = @endpoint.endpoint.get("/a//b").output(@endpoint.no_content())
+  let root = @endpoint.endpoint.get("/").output(@endpoint.no_content())
+  assert_true(trailing.doc().problems().length() == 1)
+  assert_true(doubled.doc().problems().length() == 1)
+  assert_true(root.doc().problems().is_empty())
+  let refused = try Some(@router.Router::new([trailing.serve_public(async fn(_) { () })])) catch {
+    _ => None
+  }
+  assert_true(refused is None)
+}

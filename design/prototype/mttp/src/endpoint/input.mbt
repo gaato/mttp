@@ -296,8 +296,15 @@ pub fn[T, U] Input::map(
     atoms: self.atoms,
     decode: head => {
       let s = (self.decode)(head)
+      // A mapping over head-only inputs runs during head decoding, so its
+      // failure is reported before any body is read.
+      if !s.needs_body {
+        let v = (s.finish)(NoBody)
+        let u = to(v) catch { f => raise fail(first, f) }
+        return ready(u)
+      }
       {
-        needs_body: s.needs_body,
+        needs_body: true,
         finish: b => {
           let v = (s.finish)(b)
           to(v) catch { f => raise fail(first, f) }

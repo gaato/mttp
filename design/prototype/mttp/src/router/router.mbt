@@ -180,7 +180,13 @@ async fn Router::route(self : Router, req : @model.Request) -> @model.Response n
     discard(req.body)
     return (self.options.reject)(req, [])
   }
-  let wanted : @model.Method = if req.meth is Head { Get } else { req.meth }
+  // An explicit HEAD endpoint wins; otherwise HEAD is served by GET.
+  let wanted : @model.Method = if req.meth is Head &&
+    !candidates.iter().any(c => c.0.doc().meth is Some(Head)) {
+    Get
+  } else {
+    req.meth
+  }
   for c in candidates {
     if c.0.doc().meth == Some(wanted) {
       let resp = c.0.dispatch(req, c.1, self.ctx)
@@ -195,8 +201,10 @@ async fn Router::route(self : Router, req : @model.Request) -> @model.Response n
   let allowed : Array[@model.Method] = []
   for c in candidates {
     if c.0.doc().meth is Some(m) {
-      allowed.push(m)
-      if m is Get {
+      if !allowed.contains(m) {
+        allowed.push(m)
+      }
+      if m is Get && !allowed.contains(Head) {
         allowed.push(Head)
       }
     }

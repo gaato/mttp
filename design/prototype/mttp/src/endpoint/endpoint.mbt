@@ -219,6 +219,11 @@ pub fn EndpointDoc::problems(self : EndpointDoc) -> Array[String] {
   if self.method_set_twice {
     out.push("method set twice")
   }
+  // "/a/" and "/a//b" would be routed and encoded as "/a" and "/a/b".
+  if self.template != "/" &&
+    self.template.split("/").drop(1).any(p => p.length() == 0) {
+    out.push("empty path segment (a trailing or doubled '/') in \{self.template}")
+  }
   let captures = self.segments.filter_map(s => if s is Cap(n) { Some(n) } else { None })
   let path_atoms = [..self.security, ..self.inputs].filter(a => a.location is Path)
   for n in captures {
