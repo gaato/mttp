@@ -106,7 +106,7 @@ pub fn to_openapi(
             required: a.required,
             content: Map::from_array([(media_type, { schema: a.schema.reference(schemas) })]),
           })
-        RawBody => ()
+        RawBody | Derived => ()
       }
     }
     let security : Array[Map[String, Array[String]]] = []

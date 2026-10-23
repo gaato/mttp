@@ -76,11 +76,17 @@ pub async fn[S, I, E : Error, O, R] Endpoint::call_with(
         _ => @model.BytesStream::new([])
       }
       defer s.close()
-      let v = self.output.for_head(h)[0]
-      match (v.decode_stream, v.decode_bytes) {
-        (Some(f), _) => use_(f(h, s))
-        (None, Some(f)) => use_(f(h, @model.read_bounded(s, opts.max_body_bytes)))
-        _ => raise @client.UnexpectedStatus(h, body=b"")
+      // A streaming variant gets the stream; otherwise read the body once
+      // and try every buffered candidate in order, as `call` does.
+      for v in self.output.for_head(h) {
+        if v.decode_stream is Some(f) {
+          return use_(f(h, s))
+        }
+      }
+      let body = @model.read_bounded(s, opts.max_body_bytes)
+      match self.output.decode_bytes(h, body) {
+        Some(o) => use_(o)
+        None => raise @client.UnexpectedStatus(h, body~)
       }
     },
     streaming=true,

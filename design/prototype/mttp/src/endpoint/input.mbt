@@ -17,6 +17,9 @@ pub(all) enum Location {
   Auth(scheme~ : AuthScheme, scheme_name~ : String)
   Body(media_type~ : String, streamed~ : Bool)
   RawBody
+  /// Not read from the request (an attribute, or `unit()`); a failure while
+  /// mapping such an input is attributed here.
+  Derived
 } derive(Eq, Debug)
 
 ///|
@@ -283,7 +286,12 @@ pub fn[T, U] Input::map(
   to : (T) -> U raise @schema.DecodeFailure,
   from : (U) -> T,
 ) -> Input[U] {
-  let first = self.atoms[0]
+  // An input built from no part of the request (attribute, unit) has no
+  // atom to blame, so its mapping failures are reported as Derived.
+  let first = match self.atoms {
+    [a, ..] => a
+    [] => atom(Derived, "", @schema.Schema::of({}))
+  }
   {
     atoms: self.atoms,
     decode: head => {

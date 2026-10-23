@@ -74,3 +74,45 @@ test "SSE events survive a UTF-8 sequence split across chunks" {
   })
   assert_eq(names, ["caf\u{e9}"])
 }
+
+///|
+test "mapping an input that reads nothing from the request does not abort" {
+  let who = @endpoint.attribute(@model.remote_addr).map(
+    o => o.unwrap_or("unknown"),
+    s => Some(s),
+  )
+  let ep = @endpoint.endpoint.get("/who").input(who).output(@endpoint.json_out(@schema.jstring.body()))
+  let router = @router.Router::new([ep.serve_public(async fn(addr) { addr })])
+  let got = @testing.run_sync(async fn() { ep.call(@e2e.client(router), (), "ignored") })
+  inspect(got, content="in-process")
+}
+
+///|
+priv enum IntOrText {
+  AnInt(Int)
+  AText(String)
+} derive(Eq, Debug)
+
+///|
+test "call_with tries every buffered variant that shares a status and media type" {
+  let out = @endpoint.one_of([
+    @endpoint.json_variant(200, @schema.jint.body()).contramap(
+      v => if v is AnInt(i) { Some(i) } else { None },
+      i => AnInt(i),
+    ),
+    @endpoint.json_variant(200, @schema.jstring.body()).contramap(
+      v => if v is AText(s) { Some(s) } else { None },
+      s => AText(s),
+    ),
+  ])
+  let ep = @endpoint.endpoint.get("/either").output(out)
+  let backend = @client.from_fn((_, _) => @model.Response::new(
+    200,
+    headers=@model.Headers::of([("content-type", "application/json")]),
+    body=Bytes(@utf8.encode("\"hello\"")),
+  ))
+  let got = @testing.run_sync(async fn() {
+    ep.call_with(@e2e.client(backend), (), (), async fn(v) { v })
+  })
+  assert_eq(got, AText("hello"))
+}

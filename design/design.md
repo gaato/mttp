@@ -5,8 +5,8 @@
 This draft revises the first synthesized architecture using six adversarial reviews: cross-layer integration, resolver and release, async runtime and I/O, sttp/tapir completeness, consumer migration, and scope. The design was then rebuilt as a single prototype that compiles and passes on every target. A final critique was checked against the gaato sources, the registry index and the prototypes, and its corrections are folded in. Where a rule is designed but not yet tested in `wf3/rev`, the text says so.
 
 > **Note on paths.** The prototypes cited below were built in a temporary session directory. The main one, `wf3/rev`
-> (31/31 tests on wasm-gc, js, native and wasm), is copied to `design/prototype/`, where three fixes
-> from review and their regression tests bring it to 34/34. The other cited prototypes (`wf2/*`,
+> (31/31 tests on wasm-gc, js, native and wasm), is copied to `design/prototype/`, where five fixes
+> from review and their regression tests bring it to 36/36. The other cited prototypes (`wf2/*`,
 > `v4/*`) are not kept; their results are recorded in §10.
 
 | Prototype | Path (under `/tmp/claude-0/-home-user/a088a40a-4430-5968-a906-ca92585d97e4/scratchpad/`) | Result |
@@ -548,7 +548,7 @@ pub let text_body : BodyCodec[String]               // raw_bytes; (new) form_bod
 #non_exhaustive
 pub(all) enum AuthScheme { Bearer(format~ : String?); Basic; ApiKeyHeader(String); ApiKeyQuery(String); ApiKeyCookie(String); Signature(String) }   // OAuth2, OpenIdConnect later
 #non_exhaustive
-pub(all) enum Location { Path; Query; Header; Cookie; Auth(scheme~ : AuthScheme, scheme_name~ : String); Body(media_type~ : String, streamed~ : Bool); RawBody }
+pub(all) enum Location { Path; Query; Header; Cookie; Auth(scheme~ : AuthScheme, scheme_name~ : String); Body(media_type~ : String, streamed~ : Bool); RawBody; Derived }   // Derived: attribute/unit inputs, read from no part of the request
 pub struct Atom { location : Location; name : String; schema : @schema.Schema; required : Bool; description : String? }  // (new: read-only; pub(all) in wf3/rev) docs fields will grow (SC-13)
 pub fn Atom::new(location : Location, name : String, schema : @schema.Schema, required? : Bool, description? : String) -> Atom  // (new)
 pub struct Head { request : @model.Request; captures : Map[String, String]; query : Array[(String, String)] }   // what an input sees before the body

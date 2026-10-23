@@ -39,6 +39,7 @@ fn location_name(l : @endpoint.Location) -> String {
     Cookie => "cookie"
     Auth(..) => "auth"
     Body(..) | RawBody => "body"
+    Derived => "derived"
   }
 }
 
