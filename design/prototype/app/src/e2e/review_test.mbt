@@ -169,3 +169,60 @@ test "templates with empty path segments are refused" {
   }
   assert_true(refused is None)
 }
+
+///|
+test "SSE events delimited by CRLF are delivered, even when the delimiter is split" {
+  let backend = @client.from_fn((_, _) => @model.Response::new(
+    200,
+    headers=@model.Headers::of([("content-type", "text/event-stream")]),
+    body=Stream(
+      @model.BytesStream::new([
+        @utf8.encode("data: {\"id\":1,\"name\":\"a\"}\r\n"),
+        @utf8.encode("\r\ndata: {\"id\":2,\"name\":\"b\"}\r\n\r\n"),
+      ]),
+      length=None,
+    ),
+  ))
+  let names = @testing.run_sync(async fn() {
+    @api.user_events.call_with(@e2e.client(backend), (), (), async fn(es) {
+      let names = []
+      es.each(async fn(u) { names.push(u.name) })
+      names
+    })
+  })
+  assert_eq(names, ["a", "b"])
+}
+
+///|
+priv struct FailingStream {
+  mut closed : Bool
+}
+
+///|
+impl @model.BodyStream for FailingStream with read_some(_) {
+  raise @model.TransportError(kind=Network, phase=Body, detail="reset")
+}
+
+///|
+impl @model.BodyStream for FailingStream with close(self) {
+  self.closed = true
+}
+
+///|
+test "read_bounded closes the stream when a read fails" {
+  let s = FailingStream::{ closed: false }
+  let r = @testing.run_sync(async fn() {
+    try Some(@model.read_bounded(s, 10)) catch {
+      _ => None
+    }
+  })
+  assert_eq((r, s.closed), (None, true))
+}
+
+///|
+test "HEAD responses are bodyless when the router rejects them" {
+  let router = @e2e.app(@e2e.store(), [])
+  let missing = @testing.run_sync(async fn() { router.dispatch(req(Head, "/missing")) })
+  assert_eq(missing.status, 404)
+  assert_true(missing.body is Empty)
+}

@@ -310,10 +310,22 @@ priv struct SseReader {
 }
 
 ///|
-fn SseReader::event_end(self : SseReader) -> Int? {
-  for i in 0..<(self.pending.length() - 1) {
-    if self.pending[i] == b'\n' && self.pending[i + 1] == b'\n' {
-      return Some(i)
+/// The end of the first event and the length of the blank line after it.
+/// Lines may end in LF, CRLF or CR (the SSE grammar allows all three).
+fn SseReader::event_end(self : SseReader) -> (Int, Int)? {
+  let p = self.pending
+  let n = p.length()
+  for i in 0..<n {
+    if p[i] == b'\n' && i + 1 < n && p[i + 1] == b'\n' {
+      return Some((i, 2))
+    }
+    if p[i] == b'\r' && i + 3 < n && p[i + 1] == b'\n' && p[i + 2] == b'\r' && p[i + 3] == b'\n' {
+      return Some((i, 4))
+    }
+    // a lone CR line ending: CR CR not followed by LF; wait for more bytes
+    // when the second CR is the last byte, since it may begin a CRLF
+    if p[i] == b'\r' && i + 2 < n && p[i + 1] == b'\r' && p[i + 2] != b'\n' {
+      return Some((i, 2))
     }
   }
   None
@@ -323,9 +335,9 @@ fn SseReader::event_end(self : SseReader) -> Int? {
 async fn SseReader::next_data(self : SseReader) -> String? raise @model.TransportError {
   while true {
     match self.event_end() {
-      Some(i) => {
+      Some((i, delimiter)) => {
         let event = @utf8.decode_lossy(Bytes::from_array(self.pending[0:i]))
-        let rest = self.pending[i + 2:].to_array()
+        let rest = self.pending[i + delimiter:].to_array()
         self.pending.clear()
         self.pending.append(rest)
         if event.has_prefix("data: ") {

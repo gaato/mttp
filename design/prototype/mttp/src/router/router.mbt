@@ -189,12 +189,7 @@ async fn Router::route(self : Router, req : @model.Request) -> @model.Response n
   }
   for c in candidates {
     if c.0.doc().meth == Some(wanted) {
-      let resp = c.0.dispatch(req, c.1, self.ctx)
-      if req.meth is Head {
-        resp.close()
-        return { ..resp, body: Empty }
-      }
-      return resp
+      return c.0.dispatch(req, c.1, self.ctx)
     }
   }
   discard(req.body)
@@ -225,7 +220,14 @@ pub async fn Router::dispatch(self : Router, req : @model.Request) -> @model.Res
     let inner = next
     next = r => mw(r, inner)
   }
-  next(req)
+  let resp = next(req)
+  // HEAD responses are bodyless, whatever produced them: an endpoint, a
+  // rejection, or middleware.
+  if req.meth is Head {
+    resp.close()
+    return { ..resp, body: Empty }
+  }
+  resp
 }
 
 ///|

@@ -24,10 +24,11 @@ pub async fn read_bounded(
   s : &BodyStream,
   limit : Int,
 ) -> Bytes raise TransportError {
+  // Closed however the read ends: completion, the limit, or a read error.
+  defer s.close()
   let buf = Buffer()
   while s.read_some() is Some(chunk) {
     if buf.length() + chunk.length() > limit {
-      s.close()
       raise TransportError(
         kind=TooLarge(limit~),
         phase=Body,
@@ -36,7 +37,6 @@ pub async fn read_bounded(
     }
     buf.write_bytes(chunk)
   }
-  s.close()
   buf.to_bytes()
 }
 
