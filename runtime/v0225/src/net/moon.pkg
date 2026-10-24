@@ -1,0 +1,18 @@
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/async",
+  "moonbitlang/async/http" @ahttp,
+  "moonbitlang/async/socket",
+  "moonbitlang/async/io",
+  "gaato/rtprobe/model",
+  "moonbitlang/core/string",
+}
+
+import {
+  "moonbitlang/async/fs",
+  "moonbitlang/async/cond_var",
+  "moonbitlang/core/string",
+} for "test"
+
+supported_targets = "native + wasm"

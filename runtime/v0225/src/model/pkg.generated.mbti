@@ -1,0 +1,97 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/rtprobe/model"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn parse_head_headers(BytesView) -> Headers
+
+pub async fn read_bounded(&BodyStream, Int32) -> Bytes raise TransportError
+
+pub fn scan_head(BytesView, max~ : Int32) -> Int32? raise TransportError
+
+// Errors
+pub(all) suberror TransportError {
+  TransportError(kind~ : Kind, phase~ : Phase, detail~ : String)
+} derive(@debug.Debug)
+
+// Types and methods
+pub(all) enum Body {
+  Empty
+  Bytes(Bytes)
+  Stream(&BodyStream, length~ : Int64?)
+}
+
+pub struct Headers {
+  // private fields
+}
+pub fn Headers::add(Self, String, String) -> Self
+pub fn Headers::empty() -> Self
+pub fn Headers::get(Self, String) -> String?
+pub fn Headers::get_all(Self, String) -> Array[String]
+pub fn Headers::iter(Self) -> Iter[(String, String)]
+pub fn Headers::length(Self) -> Int32
+pub fn Headers::of(ArrayView[(String, String)]) -> Self
+
+#non_exhaustive
+pub(all) enum Kind {
+  Invalid
+  Connect
+  Timeout(ms~ : Int32)
+  Network
+  Protocol
+  TooLarge(limit~ : Int64)
+  Closed
+} derive(Eq, @debug.Debug)
+
+pub(all) enum Outcome {
+  Respond(ServerResponse)
+}
+
+#non_exhaustive
+pub(all) enum Phase {
+  Pool
+  Dial
+  Write
+  Head
+  Body
+  Unknown
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Request {
+  meth : String
+  url : String
+  headers : Headers
+  body : Body
+}
+
+pub(all) struct Response {
+  status : Int32
+  headers : Headers
+  body : Body
+}
+
+pub(all) enum ServerBody {
+  Empty
+  Bytes(Bytes)
+  Stream(&BodyStream, length~ : Int64?)
+  Push(async (async (Bytes) -> Unit raise TransportError) -> Unit, length~ : Int64?)
+}
+
+pub(all) struct ServerResponse {
+  status : Int32
+  headers : Headers
+  body : ServerBody
+  close_connection : Bool
+}
+
+// Type aliases
+pub type Handler = async (Request) -> Outcome noraise
+
+// Traits
+pub(open) trait BodyStream {
+  async fn read_some(Self) -> Bytes? raise TransportError
+  fn close(Self) -> Unit
+}

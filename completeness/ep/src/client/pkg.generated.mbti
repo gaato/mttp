@@ -1,0 +1,95 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/client"
+
+import {
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn as_bytes(limit? : Int64) -> ResponseAs[Bytes]
+
+pub fn[T : @json.FromJson] as_json_or_fail() -> ResponseAs[T]
+
+pub fn as_stream() -> ResponseAs[&@model.BodyStream]
+
+pub let basic_request : ClientRequest[Result[String, String]]
+
+pub async fn body_bytes(@model.Body, Int64) -> Bytes raise @model.TransportError
+
+pub let default_max_body : Int64
+
+pub fn[T] from_head((@model.ResponseHead) -> ResponseAs[T]) -> ResponseAs[T]
+
+pub fn ignore_body() -> ResponseAs[Unit]
+
+pub let max_error_body : Int64
+
+pub fn retrying(&Backend, &Clock, max_retries? : Int32, delay_ms? : (Int32) -> Int32) -> Retrying
+
+// Errors
+pub(all) suberror ResponseError {
+  UnexpectedStatus(@model.ResponseHead, body~ : Bytes)
+  Deserialization(@model.ResponseHead, message~ : String, body~ : Bytes)
+} derive(@debug.Debug)
+
+// Types and methods
+pub struct BackendStub {
+  // private fields
+}
+pub fn BackendStub::new() -> Self
+pub fn BackendStub::sent(Self) -> Array[@model.Request]
+pub fn BackendStub::when(Self, (@model.Request) -> Bool, async (@model.Request) -> @model.Response) -> Self
+pub impl Backend for BackendStub
+
+pub struct ClientRequest[T] {
+  // private fields
+}
+pub fn[T] ClientRequest::get(Self[T], @model.Uri) -> Self[T]
+pub fn[T] ClientRequest::header(Self[T], String, String) -> Self[T]
+pub fn[T] ClientRequest::new(@model.Request, ResponseAs[T]) -> Self[T]
+pub fn[T] ClientRequest::post(Self[T], @model.Uri) -> Self[T]
+pub fn[T] ClientRequest::request(Self[T]) -> @model.Request
+pub fn[T, U] ClientRequest::response(Self[T], ResponseAs[U]) -> Self[U]
+pub async fn[T] ClientRequest::send(Self[T], &Backend) -> Response[T]
+pub fn[T] ClientRequest::timeout(Self[T], Int32) -> Self[T]
+
+pub(all) struct RequestOptions {
+  timeout_ms : Int32?
+  follow_redirects : Bool
+  max_redirects : Int32
+} derive(@debug.Debug)
+
+pub(all) struct Response[T] {
+  head : @model.ResponseHead
+  body : T
+}
+
+pub struct ResponseAs[T] {
+  // private fields
+}
+pub fn[A, B] ResponseAs::map(Self[A], (A) -> B raise) -> Self[B]
+pub fn[T] ResponseAs::new(async (@model.ResponseHead, @model.Body) -> T) -> Self[T]
+pub async fn[T] ResponseAs::read(Self[T], @model.ResponseHead, @model.Body) -> T
+
+pub struct Retrying {
+  // private fields
+}
+pub impl Backend for Retrying
+
+// Type aliases
+
+// Traits
+pub(open) trait Backend {
+  async fn send(Self, @model.Request) -> @model.Response raise @model.TransportError
+}
+
+pub(open) trait Clock {
+  async fn sleep(Self, Int32) -> Unit noraise
+  fn now_ms(Self) -> Int64
+}
+
+pub(open) trait WebSocketBackend {
+  async fn open(Self, @model.Request) -> (@model.ResponseHead, &@model.WebSocketIo) raise @model.TransportError
+}

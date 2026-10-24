@@ -1,0 +1,536 @@
+// The signatures below are a condensed copy of a sketch that type-checks with
+// `moon check` on wasm-gc, js, native and wasm (moonc 0.10.16; bodies are `...`):
+//   /tmp/claude-0/-home-user/a088a40a-4430-5968-a906-ca92585d97e4/scratchpad/wf1/moonbit-native-minimal/sketch/src/{root.mbt,client/,api/,testing/,net/,fetch/,sse/,cookie/,fields/,example/}
+// The usage blocks come from the working prototype, whose tests pass on all four targets:
+//   .../wf1/moonbit-native-minimal/mttp/src/**  and  .../wf1/moonbit-native-minimal/mttp-net/src/**
+
+// ======================= package gaato/mttp (vocabulary) =======================
+pub(all) enum Method {
+  Get
+  Head
+  Post
+  Put
+  Patch
+  Delete
+  Options
+  Trace
+  Connect
+  Other(String)
+} derive(Eq, Hash, Debug)
+
+pub fn Method::parse(s : String) -> Method { ... }
+
+// immutable: add/set/remove return copies, so a Request is a shareable value
+pub struct Headers {
+  priv pairs : Array[(String, String)]
+} derive(Eq, Debug)
+
+pub fn Headers::of(pairs : Array[(String, String)]) -> Headers { ... }
+pub fn Headers::get(self : Headers, name : String) -> String? { ... }
+pub fn Headers::get_all(self : Headers, name : String) -> Array[String] { ... }
+pub fn Headers::add(self : Headers, name : String, value : String) -> Headers { ... }
+pub fn Headers::set(self : Headers, name : String, value : String) -> Headers { ... }
+
+// gaato/http's WPT-tested URL, moved
+pub struct Url {
+  scheme : String?
+  userinfo : String?
+  host : String?
+  port : Int?
+  path : String
+  query : String?
+  fragment : String?
+} derive(Eq, Debug)
+
+pub fn Url::parse(s : String) -> Url raise HttpError { ... }
+pub fn Url::resolve(self : Url, reference : Url) -> Url { ... }
+
+// u <+ "https://h/users/\{id}?q=\{q}" : literal text trusted, each
+// interpolation encoded for the position it lands in
+pub struct UrlBuilder {
+  priv buf : StringBuilder
+  priv mut in_query : Bool
+}
+
+pub fn UrlBuilder::new() -> UrlBuilder { ... }
+pub fn UrlBuilder::write_string(self : UrlBuilder, s : String) -> Unit { ... }
+pub fn[T : Show] UrlBuilder::write_string_interpolation(self : UrlBuilder, value : T) -> Unit { ... }
+pub fn url(f : (UrlBuilder) -> Unit) -> String { ... }
+
+#non_exhaustive
+pub(all) enum Phase {
+  Pool
+  Dial
+  Write
+  Head
+  Body
+  Unknown
+} derive(Eq, Debug)
+
+// #non_exhaustive is ignored on a suberror (verified), so the kind is the open part
+#non_exhaustive
+pub(all) enum Kind {
+  Invalid
+  Connect
+  Timeout(ms~ : Int)
+  Network
+  Protocol
+  TooLarge(limit~ : Int64)
+  Proxy(status~ : Int)
+  TooManyRedirects(max~ : Int)
+  BadRedirect(location~ : String)
+} derive(Eq, Debug)
+
+pub(all) suberror HttpError {
+  HttpError(kind~ : Kind, phase~ : Phase, detail~ : String)
+} derive(Debug)
+
+pub fn HttpError::is_unsent(self : HttpError) -> Bool { ... }
+
+// pull side of a body; CONTRACT.md rules 9-12 (None = end, close idempotent)
+pub(open) trait BodyStream {
+  async fn read(Self) -> Bytes? raise HttpError
+  fn close(Self) -> Unit
+}
+
+pub(all) enum Message {
+  Text(String)
+  Binary(Bytes)
+} derive(Eq, Debug)
+
+pub(open) trait WebSocket {
+  async fn recv(Self) -> Message? raise HttpError
+  async fn send(Self, Message) -> Unit raise HttpError
+  fn close(Self, Int) -> Unit
+}
+
+pub(all) enum Body {
+  Empty
+  Bytes(Bytes)
+  Stream(&BodyStream, length~ : Int64?)                         // consumer pulls
+  Push(async (async (Bytes) -> Unit) -> Unit, length~ : Int64?) // producer pushes
+  Upgrade(async (&WebSocket) -> Unit)                            // response only
+}
+
+pub(all) struct Request {
+  meth : Method
+  url : String
+  headers : Headers
+  body : Body
+  timeout_ms : Int? // whole exchange (stream: up to its head); set by retry(total_ms~)
+}
+
+pub fn Request::get(url : String) -> Request { ... } // also new/post/put/patch/delete
+pub fn Request::header(self : Request, name : String, value : String) -> Request { ... }
+pub fn Request::query(self : Request, params : Array[(String, String)]) -> Request { ... }
+pub fn Request::json(self : Request, value : Json) -> Request { ... }
+pub fn Request::form(self : Request, fields : Array[(String, String)]) -> Request { ... }
+pub fn Request::body(self : Request, body : Body, content_type? : String) -> Request { ... }
+pub fn Request::timeout(self : Request, ms : Int) -> Request { ... }
+
+pub(all) struct Response {
+  status : Int
+  headers : Headers
+  body : Body
+}
+
+pub fn Response::new(status : Int, headers? : Headers = Headers::new(), body? : Body = Empty) -> Response { ... }
+pub fn Response::is_success(self : Response) -> Bool { ... }
+pub fn Response::close(self : Response) -> Unit { ... }
+// refuses (TooLarge) rather than truncates; collects Push bodies too
+pub async fn Response::bytes(self : Response, limit? : Int = 64 * 1024 * 1024) -> Bytes raise HttpError { ... }
+
+// client backend, wrapped client, server handler, router: one type
+pub type Service = async (Request) -> Response raise HttpError
+
+pub(open) trait Clock {
+  fn now_ms(Self) -> Int64
+  async fn sleep(Self, Int) -> Unit noraise
+}
+
+pub fn retry_after_ms(headers : Headers, now_ms~ : Int64) -> Int? { ... }
+pub fn link_next(headers : Headers) -> String? { ... }
+pub fn negotiate(accept : String, offered : Array[String]) -> String? { ... }
+pub fn percent_decode(s : String) -> String raise HttpError { ... }
+// subpackages: sse (SseEvent, SseParser::{new, feed, finish}, SseEvent::encode),
+// multipart (Part, encode, Parser), cookie (CookieJar::new(clock), SetCookie, parse_cookie_header),
+// fields (Presence[T], field/opt/presence, open_string, ObjBuilder)
+
+// --- usage (prototype url_builder_test.mbt, green on 4 targets) ---
+test "interpolations are encoded for the position they land in" {
+  let id = "a/b c"
+  let q = "x&y=z#"
+  let u = @mttp.UrlBuilder::new()
+  u <+ "https://api.example.com/users/\{id}/posts?q=\{q}"
+  inspect(u.to_string(), content="https://api.example.com/users/a%2Fb%20c/posts?q=x%26y%3Dz%23")
+}
+
+// ======================= package gaato/mttp/client =======================
+pub(all) suberror ResponseError {
+  Status(status~ : Int, headers~ : @mttp.Headers, body~ : Bytes) // body <= 1 MiB
+  Decode(status~ : Int, message~ : String, body~ : Bytes)
+}
+
+pub async fn[T] send(svc : @mttp.Service, req : @mttp.Request, read : async (@mttp.Response) -> T) -> T {
+  let resp = svc(req)
+  defer resp.close()
+  read(resp)
+}
+
+// readers = sttp's ResponseAs, as plain functions passed by name (non-2xx -> Status)
+pub async fn bytes(resp : @mttp.Response) -> Bytes raise { ... }
+pub async fn text(resp : @mttp.Response) -> String raise { ... }
+pub async fn[T : FromJson] json(resp : @mttp.Response) -> T raise { ... }
+pub async fn discard(resp : @mttp.Response) -> Unit raise { ... } // not `ignore`: that shadows the prelude
+pub async fn raw(resp : @mttp.Response) -> @mttp.Response raise { ... }
+pub async fn lines(resp : @mttp.Response, f : async (String) -> Unit, max_line_bytes? : Int = 1024 * 1024) -> Unit raise { ... }
+pub async fn events(resp : @mttp.Response, f : async (@sse.SseEvent) -> Unit, max_event_bytes? : Int = 16 * 1024 * 1024) -> Unit raise { ... }
+
+// wrappers = sttp's backend wrappers, as functions chained with |>
+pub fn defaults(inner : @mttp.Service, base_url? : String, headers? : Array[(String, String)] = []) -> @mttp.Service { ... }
+pub fn redirects(inner : @mttp.Service, max? : Int = 10, allow_downgrade? : Bool = false) -> @mttp.Service { ... }
+pub fn auth(inner : @mttp.Service, auth : Auth) -> @mttp.Service { ... }
+pub fn cookies(inner : @mttp.Service, jar : @cookie.CookieJar) -> @mttp.Service { ... }
+pub fn retry(inner : @mttp.Service, clock : &@mttp.Clock, policy? : RetryPolicy = RetryPolicy::default(), total_ms? : Int, random? : () -> Double) -> @mttp.Service { ... }
+pub fn limit(inner : @mttp.Service, limiter : WindowLimiter, bucket? : (@mttp.Request) -> String) -> @mttp.Service { ... }
+pub fn observe(inner : @mttp.Service, f : (@mttp.Request, Result[@mttp.Response, @mttp.HttpError], Int64) -> Unit, clock~ : &@mttp.Clock) -> @mttp.Service { ... }
+
+#non_exhaustive
+pub(all) enum Auth {
+  Basic(user~ : String, password~ : String)
+  Bearer(String)
+  Header(String, String)
+  Digest(user~ : String, password~ : String)
+} derive(Debug)
+
+// the one retry policy (replaces gaato/http/retry, sdk-runtime, requesto)
+pub(all) struct RetryPolicy {
+  max_retries : Int
+  statuses : Array[Int]
+  methods : Array[@mttp.Method]
+  unsent_failures : Bool
+  override_header : String?           // "x-should-retry"
+  retry_after_headers : Array[String] // ["retry-after-ms", "retry-after"]
+  max_retry_after_ms : Int
+  base_ms : Int
+  max_ms : Int
+} derive(Eq, Debug)
+
+pub fn RetryPolicy::default() -> RetryPolicy { ... } // also none(), stainless()
+
+pub struct WindowLimiter {
+  priv clock : &@mttp.Clock
+}
+
+pub fn WindowLimiter::new(clock : &@mttp.Clock, read : (@mttp.Headers, Int64) -> (Int, Int64)?) -> WindowLimiter { ... }
+
+pub struct Pages[T] {
+  priv next : async () -> Array[T]?
+}
+
+pub fn[T] Pages::by_cursor(fetch : async (String?) -> (Array[T], String?)) -> Pages[T] { ... }
+pub async fn[T] Pages::each(self : Pages[T], f : async (T) -> Unit) -> Unit { ... }
+pub async fn[T] Pages::collect(self : Pages[T], max~ : Int) -> Array[T] { ... }
+
+// --- usage (prototype client/client_test.mbt, green on 4 targets incl. wasm-gc) ---
+test "readers are generic functions passed by name" {
+  @testing.run(async fn() {
+    let stub = @testing.Stub::new()
+      .respond(Get, "https://api.test/users/1", 200, body="{\"id\":1,\"name\":\"gaato\"}")
+      .respond(Get, "https://api.test/users/2", 503)
+    let clock = @testing.FakeClock::new()
+    let svc = stub.service()
+      |> @client.defaults(base_url="https://api.test", headers=[("accept", "application/json")])
+      |> @client.retry(clock)
+    let user : User = @client.send(svc, @mttp.Request::get("/users/1"), @client.json)
+    let r = @client.send(svc, @mttp.Request::get("/users/2"), @client.json) catch {
+      @client.ResponseError::Status(status~, ..) => "status \{status}"
+      @mttp.HttpError(kind=Timeout(..), ..) => "timeout"
+      _ => "other"
+    } noraise {
+      (u : User) => u.name
+    }
+    inspect(r, content="status 503") // after 2 retries: clock.slept().length() == 2
+  })
+}
+
+// writing your own wrapper: the closure must name its error type (verified)
+fn trace_id(inner : @mttp.Service, id : String) -> @mttp.Service {
+  async fn(req) raise @mttp.HttpError { inner(req.header("x-trace-id", id)) }
+}
+
+// ======================= package gaato/mttp/api =======================
+pub(all) suberror Problem {
+  Problem(loc~ : Array[String], msg~ : String)
+} derive(Debug, ToJson)
+
+pub struct Codec[T] {
+  priv decode : (String) -> T raise Problem
+  priv encode : (T) -> String
+  priv schema : Json
+  priv name : String? // named schemas go to components/schemas
+  priv media : String
+}
+
+pub fn[T] Codec::new(decode : (String) -> T raise Problem, encode : (T) -> String, schema~ : Json, name? : String, media? : String = "text/plain") -> Codec[T] { ... }
+pub let int : Codec[Int] = scalar() // also int64, string, bool, double
+pub fn[T : ToJson + FromJson] json(schema~ : Json, name? : String) -> Codec[T] { ... }
+pub fn[T : Eq] one_of(cases : Array[(String, T)]) -> Codec[T] { ... }
+pub fn[T] Codec::check(self : Codec[T], ok : (T) -> String?, schema_patch? : Map[String, Json] = Map([])) -> Codec[T] { ... }
+pub fn[T, U] Codec::map(self : Codec[T], to : (T) -> U raise Problem, from : (U) -> T) -> Codec[U] { ... }
+
+pub struct Input[T] {
+  priv decode : async (@mttp.Request, Map[String, String]) -> T raise
+  priv encode : (T, @mttp.Request, Map[String, String]) -> @mttp.Request
+  priv docs : Array[Json]
+}
+
+pub fn none() -> Input[Unit] { ... }
+pub fn[T] path(name : String, codec : Codec[T]) -> Input[T] { ... }
+pub fn[T] query(name : String, codec : Codec[T]) -> Input[T?] { ... }
+pub fn[T] header(name : String, codec : Codec[T]) -> Input[T?] { ... }
+pub fn[T] cookie(name : String, codec : Codec[T]) -> Input[T?] { ... }
+pub fn[T] Input::required(self : Input[T?]) -> Input[T] { ... }
+pub fn[T] Input::or(self : Input[T?], default : T) -> Input[T] { ... }
+pub fn[T] json_body(codec : Codec[T], limit? : Int = 1024 * 1024) -> Input[T] { ... } // over limit -> 413
+pub fn text_body(limit? : Int = 1024 * 1024) -> Input[String] { ... }
+pub fn bytes_body(media : String, limit? : Int = 1024 * 1024) -> Input[Bytes] { ... }
+pub fn form_body(limit? : Int = 64 * 1024) -> Input[Array[(String, String)]] { ... }
+pub fn stream_body(media : String) -> Input[@mttp.Body] { ... }
+pub fn request() -> Input[@mttp.Request] { ... } // escape hatch, undocumented
+pub fn bearer() -> Input[String] { ... }         // security inputs
+pub fn basic() -> Input[(String, String)] { ... }
+pub fn api_key(header~ : String) -> Input[String] { ... }
+// fixed arities, both directions; every failing part is reported (map2..map6)
+pub fn[A, B, T] map2(a : Input[A], b : Input[B], to : (A, B) -> T, from : (T) -> (A, B)) -> Input[T] { ... }
+pub fn[A, B, C, T] map3(a : Input[A], b : Input[B], c : Input[C], to : (A, B, C) -> T, from : (T) -> (A, B, C)) -> Input[T] { ... }
+
+pub struct Output[T] {
+  priv status : Int
+  priv write : (T) -> @mttp.Response
+  priv read : async (@mttp.Response) -> T raise
+  priv doc : Json
+}
+
+pub fn[T] json_out(codec : Codec[T], status? : Int = 200) -> Output[T] { ... }
+pub fn text_out(status? : Int = 200) -> Output[String] { ... }
+pub fn empty(status? : Int = 204) -> Output[Unit] { ... }
+pub fn stream_out(media : String) -> Output[@mttp.Body] { ... }
+pub fn raw_out(doc~ : Json) -> Output[@mttp.Response] { ... }
+pub fn[T] sse(codec : Codec[T], max_event_bytes? : Int = 16 * 1024 * 1024) -> Output[Events[T]] { ... }
+
+// push stream: server producer and client consumer are the same value
+pub struct Events[T] {
+  priv run : async (async (T) -> Unit) -> Unit
+}
+
+pub fn[T] Events::new(run : async (async (T) -> Unit) -> Unit) -> Events[T] { ... }
+pub async fn[T] Events::each(self : Events[T], f : async (T) -> Unit) -> Unit { ... }
+
+pub struct Errors[E] {
+  priv pick : (Error) -> E?
+  priv status : (E) -> Int
+  priv codec : Codec[E]
+  priv statuses : Array[Int]
+}
+
+pub fn[E] errors(pick : (Error) -> E?, status~ : (E) -> Int, codec~ : Codec[E], statuses~ : Array[Int]) -> Errors[E] { ... }
+pub(all) suberror NoError derive(ToJson, FromJson)
+pub fn no_errors() -> Errors[NoError] { ... }
+
+pub struct Endpoint[S, I, E, O] {
+  priv meth : @mttp.Method
+  priv template : String
+  priv security : Input[S]
+  priv input : Input[I]
+  priv output : Output[O]
+  priv errors : Errors[E]
+  priv info : Map[String, Json]
+}
+
+pub fn[I, E, O] endpoint(meth : @mttp.Method, template : String, input~ : Input[I], output~ : Output[O], errors~ : Errors[E], summary? : String, tags? : Array[String] = [], operation_id? : String, deprecated? : Bool = false) -> Endpoint[Unit, I, E, O] { ... }
+pub fn[S, I, E, O] Endpoint::secure(self : Endpoint[Unit, I, E, O], security : Input[S]) -> Endpoint[S, I, E, O] { ... }
+
+// client interpreter: two pure halves and their composition
+pub fn[S, I, E, O] Endpoint::request(self : Endpoint[S, I, E, O], security : S, input : I) -> @mttp.Request { ... }
+pub async fn[S, I, E : Error, O] Endpoint::read(self : Endpoint[S, I, E, O], resp : @mttp.Response) -> O raise { ... } // raises E itself
+pub async fn[S, I, E : Error, O] Endpoint::call_as(self : Endpoint[S, I, E, O], svc : @mttp.Service, security : S, input : I) -> O raise {
+  @client.send(svc, self.request(security, input), resp => self.read(resp))
+}
+pub async fn[I, E : Error, O] Endpoint::call(self : Endpoint[Unit, I, E, O], svc : @mttp.Service, input : I) -> O raise { ... }
+
+// server interpreter: security decoded, then auth, then body, then logic
+pub struct Route {
+  priv meth : @mttp.Method
+  priv template : String
+  priv handle : async (@mttp.Request, Map[String, String]) -> @mttp.Response raise
+  priv declared : (Error) -> @mttp.Response?
+  priv op : Json
+}
+
+pub fn[S, I, E, O, P] Endpoint::serve_as(self : Endpoint[S, I, E, O], auth : async (S) -> P, logic : async (P, I) -> O) -> Route { ... }
+pub fn[I, E, O] Endpoint::serve(self : Endpoint[Unit, I, E, O], logic : async (I) -> O) -> Route { ... }
+pub fn[I] websocket(template : String, input : Input[I], session : async (I, &@mttp.WebSocket) -> Unit) -> Route { ... }
+
+pub(all) suberror RouteConflict {
+  RouteConflict(String, String)
+} derive(Debug)
+
+pub struct Router {
+  priv routes : Array[Route]
+  priv on_error : (@mttp.Request, Error) -> Unit
+}
+
+pub fn Router::new(routes : Array[Route], on_error? : (@mttp.Request, Error) -> Unit = (_, _) => ()) -> Router raise RouteConflict { ... }
+pub fn Router::service(self : Router) -> @mttp.Service { ... }
+pub fn Router::ops(self : Router) -> Array[Json] { ... }
+pub fn[S, I, E, O] Endpoint::op(self : Endpoint[S, I, E, O]) -> Json { ... }
+pub fn openapi(title~ : String, version~ : String, ops : Array[Json]) -> Json { ... }
+
+// --- usage (prototype example/example.mbt + example_test.mbt, green on 4 targets) ---
+pub(all) suberror UserError {
+  NotFound(Int)
+  Forbidden
+} derive(ToJson, FromJson, Debug)
+
+let user_errors : @api.Errors[UserError] = @api.errors(
+  e => match e {
+    UserError::_ as u => Some(u)
+    _ => None
+  },
+  status=e => match e {
+    NotFound(_) => 404
+    Forbidden => 403
+  },
+  codec=@api.json(name="UserError", schema={ "type": "array" }),
+  statuses=[404, 403],
+)
+
+// shared package: no net import, so it builds for wasm-gc, js and the server alike
+pub let get_user : @api.Endpoint[Unit, (Int, Int?), UserError, User] = @api.endpoint(
+  Get,
+  "/users/{id}",
+  input=@api.map2(@api.path("id", @api.int), @api.query("v", @api.int), (id, v) => (id, v), t => t),
+  output=@api.json_out(user),
+  errors=user_errors,
+  summary="Get a user",
+)
+
+pub let create_user : @api.Endpoint[String, NewUser, UserError, User] = @api.endpoint(
+  Post,
+  "/users",
+  input=@api.json_body(@api.json(schema={ "type": "object" })),
+  output=@api.json_out(user, status=201),
+  errors=user_errors,
+).secure(@api.bearer())
+
+pub let ticks : @api.Endpoint[Unit, Unit, @api.NoError, @api.Events[Int]] = @api.endpoint(
+  Get,
+  "/ticks",
+  input=@api.none(),
+  output=@api.sse(@api.int),
+  errors=@api.no_errors(),
+)
+
+fn app() -> @api.Router raise @api.RouteConflict {
+  @api.Router::new([
+    get_user.serve(async fn(input) {
+      let (id, _) = input
+      if id == 1 { { id: 1, name: "gaato" } } else { raise NotFound(id) }
+    }),
+    create_user.serve_as(
+      async fn(token) { if token == "secret" { "admin" } else { raise Forbidden } },
+      async fn(_who, body) { { id: 2, name: body.name } },
+    ),
+    ticks.serve(async fn(_) {
+      @api.Events::new(async fn(emit) { for i in 0..<3 { emit(i) } })
+    }),
+  ])
+}
+
+test "one definition, both sides, in process" {
+  @testing.run(async fn() {
+    let svc = app().service()                        // a Router is a Service
+    let u = get_user.call(svc, (1, None))            // typed client
+    let r = get_user.call(svc, (42, Some(3))) catch {
+      UserError::NotFound(id) => "not found \{id}"   // the handler's error, re-raised
+      e => "other \{e}"
+    } noraise {
+      _ => "ok"
+    }
+    let made = create_user.call_as(svc, "secret", { name: "neko" })
+    let got = []
+    ticks.call(svc, ()).each(async fn(i) { got.push(i) })  // [0, 1, 2]
+    let doc = @api.openapi(title="demo", version="1", [get_user.op(), create_user.op()])
+    ignore((u, r, made, doc))
+  })
+}
+
+// ======================= package gaato/mttp/testing =======================
+pub fn Stub::new() -> Stub { ... }
+pub fn Stub::respond(self : Stub, meth : @mttp.Method, url : String, status : Int, body? : String = "") -> Stub { ... }
+pub fn Stub::when(self : Stub, matches : (@mttp.Request) -> Bool, respond : async (@mttp.Request) -> @mttp.Response raise @mttp.HttpError) -> Stub { ... }
+pub fn Stub::service(self : Stub) -> @mttp.Service { ... }
+pub fn Stub::sent(self : Stub) -> Array[@mttp.Request] { ... }
+pub fn FakeClock::new(start? : Int64 = 0L) -> FakeClock { ... }
+pub impl @mttp.Clock for FakeClock with sleep(self, ms) { ... } // advances virtual time, records ms
+pub fn run(f : async () -> Unit) -> Unit raise { ... }          // %async.run driver, every backend
+pub fn[T : Eq + Show] check_splits(input : Bytes, parse : (Array[Bytes]) -> T raise) -> Unit raise { ... }
+
+// ======================= package gaato/mttp/net (native + wasm + js) =======================
+// public API names no runtime type, so moonbitlang/async 0.22.5 -> core/async is invisible
+pub fn RealClock::new() -> RealClock { ... }
+pub fn client(
+  timeout_ms? : Int = 30_000,
+  connect_timeout_ms? : Int,
+  read_timeout_ms? : Int,
+  pool_timeout_ms? : Int,
+  max_connections? : Int = 100,
+  max_connections_per_origin? : Int = 10,
+  max_idle_per_origin? : Int = 4,
+  idle_max_ms? : Int = 90_000,
+  proxy? : String,
+  trust_env? : Bool = false,
+  decoders? : Map[String, () -> (Bytes, Bool) -> Bytes raise @mttp.HttpError] = Map([]),
+  clock? : &@mttp.Clock = RealClock::new(),
+) -> @mttp.Service { ... }
+pub async fn serve(
+  svc : @mttp.Service,
+  addr~ : String,
+  on_listen? : (Int) -> Unit,
+  max_header_bytes? : Int = 16 * 1024,
+  header_timeout_ms? : Int = 5000,
+  body_timeout_ms? : Int = 5000,
+  max_body_bytes? : Int = 1024 * 1024,
+  max_connections? : Int = 256,
+  max_ws_message_bytes? : Int = 1024 * 1024,
+  drain_ms? : Int = 10_000,
+) -> Unit { ... }
+pub async fn websocket(url : String, headers? : @mttp.Headers = @mttp.Headers::new(), max_message_bytes? : Int = 1024 * 1024) -> &@mttp.WebSocket raise @mttp.HttpError { ... }
+
+// --- usage (sketch example/, supported_targets = "native + wasm + js") ---
+async fn plain(token : String) -> User raise {
+  let clock = @net.RealClock::new()
+  let svc = @net.client()
+    |> @client.redirects()
+    |> @client.cookies(@cookie.CookieJar::new(clock))
+    |> @client.defaults(base_url="https://api.example.com")
+    |> @client.auth(Bearer(token))
+    |> @client.retry(clock, total_ms=60_000)
+  let id = 42
+  @client.send(svc, @mttp.Request::get(@mttp.url(u => u <+ "/users/\{id}")), @client.json)
+}
+
+async fn main_server() -> Unit raise {
+  @net.serve(app().service(), addr="0.0.0.0:8080") // verified over sockets: 413 above the limit, SSE streamed
+}
+
+// ======================= package gaato/mttp/fetch (js) =======================
+#external
+pub type JsRequest
+
+#external
+pub type JsPromise
+
+// export default { fetch: handler(app().service()) }   (verified on node 22)
+pub fn handler(svc : @mttp.Service, max_body_bytes? : Int = 1024 * 1024) -> (JsRequest) -> JsPromise { ... }

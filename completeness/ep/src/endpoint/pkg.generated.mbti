@@ -1,0 +1,256 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/endpoint"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/model",
+  "gaato/mttp/schema",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn bearer(scheme_name? : String) -> Input[String]
+
+pub fn[T] body(@schema.BodyCodec[T]) -> Input[T]
+
+pub fn default_decode_failure(DecodeFailureContext) -> @model.Response
+
+pub let default_options : ServerOptions
+
+pub fn empty_variant(Int32, description? : String) -> Variant[Unit]
+
+pub fn endpoint(@model.Method, String) -> Endpoint[Unit, Unit, NoError, Unit]
+
+pub fn[T] header(String, @schema.TextCodec[T]) -> Input[T]
+
+pub fn[T] json_out(@schema.BodyCodec[T], status? : Int32) -> Out[T]
+
+pub fn[T] json_variant(Int32, @schema.BodyCodec[T], matches? : (T) -> Bool, description? : String) -> Variant[T]
+
+pub fn no_content() -> Out[Unit]
+
+pub fn no_errors() -> Errors[NoError]
+
+pub fn none() -> Input[Unit]
+
+pub fn[T] path(String, @schema.TextCodec[T]) -> Input[T]
+
+pub fn problem(Int32, String, errors? : Json) -> @model.Response
+
+pub fn[T] query(String, @schema.TextCodec[T]) -> Input[T]
+
+pub fn raw_body() -> Input[Bytes]
+
+pub fn[T] sse_out(@schema.JsonCodec[T]) -> Out[EventSource[T]]
+
+pub fn stream_body(String) -> Input[&@model.BodyStream]
+
+pub fn[T] ws_json(@schema.JsonCodec[T]) -> WsCodec[T]
+
+// Errors
+pub(all) suberror InputErrors {
+  InputErrors(Array[InputFailure])
+} derive(@debug.Debug)
+
+pub(all) suberror NoError derive(@debug.Debug)
+
+pub(all) suberror RouteError {
+  Invalid(String, Array[String])
+  Duplicate(String, String)
+} derive(@debug.Debug)
+
+// Types and methods
+pub(all) struct Atom {
+  location : Location
+  name : String
+  schema : @schema.Schema
+  required : Bool
+  description : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) enum AuthScheme {
+  Bearer(format~ : String?)
+  Basic
+  ApiKeyHeader(String)
+  ApiKeyQuery(String)
+} derive(Eq, @debug.Debug)
+
+pub(all) enum BodyValue {
+  NoBody
+  Buffered(Bytes)
+  Streamed(&@model.BodyStream)
+}
+
+pub(all) struct DecodeFailureContext {
+  doc : EndpointDoc
+  failures : Array[InputFailure]
+  security : Bool
+}
+
+pub struct Endpoint[S, I, E, O] {
+  // private fields
+}
+pub async fn[S, I, E : Error, O] Endpoint::call(Self[S, I, E, O], &@client.Backend, @model.Uri, S, I) -> O
+pub fn[S, I, E, O] Endpoint::decode_response(Self[S, I, E, O], @model.ResponseHead, Bytes) -> Result[O, E] raise @client.ResponseError
+pub fn[S, I, E, O] Endpoint::doc(Self[S, I, E, O]) -> EndpointDoc
+pub fn[S, I, E, O] Endpoint::encode_request(Self[S, I, E, O], @model.Uri, S, I) -> @model.Request
+pub fn[S, I, E, O, E2] Endpoint::errors(Self[S, I, E, O], Errors[E2]) -> Self[S, I, E2, O]
+pub fn[S, I, E, O, I2] Endpoint::input(Self[S, I, E, O], Input[I2]) -> Self[S, I2, E, O]
+pub fn[S, I, E, O] Endpoint::max_body(Self[S, I, E, O], Int64) -> Self[S, I, E, O]
+pub fn[S, I, E, O] Endpoint::operation_id(Self[S, I, E, O], String) -> Self[S, I, E, O]
+pub fn[S, I, E, O, O2] Endpoint::output(Self[S, I, E, O], Out[O2]) -> Self[S, I, E, O2]
+pub fn[S, I, E : Error, O] Endpoint::request(Self[S, I, E, O], @model.Uri, S, I) -> @client.ClientRequest[O]
+pub fn[S, I, E, O, S2] Endpoint::security(Self[S, I, E, O], Input[S2]) -> Self[S2, I, E, O]
+pub fn[S, I, E, O, P] Endpoint::serve(Self[S, I, E, O], async (S) -> P, async (P, I) -> O) -> ServerEndpoint
+pub fn[I, E, O] Endpoint::serve_public(Self[Unit, I, E, O], async (I) -> O) -> ServerEndpoint
+pub fn[S, I, E, O] Endpoint::summary(Self[S, I, E, O], String) -> Self[S, I, E, O]
+pub fn[S, I, E, O] Endpoint::tags(Self[S, I, E, O], Array[String]) -> Self[S, I, E, O]
+pub fn[S, I, E, O, In, Out] Endpoint::websocket(Self[S, I, E, O], WsCodec[In], WsCodec[Out]) -> WsEndpoint[S, I, E, In, Out]
+
+pub(all) struct EndpointDoc {
+  meth : @model.Method
+  template : String
+  segments : Array[Seg]
+  security : Array[Atom]
+  inputs : Array[Atom]
+  outputs : Array[VariantDoc]
+  errors : Array[VariantDoc]
+  implied : Array[(Int32, String)]
+  info : Info
+  max_body : Int64
+} derive(@debug.Debug)
+pub fn EndpointDoc::problems(Self) -> Array[String]
+
+pub struct Errors[E] {
+  // private fields
+}
+pub fn[E] Errors::new((Error) -> E?, Array[Variant[E]]) -> Self[E]
+
+pub(all) struct EventSource[T] {
+  next : async () -> T?
+  close : () -> Unit
+}
+
+pub struct Head {
+  request : @model.Request
+  captures : Map[String, String]
+}
+
+pub(all) struct Info {
+  operation_id : String?
+  summary : String?
+  tags : Array[String]
+  deprecated : Bool
+} derive(@debug.Debug)
+
+pub struct Input[T] {
+  // private fields
+}
+pub fn[T] Input::atoms(Self[T]) -> Array[Atom]
+pub fn[T] Input::decode_head(Self[T], Head) -> Staged[T] raise InputErrors
+pub fn[T] Input::encode(Self[T], T, RequestSink) -> Unit
+pub fn[A, B, T] Input::map2(Self[A], Self[B], (A, B) -> T, (T) -> (A, B)) -> Self[T]
+pub fn[T] Input::optional(Self[T]) -> Self[T?]
+pub fn[A, B] Input::pair(Self[A], Self[B]) -> Self[(A, B)]
+
+pub(all) struct InputFailure {
+  atom : Atom
+  failure : @schema.DecodeFailure
+} derive(@debug.Debug)
+
+pub(all) enum Location {
+  Path
+  Query
+  Header
+  Cookie
+  Auth(scheme~ : AuthScheme, scheme_name~ : String)
+  Body(media_type~ : String, streamed~ : Bool, secondary~ : Bool)
+} derive(Eq, @debug.Debug)
+
+pub struct Out[T] {
+  // private fields
+}
+pub fn[T] Out::docs(Self[T]) -> Array[VariantDoc]
+pub fn[T] Out::one_of(Array[Variant[T]]) -> Self[T]
+
+pub enum Outcome {
+  Respond(@model.Response)
+  Upgrade(@model.ResponseHead, async (&@model.WebSocketIo) -> Unit)
+}
+
+pub struct RequestSink {
+  captures : Map[String, String]
+  query : Array[(String, String)]
+  mut headers : @model.Headers
+  mut body : @model.Body
+}
+pub fn RequestSink::new() -> Self
+
+pub struct ScriptedWs {
+  sent : Array[@model.Frame]
+  // private fields
+}
+pub fn ScriptedWs::new(Array[@model.Frame]) -> Self
+pub impl @model.WebSocketIo for ScriptedWs
+
+pub(all) enum Seg {
+  Lit(String)
+  Cap(String)
+} derive(Eq, @debug.Debug)
+
+pub struct Server {
+  // private fields
+}
+pub async fn Server::dispatch(Self, @model.Request) -> Outcome noraise
+pub fn Server::docs(Self) -> Array[EndpointDoc]
+pub async fn Server::handle(Self, @model.Request) -> @model.Response noraise
+pub fn Server::new(Array[ServerEndpoint], options? : ServerOptions) -> Self raise RouteError
+pub impl @client.Backend for Server
+
+pub struct ServerEndpoint {
+  // private fields
+}
+pub fn ServerEndpoint::doc(Self) -> EndpointDoc
+
+pub(all) struct ServerOptions {
+  decode_failure : (DecodeFailureContext) -> @model.Response
+  on_unhandled : (EndpointDoc, Error) -> Unit
+}
+
+pub struct Staged[T] {
+  // private fields
+}
+pub fn[T] Staged::finish(Self[T], BodyValue) -> T raise InputErrors
+
+pub struct Variant[T] {
+  // private fields
+}
+pub fn[A, T] Variant::contramap(Self[A], (T) -> A?, (A) -> T) -> Self[T]
+pub fn[T] Variant::doc(Self[T]) -> VariantDoc
+
+pub(all) struct VariantDoc {
+  status : Int32
+  media_type : String?
+  schema : @schema.Schema?
+  description : String
+} derive(@debug.Debug)
+
+pub struct WsChannel[In, Out] {
+  recv : async () -> In?
+  send : async (Out) -> Unit
+  close : () -> Unit
+}
+
+pub struct WsCodec[T] {
+  // private fields
+}
+
+pub struct WsEndpoint[S, I, E, In, Out] {
+  // private fields
+}
+pub async fn[S, I, E, In, Out, R] WsEndpoint::connect(Self[S, I, E, In, Out], &@client.WebSocketBackend, @model.Uri, S, I, async (WsChannel[Out, In]) -> R) -> R
+pub fn[S, I, E, In, Out, P] WsEndpoint::serve(Self[S, I, E, In, Out], async (S) -> P, async (P, I, WsChannel[In, Out]) -> Unit) -> ServerEndpoint
+
+// Type aliases
+
+// Traits

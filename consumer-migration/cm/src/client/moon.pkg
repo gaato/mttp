@@ -1,0 +1,5 @@
+import {
+  "gaato/cm/model",
+
+  "moonbitlang/core/encoding/utf8",
+}

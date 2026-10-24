@@ -1,0 +1,12 @@
+import {
+  "gaato/cm/model",
+  "gaato/cm/client",
+  "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/string",
+}
+
+import {
+  "gaato/cm/testing",
+  "gaato/cm/gen_pos" @gen,
+} for "test"

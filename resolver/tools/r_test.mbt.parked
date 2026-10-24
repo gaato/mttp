@@ -1,0 +1,5 @@
+///|
+async test "sleep on this target" {
+  @rootonly.nap2(1)
+  inspect(1, content="1")
+}

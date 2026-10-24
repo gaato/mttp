@@ -1,0 +1,28 @@
+import {
+  "moonbitlang/core/builtin",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/string",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/http" @ahttp,
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/async/io",
+  "moonbitlang/core/async/zz_mttp_model" @model,
+}
+
+import {
+  "moonbitlang/core/test",
+  "moonbitlang/core/ref",
+  "moonbitlang/core/async/http" @ahttp,
+  "moonbitlang/core/async/fs",
+} for "test"
+
+warnings = "-missing_doc-implicit_impl_as_method-test_unqualified_package-unnecessary_view_op-deprecated"
+
+options(
+  targets: {
+    "net.mbt": [ "native", "wasm" ],
+    "net_test.mbt": [ "native", "wasm" ],
+  },
+)

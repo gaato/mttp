@@ -1,0 +1,19 @@
+import {
+  "moonbitlang/core/builtin",
+  "moonbitlang/core/ref",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async_old" @old,
+}
+
+import {
+  "moonbitlang/core/test",
+} for "test"
+
+warnings = "-a"
+
+options(
+  targets: {
+    "coexist.mbt": [ "native", "js" ],
+    "coexist_test.mbt": [ "native", "js" ],
+  },
+)

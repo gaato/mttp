@@ -1,0 +1,135 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/model"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn percent_encode(String, keep_slash? : Bool) -> String
+
+pub async fn read_bounded(&BodyStream, Int64) -> Bytes raise TransportError
+
+// Errors
+pub(all) suberror TransportError {
+  Connect(String)
+  Timeout(phase~ : Phase, ms~ : Int32)
+  Network(phase~ : Phase, message~ : String)
+  Protocol(String)
+  LimitExceeded(what~ : String, limit~ : Int64)
+} derive(@debug.Debug)
+pub fn TransportError::is_unsent(Self) -> Bool
+
+// Types and methods
+pub(all) enum Body {
+  Empty
+  Bytes(Bytes)
+  Stream(&BodyStream, length~ : Int64?)
+}
+pub fn Body::is_replayable(Self) -> Bool
+
+pub struct BytesStream {
+  // private fields
+}
+pub fn BytesStream::closed(Self) -> Bool
+pub fn BytesStream::new(Array[Bytes]) -> Self
+pub fn BytesStream::reads(Self) -> Int32
+pub impl BodyStream for BytesStream
+
+pub(all) enum Frame {
+  Text(String)
+  Binary(Bytes)
+  Close(code~ : Int32, reason~ : String)
+} derive(Eq, @debug.Debug)
+
+pub struct Headers {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn Headers::add(Self, String, String) -> Self
+pub fn Headers::from_array(Array[(String, String)]) -> Self
+pub fn Headers::get(Self, String) -> String?
+pub fn Headers::get_all(Self, String) -> Array[String]
+pub fn Headers::iter(Self) -> Iter[(String, String)]
+pub fn Headers::new() -> Self
+
+pub(all) enum Method {
+  Get
+  Head
+  Post
+  Put
+  Patch
+  Delete
+  Options
+  Trace
+  Connect
+  Other(String)
+} derive(Eq, Hash, @debug.Debug)
+pub fn Method::as_str(Self) -> String
+
+#non_exhaustive
+pub(all) enum Phase {
+  Pool
+  Dial
+  Write
+  Head
+  Body
+  Unknown
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Request {
+  meth : Method
+  uri : Uri
+  headers : Headers
+  body : Body
+}
+pub fn Request::new(Method, Uri) -> Self
+
+pub(all) struct Response {
+  status : Status
+  headers : Headers
+  body : Body
+}
+pub fn Response::head(Self) -> ResponseHead
+
+pub(all) struct ResponseHead {
+  status : Status
+  headers : Headers
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Status(Int32) derive(Eq, Hash, @debug.Debug)
+pub fn Status::code(Self) -> Int32
+pub fn Status::is_success(Self) -> Bool
+
+pub(all) struct Uri {
+  scheme : String?
+  authority : String?
+  segments : Array[String]
+  query : Array[(String, String)]
+} derive(Eq, @debug.Debug)
+pub fn Uri::add_query(Self, String, String) -> Self
+pub fn Uri::query_all(Self, String) -> Array[String]
+pub fn Uri::relative(Array[String]) -> Self
+pub fn Uri::to_string(Self) -> String
+pub fn Uri::with_segments(Self, Array[String]) -> Self
+
+pub struct UriBuilder {
+  // private fields
+}
+pub fn UriBuilder::new() -> Self
+pub fn UriBuilder::raw(Self) -> String
+pub fn UriBuilder::write_string(Self, String) -> Unit
+pub fn[T : Show] UriBuilder::write_string_interpolation(Self, T) -> Unit
+
+// Type aliases
+
+// Traits
+pub(open) trait BodyStream {
+  async fn read_some(Self) -> Bytes? raise TransportError
+  fn close(Self) -> Unit
+}
+
+pub(open) trait WebSocketIo {
+  async fn recv(Self) -> Frame? raise TransportError
+  async fn send(Self, Frame) -> Unit raise TransportError
+  fn close(Self) -> Unit
+}

@@ -1,0 +1,419 @@
+// Type-checked form of this sketch (moon check on wasm-gc, js, native, wasm; also moonc 0.10.16):
+//   /tmp/claude-0/-home-user/a088a40a-4430-5968-a906-ca92585d97e4/scratchpad/wf1/sttp-faithful/sketch/src/**
+// Implemented and tested subset:
+//   /tmp/claude-0/-home-user/a088a40a-4430-5968-a906-ca92585d97e4/scratchpad/wf1/sttp-faithful/mttp/src/**
+//   /tmp/claude-0/-home-user/a088a40a-4430-5968-a906-ca92585d97e4/scratchpad/wf1/sttp-faithful/mttp-async/src/**
+
+// ===================== gaato/mttp-model (sttp-model) =====================
+
+pub(all) enum Method { GET; HEAD; POST; PUT; DELETE; OPTIONS; PATCH; CONNECT; TRACE; Other(String) } derive(Eq, Debug)
+pub fn Method::is_idempotent(self : Method) -> Bool
+pub(all) struct StatusCode(Int) derive(Eq, Debug)
+pub fn StatusCode::is_success(self : StatusCode) -> Bool
+pub let ok : StatusCode = StatusCode(200)
+
+pub(all) struct Header { name : String; value : String } derive(Eq, Debug)
+pub struct Headers { priv entries : Array[Header] } derive(Eq, Debug)   // ordered, dups kept, case-insensitive, immutable
+pub fn Headers::empty() -> Headers
+pub fn Headers::get(self : Headers, name : String) -> String?
+pub fn Headers::get_all(self : Headers, name : String) -> Array[String]
+pub fn Headers::add(self : Headers, name : String, value : String) -> Headers
+
+pub(all) struct Uri {
+  scheme : String?
+  host : String?
+  port : Int?
+  path : Array[String]                 // decoded segments
+  query : Array[(String, String?)]     // decoded
+  fragment : String?
+} derive(Eq, Debug)
+pub(all) suberror UriError { Invalid(String) } derive(Debug)
+pub fn Uri::parse(s : String) -> Uri raise UriError
+pub fn Uri::to_string(self : Uri) -> String
+
+// sttp's uri"..." interpolator, through MoonBit template writes
+pub struct UriBuilder { priv parts : Array[String] }
+pub fn UriBuilder::write_string(self : UriBuilder, lit : String) -> Unit
+pub fn[T : UriPart] UriBuilder::write_string_interpolation(self : UriBuilder, value : T) -> Unit
+pub(open) trait UriPart { write_uri(Self, UriBuilder) -> Unit }   // String, Int, Int64, T?, Array[(String, String)]
+pub fn uri(f : (UriBuilder) -> Unit) -> Uri raise UriError
+
+pub(open) trait BodyStream {                 // gaato CONTRACT rules 9-11
+  async fn read_some(Self) -> Bytes? raise
+  fn close(Self) -> Unit
+}
+pub async fn read_all(s : &BodyStream, limit? : Int) -> Bytes raise   // raises BodyTooLarge at the crossing chunk
+
+pub struct AttributeKey[T] { priv id : Int; priv slot : Ref[T?] }
+pub fn[T] AttributeKey::new(name : String) -> AttributeKey[T]
+pub struct AttributeMap { priv entries : Map[Int, () -> Unit] }
+pub fn[T] AttributeMap::put(self : AttributeMap, k : AttributeKey[T], v : T) -> AttributeMap
+pub fn[T] AttributeMap::get(self : AttributeMap, k : AttributeKey[T]) -> T?
+
+pub(all) struct RequestMetadata { meth : Method; uri : Uri; headers : Headers } derive(Eq, Debug)
+pub(all) struct ResponseMetadata { code : StatusCode; status_text : String; headers : Headers } derive(Eq, Debug)
+
+// mttp-model/clock
+pub(open) trait Clock { async fn sleep(Self, Int) -> Unit noraise; fn now_unix_ms(Self) -> Int64 }
+pub(open) trait Timer { async fn within(Self, Int, async () -> Unit noraise) -> Bool noraise }
+
+// mttp-model/sse
+pub(all) struct ServerSentEvent { data : String; event_type : String?; id : String?; retry_ms : Int? } derive(Eq, Debug)
+pub fn SseParser::new(max_event_bytes? : Int = 16 * 1024 * 1024) -> SseParser
+pub fn SseParser::feed(self : SseParser, chunk : Bytes) -> Array[ServerSentEvent] raise
+pub struct EventStream {                       // push-based; same type on server and client
+  run : async (async (ServerSentEvent) -> Unit) -> Unit
+  close : () -> Unit
+}
+pub fn EventStream::from_producer(f : async (async (ServerSentEvent) -> Unit) -> Unit) -> EventStream
+pub async fn EventStream::each(self : EventStream, f : async (ServerSentEvent) -> Unit) -> Unit
+
+// mttp-model/ws, mttp-model/cookie, mttp-model/multipart
+pub(all) enum WebSocketFrame { Text(String, fin~ : Bool); Binary(Bytes, fin~ : Bool); Ping(Bytes); Pong(Bytes); Close(code~ : Int, reason~ : String) }
+pub(open) trait WebSocket { async fn receive(Self) -> WebSocketFrame raise; async fn send(Self, WebSocketFrame) -> Unit raise; fn close(Self) -> Unit }
+pub fn CookieJar::new(clock : &Clock, max_per_domain? : Int = 50, max_total? : Int = 3000) -> CookieJar
+pub(all) struct Part { name : String; filename : String?; content_type : String?; body : Bytes }
+
+// usage
+test {
+  let id = "a/b c"
+  let q : String? = None
+  let u = @model.uri(b => b <+ "https://api.example.com/users/\{id}?q=\{q}&n=\{3}")
+  inspect(u.to_string(), content="https://api.example.com/users/a%2Fb%20c?n=3")
+}
+
+// ===================== gaato/mttp (sttp client4) =====================
+
+#non_exhaustive
+pub(all) enum Phase { Pool; Dial; Write; Head; Body; Unknown } derive(Eq, Debug)
+pub(all) suberror TransportError {                   // sttp SttpClientException
+  Connect(String)
+  Timeout(phase~ : Phase, ms~ : Int)
+  Read(phase~ : Phase, message~ : String)
+  Protocol(String)
+  Proxy(status~ : Int, message~ : String)
+  BodyLimit(limit~ : Int)
+  TooManyRedirects(max~ : Int, location~ : String)
+  InvalidRedirect(location~ : String, reason~ : String)
+} derive(Debug)
+pub fn TransportError::is_unsent(self : TransportError) -> Bool
+pub(all) suberror ResponseError {                    // sttp ResponseException (raised)
+  UnexpectedStatusCode(meta~ : @model.ResponseMetadata, body~ : String)
+  Deserialization(meta~ : @model.ResponseMetadata, body~ : String, message~ : String)
+} derive(Debug)
+pub(all) enum ResponseException[HE] {                 // value form, used inside Result
+  UnexpectedStatus(HE, @model.ResponseMetadata)
+  DeserializationFailed(body~ : String, message~ : String, @model.ResponseMetadata)
+}
+
+pub(all) enum RequestBody {
+  NoBody
+  StringBody(String, content_type~ : String)
+  ByteArrayBody(Bytes, content_type~ : String)
+  StreamBody(&@model.BodyStream, content_type~ : String, length~ : Int64?)
+  MultipartBody(Array[@model.Part], boundary~ : String?)
+}
+pub(all) struct RequestOptions {
+  follow_redirects : Bool          // true
+  max_redirects : Int              // 32 (sttp)
+  redirect_to_get : Bool
+  read_timeout_ms : Int?           // 60 s (sttp)
+  decompress_response_body : Bool
+  max_response_body_bytes : Int?   // 64 MiB by default (gaato bound)
+}
+pub(all) struct RawRequest { meth : @model.Method; uri : @model.Uri; headers : @model.Headers; body : RequestBody; options : RequestOptions; attributes : @model.AttributeMap }
+pub(all) struct RawResponse { meta : @model.ResponseMetadata; body : &@model.BodyStream; history : Array[@model.ResponseMetadata]; request : @model.RequestMetadata }
+
+pub(open) trait Backend {                       // object-safe: T never reaches a backend
+  async fn send(Self, RawRequest) -> RawResponse
+  fn close(Self) -> Unit
+}
+pub(open) trait WebSocketBackend {
+  async fn open_websocket(Self, RawRequest) -> (@model.ResponseMetadata, &@model.WebSocket)
+}
+
+pub struct ResponseAs[T] {
+  read : async (@model.ResponseMetadata, &@model.BodyStream, RequestOptions) -> T
+  show : String
+}
+pub fn[T, U] ResponseAs::map(self : ResponseAs[T], f : (T) -> U) -> ResponseAs[U]
+pub fn[T, U] ResponseAs::map_with_metadata(self : ResponseAs[T], f : (T, @model.ResponseMetadata) -> U raise) -> ResponseAs[U]
+pub fn[B] ResponseAs::or_fail(self : ResponseAs[Result[B, String]]) -> ResponseAs[B]
+pub fn ignore_body() -> ResponseAs[Unit]
+pub fn as_string() -> ResponseAs[Result[String, String]]
+pub fn as_string_always() -> ResponseAs[String]
+pub fn as_string_or_fail() -> ResponseAs[String]
+pub fn as_byte_array_always() -> ResponseAs[Bytes]
+pub fn[T : FromJson] as_json() -> ResponseAs[Result[T, ResponseException[String]]]
+pub fn[T : FromJson] as_json_or_fail() -> ResponseAs[T]
+pub fn[E : FromJson, T : FromJson] as_json_either() -> ResponseAs[Result[T, ResponseException[E]]]
+pub fn[T] from_metadata(default : ResponseAs[T], conditions : Array[((@model.ResponseMetadata) -> Bool, ResponseAs[T])]) -> ResponseAs[T]
+pub fn[A, B] as_either(on_error : ResponseAs[A], on_success : ResponseAs[B]) -> ResponseAs[Result[B, A]]
+pub fn[T] as_stream_always(f : async (&@model.BodyStream) -> T) -> ResponseAs[T]
+pub fn as_stream_unsafe() -> ResponseAs[&@model.BodyStream]
+pub fn as_sse(f : async (@model.ServerSentEvent) -> Unit, max_event_bytes? : Int) -> ResponseAs[Unit]
+
+pub(open) trait RequestBuilder {                 // sttp RequestBuilder[R]
+  raw_parts(Self) -> RawRequest
+  with_raw_parts(Self, RawRequest) -> Self
+  header(Self, String, String) -> Self = _
+  auth_bearer(Self, String) -> Self = _
+  body(Self, RequestBody) -> Self = _
+  read_timeout_ms(Self, Int) -> Self = _
+  max_redirects(Self, Int) -> Self = _
+}
+pub struct PartialRequest[T] { priv raw : RawRequest; priv response : ResponseAs[T] }
+pub struct Request[T] { priv raw : RawRequest; priv response : ResponseAs[T] }
+pub struct WebSocketRequest[T] { priv raw : RawRequest; priv response : async (@model.ResponseMetadata, &@model.WebSocket) -> T }
+pub extend PartialRequest with RequestBuilder::{header, auth_bearer, body, read_timeout_ms, max_redirects}
+pub extend Request with RequestBuilder::{header, auth_bearer, body, read_timeout_ms, max_redirects}
+
+pub let empty_request : PartialRequest[Result[String, String]]
+pub let basic_request : PartialRequest[Result[String, String]]   // + Accept-Encoding
+pub let quick_request : PartialRequest[String]
+pub fn[T, U] PartialRequest::response(self : PartialRequest[T], ra : ResponseAs[U]) -> PartialRequest[U]
+pub fn[T] PartialRequest::get(self : PartialRequest[T], uri : @model.Uri) -> Request[T]
+pub fn[T] PartialRequest::post(self : PartialRequest[T], uri : @model.Uri) -> Request[T]
+pub fn[T] PartialRequest::with_method(self : PartialRequest[T], meth : @model.Method, uri : @model.Uri) -> Request[T]
+pub fn[T, U] Request::response(self : Request[T], ra : ResponseAs[U]) -> Request[U]
+pub fn[T, U] Request::response_websocket(self : Request[T], f : async (@model.ResponseMetadata, &@model.WebSocket) -> U) -> WebSocketRequest[U]
+pub fn[T, B : ToJson] Request::body_json(self : Request[T], v : B) -> Request[T]
+pub fn[T, A] Request::attribute(self : Request[T], k : @model.AttributeKey[A], v : A) -> Request[T]
+pub fn[T] Request::to_curl(self : Request[T], sensitive_headers? : Array[String]) -> String
+
+pub(all) struct Response[T] { body : T; code : @model.StatusCode; status_text : String; headers : @model.Headers; history : Array[@model.ResponseMetadata]; request : @model.RequestMetadata }
+pub async fn[T] Request::send(self : Request[T], backend : &Backend) -> Response[T] {
+  let raw = backend.send(self.raw)
+  defer raw.body.close()                           // always consumed and closed
+  let body = (self.response.read)(raw.meta, raw.body, self.raw.options)
+  { body, code: raw.meta.code, status_text: raw.meta.status_text, headers: raw.meta.headers, history: raw.history, request: raw.request }
+}
+pub async fn[T] WebSocketRequest::send(self : WebSocketRequest[T], backend : &WebSocketBackend) -> Response[T]
+
+// mttp/wrappers (each implements Backend)
+pub fn FollowRedirectsBackend::new(inner : &Backend, sensitive_headers? : Array[String]) -> FollowRedirectsBackend
+pub(all) enum RetryWhen { Default; Rule(max_retries~ : Int, statuses~ : Array[Int], idempotent_only~ : Bool); Custom((RawRequest, Result[@model.ResponseMetadata, Error], Int) -> Int?) }
+pub fn RetryBackend::new(inner : &Backend, clock : &@model.Clock, when? : RetryWhen, random? : () -> Double) -> RetryBackend
+pub fn CookieJarBackend::new(inner : &Backend, jar : @model.CookieJar) -> CookieJarBackend
+pub let rate_limit_bucket : @model.AttributeKey[String]
+pub(open) trait RateLimiter { async fn acquire(Self, String) -> Unit; async fn release(Self, String, @model.ResponseMetadata) -> Unit }
+pub fn RateLimitBackend::new(inner : &Backend, limiter : &RateLimiter) -> RateLimitBackend
+pub impl Backend for RateLimitBackend with send(self, req) {
+  let bucket = req.attributes.get(rate_limit_bucket).unwrap_or("default")
+  self.limiter.acquire(bucket)
+  let resp = self.inner.send(req)
+  self.limiter.release(bucket, resp.meta)
+  resp
+}
+pub(open) trait RequestListener {
+  before_request(Self, @model.RequestMetadata) -> Unit
+  request_successful(Self, @model.RequestMetadata, @model.ResponseMetadata, duration_ms~ : Int64) -> Unit
+  request_exception(Self, @model.RequestMetadata, Error, duration_ms~ : Int64) -> Unit
+}
+
+// mttp/testing
+pub fn BackendStub::new() -> BackendStub
+pub fn BackendStub::when_request_matches(self : BackendStub, p : (RawRequest) -> Bool) -> StubRule
+pub fn StubRule::then_respond(self : StubRule, body : String, code? : @model.StatusCode, headers? : @model.Headers) -> BackendStub
+pub fn StubRule::then_respond_with(self : StubRule, f : async (RawRequest) -> RawResponse) -> BackendStub
+pub fn BackendStub::open_streams(self : BackendStub) -> Int
+pub fn[X] run_sync(f : async () -> X) -> X raise   // %async.run + %async.capture_cancellation; refuses suspension
+
+// usage (from the passing prototype test)
+test {
+  let stub = @client.BackendStub::new()
+    .when_request_matches(r => r.uri.path == ["users", "42"])
+    .then_respond("{\"id\":42,\"name\":\"gaato\"}")
+  let id = 42
+  let resp = @testing.run_sync(async fn() {
+    @client.basic_request
+    .get(@model.uri(b => b <+ "https://api.example.com/users/\{id}"))
+    .header("Accept", "application/json")
+    .response(@client.as_json_or_fail())
+    .send(stub)
+  })
+  let user : User = resp.body
+  inspect(stub.open_streams(), content="0")
+}
+pub fn stack(raw : &@client.Backend, clock : &@model.Clock, jar : @model.CookieJar) -> &@client.Backend {
+  @client.RetryBackend::new(@client.FollowRedirectsBackend::new(@client.CookieJarBackend::new(raw, jar)), clock)
+}
+
+// ===================== gaato/mttp-apispec (sttp-apispec) =====================
+
+pub(all) struct Schema {
+  ref_ : String?; type_ : String?; format : String?
+  properties : Map[String, Schema]?; required : Array[String]?; items : Schema?
+  minimum : Double?; minLength : Int?; pattern : String?; oneOf : Array[Schema]?
+} derive(ToJson(fields(ref_(rename="$ref"), type_(rename="type"))), FromJson(fields(ref_(rename="$ref"), type_(rename="type"))), Eq, Debug)
+pub(all) struct Parameter { name : String; in_ : String; required : Bool; schema : Schema } derive(ToJson(fields(in_(rename="in"))))
+pub(all) struct Operation { operationId : String?; summary : String?; tags : Array[String]; parameters : Array[Parameter]; responses : Map[String, Response]; security : Array[Map[String, Array[String]]]? } derive(ToJson)
+pub(all) struct OpenAPI { openapi : String; paths : Map[String, Map[String, Operation]]; components : Map[String, Map[String, Schema]]? } derive(ToJson)
+
+// ===================== gaato/mttp-endpoint (tapir) =====================
+
+pub(all) enum DecodeFailure { Missing(String); Multiple(String, Array[String]); Mismatch(expected~ : String, actual~ : String); Error(original~ : String, message~ : String); InvalidValue(Array[ValidationError]); BodyPending }
+pub(all) enum DecodeResult[T] { Value(T); Failure(DecodeFailure) }
+pub(all) struct ValidationError { path : Array[String]; message : String }
+pub(all) enum CodecFormat { TextPlain; Json; OctetStream; FormUrlencoded; TextEventStream; Other(String) }
+pub(all) enum Constraint { Minimum(Double, exclusive~ : Bool); Maximum(Double, exclusive~ : Bool); MinLength(Int); MaxLength(Int); Pattern(String); Enum(Array[Json]) }
+pub(all) enum SchemaType { SString(format~ : String?); SInteger(format~ : String?); SNumber; SBoolean; SBinary; SArray(SchemaShape); SOption(SchemaShape); SProduct(Array[FieldShape]); SCoproduct(Array[SchemaShape], discriminator~ : String?); SAny }
+pub(all) struct SchemaShape { ty : SchemaType; name : String?; description : String?; constraints : Array[Constraint] }
+pub struct Validator[T] { check : (T) -> Array[ValidationError]; constraints : Array[Constraint] }
+pub fn Validator::min_length(n : Int) -> Validator[String]
+pub fn[T] Validator::custom(f : (T) -> String?, doc? : Constraint) -> Validator[T]
+pub struct Schema[T] { shape : SchemaShape; validate : (T) -> Array[ValidationError] }
+pub fn[T] Schema::validate_with(self : Schema[T], v : Validator[T]) -> Schema[T]
+pub fn[T] Schema::option(self : Schema[T]) -> Schema[T?]
+pub fn[T] Schema::array(self : Schema[T]) -> Schema[Array[T]]
+pub fn[T, F] field(name : String, schema : Schema[F], get : (T) -> F) -> Field[T]       // F erased through the getter
+pub fn[T] Schema::product(name : String, fields : Array[Field[T]]) -> Schema[T]
+pub struct Codec[L, H] { decode : (L) -> DecodeResult[H]; encode : (H) -> L; schema : Schema[H]; format : CodecFormat }
+pub let string_codec : Codec[String, String]
+pub fn int_codec() -> Codec[String, Int]
+pub fn[T : ToJson + FromJson] json_codec(schema : Schema[T]) -> Codec[String, T]
+pub(all) enum Presence[T] { Absent; Null; Value(T) }                                   // mttp-endpoint/json
+
+// Io: EndpointInput / EndpointOutput / EndpointIO with a phantom side
+pub struct In { priv x : Unit }
+pub struct Out { priv x : Unit }
+pub struct InOut { priv x : Unit }
+pub trait InputSide {}
+pub trait OutputSide {}
+pub impl InputSide for In
+pub impl InputSide for InOut
+pub impl OutputSide for Out
+pub impl OutputSide for InOut
+pub struct Io[T, D] { basics : Array[Basic]; decode : (View) -> DecodeResult[T]; encode : (T, Sink) -> Unit }
+pub type Input[T] = Io[T, In]
+pub type Output[T] = Io[T, Out]
+pub fn[T, U, D] Io::map(self : Io[T, D], f : (T) -> U, g : (U) -> T) -> Io[U, D]
+pub fn[T, D] Io::optional(self : Io[T, D]) -> Io[T?, D]
+pub fn[T] path_param(name : String, codec : Codec[String, T]) -> Io[T, In]
+pub fn[T] query(name : String, codec : Codec[String, T]) -> Io[T, In]
+pub fn[T] header(name : String, codec : Codec[String, T]) -> Io[T, InOut]
+pub fn[T : ToJson + FromJson] json_body(schema : Schema[T]) -> Io[T, InOut]
+pub fn stream_body(format : CodecFormat) -> Io[&@model.BodyStream, InOut]
+pub fn sse_body() -> Io[@model.EventStream, Out]
+pub fn[Req, Resp] web_socket_body(req : Codec[String, Req], resp : Codec[String, Resp]) -> Io[async (async () -> Req?, async (Resp) -> Unit) -> Unit, Out]
+pub fn bearer_auth() -> Io[String, In]
+pub fn status_code(code : @model.StatusCode) -> Io[Unit, Out]
+pub fn[A, B, D1 : InputSide, D2 : InputSide] in2(a : Io[A, D1], b : Io[B, D2]) -> Io[(A, B), In]     // in3..in6
+pub fn[T, D1 : OutputSide, D2 : OutputSide] Io::and_unit(self : Io[T, D1], u : Io[Unit, D2]) -> Io[T, Out]
+pub fn[E, B, D : OutputSide] one_of_variant(status : @model.StatusCode, out : Io[B, D], wrap : (B) -> E, unwrap : (E) -> B?) -> OneOfVariant[E]
+pub fn[E] one_of(variants : Array[OneOfVariant[E]]) -> Io[E, Out]
+
+pub struct Endpoint[S, I, E, O] {
+  meth : @model.Method?; path : Array[PathSegment]
+  security : Io[S, In]; input : Io[I, In]; error_output : Io[E, Out]; output : Io[O, Out]
+  success_status : Int; info : EndpointInfo
+}
+pub let endpoint : Endpoint[Unit, Unit, Unit, Unit]
+pub fn[S, I, E, O] Endpoint::path(self : Endpoint[S, I, E, O], template : String) -> Endpoint[S, I, E, O]
+pub fn[I, E, O, A, D : InputSide] Endpoint::security_in(self : Endpoint[Unit, I, E, O], s : Io[A, D]) -> Endpoint[A, I, E, O]
+pub fn[S, E, O, J, D : InputSide] Endpoint::in_(self : Endpoint[S, Unit, E, O], i : Io[J, D]) -> Endpoint[S, J, E, O]
+pub fn[S, I, E, O, J, D : InputSide] Endpoint::and_in(self : Endpoint[S, I, E, O], j : Io[J, D]) -> Endpoint[S, (I, J), E, O]
+pub fn[S, I, E, P, D : OutputSide] Endpoint::out(self : Endpoint[S, I, E, Unit], o : Io[P, D]) -> Endpoint[S, I, E, P]
+pub fn[S, I, O, F, D : OutputSide] Endpoint::error_out(self : Endpoint[S, I, Unit, O], e : Io[F, D]) -> Endpoint[S, I, F, O]
+pub fn[S, I, E, O] Endpoint::meta(self : Endpoint[S, I, E, O]) -> EndpointMeta
+pub fn EndpointMeta::check(self : EndpointMeta) -> Unit raise EndpointDefinitionError
+
+pub struct ServerEndpoint { meta : EndpointMeta; run : async (View, async () -> ViewBody) -> ServerOutcome }
+pub fn[S, I, E, O, U] Endpoint::server_security_logic(self : Endpoint[S, I, E, O], f : async (S) -> Result[U, E]) -> PartialServerEndpoint[S, U, I, E, O]
+pub fn[S, U, I, E, O] PartialServerEndpoint::server_logic(self : PartialServerEndpoint[S, U, I, E, O], f : async (U, I) -> Result[O, E]) -> ServerEndpoint
+pub fn[I, E, O] Endpoint::server_logic_success(self : Endpoint[Unit, I, E, O], f : async (I) -> O) -> ServerEndpoint
+pub fn[I, E, O] Endpoint::server_logic_recover_errors(self : Endpoint[Unit, I, E, O], classify : (Error) -> E?, f : async (I) -> O) -> ServerEndpoint
+
+// mttp-endpoint/client_interp
+pub fn[S, I, E, O] to_secure_request(e : @endpoint.Endpoint[S, I, E, O], base : @model.Uri, security : S, input : I) -> @client.Request[@endpoint.DecodeResult[Result[O, E]]]
+pub fn[I, E, O] to_request(e : @endpoint.Endpoint[Unit, I, E, O], base : @model.Uri, input : I) -> @client.Request[@endpoint.DecodeResult[Result[O, E]]]
+pub fn[S, I, E, O] to_secure_request_throw_errors(e : @endpoint.Endpoint[S, I, E, O], base : @model.Uri, security : S, input : I, to_error : (E) -> Error) -> @client.Request[O]
+
+// mttp-endpoint/server_interp (sans-IO)
+pub(all) struct ServerRequest { meth : @model.Method; uri : @model.Uri; headers : @model.Headers; body : &@model.BodyStream; remote_addr : String? }
+pub(all) enum ResponseBody { Empty; Bytes(Bytes); Stream(&@model.BodyStream); Events(@model.EventStream); Upgrade(async (&@model.WebSocket) -> Unit) }
+pub(all) struct ServerResponse { status : Int; headers : @model.Headers; body : ResponseBody; close_connection : Bool }
+pub(open) trait Interceptor { async fn on_request(Self, ServerRequest, async (ServerRequest) -> ServerResponse) -> ServerResponse }
+pub(all) struct ServerOptions {
+  max_body_bytes : Int                                                    // 1 MiB
+  decode_failure_handler : (DecodeFailureContext) -> ServerResponse?     // tapir default table
+  exception_handler : (@model.RequestMetadata, Error) -> ServerResponse   // 500, no details
+  reject_handler : (@model.RequestMetadata, Array[@model.Method]) -> ServerResponse  // 404 / 405 + Allow
+  interceptors : Array[&Interceptor]
+  log : (String) -> Unit
+}
+pub fn Router::new(endpoints : Array[@endpoint.ServerEndpoint], options? : ServerOptions) -> Router raise @endpoint.EndpointDefinitionError
+pub async fn Router::handle(self : Router, req : ServerRequest) -> ServerResponse
+pub fn RouterBackend::new(router : Router) -> RouterBackend          // impl @client.Backend (stub server)
+
+// mttp-endpoint/openapi
+pub fn to_openapi(endpoints : Array[@endpoint.EndpointMeta], title~ : String, version~ : String, options? : OpenAPIDocsOptions) -> @apispec.OpenAPI raise @endpoint.EndpointDefinitionError
+
+// usage: one definition package, shared by server and client
+pub(all) struct User { id : Int; name : String } derive(ToJson, FromJson, Eq, Debug)
+pub(all) struct ErrorBody { message : String } derive(ToJson, FromJson, Eq, Debug)
+pub(all) enum ApiError { Unauthorized(ErrorBody); NotFound(ErrorBody) } derive(Eq, Debug)
+pub let user_schema : @endpoint.Schema[User] = @endpoint.Schema::product("User", [   // or emitted by mttp-gen
+  @endpoint.field("id", @endpoint.schema_int(), u => u.id),
+  @endpoint.field("name", @endpoint.schema_string().validate_with(@endpoint.Validator::min_length(1)), u => u.name),
+])
+pub let secured : @endpoint.Endpoint[String, Unit, ApiError, Unit] = @endpoint.endpoint
+  .path("/api/v1")
+  .security_in(@endpoint.bearer_auth())
+  .error_out(@endpoint.one_of([
+    @endpoint.one_of_variant(@model.unauthorized, @endpoint.json_body(error_schema), b => Unauthorized(b), e => if e is Unauthorized(b) { Some(b) } else { None }),
+    @endpoint.one_of_variant(@model.not_found, @endpoint.json_body(error_schema), b => NotFound(b), e => if e is NotFound(b) { Some(b) } else { None }),
+  ]))
+pub let get_user : @endpoint.Endpoint[String, (Int, String?), ApiError, User] = secured
+  .get()
+  .path("/users/{id}")
+  .in_(@endpoint.in2(@endpoint.path_param("id", @endpoint.int_codec()), @endpoint.query("fields", @endpoint.string_codec).optional()))
+  .out(@endpoint.json_body(user_schema))
+  .summary("Get a user")
+  .tag("users")
+
+pub fn app() -> @server_interp.Router raise {                 // server
+  let authenticate = async fn(token : String) -> Result[String, ApiError] {
+    if token == "good" { Ok("alice") } else { Err(Unauthorized({ message: "bad token" })) }
+  }
+  @server_interp.Router::new([
+    get_user.server_security_logic(authenticate).server_logic(async fn(_who, input) {
+      let (id, _fields) = input
+      if id == 1 { Ok({ id: 1, name: "gaato" }) } else { Err(NotFound({ message: "no user \{id}" })) }
+    }),
+  ])
+}
+pub async fn typed(backend : &@client.Backend, base : @model.Uri) -> String {   // client
+  match @client_interp.to_secure_request(get_user, base, "token", (42, None)).send(backend).body {
+    Value(Ok(user)) => user.name
+    Value(Err(NotFound(b))) => "not found: " + b.message
+    Value(Err(Unauthorized(_))) => "unauthorized"
+    Failure(_) => "undecodable"
+  }
+}
+pub fn docs() -> Json raise { @openapi.to_openapi([get_user.meta()], title="users", version="1").to_json() }
+// in-process test: typed(@server_interp.RouterBackend::new(app()), base) under @testing.run_sync
+
+// ===================== gaato/mttp-async (adapters; signatures from the passing prototype) =====================
+
+// backend (native, wasm, js)
+pub fn AsyncBackend::new(timeout_ms? : Int, connect_timeout_ms? : Int, write_timeout_ms? : Int, read_timeout_ms? : Int, pool_timeout_ms? : Int, max_connections? : Int, max_connections_per_origin? : Int, max_idle_per_origin? : Int, idle_max_ms? : Int, proxy? : String, trust_env? : Bool, clock? : &@model.Clock) -> AsyncBackend   // impl @client.Backend
+pub fn FetchBackend::new() -> FetchBackend               // js, redirect: manual
+// server (native, wasm)
+pub async fn[X] serve(group : @async.TaskGroup[X], router : @server_interp.Router, addr~ : String, max_connections? : Int = 256, header_timeout_ms? : Int = 5000, body_timeout_ms? : Int = 30000) -> String
+// fetch (js): export default { fetch } in the JS entry calls the returned function
+pub fn fetch_handler(router : @server_interp.Router) -> (JsRequest) -> @js_async.Promise[JsResponse]
+// quick
+pub fn backend() -> &@client.Backend                      // AsyncBackend + FollowRedirects + Retry(conservative)
+
+// usage (passing loopback test, native and wasm)
+async test "typed client over a real socket to the sans-IO router" {
+  @async.with_task_group(group => {
+    let addr = @server.serve(group, app(), addr="127.0.0.1:0")
+    let backend = @backend.AsyncBackend::new()
+    defer @client.Backend::close(backend)
+    let ok = @client_interp.to_secure_request(get_user, @model.Uri::parse("http://\{addr}"), "good", (1, None)).send(backend)
+    debug_inspect(ok.body, content="Value(Ok({ id: 1, name: \"gaato\" }))")
+    group.return_immediately(())
+  })
+}

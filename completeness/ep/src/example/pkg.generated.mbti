@@ -1,0 +1,60 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/example"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/model",
+  "gaato/mttp/schema",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn app(Map[Int32, User]) -> @endpoint.Server raise @endpoint.RouteError
+
+pub fn browser_side((@model.Request) -> (@model.ResponseHead, Bytes)) -> String raise
+
+pub let create_user : @endpoint.Endpoint[String, NewUser, UserError, User]
+
+pub let echo_ws : @endpoint.WsEndpoint[String, Unit, UserError, User, User]
+
+pub async fn fetch_name(&@client.Backend, Int32) -> String
+
+pub let get_user : @endpoint.Endpoint[String, GetUser, UserError, User]
+
+pub async fn plain(&@client.Backend) -> String
+
+pub fn spec(@endpoint.Server) -> Json
+
+pub let user_events : @endpoint.Endpoint[Unit, Unit, @endpoint.NoError, @endpoint.EventSource[User]]
+
+pub let user_json : @schema.JsonCodec[User]
+
+pub let webhook : @endpoint.Endpoint[(String, Bytes), NewUser, UserError, Unit]
+
+// Errors
+pub(all) suberror UserError {
+  NotFound(Int32)
+  Forbidden
+} derive(@debug.Debug)
+
+// Types and methods
+pub(all) struct GetUser {
+  id : Int32
+  fields : String?
+} derive(Eq, @debug.Debug)
+
+pub(all) struct NewUser {
+  name : String
+} derive(ToJson, @debug.Debug, @json.FromJson)
+pub impl @schema.JsonSchema for NewUser
+
+pub(all) struct User {
+  id : Int32
+  name : String
+} derive(Eq, @debug.Debug)
+
+// Type aliases
+
+// Traits

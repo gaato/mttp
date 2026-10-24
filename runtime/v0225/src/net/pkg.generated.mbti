@@ -1,0 +1,36 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/rtprobe/net"
+
+import {
+  "gaato/rtprobe/model",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub async fn serve(async (@model.Request) -> @model.Outcome noraise, addr~ : String, on_listen? : (String) -> Unit, limits? : ServerLimits) -> Unit raise ServerConfigError
+
+// Errors
+pub(all) suberror ServerConfigError {
+  InvalidMaxConnections(value~ : Int32)
+  Bind(detail~ : String)
+} derive(@debug.Debug)
+
+// Types and methods
+pub struct AsyncBackend {
+  // private fields
+}
+pub fn AsyncBackend::new(timeout_ms? : Int32) -> Self
+pub async fn AsyncBackend::send(Self, @model.Request) -> @model.Response raise @model.TransportError
+
+pub(all) struct ServerLimits {
+  max_header_bytes : Int32
+  header_timeout_ms : Int32
+  max_body_bytes : Int32
+  max_connections : Int32
+  prescan_head : Bool
+}
+pub fn ServerLimits::default() -> Self
+
+// Type aliases
+
+// Traits

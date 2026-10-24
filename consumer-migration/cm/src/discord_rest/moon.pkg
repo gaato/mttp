@@ -1,0 +1,10 @@
+import {
+  "gaato/cm/model",
+  "gaato/cm/client",
+  "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "gaato/cm/testing",
+} for "test"

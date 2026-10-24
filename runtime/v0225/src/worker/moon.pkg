@@ -1,0 +1,11 @@
+import {
+  "moonbitlang/core/encoding/utf8",
+  "gaato/rtprobe/model",
+  "gaato/rtprobe/fetch",
+}
+
+supported_targets = "js"
+
+options(
+  link: { "js": { "exports": [ "fetch" ], "format": "esm" } },
+)

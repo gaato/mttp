@@ -1,0 +1,13 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/schema",
+  "gaato/mttp/client",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/openapi",
+  "moonbitlang/core/json",
+}
+
+import {
+  "gaato/mttp/example",
+  "gaato/mttp/model",
+} for "test"
