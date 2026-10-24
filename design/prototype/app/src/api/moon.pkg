@@ -1,7 +1,0 @@
-// Definition package: model + schema + endpoint only. No client, router,
-// testing or runtime import; checks on all four targets.
-import {
-  "gaato/mttp/model",
-  "gaato/mttp/schema",
-  "gaato/mttp/endpoint",
-}

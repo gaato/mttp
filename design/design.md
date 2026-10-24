@@ -1,13 +1,13 @@
 # mttp design (draft)
 
-**Status: proposal. Nothing here has been decided by the user.** Items that need the user's choice are marked **[needs-user-input]**; items that need a prototype before they can be proposed firmly are marked **[needs-prototype]**. Everything else is **[proposed]**.
+**Status: accepted as the basis for implementation (2026-10-24).** The decisions the user made are listed in §0 and override anything below that says otherwise. Items still marked **[needs-prototype]** are settled by the pre-flight probes or during implementation; remaining **[proposed]** items are the defaults.
 
 This draft revises the first synthesized architecture using six adversarial reviews: cross-layer integration, resolver and release, async runtime and I/O, sttp/tapir completeness, consumer migration, and scope. The design was then rebuilt as a single prototype that compiles and passes on every target. A final critique was checked against the gaato sources, the registry index and the prototypes, and its corrections are folded in. Where a rule is designed but not yet tested in `wf3/rev`, the text says so.
 
 > **Note on paths.** The prototypes cited below were built in a temporary session directory. The main one, `wf3/rev`
-> (31/31 tests on wasm-gc, js, native and wasm), is copied to `design/prototype/`, where review fixes
-> (with regression tests) and the moved `sse` parser (with its own tests) bring it to 65/65. The other cited prototypes (`wf2/*`,
-> `v4/*`) are not kept; their results are recorded in §10.
+> (31/31 tests on wasm-gc, js, native and wasm), later grew review fixes, the moved `sse` parser and their tests (65/65)
+> as `design/prototype/` on branch `ccr-eae554e2-r0xapl-prototype` (commit 105d062); it is no longer in the tree.
+> The other cited prototypes (`wf2/*`, `synth/probe`) are kept as sources on branch `ccr-eae554e2-r0xapl-seeds`.
 
 | Prototype | Path (under `/tmp/claude-0/-home-user/a088a40a-4430-5968-a906-ca92585d97e4/scratchpad/`) | Result |
 |---|---|---|
@@ -23,6 +23,23 @@ This draft revises the first synthesized architecture using six adversarial revi
 Toolchains used: `moon` on PATH is moon 0.1.20261023 with moonc v0.10.17+d971670cd; the pinned toolchain is moon 0.1.20261016 with moonc v0.10.16+b1a0e846e (`wf2/bin/m16`). Neither ships core async. The final-review probes ran on the moon on PATH (0.10.17).
 
 ---
+
+## 0. Decisions
+
+Made by the user on 2026-10-24; they supersede the corresponding [needs-user-input] items.
+
+| Topic | Decision | Replaces |
+|---|---|---|
+| Scope | v0.1–v0.4 are implemented; the endpoint layer, router, openapi and the test toolkit ship as **experimental** in 0.1.x, outside the §5.6 freeze. WebSockets are deferred (see X-06). | V-01, Q1, Q12 |
+| PRs | This document lands on its own; the implementation follows as stacked PRs, one per review unit (≲ 5k lines, fully gated). Merge commits. Nothing is published from them; publishing stays behind M-11. | — |
+| `Request.url` | `String`. The raw string is refused if it contains space, CR, LF or other controls (before parsing: the WHATWG parser strips them), then parsed strictly at send time; the backend re-serialises the request target from the parsed form and validates headers. No URL type exists in core, core/async, moonbitlang/async or moonbitlang/x; async#368 only says one may be bundled later. | X-01, Q2 |
+| Module names | `gaato/mttp`, `gaato/mttp-net`, and `gaato/mttp-digest` (DigestScheme; the only importer of moonbitlang/x). Later third-party integrations follow sttp/tapir: `gaato/mttp-<lib>-backend`, `gaato/mttp-<lib>-server`. The tapir-equivalent packages stay inside `gaato/mttp` for now. | M-04, M-07, Q6 |
+| Facade | sttp style: `mttp-net/quick` (a lazy default backend and `send(req)`) and `client.quick_request(req)` (a string body for any status). requesto is deprecated later; its keyword-argument API is not carried over. | M-06, Q3 |
+| jsonkit | `gaato/mttp/jsonkit` (default kept). | M-03 |
+| Shim | None (G-02 default (d)). | G-02, Q4 |
+| Server | 400 for invalid bodies; credentials first (defaults kept). | P-04, P-05, Q7, Q8 |
+| WebSockets | Not now: core/async's websocket lacks size bounds, aborts on misuse, needs a concurrent reader for ping, never waits for the peer's Close, validates UTF-8 loosely, sends a fixed 101 header set, has no js/wasm-gc support, and upgrades only an `@http.ServerConnection`. Reserved hooks: `Response.attributes`, an internal 101 hand-off in the h1 server loop, no compression on 101, no runtime type in any public signature. | X-06, Q12 |
+| Test architecture | A runtime-free deterministic `testing/driver` (virtual time, spawn/park/cancel) and contract-bound doubles; no `async test` in gaato/mttp; the existing VirtualClock is redesigned rather than preserved. Details land with the implementation. | §4.10, §5.7 |
 
 ## 1. Goals and non-goals
 
@@ -1222,10 +1239,10 @@ discord 0.13 → 0.14:
 |---|---|---|---|
 | M-01 | Modules: gaato/mttp (core only; incl. clock, clock/fake, jsonkit), gaato/mttp-net (all I/O), gaato/mttp-gen (tool, later). Existing gaato/http, http-async, sdk-runtime, requesto kept until Stage 6. | proposed | Module imports reach every consumer (F31); only external deps justify a module (R-12, S-02). |
 | M-02 | clock and clock/fake are packages of gaato/mttp, with today's names and signatures. | proposed | No non-HTTP consumer; consumers compile only imported packages (F18). |
-| M-03 | jsonkit is `gaato/mttp/jsonkit`; alternatively it stays in mbt-sdk. | needs-user-input | Location only; the alias must not be `json`. |
-| M-04 | mttp-net: backend, codings, runtime (v0.1); facade (v0.2); server, fetch (v0.3); files later; `internal/io`. No digest. Name mttp-net vs mttp-async. | needs-user-input (name) | Digest's crypto dependency would reach every consumer; only requesto uses it (S-09). `internal/` keeps the bridges unimportable, as discord does. |
+| M-03 | jsonkit is `gaato/mttp/jsonkit`; alternatively it stays in mbt-sdk. | decided (§0) | Location only; the alias must not be `json`. |
+| M-04 | mttp-net: backend, codings, runtime (v0.1); facade (v0.2); server, fetch (v0.3); files later; `internal/io`. No digest. Name mttp-net vs mttp-async. | decided (§0) | Digest's crypto dependency would reach every consumer; only requesto uses it (S-09). `internal/` keeps the bridges unimportable, as discord does. |
 | M-05 | Runtime transition: signatures stay runtime-free; the switch is a flag day per application graph (Stage R), editing consumers' manifests. | proposed | The runtimes cannot coexist (F35); async main/test needs the runtime in each consumer's manifest (F15, R-10). |
-| M-06 | Exactly one facade at v0.2: requesto 0.3 (thin, no HTTP logic) or `mttp-net/quick` with requesto deprecated. | needs-user-input | Neither has a consumer in the workspace (S-10). |
+| M-06 | Exactly one facade at v0.2: requesto 0.3 (thin, no HTTP logic) or `mttp-net/quick` with requesto deprecated. | decided (§0) | Neither has a consumer in the workspace (S-10). |
 | M-07 | Digest and ChallengeAuth leave the core; requesto implements Digest itself if kept. | proposed | S-09. |
 | M-08 | Monorepo with moon.work, plus the resolver gate, manifest-vs-index ledger, per-target test counts and paired-runtime mbti diff. | proposed | Workspace overrides hide real resolutions (F30). |
 | M-09 | mttp ↔ mttp-net compatibility rule: option 1 (each mttp minor compiles the previous mttp-net minor) or option 2 (mttp-net patch per mttp minor). | needs-user-input | Lockstep cannot be enforced (F29, R-07). |
@@ -1247,19 +1264,19 @@ discord 0.13 → 0.14:
 | C-11 | Client-wide `options : RequestOptions` on `Client::new` (v0.1); AsyncBackend keeps `max_body_bytes` as a hard ceiling. | proposed (not in wf3/rev) | discord, openai, anthropic and github all set client-wide timeouts or body caps. |
 | C-12 | The loop enforces only replayability (a `Wait` on an unreplayable request becomes `Stop(NotReplayable)`); method gating is the decider's. `Body::Stream` keeps the take-once guard. | proposed (needs tests; take-once cell needs-prototype) | `stainless` resends POST today; CONTRACT 8. |
 | C-13 | `decompress`: true sends the full Accept-Encoding when the request has none and decodes; a request's own Accept-Encoding passes through; false sends the request's value or `identity`. | proposed | Keeps http-async's behaviour; F40. |
-| X-01 | `Request.url : String` (absolute or relative; parsed at send). | needs-user-input | Generated code stays non-raising; a read-only `Url` field forces E4036 or new raises (CM-02, S-11). |
+| X-01 | `Request.url : String` (absolute or relative; parsed at send). | decided (§0) | Generated code stays non-raising; a read-only `Url` field forces E4036 or new raises (CM-02, S-11). |
 | X-02 | Int status; `#non_exhaustive Method` with Show; immutable ordered Headers. | proposed | I-13, S-05. |
 | X-03 | UriBuilder/UriPart/Trusted at v0.2; `uri()` returns String (no raise). | proposed | No v0.1 consumer (S-11). |
 | X-04 | Pull-only bodies in both directions; one `Response` type; `#non_exhaustive Body`. | proposed | S-04e/f; verified. |
 | X-05 | Server SSE as pull `EventStream` → `Body::Stream`; no push bridge. | proposed | Replaces the old needs-prototype item; verified through Router-as-Backend. |
-| X-06 | WebSockets after v0.3: 101 + attribute, sans-IO frame codec, WebSocketStub. | needs-prototype (later) | No consumer (S-08); runtime WS cannot send our headers (RT-10). |
+| X-06 | WebSockets deferred beyond v0.4; later order: sans-IO `mttp/ws` codec with bounds (+ Autobahn), client over `@http.Client` passthrough, server via the h1 101 hand-off, `WsEndpoint` last. | decided (§0) | No consumer (S-08). The runtime client can send request headers on native/wasm; the real gaps are listed in §0. |
 | X-07 | Evolution rules (§5.6): `#non_exhaustive` on every enum that may grow (incl. AuthScheme, Location, Framing, FailureStage, Decision); a growing suberror takes the kind form (DecodeFailure, ParseError), all other suberrors frozen; frozen-struct lists per tier; Atom/VariantDoc/EndpointDoc read-only with constructors. | proposed | S-05; F3, F4, F52. |
 | X-08 | `impl Eq` (Stream by identity) and `Debug` for `Body`. | proposed | The moved multipart `Part` derives Eq and Debug over its body. |
 | P-01 | Input = atoms + staged closures; `Input::new` public with `Staged::ready`/`after_body`, an opaque `RequestSink` with setters, and `Atom::new`; `attribute(key)` input; client_ip/query_params/headers at v0.3. | proposed (Input::new usable outside endpoint: not yet verified) | SC-07; attribute input verified; in wf3/rev `Input::new` fails outside the package (E4015, E4094). |
 | P-02 | Set-once builders, with the Unit-slot and base-capture limits documented. | proposed | I-07, I-08. |
 | P-03 | OpenAPI templates + typed path inputs; `{name...}` rest capture decided before freeze. | needs-prototype | SC-09. |
-| P-04 | Credentials-first server ordering (documented deviation). | needs-user-input | Verified behaviour; may surprise tapir users. |
-| P-05 | 400 vs 422 for invalid bodies. | needs-user-input | — |
+| P-04 | Credentials-first server ordering (documented deviation). | decided (§0) | Verified behaviour; may surprise tapir users. |
+| P-05 | 400 vs 422 for invalid bodies. | decided (§0) | — |
 | P-06 | Router: trie, literal beats capture, 404/405/HEAD/OPTIONS, no fall-through. | proposed | Verified. |
 | P-07 | Middleware over Response; `route_template` response attribute; `on_unhandled -> Response?`; decode_failure/reject hooks; FailureContext and DispatchContext in endpoint. | proposed | I-01, SC-06; verified. |
 | P-08 | Client interpreter on `Client`: selection by (status, media type); reject inside the attempt; relative targets; sync half internal. | proposed | I-02, I-03, I-04, S-07; verified. |
@@ -1280,7 +1297,7 @@ discord 0.13 → 0.14:
 | A-02 | Bounded content decoding; Accept-Encoding per C-13. | proposed | RT-16. |
 | A-03 | mttp-net/server never ships without `h1`. Until discord's endpoint_http adopts `h1`, it sits behind a header-limiting proxy, and discord's README says so. | proposed | RT-05; F36–F38 apply to endpoint_http today. |
 | G-01 | SDK phases: phase 1 mechanical retarget (§4.12); phase 2 opt-in after v0.3/v0.4. | proposed | CM-02, CM-04. |
-| G-02 | No forward shim. Default (d): clocks are new traits and mixed graphs pass two clocks. Optional gaato/http 0.5.1 `bridge` package for mixed graphs. Alternative (a): `mttp/clock` re-exports gaato/http 0.5.0's traits until a later minor. | needs-user-input | A forward 0.5.1 shim is inert unless something requires it (F33). |
+| G-02 | No forward shim. Default (d): clocks are new traits and mixed graphs pass two clocks. Optional gaato/http 0.5.1 `bridge` package for mixed graphs. Alternative (a): `mttp/clock` re-exports gaato/http 0.5.0's traits until a later minor. | decided (§0) | A forward 0.5.1 shim is inert unless something requires it (F33). |
 | G-03 | discord 0.14 as in §8.6 (including the DiscordHttpError phase type and the client options); interactions server onto `h1` at Stage 3 (Q9 (c)) or Stage 4. | proposed (stage of `h1` needs-user-input) | CM-05, CM-06, CM-10. |
 | G-04 | Retirement by advisory deprecation; no yanks; security via patches plus raised minimums. | proposed | F26, F27. |
 | G-05 | Stage R train list (§8.1), including discord-cli and kbbi if migrated. | proposed | RT-03, CM-10; registry index. |
@@ -1290,7 +1307,7 @@ discord 0.13 → 0.14:
 | N-01 | Naming rules (§5.9). | proposed | — |
 | N-02 | Adapters set `remote_addr` and `background`; the Workers shim also sets `env`; handlers read them through `attribute`. | proposed | SC-07, RT-08. |
 | N-03 | HTTP/1.1 only; TLS and HTTP/2 via a front proxy. | needs-user-input | — |
-| V-01 | Staged tiers v0.1 → v0.4 (§7). | needs-user-input | S-01, S-07. |
+| V-01 | Staged tiers v0.1 → v0.4 (§7). | decided (§0) | S-01, S-07. |
 
 ## 10. Verified facts and refuted assumptions
 
@@ -1453,6 +1470,8 @@ Corrections to the previous draft (from the final critique, each checked against
 | 23 | The v0.1 client rests on rules not yet prototyped or tested: the real `client/retry` port, Client-wide options, deadline rules, the take-once cell. | Stage 0 exit criteria (§4.4 test list); publish gate M-11. |
 
 ## 12. Open questions for the user
+
+Q1–Q4, Q6–Q8, Q11 and Q12 are answered in §0. Q5, Q9, Q10 and Q13–Q16 concern releases and the migration of consumers and stay open.
 
 1. **Scope tiers.** Ship v0.1 as the client half only, with the endpoint layer as an experimental v0.3 and OpenAPI at v0.4 (proposed)? Or keep the endpoint layer in the first train?
 2. **Request.url.** A `String` target parsed at send time (proposed, keeps generated SDK code non-raising)? Or the parsed `Url` with a non-raising `Url::from_encoded` for generators?

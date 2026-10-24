@@ -1,4 +1,0 @@
-import {
-  "gaato/mttp/model",
-  "gaato/mttp/client",
-}
