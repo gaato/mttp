@@ -22,7 +22,7 @@ fails when a row names no test or a named test is not declared in the named
 file. Whether a named test really reaches the bound is checked in review. The
 other tables describe where no limit is enforced, so they stay prose.
 
-Scope: every package of `gaato/mttp` and `gaato/mttp-net`. Test helpers (`testing`, `clock/fake`)
+Scope: every package of `gaato/mttp`, `gaato/mttp-net` and `gaato/mttp-digest`. Test helpers (`testing`, `clock/fake`)
 record what a test feeds them and are not listed, except the limits that keep
 a test from hanging (the `testing/driver` rows).
 
@@ -30,6 +30,8 @@ a test from hanging (the `testing/driver` rows).
 
 | Structure | Bound | On overflow | Tests |
 |---|---|---|---|
+| `mttp-digest` challenge parsing | 16 KiB of UTF-8 across all WWW-Authenticate fields, checked before parsing; at most two challenge answers per send | Returns the 401 unchanged when oversized or retry budget is exhausted | `mttp-digest/src/backend_test.mbt`: "Digest challenge budget counts UTF8 bytes and includes every field", "Digest refuses oversized challenges and replaying stream bodies", "Digest stale retry is bounded and origin credentials do not cross hosts" |
+| `mttp-digest` nonce state | At most 16 origins in the retained nonce helper, with an eight-hex-digit counter; each public wrapper is pinned to one origin | Evicts the oldest entry; forgets a nonce when its counter is exhausted | `mttp-digest/src/digest_wbtest.mbt`: "nonce state: counted per origin, bounded, forgotten when nc runs out" |
 | `mttp-net/backend` JS stream upload buffer | 16 MiB; byte bodies remain caller-owned | Refuses a larger declared length before taking the stream, or the first crossing chunk while closing a taken stream | `mttp-net/src/backend/fetch.js_test.mbt`: "JS upload buffering accepts exactly 16 MiB and refuses overflow" |
 | `mttp-net/backend` JS response delivery | 64 KiB per delivered slice; buffered total uses RequestOptions/backend ceiling; at most 1024 consecutive empty host chunks before refusal | Closes/aborts on the first crossing chunk or empty-chunk exhaustion; retains a single host chunk with an offset, without quadratic remainder copying | `mttp-net/src/backend/fetch.js_test.mbt`: "JS body slices are bounded and decoded byte limits close responses", "JS reports fetch failures in Unknown and rejects opaque responses" |
 | `mttp-net/backend` proxy CONNECT ingestion and TLS layers | CONNECT shares h1 head limits; one origin TLS layer, optionally one proxy TLS layer | Refuses oversized/invalid CONNECT answers before TLS; closes all layers with the owned socket | `mttp-net/src/backend/proxy_test.mbt`: "CONNECT refusals malformed heads and excess bytes are bounded in Dial"; `mttp-net/src/backend/tls_wbtest.mbt`: "CONNECT carries verified end-to-end TLS over plain and TLS proxies" |

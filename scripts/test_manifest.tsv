@@ -69,3 +69,7 @@ gaato/mttp	gaato/mttp/testing/gen	js	2
 gaato/mttp	gaato/mttp/testing/gen	native	2
 gaato/mttp	gaato/mttp/testing/gen	wasm	2
 gaato/mttp	gaato/mttp/testing/gen	wasm-gc	2
+gaato/mttp-digest	gaato/mttp-digest	js	18
+gaato/mttp-digest	gaato/mttp-digest	native	18
+gaato/mttp-digest	gaato/mttp-digest	wasm	18
+gaato/mttp-digest	gaato/mttp-digest	wasm-gc	18

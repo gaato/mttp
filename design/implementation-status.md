@@ -12,6 +12,8 @@ The implementation starts from design commit
   commit `43f92f0`, retaining its tests and changing the module/API boundaries.
 - The archived prototype supplies new API shapes only. It is not the source
   for hardened parsers, multipart streaming or retry logic.
+- Digest parsing, hash calculation and reference tests come from local
+  `gaato/requesto.mbt` commit `be3dfa395b960746bd5b7976e0de3d6eac480baf`.
 - `scripts/docs_audit.mbtx` is copied unchanged from `gaato/discord.mbt`.
 
 ## Progress
@@ -65,8 +67,12 @@ The implementation starts from design commit
   headers without consuming streams. The quick facade lazily shares a Client
   and supports explicit close/recreation on native, wasm and JS.
 - Remaining U4–U9 work:
-  runtime and HTTP/1 adapters, socket conformance, client conveniences,
-  digest, schema/endpoints, router/server and OpenAPI generation.
+  socket and browser conformance, schema/endpoints, router/server and OpenAPI
+  generation, plus the consumer migrations and remaining U1–U3 checks.
+- The separate `mttp-digest` module now wraps Backends with an origin-scoped
+  DigestScheme. Mature requesto hash/parser tests are retained, with additional
+  contract, replay/close, cross-origin, stale-nonce and challenge-budget tests.
+  It imports crypto without adding that dependency to mttp or mttp-net.
 
 ## Port decisions
 
