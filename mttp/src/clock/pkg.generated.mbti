@@ -2,6 +2,7 @@
 package "gaato/mttp/clock"
 
 // Values
+pub fn default_random() -> Double
 
 // Errors
 

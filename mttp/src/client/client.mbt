@@ -28,7 +28,7 @@ pub fn Client::new(
   limiter~ : &RateLimiter = NoLimiter::new(),
   total_ms? : Int32,
   observer~ : (Attempt) -> Unit = _ => (),
-  random~ : () -> Double = () => 0.5,
+  random~ : () -> Double = @clock.default_random,
 ) -> Client {
   {
     backend,

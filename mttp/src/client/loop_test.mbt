@@ -246,6 +246,7 @@ test "an attempt that runs out of time is retried for GET not POST" {
       timer=@fake.SimTimer::new(d),
       retry=@client.RetryPolicy::conservative(),
       observer=a => attempts.push((a.attempt, a.status, a.decision)),
+      random=() => 0.5,
     )
     let ok = try {
       let reply = d.run(() => {
@@ -291,6 +292,7 @@ test "total timeout caps backoff and shrinks attempt budgets" {
     total_ms=1000,
     retry=@client.RetryPolicy::conservative(),
     observer=a => attempts.push(a.decision),
+    random=() => 0.5,
   )
   let failed = try {
     let _ = @driver.run_sync(() => {
