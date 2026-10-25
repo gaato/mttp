@@ -85,6 +85,10 @@ extern "js" fn JsRequest::aborted(self : JsRequest) -> Bool =
   #| req => req.signal.aborted
 
 ///|
+extern "js" fn JsRequest::has_body(self : JsRequest) -> Bool =
+  #| req => req.body !== null
+
+///|
 extern "js" fn JsRequest::reject_aborted(self : JsRequest) -> JsPromise =
   #| req => {
   #|   req.body?.cancel().catch(() => {});

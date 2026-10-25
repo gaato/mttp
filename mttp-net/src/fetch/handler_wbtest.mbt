@@ -45,6 +45,12 @@ extern "js" fn make_request(
   #| })
 
 ///|
+extern "js" fn bodyless_request(
+  headers : FixedArray[FixedArray[String]],
+) -> JsRequest =
+  #| headers => new Request('https://example.test/', {method: 'POST', headers})
+
+///|
 extern "js" fn streaming_request(
   chunks : FixedArray[Bytes],
   signal : @js_async.AbortSignal,
@@ -120,6 +126,25 @@ async test "Web Requests preserve metadata environment cookies and body ownershi
   probe.settled().wait()
   assert_true(probe.done())
   assert_false(probe.failed())
+}
+
+///|
+async test "a bodyless Fetch POST remains absent rather than an EOF stream" {
+  let adapter = fetch_handler(request => {
+    assert_true(request.body is Empty) catch {
+      _ => abort("absent Fetch body became a stream")
+    }
+    @model.Response::new(204)
+  })
+  let absent = awaited(adapter(bodyless_request([]), Probe::new().callback())).wait()
+  assert_eq(absent.status(), 204)
+  let invalid = awaited(
+    adapter(
+      bodyless_request([["content-length", "4"]]),
+      Probe::new().callback(),
+    ),
+  ).wait()
+  assert_eq(invalid.status(), 400)
 }
 
 ///|

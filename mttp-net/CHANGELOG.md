@@ -14,6 +14,8 @@
 
 ### Fixed
 
+- Preserve absent Web Request bodies as `Empty` in the Fetch adapter so
+  optional endpoint bodies decode correctly.
 - Send authority-form targets for user-issued CONNECT requests through a
   forward proxy.
 - Finish responses after a client closes only its sending half. A read EOF

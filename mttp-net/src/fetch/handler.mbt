@@ -55,6 +55,10 @@ pub fn fetch_handler(
         let framing = @h1.request_framing(headers) catch {
           _ => return empty_response(400, request)
         }
+        let has_body = request.has_body()
+        if !has_body && framing is Length(n) && n > 0 {
+          return empty_response(400, request)
+        }
         if framing is Length(n) && n > max_body_bytes.to_int64() {
           return empty_response(413, request)
         }
@@ -82,15 +86,19 @@ pub fn fetch_handler(
           ),
           headers,
           attributes,
-          body: Stream(
-            @model.StreamBody::new(
-              input,
-              length?=match framing {
-                Length(n) => Some(n)
-                _ => None
-              },
-            ),
-          ),
+          body: if has_body {
+            Stream(
+              @model.StreamBody::new(
+                input,
+                length?=match framing {
+                  Length(n) => Some(n)
+                  _ => None
+                },
+              ),
+            )
+          } else {
+            Empty
+          },
         }
         model.validate() catch {
           _ => return empty_response(400, request)
