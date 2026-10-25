@@ -84,6 +84,7 @@ test "response metadata success classes and conventional phrases" {
     (status, phrase) in [
       (200, "OK"),
       (201, "Created"),
+      (202, "Accepted"),
       (204, "No Content"),
       (400, "Bad Request"),
       (401, "Unauthorized"),
@@ -91,11 +92,13 @@ test "response metadata success classes and conventional phrases" {
       (404, "Not Found"),
       (405, "Method Not Allowed"),
       (406, "Not Acceptable"),
+      (408, "Request Timeout"),
       (413, "Content Too Large"),
       (415, "Unsupported Media Type"),
       (422, "Unprocessable Content"),
       (431, "Request Header Fields Too Large"),
       (500, "Internal Server Error"),
+      (504, "Gateway Timeout"),
       (599, ""),
     ] {
     assert_eq(@model.reason_phrase(status), phrase)

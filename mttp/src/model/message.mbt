@@ -245,6 +245,7 @@ pub fn reason_phrase(status : Int32) -> String {
   match status {
     200 => "OK"
     201 => "Created"
+    202 => "Accepted"
     204 => "No Content"
     400 => "Bad Request"
     401 => "Unauthorized"
@@ -252,11 +253,13 @@ pub fn reason_phrase(status : Int32) -> String {
     404 => "Not Found"
     405 => "Method Not Allowed"
     406 => "Not Acceptable"
+    408 => "Request Timeout"
     413 => "Content Too Large"
     415 => "Unsupported Media Type"
     422 => "Unprocessable Content"
     431 => "Request Header Fields Too Large"
     500 => "Internal Server Error"
+    504 => "Gateway Timeout"
     _ => ""
   }
 }

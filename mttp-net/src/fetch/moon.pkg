@@ -9,4 +9,23 @@ import {
   "moonbitlang/async/cond_var",
 } for "wbtest"
 
-supported_targets = "js"
+// Conditional imports are unavailable in the pinned compiler. Empty non-JS
+// packages let portable facades expose this adapter only in their JS files.
+
+supported_targets = "js + native + wasm"
+
+warnings = "-unused_package"
+
+options(
+  targets: {
+    "ffi.mbt": [ "js" ],
+    "handler.mbt": [ "js" ],
+    "input.mbt": [ "js" ],
+    "output.mbt": [ "js" ],
+    "README.mbt.md": [ "js" ],
+    "failures_wbtest.mbt": [ "js" ],
+    "handler_wbtest.mbt": [ "js" ],
+    "hosts_wbtest.mbt": [ "js" ],
+    "pkg.generated.mbti": [ "js" ],
+  },
+)

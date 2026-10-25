@@ -159,6 +159,21 @@ The implementation starts from design commit
 - VirtualClock now separates manual timestamp changes from explicit observation
   waits. `settle(until=...)` replaces quiet-round heuristics; caller migration is
   in progress. Core Driver remains the scheduler-owning deterministic option.
+- The Discord integration now passes 1,480 native tests across its core and
+  Voice packages. REST uses mttp Client/Backend, and the native interaction
+  listener uses a signed Endpoint, Router and mttp-net/server. Multipart replies
+  use the new `stream_body_out` without concatenation. Fetch-backed examples
+  pass Node PING/command/deferred tests plus Fastly, Vercel and Lambda lifetime
+  adapter tests. Cross-target Discord validation and real-host runs remain.
+- Consumer integration exposed two adapter-import requirements: the pinned
+  compiler cannot make imports conditional, so server is empty on JS and fetch
+  is empty on native/Wasm. The real Fetch interface is checked separately in
+  `pkg.generated.js.mbti`. This does not add a JS listener or non-JS Fetch.
+  The full core gate passes after these changes, including four-target tests,
+  runtime suites, coverage ledgers and documentation checks.
+- An isolated requesto workspace contains an unreleased deprecation notice and
+  feature-by-feature migration map. No requesto runtime or dependency is changed
+  and no replacement release has been published.
 
 The latest pinned toolchain is `0.10.17+d971670cd`. Tests must be rerun after
 changes; earlier checkpoint counts are not a completion claim.

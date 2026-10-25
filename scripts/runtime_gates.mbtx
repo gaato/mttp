@@ -85,9 +85,9 @@ async fn main {
     }
     println("\{pkg} \{target}: \{count} passed")
   }
-  // moon info uses the module's native canonical backend and skips this
-  // JS-only package. Compare its compiler-produced interface explicitly.
-  if @fs.read_file("mttp-net/src/fetch/pkg.generated.mbti").text() !=
+  // The canonical native interface is empty because portable facades import
+  // this package on every target. Keep the actual JS interface checked too.
+  if @fs.read_file("mttp-net/src/fetch/pkg.generated.js.mbti").text() !=
     @fs.read_file("_build/js/debug/check/gaato/mttp-net/fetch/fetch.mbti").text() {
     raise GateError("fetch JS interface is stale")
   }

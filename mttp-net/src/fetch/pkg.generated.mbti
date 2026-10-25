@@ -1,31 +1,11 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "gaato/mttp-net/fetch"
 
-import {
-  "gaato/mttp/model",
-}
-
 // Values
-pub let env : @model.AttributeKey[JsEnv]
-
-pub fn fetch_handler(async (@model.Request) -> @model.Response noraise, max_body_bytes? : Int32) -> (JsRequest, JsBackground) -> JsPromise
-
-pub fn with_env(JsRequest, JsEnv) -> JsRequest
 
 // Errors
 
 // Types and methods
-#external
-pub type JsBackground
-
-#external
-pub type JsEnv
-
-#external
-pub type JsPromise
-
-#external
-pub type JsRequest
 
 // Type aliases
 

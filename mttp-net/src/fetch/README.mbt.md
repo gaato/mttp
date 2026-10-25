@@ -7,6 +7,7 @@ create a JavaScript export.
 
 ```mbt check
 ///|
+#cfg(target="js")
 test "a fetch adapter can be assembled without a host runtime call" {
   let adapter = @fetch.fetch_handler(_ => @model.Response::new(204))
   ignore(adapter)

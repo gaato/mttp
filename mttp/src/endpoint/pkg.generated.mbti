@@ -74,6 +74,8 @@ pub fn[T] sse_out(@schema.JsonCodec[T], to_event? : (T) -> @sse.SseEvent) -> Out
 
 pub fn stream_body(media_type? : String) -> Input[&@model.BodyStream]
 
+pub fn stream_body_out(status? : Int32) -> Out[(String?, @model.Body)]
+
 pub fn text_out(status? : Int32) -> Out[String]
 
 pub fn unit() -> Input[Unit]

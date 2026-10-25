@@ -37,10 +37,10 @@ gaato/mttp	gaato/mttp/cookie	js	36
 gaato/mttp	gaato/mttp/cookie	native	36
 gaato/mttp	gaato/mttp/cookie	wasm	36
 gaato/mttp	gaato/mttp/cookie	wasm-gc	36
-gaato/mttp	gaato/mttp/endpoint	js	35
-gaato/mttp	gaato/mttp/endpoint	native	35
-gaato/mttp	gaato/mttp/endpoint	wasm	35
-gaato/mttp	gaato/mttp/endpoint	wasm-gc	35
+gaato/mttp	gaato/mttp/endpoint	js	37
+gaato/mttp	gaato/mttp/endpoint	native	37
+gaato/mttp	gaato/mttp/endpoint	wasm	37
+gaato/mttp	gaato/mttp/endpoint	wasm-gc	37
 gaato/mttp	gaato/mttp/endpoint/testkit	js	3
 gaato/mttp	gaato/mttp/endpoint/testkit	native	3
 gaato/mttp	gaato/mttp/endpoint/testkit	wasm	3

@@ -63,6 +63,42 @@ pub fn body_out(status~ : Int32 = 200) -> Out[(String, Bytes)] {
 }
 
 ///|
+/// A response with optional dynamic content type and a buffered or streamed
+/// body. Server encoding transfers body ownership without concatenating it.
+/// `call` buffers within the client's limit; `call_with` borrows a stream only
+/// for the callback's lifetime, which ends by closing that stream.
+pub fn stream_body_out(status~ : Int32 = 200) -> Out[(String?, @model.Body)] {
+  let variant : Variant[(String?, @model.Body)] = {
+    status,
+    status_of: None,
+    dynamic_media: true,
+    matches: _ => true,
+    media_type: None,
+    schema: Some(@schema.raw_bytes.schema()),
+    headers: [],
+    header_schemas: {},
+    description: "response body with an optional dynamic content type",
+    encode: value => {
+      let headers = match value.0 {
+        Some(media_type) => @model.Headers::of([("content-type", media_type)])
+        None => @model.Headers::empty()
+      }
+      (headers, value.1)
+    },
+    decode_bytes: Some((head, bytes) => {
+      (head.headers.get("content-type"), @model.Bytes(bytes))
+    }),
+    decode_stream: Some((head, stream) => {
+      (
+        head.headers.get("content-type"),
+        @model.Stream(@model.StreamBody::new(stream)),
+      )
+    }),
+  }
+  { variants: [variant], }
+}
+
+///|
 /// Adds a named Set-Cookie field. The paired string is the value and optional
 /// attributes (for example `abc; Secure; HttpOnly`); callers supply valid cookie
 /// syntax. Unlike ordinary headers, repeated Set-Cookie fields stay separate.
