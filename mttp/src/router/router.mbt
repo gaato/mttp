@@ -205,17 +205,15 @@ pub async fn Router::dispatch(
       let response = middleware(req, forwarded => {
         // A taken stream belongs to the middleware's reader or lazy wrapper.
         // Only an unclaimed response can be discarded by the router here.
-        if produced.val is Some(previous) && previous.body.is_replayable() {
-          previous.close()
+        if produced.val is Some(previous) {
+          previous.close_if_unclaimed()
         }
         let response = inner(forwarded)
         produced.val = Some(response)
         response
       })
-      if produced.val is Some(previous) &&
-        previous.body != response.body &&
-        previous.body.is_replayable() {
-        previous.close()
+      if produced.val is Some(previous) && previous.body != response.body {
+        previous.close_if_unclaimed()
       }
       response
     }

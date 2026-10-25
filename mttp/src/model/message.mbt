@@ -217,6 +217,16 @@ pub fn Response::close(self : Response) -> Unit {
 }
 
 ///|
+/// Closes a discarded response only while its streamed reader is unclaimed.
+/// `StreamBody::take` transfers ownership to the returned reader, so a lazy
+/// middleware wrapper that took it remains responsible for closing it.
+pub fn Response::close_if_unclaimed(self : Response) -> Unit {
+  if self.body is Stream(stream) && !stream.taken {
+    stream.close()
+  }
+}
+
+///|
 /// Reports a close token across all Connection header values.
 pub fn Response::closes_connection(self : Response) -> Bool {
   self.headers

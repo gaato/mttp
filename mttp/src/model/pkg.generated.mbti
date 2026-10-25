@@ -208,6 +208,7 @@ pub(all) struct Response {
   attributes : Attributes
 }
 pub fn Response::close(Self) -> Unit
+pub fn Response::close_if_unclaimed(Self) -> Unit
 pub fn Response::closes_connection(Self) -> Bool
 pub fn Response::head(Self) -> ResponseHead
 pub fn Response::new(Int32, headers? : Headers, body? : Body) -> Self

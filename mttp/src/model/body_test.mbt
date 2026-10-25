@@ -58,6 +58,26 @@ test "stream body take-once length and identity" {
 }
 
 ///|
+test "discarding a response closes only a stream it still owns" {
+  let unused = feed([b"data"])
+  let unused_body = @model.StreamBody::new(unused)
+  @model.Response::new(200, body=Stream(unused_body)).close_if_unclaimed()
+  assert_eq(unused.closes, 1)
+  assert_false(@model.Body::Stream(unused_body).is_replayable())
+
+  let transferred = feed([b"data"])
+  let body = @model.StreamBody::new(transferred)
+  let reader = body.take()
+  @model.Response::new(200, body=Stream(body)).close_if_unclaimed()
+  assert_eq(transferred.closes, 0)
+  @driver.run_sync(() => {
+    assert_eq(reader.read_some(), Some(b"data"))
+    reader.close()
+  })
+  assert_eq(transferred.closes, 1)
+}
+
+///|
 test "closing a response before acquisition consumes its stream" {
   let source = feed([b"x"])
   let stream = @model.StreamBody::new(source)

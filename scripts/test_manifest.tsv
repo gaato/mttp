@@ -61,10 +61,10 @@ gaato/mttp	gaato/mttp/jsonkit	js	8
 gaato/mttp	gaato/mttp/jsonkit	native	8
 gaato/mttp	gaato/mttp/jsonkit	wasm	8
 gaato/mttp	gaato/mttp/jsonkit	wasm-gc	8
-gaato/mttp	gaato/mttp/model	js	67
-gaato/mttp	gaato/mttp/model	native	67
-gaato/mttp	gaato/mttp/model	wasm	67
-gaato/mttp	gaato/mttp/model	wasm-gc	67
+gaato/mttp	gaato/mttp/model	js	68
+gaato/mttp	gaato/mttp/model	native	68
+gaato/mttp	gaato/mttp/model	wasm	68
+gaato/mttp	gaato/mttp/model	wasm-gc	68
 gaato/mttp	gaato/mttp/multipart	js	34
 gaato/mttp	gaato/mttp/multipart	native	34
 gaato/mttp	gaato/mttp/multipart	wasm	34

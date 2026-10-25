@@ -1,15 +1,20 @@
 # gaato/mttp-net
 
 Runtime adapters for `gaato/mttp`, using `moonbitlang/async` on native,
-moonrun wasm and JavaScript. This module is under development and unpublished.
+moonrun wasm and JavaScript. This is an early 0.x release: host adapters have
+different capabilities, and actual remote deployments are not yet verified.
 The backend provides bounded HTTP/1 sockets and a JS fetch adapter. The server
 package serves HTTP/1 on native/wasm; fetch adapts handlers to Web Request and
 Response on JavaScript, with host entry shims and tracked background work.
 
 ## Install
 
-Use the repository's `moon.work` workspace while the module is unpublished.
-Registry installation will be available after the first release.
+```sh
+moon add gaato/mttp-net
+```
+
+For a simple request, see the
+[`quick` package example](https://github.com/gaato/mttp/blob/main/mttp-net/src/quick/README.mbt.md).
 
 The `runtime` package provides a wall clock, a cancellable timer and a
 semaphore gate implementing the runtime-free `gaato/mttp/clock` traits.
