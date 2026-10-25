@@ -22,7 +22,10 @@ The implementation starts from design commit
 - Remaining U1: reusable contract suites, the complete generator inventory,
   API review and test-gate negative tests. Driver timer callback and cleanup
   budget regressions have been fixed and have dedicated tests.
-- U2–U9 remain: client and stubs, retry/deadline/rate-limit orchestration,
+- U2 in progress: Backend wrappers, ClientRequest, response readers, request
+  defaults, fallback timers and BackendStub are present. The Client currently
+  performs a single attempt. Shared contracts and fault wrappers remain.
+- U3–U9 remain: retry/deadline/rate-limit orchestration,
   runtime and HTTP/1 adapters, socket conformance, client conveniences,
   digest, schema/endpoints, router/server and OpenAPI generation.
 
@@ -41,6 +44,11 @@ The implementation starts from design commit
 - Query appending preserves a fragment at the end, including a question
   mark inside the fragment, as required by the design checklist.
 - Full local gates include coverage, matching the CI checks.
+- `from_head` selects once and runs the selected reader inside the attempt,
+  as specified by the accepted design. Explicit streaming readers run after
+  the attempt and close their response even when the callback fails.
+- A completed fallback-timer callback wins a simultaneous expiry, retaining
+  ownership of its returned stream so it can be consumed and closed.
 
 The latest pinned toolchain is `0.10.17+d971670cd`. Tests must be rerun after
 changes; earlier checkpoint counts are not a completion claim.

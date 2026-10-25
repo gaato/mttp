@@ -1,0 +1,118 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/client"
+
+import {
+  "gaato/mttp/clock",
+  "gaato/mttp/model",
+  "gaato/mttp/sse",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn as_bytes() -> ResponseAs[Bytes]
+
+pub fn[T : @json.FromJson] as_json() -> ResponseAs[T]
+
+pub fn as_json_value() -> ResponseAs[Json]
+
+pub fn as_sse(async (@sse.SseEvent) -> Unit, max_event_bytes? : Int32, stop? : (@sse.SseEvent) -> Bool) -> ResponseAs[Unit]
+
+pub fn[T] as_stream(async (@model.ResponseHead, &@model.BodyStream) -> T) -> ResponseAs[T]
+
+pub fn as_string() -> ResponseAs[String]
+
+pub fn from_fn(async (@model.Request, RequestOptions) -> @model.Response raise @model.TransportError, on_close? : () -> Unit) -> &Backend
+
+pub fn from_handler(async (@model.Request) -> @model.Response noraise) -> &Backend
+
+pub fn[T] from_head((@model.ResponseHead) -> ResponseAs[T]) -> ResponseAs[T]
+
+pub let global_exempt : @model.AttributeKey[Bool]
+
+pub fn ignore_body() -> ResponseAs[Unit]
+
+pub let max_error_body : Int32
+
+pub let operation_id : @model.AttributeKey[String]
+
+pub fn quick_request(@model.Request) -> ClientRequest[String]
+
+pub let rate_limit_bucket : @model.AttributeKey[String]
+
+pub async fn read_body(@model.Body, Int32) -> Bytes raise @model.TransportError
+
+pub fn request(@model.Request) -> ClientRequest[String]
+
+pub fn status_of(Error) -> Int32?
+
+// Errors
+pub(all) suberror InvalidRequest {
+  InvalidRequest(message~ : String)
+} derive(@debug.Debug)
+pub fn InvalidRequest::to_repr(Self) -> @debug.Repr
+
+pub(all) suberror ResponseError {
+  UnexpectedStatus(@model.ResponseHead, body~ : Bytes)
+  Deserialization(@model.ResponseHead, message~ : String, body~ : Bytes)
+} derive(@debug.Debug)
+pub fn ResponseError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct Client {
+  // private fields
+}
+pub fn Client::close(Self) -> Unit
+pub fn Client::new(&Backend, &@clock.Clock, base_url? : String, headers? : @model.Headers, options? : RequestOptions, timer? : &@clock.Timer) -> Self
+pub async fn[T] Client::send(Self, ClientRequest[T]) -> Reply[T]
+
+pub struct ClientRequest[T] {
+  // private fields
+}
+pub fn[T, A] ClientRequest::attribute(Self[T], @model.AttributeKey[A], A) -> Self[T]
+pub fn[T] ClientRequest::body_fn(Self[T], () -> Bytes) -> Self[T]
+pub fn[T] ClientRequest::max_body_bytes(Self[T], Int32) -> Self[T]
+pub fn[T] ClientRequest::new(@model.Request, ResponseAs[T]) -> Self[T]
+pub fn[T] ClientRequest::raw(Self[T]) -> @model.Request
+pub fn[T] ClientRequest::read_idle_ms(Self[T], Int32) -> Self[T]
+pub fn[T, U] ClientRequest::response(Self[T], ResponseAs[U]) -> Self[U]
+pub fn[T] ClientRequest::timeout_ms(Self[T], Int32) -> Self[T]
+
+pub(all) struct Reply[T] {
+  status : Int32
+  headers : @model.Headers
+  body : T
+  request : @model.RequestHead
+  attributes : @model.Attributes
+}
+
+pub(all) struct RequestOptions {
+  timeout_ms : Int32?
+  body_deadline : Bool
+  read_idle_ms : Int32?
+  max_body_bytes : Int32
+  follow_redirects : Bool
+  max_redirects : Int32
+  decompress : Bool
+} derive(Eq, @debug.Debug)
+pub fn RequestOptions::default() -> Self
+pub fn RequestOptions::equal(Self, Self) -> Bool
+pub fn RequestOptions::not_equal(Self, Self) -> Bool
+pub fn RequestOptions::to_repr(Self) -> @debug.Repr
+
+pub struct ResponseAs[T] {
+  // private fields
+}
+pub fn[T] ResponseAs::any_status(Self[T]) -> Self[T]
+pub fn[A, B] ResponseAs::map(Self[A], (A) -> B raise) -> Self[B]
+pub fn[A, B] ResponseAs::map_with_head(Self[A], (A, @model.ResponseHead) -> B raise) -> Self[B]
+pub fn[T] ResponseAs::new(async (@model.ResponseHead, @model.Body, RequestOptions) -> T, accept_head? : (@model.ResponseHead) -> Bool, reject? : (@model.ResponseHead, Bytes) -> Unit raise, streaming? : Bool) -> Self[T]
+
+// Type aliases
+pub type SendFn = async (@model.Request, RequestOptions) -> @model.Response raise @model.TransportError
+
+// Traits
+pub(open) trait Backend {
+  async fn send(Self, @model.Request, RequestOptions) -> @model.Response raise @model.TransportError
+  fn close(Self) -> Unit = _
+}
