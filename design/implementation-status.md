@@ -66,9 +66,9 @@ The implementation starts from design commit
   components and omits None query values; curl diagnostics redact sensitive
   headers without consuming streams. The quick facade lazily shares a Client
   and supports explicit close/recreation on native, wasm and JS.
-- Remaining U4–U9 work:
-  socket and browser conformance, schema/endpoints, router/server and OpenAPI
-  generation, plus the consumer migrations and remaining U1–U3 checks.
+- Remaining U4–U9 work includes socket/browser conformance, the runtime server,
+  fetch handler, compression encoding/negotiation, consumer migrations and
+  remaining U1–U3 checks.
 - The separate `mttp-digest` module now wraps Backends with an origin-scoped
   DigestScheme. Mature requesto hash/parser tests are retained, with additional
   contract, replay/close, cross-origin, stale-nonce and challenge-budget tests.
@@ -77,8 +77,25 @@ The implementation starts from design commit
   numbers, accumulated pointer-path issues, optional/presence fields,
   object1–object8, bounded recursive codecs, unions and a bounded ECMA pattern
   subset. Shared internal form/text helpers keep schema independent of model
-  without duplicating encoders. Endpoint interpreters, definition checks and
-  cross-layer schema/document consistency checks still remain.
+  without duplicating encoders. Schema construction now retains conflicting
+  named definitions and duplicate fields for endpoint definition checking.
+- U8 endpoint/client/server interpreters and the in-process Router are present.
+  Tests cover staged security, repeated input rejection, typed round trips,
+  rest captures, response headers/cookies, dynamic status/media types, SSE,
+  middleware cancellation and streamed request/response ownership. The shared
+  checker covers routing conflicts, invalid captures, body combinations,
+  response header conflicts, operation IDs and schema-name conflicts.
+- U9 apispec/OpenAPI and endpoint/testkit are present. Explicit generated JSON
+  codecs omit absent optional fields and flatten x-* extensions. Projection
+  tests cover response merging, typed headers, AND security, local references
+  and a documentation endpoint. A typed stub round trip preserves declared
+  application errors.
+- Endpoint/document verification checkpoint: every core and Digest package
+  passes on all four targets with equal test counts. Static gates pass,
+  including runtime loopback tests, documentation and resource-bound audits,
+  and native coverage (545 tests). The closed coverage ledger records only
+  unreachable construction/forward-compatibility guards in the new packages.
+  This validates these packages, not the remaining runtime and migration work.
 
 ## Port decisions
 

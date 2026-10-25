@@ -161,13 +161,14 @@ pub(all) struct Schema {
   name : String?
   json : Json
   defs : Map[String, Json]
+  problems : Array[String]
 } derive(Eq, @debug.Debug)
 pub fn Schema::equal(Self, Self) -> Bool
 pub fn Schema::named(Self, String) -> Self
 pub fn Schema::not_equal(Self, Self) -> Bool
 pub fn Schema::of(Json) -> Self
 pub fn Schema::patch(Self, Map[String, Json]) -> Self
-pub fn Schema::reference(Self, Map[String, Json]) -> Json
+pub fn Schema::reference(Self, Map[String, Json], problems? : Array[String]) -> Json
 pub fn Schema::to_repr(Self) -> @debug.Repr
 
 pub struct TextCodec[T] {

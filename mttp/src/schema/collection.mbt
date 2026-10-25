@@ -2,7 +2,8 @@
 /// An array codec that collects every element error with its index path.
 pub fn[T] array(c : JsonCodec[T]) -> JsonCodec[Array[T]] {
   let defs : Map[String, Json] = Map([])
-  let items = c.schema_.reference(defs)
+  let problems = []
+  let items = c.schema_.reference(defs, problems~)
   {
     missing_: None,
     omit_: never_omit,
@@ -32,7 +33,12 @@ pub fn[T] array(c : JsonCodec[T]) -> JsonCodec[Array[T]] {
       }
     },
     to_: xs => Json::array(xs.map(c.to_)),
-    schema_: { name: None, json: { "type": "array", "items": items }, defs, },
+    schema_: {
+      name: None,
+      json: { "type": "array", "items": items },
+      defs,
+      problems,
+    },
   }
 }
 
@@ -70,6 +76,7 @@ pub fn[T] recursive(
       name: None,
       json: { "$ref": Json("#/components/schemas/\{pointer_segment(name)}") },
       defs: {},
+      problems: [],
     },
   }
   let real = body(proxy)

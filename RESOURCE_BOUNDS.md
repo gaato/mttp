@@ -30,6 +30,9 @@ a test from hanging (the `testing/driver` rows).
 
 | Structure | Bound | On overflow | Tests |
 |---|---|---|---|
+| `endpoint` buffered and streamed request bodies | Configurable byte limit, default 1 MiB; an endpoint can override the router default | Closes the source at the first crossing chunk; a handler cannot suppress the rejection by catching its read error | `mttp/src/endpoint/ownership_test.mbt`: "rejected heads close unread bodies and limits survive caught read errors"; `mttp/src/endpoint/failures_test.mbt`: "server bounds buffered streams records read failures and rejects reused streams" |
+| `endpoint` decoded query pairs and reported issues | 256 query pairs; configurable reported issue count, default 100 | Refuses excess query pairs before the handler; truncates the reported failure list after decoding | `mttp/src/endpoint/failures_test.mbt`: "invalid requests excessive queries and issue lists are rejected before the handler" |
+| `openapi` schema traversal depth | 128 nested schema edges; traversal also stops after 100,000 visited nodes | Reports a traversal-limit problem without recursively following references | `mttp/src/openapi/openapi_test.mbt`: "reference pointers handle array indices percent escapes and traversal limits" |
 | `schema` JSON body nesting | 128 JSON nesting levels; duplicate object keys refused | Raises Malformed before exceeding parser nesting | `mttp/src/schema/schema_test.mbt`: "body codecs reject invalid UTF8 JSON duplicates and excessive nesting" |
 | `schema` recursive codec decoding | Configurable recursion depth, default 128, clamped to at least 1 | Reports a depth issue and restores the depth counter when unwinding | `mttp/src/schema/collection_test.mbt`: "recursive codecs reference themselves and restore depth after failure" |
 | `schema` pattern compilation | 1024 UTF-16 source units, 32 nested groups, 256 repetitions per atom and 4096 repetitions summed; no group repetition | Raises UnsupportedPattern before handing unsupported or oversized input to Regex | `mttp/src/schema/pattern_test.mbt`: "pattern translator refuses unsupported syntax and compilation growth" |
@@ -80,6 +83,7 @@ Growth that follows what the caller asks for, not what the network sends.
 
 | Structure | Grows with | Why it is not bounded here |
 |---|---|---|
+| `endpoint`, `router` and `openapi` definitions and generated documents | Caller-created endpoints, schemas, variants and middleware | Configuration is caller-owned. Routing retains at most one candidate per configured endpoint. Schema traversal retains pending children from the supplied document; its visit budget does not cap the caller's initial document allocation. |
 | `mttp-net/codings` retained input slice | One caller-supplied wire chunk, plus bounded inter-stage slices | feed accepts a Bytes value already owned by the caller; socket adapters must limit their reads. A second feed before NeedInput is refused, preventing accidental overwrite. |
 | `model` headers, URL strings, attribute maps and byte bodies | Values explicitly constructed by the caller | Parsers and backends impose network input limits; these value constructors do not consume network input. |
 | `model` URI builder and `client` curl diagnostics | Caller-provided components, headers and byte bodies | URI interpolation is linear in supplied text and stages one query parameter; diagnostics encode byte bodies with constant expansion and never read streams or invoke factories. Neither consumes network input. |

@@ -51,9 +51,10 @@ pub fn[T] tagged(
   let cases = cases.copy()
   let defs : Map[String, Json] = Map([])
   let alternatives = []
+  let problems = []
   let mapping : Map[String, Json] = Map([])
   for i, case_ in cases {
-    let child = case_.schema.reference(defs)
+    let child = case_.schema.reference(defs, problems~)
     let properties : Map[String, Json] = Map([
       (discriminator, { "const": Json(case_.tag) }),
     ])
@@ -117,6 +118,7 @@ pub fn[T] tagged(
     schema_: {
       name: Some(name),
       defs,
+      problems,
       json: {
         "oneOf": Json::array(alternatives),
         "discriminator": {
@@ -139,7 +141,8 @@ pub fn[T] any_of(
   check_cases(cases)
   let cases = cases.copy()
   let defs : Map[String, Json] = Map([])
-  let alternatives = cases.map(c => c.schema.reference(defs))
+  let problems = []
+  let alternatives = cases.map(c => c.schema.reference(defs, problems~))
   {
     from_: (j, path) => {
       let issues = []
@@ -167,6 +170,7 @@ pub fn[T] any_of(
     schema_: {
       name: Some(name),
       defs,
+      problems,
       json: { "anyOf": Json::array(alternatives) },
     },
   }

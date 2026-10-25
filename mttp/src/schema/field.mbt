@@ -68,8 +68,12 @@ fn object_schema(
   let defs : Map[String, Json] = Map([])
   let props : Map[String, Json] = Map([])
   let required = []
+  let problems = []
   for (key, schema, need) in fields {
-    props[key] = schema.reference(defs)
+    if props.contains(key) {
+      problems.push("duplicate object field \{key}")
+    }
+    props[key] = schema.reference(defs, problems~)
     if need {
       required.push(key)
     }
@@ -82,5 +86,6 @@ fn object_schema(
       "required": Json(required),
     },
     defs,
+    problems,
   }
 }

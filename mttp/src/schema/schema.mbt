@@ -5,27 +5,49 @@ pub(all) struct Schema {
   name : String?
   json : Json // for a named schema: its definition body
   defs : Map[String, Json] // every named schema reachable from here (SC-01)
+  problems : Array[String] // retained construction conflicts for definition checking
 } derive(Eq, Debug)
 
 ///|
 /// Creates an unnamed schema with no reachable definitions.
 pub fn Schema::of(json : Json) -> Schema {
-  { name: None, json, defs: {}, }
+  { name: None, json, defs: {}, problems: [], }
 }
 
 ///|
 /// What a parent embeds for this child: a $ref for a named schema (its
 /// definition and its own defs are merged into `into`), the body otherwise.
-pub fn Schema::reference(self : Schema, into : Map[String, Json]) -> Json {
+/// Conflicting names preserve the first definition and append to `problems`;
+/// codec composition retains these findings for the shared endpoint checker.
+pub fn Schema::reference(
+  self : Schema,
+  into : Map[String, Json],
+  problems~ : Array[String] = [],
+) -> Json {
+  problems.append(self.problems)
   for k, v in self.defs {
-    into[k] = v
+    merge_definition(into, k, v, problems)
   }
   match self.name {
     Some(n) => {
-      into[n] = self.json
+      merge_definition(into, n, self.json, problems)
       { "$ref": Json("#/components/schemas/\{pointer_segment(n)}") }
     }
     None => self.json
+  }
+}
+
+///|
+fn merge_definition(
+  into : Map[String, Json],
+  name : String,
+  value : Json,
+  problems : Array[String],
+) -> Unit {
+  match into.get(name) {
+    Some(previous) if previous != value =>
+      problems.push("conflicting schema definition \{name}")
+    _ => into[name] = value
   }
 }
 

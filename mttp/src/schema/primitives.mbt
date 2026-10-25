@@ -55,7 +55,7 @@ pub fn maximum(n : Int32) -> Validator[Int32] {
 pub fn min_length(n : Int32) -> Validator[String] {
   custom(
     v => if v.iter().count() < n { Some("shorter than \{n}") } else { None },
-    keywords={ "minLength": Json(n) },
+    keywords={ "minLength": Json(n.max(0)) },
   )
 }
 
@@ -65,7 +65,11 @@ pub fn[T : Eq + ToJson] one_of_values(values : Array[T]) -> Validator[T] {
   let values = values.copy()
   custom(
     v => if values.contains(v) { None } else { Some("not an allowed value") },
-    keywords={ "enum": Json(values) },
+    keywords=if values.is_empty() {
+      { "not": {} }
+    } else {
+      { "enum": Json(values) }
+    },
   )
 }
 

@@ -1,0 +1,12 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/schema",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/apispec",
+  "moonbitlang/core/string",
+}
+
+import {
+  "moonbitlang/core/json",
+  "gaato/mttp/testing/driver",
+} for "test"

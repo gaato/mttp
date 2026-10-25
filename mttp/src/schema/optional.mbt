@@ -3,7 +3,8 @@
 /// None is omitted on object encoding and encoded as null in arrays or alone.
 pub fn[T] option(codec : JsonCodec[T]) -> JsonCodec[T?] {
   let defs : Map[String, Json] = Map([])
-  let child = codec.schema_.reference(defs)
+  let problems = []
+  let child = codec.schema_.reference(defs, problems~)
   {
     from_: (j, path) => {
       if j is Null {
@@ -24,6 +25,7 @@ pub fn[T] option(codec : JsonCodec[T]) -> JsonCodec[T?] {
       name: None,
       json: { "anyOf": [child, { "type": "null" }] },
       defs,
+      problems,
     },
   }
 }
@@ -57,7 +59,8 @@ pub fn[T] presence(codec : JsonCodec[T]) -> JsonCodec[@jsonkit.Presence[T]] {
 /// values are reported with escaped JSON-pointer keys; no keys are omitted.
 pub fn[T] map_of(codec : JsonCodec[T]) -> JsonCodec[Map[String, T]] {
   let defs : Map[String, Json] = Map([])
-  let child = codec.schema_.reference(defs)
+  let problems = []
+  let child = codec.schema_.reference(defs, problems~)
   {
     from_: (j, path) => {
       guard j is Object(obj) else {
@@ -93,6 +96,7 @@ pub fn[T] map_of(codec : JsonCodec[T]) -> JsonCodec[Map[String, T]] {
       name: None,
       json: { "type": "object", "additionalProperties": child },
       defs,
+      problems,
     },
   }
 }

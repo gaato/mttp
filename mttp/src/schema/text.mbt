@@ -85,7 +85,11 @@ pub fn max_length(n : Int32) -> Validator[String] {
         None
       }
     },
-    keywords: { "maxLength": Json(n) },
+    keywords: if n < 0 {
+      { "not": {} }
+    } else {
+      { "maxLength": Json(n) }
+    },
   }
 }
 

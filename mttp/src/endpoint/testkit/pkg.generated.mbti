@@ -1,0 +1,20 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/endpoint/testkit"
+
+import {
+  "gaato/mttp/endpoint",
+  "gaato/mttp/testing",
+}
+
+// Values
+pub fn verify(Array[@endpoint.EndpointDoc]) -> Array[@endpoint.DefinitionProblem]
+
+pub fn[S, I, E, O] when_endpoint(@testing.BackendStub, @endpoint.Endpoint[S, I, E, O], async (I) -> O) -> @testing.BackendStub raise @endpoint.DefinitionError
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

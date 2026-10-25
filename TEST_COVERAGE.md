@@ -67,6 +67,14 @@ Budgets are exact uncovered counts at the last measurement.
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| mttp/src/endpoint/client_interp.mbt | 2 | Defensive no-variant guards: accept_head already selected from the same immutable output variants and response head before either reader runs. Decoder failures raise instead of returning no match. |
+| mttp/src/endpoint/dynamic_output.mbt | 1 | Named-cookie prefix guard: the private selector filters for that exact prefix before invoking its decoder. |
+| mttp/src/endpoint/input.mbt | 3 | Defensive wrong BodyValue arms: the server chooses Buffered for raw and buffered inputs and Streamed for streaming inputs; these private staged decoders cannot receive the opposite representation through dispatch. |
+| mttp/src/endpoint/output.mbt | 2 | Projection precondition guards: encoding and dynamic status selection follow a successful matches call. Reaching these arms requires a nondeterministic projection, contrary to the documented variant contract. |
+| mttp/src/endpoint/server.mbt | 1 | Defensive outer pipeline catch: current authenticate and handle errors are classified inside their calls; staged decoders raise InputErrors handled at their stage. The private wrapper retains the unhandled policy for future pipeline steps. |
+| mttp/src/openapi/openapi.mbt | 4 | Forward-compatible AuthScheme and Seg arms: all currently constructible variants are handled before these non-exhaustive fallback arms. |
+| mttp/src/router/router.mbt | 1 | Forward-compatible Seg arm: every currently constructible segment is handled before this fallback. |
+| mttp/src/router/ownership.mbt | 1 | Defensive closed-reader guard: the enclosing taken stream returns EOF after close before invoking this private response owner again. Public EOF, failure, cancellation and repeated close paths are tested. |
 | mttp-net/src/backend/target.mbt | 1 | Defensive URL-parse conversion: Request.validate has already parsed and accepted the same immutable URL before target construction. |
 | mttp-net/src/backend/response_body.mbt | 2 | Defensive NoBody and future-framing arms: send returns Empty for NoBody, and the current h1 response framing function cannot produce future constructors. |
 | mttp-net/src/runtime/timer.mbt | 1 | Defensive conversion required by the runtime task-group API's open error type: ClockTimer accepts a nonraising callback and Clock.sleep is nonraising. Parent cancellation propagates as a signal, verified by the cancellation test, and cannot enter this ordinary-error catch. |
