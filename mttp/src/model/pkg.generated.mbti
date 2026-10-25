@@ -12,6 +12,8 @@ pub fn encode_path(Array[String]) -> String
 
 pub fn encode_utf8(String) -> Bytes
 
+pub fn form_urldecode(String, max_pairs? : Int32) -> Array[(String, String)] raise TransportError
+
 pub fn form_urlencode(ArrayView[(String, String)]) -> String
 
 pub fn is_idempotent(Request) -> Bool

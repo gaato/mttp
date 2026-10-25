@@ -34,7 +34,9 @@ The implementation starts from design commit
 - U6 has the mature CookieJar and a Cookies backend wrapper, including its
   bounds, expiry, domain/path and credential-header tests. FollowRedirects
   ports the mature redirect planner, closes intermediate bodies, records
-  final URL/history, and composes with Cookies. Other conveniences remain.
+  final URL/history, and composes with Cookies. Bounded line readers, form
+  decoding and paired response readers are present. URI interpolation, curl
+  diagnostics and the runtime facade remain.
 - Remaining U4–U9 work:
   runtime and HTTP/1 adapters, socket conformance, client conveniences,
   digest, schema/endpoints, router/server and OpenAPI generation.

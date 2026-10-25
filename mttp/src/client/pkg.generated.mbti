@@ -11,11 +11,17 @@ import {
 }
 
 // Values
+pub fn[A, B] as_both(ResponseAs[A], ResponseAs[B]) -> ResponseAs[(A, B)]
+
 pub fn as_bytes() -> ResponseAs[Bytes]
+
+pub fn as_form(max_pairs? : Int32) -> ResponseAs[Array[(String, String)]]
 
 pub fn[T : @json.FromJson] as_json() -> ResponseAs[T]
 
 pub fn as_json_value() -> ResponseAs[Json]
+
+pub fn as_lines(async (String) -> Unit, max_line_bytes? : Int32) -> ResponseAs[Unit]
 
 pub fn as_sse(async (@sse.SseEvent) -> Unit, max_event_bytes? : Int32, stop? : (@sse.SseEvent) -> Bool) -> ResponseAs[Unit]
 
