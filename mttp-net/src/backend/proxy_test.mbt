@@ -27,6 +27,28 @@ async test "HTTP proxies get absolute targets and only configured proxy credenti
 }
 
 ///|
+async test "user CONNECT keeps authority form through a forward proxy" {
+  with_server(
+    conn => {
+      let text = conn.read_until("\r\n\r\n").unwrap()
+      assert_true(text.has_prefix("CONNECT destination.invalid:80 HTTP/1.1"))
+      assert_true(text.contains("host: destination.invalid:80"))
+      conn.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+    },
+    proxy => {
+      let backend = @backend.H1Backend::new(trust_env=false, proxy~)
+      defer backend.close()
+      let response = backend.send(
+        @model.Request::new(Connect, "http://destination.invalid:80"),
+        @client.RequestOptions::default(),
+      )
+      assert_eq(response.status, 200)
+      response.close()
+    },
+  )
+}
+
+///|
 async test "CONNECT refusals malformed heads and excess bytes are bounded in Dial" {
   let cases : Array[(Bytes, @model.Kind)] = [
     (b"HTTP/1.1 407 Authentication Required\r\n\r\n", Proxy(status=407)),

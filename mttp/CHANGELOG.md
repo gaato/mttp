@@ -26,6 +26,8 @@ never does. Every breaking change is listed with a migration note.
 
 ### Fixed
 
+- Keep optional authentication schemes optional in OpenAPI security
+  requirements even when another scheme is required.
 - Preserve response streams transferred into lazy middleware wrappers; use an
   explicit `Response::close_if_unclaimed` operation for discarded responses.
 - Accept explicit port 80 in CONNECT request parsing and serialization.

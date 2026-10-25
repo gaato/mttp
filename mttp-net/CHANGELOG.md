@@ -14,6 +14,8 @@
 
 ### Fixed
 
+- Send authority-form targets for user-issued CONNECT requests through a
+  forward proxy.
 - Finish responses after a client closes only its sending half. A read EOF
   alone no longer cancels a handler; use `handler_timeout_ms` to bound a
   suspended handler when a graceful full close cannot yet be distinguished.

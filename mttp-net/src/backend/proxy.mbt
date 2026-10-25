@@ -172,9 +172,17 @@ fn Route::key(self : Route, origin : String) -> String {
 }
 
 ///|
-/// The request target: `path` on the origin's own connection or tunnel,
-/// the absolute URL when the proxy forwards the request.
-fn Route::target(self : Route, origin : String, path : String) -> String {
+/// The request target: CONNECT uses its authority on every route; other
+/// requests use `path` directly or an absolute URL through a forward proxy.
+fn Route::target(
+  self : Route,
+  origin : String,
+  path : String,
+  meth : @model.Method,
+) -> String {
+  if meth == Connect {
+    return path
+  }
   match self {
     Forward(_) => origin + path
     Direct | Tunnel(_) => path

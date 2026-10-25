@@ -17,7 +17,7 @@ pub fn to_openapi(
     let parameters = []
     let mut request_body : @apispec.RequestBody? = None
     let requirement : Map[String, Array[String]] = Map([])
-    let mut required_auth = false
+    let optional_schemes : Array[String] = []
     for atom in [..doc.security, ..doc.inputs] {
       match atom.location {
         Path | Query | Header | Cookie => {
@@ -88,8 +88,11 @@ pub fn to_openapi(
           } else {
             schemes[scheme_name] = scheme
           }
-          requirement[scheme_name] = []
-          required_auth = required_auth || atom.required
+          if atom.required {
+            requirement[scheme_name] = []
+          } else if !optional_schemes.contains(scheme_name) {
+            optional_schemes.push(scheme_name)
+          }
         }
         Body(media_type~, ..) =>
           request_body = Some(
@@ -110,9 +113,15 @@ pub fn to_openapi(
     }
     let security : Array[Map[String, Array[String]]] = []
     if !requirement.is_empty() {
-      security.push(requirement)
-      if !required_auth {
-        security.push({})
+      security.push(requirement.copy())
+    } else if !optional_schemes.is_empty() {
+      security.push({})
+    }
+    for scheme_name in optional_schemes {
+      if !requirement.contains(scheme_name) {
+        let alternative = requirement.copy()
+        alternative[scheme_name] = []
+        security.push(alternative)
       }
     }
     let responses : Map[String, @apispec.ResponseObject] = Map([])

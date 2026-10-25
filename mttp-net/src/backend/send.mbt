@@ -48,7 +48,7 @@ pub async fn H1Backend::send(
   }
   let head = @h1.write_request_head(
     request.meth,
-    route.target(target.origin, target.path),
+    route.target(target.origin, target.path, request.meth),
     headers,
     framing,
     Http11,

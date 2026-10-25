@@ -224,7 +224,11 @@ test "optional security signatures and metadata parameters project without inven
     [ep.doc(), signed.doc(), key.doc()],
     @apispec.Info::new("Test", "1"),
   )
-  assert_eq(spec.paths["/"].operations["post"].security.length(), 2)
+  assert_eq(spec.paths["/"].operations["post"].security, [
+    {},
+    { "basic": [] },
+    { "cookieKey": [] },
+  ])
   assert_eq(spec.paths["/"].operations["post"].parameters.map(p => p.in_), [
     "query", "header", "cookie",
   ])
@@ -272,6 +276,26 @@ test "optional security signatures and metadata parameters project without inven
     @endpoint.DefinitionError(_) => true
   }
   assert_true(unsupported)
+}
+
+///|
+test "mixed required and optional security keeps optional credentials optional" {
+  let endpoint = @endpoint.endpoint
+    .get("/mixed")
+    .security(
+      @endpoint.pair(
+        @endpoint.bearer(),
+        @endpoint.api_key_header("key", scheme_name="headerKey").optional(),
+      ),
+    )
+  let spec = @openapi.to_openapi(
+    [endpoint.doc()],
+    @apispec.Info::new("Test", "1"),
+  )
+  assert_eq(spec.paths["/mixed"].operations["get"].security, [
+    { "bearer": [] },
+    { "bearer": [], "headerKey": [] },
+  ])
 }
 
 ///|

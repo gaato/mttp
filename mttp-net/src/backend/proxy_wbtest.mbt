@@ -36,7 +36,7 @@ fn describe_route(proxies : Proxies, url : String) -> String {
   " | key " +
   route.key(origin.origin) +
   " | target " +
-  route.target(origin.origin, "/p")
+  route.target(origin.origin, "/p", Get)
 }
 
 ///|

@@ -69,10 +69,10 @@ gaato/mttp	gaato/mttp/multipart	js	34
 gaato/mttp	gaato/mttp/multipart	native	34
 gaato/mttp	gaato/mttp/multipart	wasm	34
 gaato/mttp	gaato/mttp/multipart	wasm-gc	34
-gaato/mttp	gaato/mttp/openapi	js	11
-gaato/mttp	gaato/mttp/openapi	native	11
-gaato/mttp	gaato/mttp/openapi	wasm	11
-gaato/mttp	gaato/mttp/openapi	wasm-gc	11
+gaato/mttp	gaato/mttp/openapi	js	12
+gaato/mttp	gaato/mttp/openapi	native	12
+gaato/mttp	gaato/mttp/openapi	wasm	12
+gaato/mttp	gaato/mttp/openapi	wasm-gc	12
 gaato/mttp	gaato/mttp/router	js	22
 gaato/mttp	gaato/mttp/router	native	22
 gaato/mttp	gaato/mttp/router	wasm	22
