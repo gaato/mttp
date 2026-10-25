@@ -29,6 +29,16 @@ callback. Cancellation of the parent task propagates and unwinds the
 callback. `SemaphoreGate` waits without blocking the runtime and clamps
 nonpositive permit counts to one.
 
+`VirtualClock(start_ms=...)` is a manually advanced test clock. `advance(ms)`
+wakes sleepers already due at the new timestamp; it does not execute missed
+periodic intervals retrospectively. `advance_to_next()` moves to the earliest
+registered deadline. After either, use `settle(until=() => observed_state)`
+before the next advance. The predicate is required: a fixed number of quiet
+scheduler rounds cannot establish runtime idleness. An unmet observation
+raises `NoQuiescence` after `max_rounds` (100,000 by default), and cancellation
+still propagates. The runtime-free `mttp/testing/driver` owns its scheduler and
+can instead provide exact scheduling and virtual-time control.
+
 Programs using only request descriptions, codecs or deterministic tests
 can depend on `gaato/mttp` without importing this module.
 

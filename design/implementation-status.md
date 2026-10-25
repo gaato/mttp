@@ -150,5 +150,15 @@ The implementation starts from design commit
   but use Driver instead of raw coroutine intrinsics. Their two test-only
   imports are explicitly ledgered rather than exposing private maps.
 
+- SDK migration checkpoint `5cdfea06` in the isolated mbt-sdk workspace retargets
+  generation, OpenAI/Anthropic/GitHub facades and Codex JSON helpers. Its gate
+  checks every target, passes 105 generated/facade tests on all four targets,
+  retains 59 detailed behavioural cases on native/JS, and verifies 68 Python
+  generator tests, regeneration, formatting, interfaces, docs and bounds.
+  No registry release or external provider test was performed.
+- VirtualClock now separates manual timestamp changes from explicit observation
+  waits. `settle(until=...)` replaces quiet-round heuristics; caller migration is
+  in progress. Core Driver remains the scheduler-owning deterministic option.
+
 The latest pinned toolchain is `0.10.17+d971670cd`. Tests must be rerun after
 changes; earlier checkpoint counts are not a completion claim.

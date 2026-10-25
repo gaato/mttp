@@ -2,6 +2,7 @@ import {
   "gaato/mttp/clock",
   "moonbitlang/async",
   "moonbitlang/async/semaphore",
+  "moonbitlang/async/cond_var",
 }
 
 import {
