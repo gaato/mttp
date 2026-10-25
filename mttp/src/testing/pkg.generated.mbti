@@ -8,6 +8,17 @@ import {
 }
 
 // Values
+pub async fn check_backend_contract(() -> &@client.Backend, url? : String) -> Array[String]
+
+pub async fn check_body_stream_contract(() -> &@model.BodyStream, Bytes, max_reads? : Int32) -> Array[String]
+
+pub fn[T : Eq + @debug.Debug] check_splits(Bytes, (Array[Bytes]) -> T raise) -> Unit raise
+
+pub fn fail_after(&@model.BodyStream, Int32, @model.TransportError) -> &@model.BodyStream raise @model.TransportError
+
+pub fn fail_sends(&@client.Backend, @model.TransportError, times? : Int32) -> &@client.Backend
+
+pub fn[X] run_sync(async () -> X) -> X raise
 
 // Errors
 

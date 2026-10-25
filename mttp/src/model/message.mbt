@@ -42,6 +42,18 @@ pub fn Request::put(url : String) -> Request {
 }
 
 ///|
+/// Creates a PATCH request.
+pub fn Request::patch(url : String) -> Request {
+  Request::new(Patch, url)
+}
+
+///|
+/// Creates an OPTIONS request.
+pub fn Request::options(url : String) -> Request {
+  Request::new(Options, url)
+}
+
+///|
 /// Creates a DELETE request.
 pub fn Request::delete(url : String) -> Request {
   Request::new(Delete, url)
@@ -71,6 +83,20 @@ pub fn Request::set_header(
 /// Sets a bearer Authorization header on a copy.
 pub fn Request::bearer(self : Request, token : String) -> Request {
   self.set_header("authorization", "Bearer \{token}")
+}
+
+///|
+/// Sets Basic authorization from UTF-8 username and password bytes. A colon
+/// separates the username from the password; it cannot be part of a username.
+pub fn Request::basic(
+  self : Request,
+  username : String,
+  password : String,
+) -> Request {
+  self.set_header(
+    "authorization",
+    "Basic " + @base64.encode(encode_utf8(username + ":" + password)),
+  )
 }
 
 ///|
@@ -264,7 +290,8 @@ pub fn Url::path_segments(self : Url) -> Array[String] raise UrlError {
 /// between base and target. "https://api.openai.com/v1" + "/chat" gives
 /// "https://api.openai.com/v1/chat" (RFC 3986 `resolve` would drop /v1).
 pub fn join_url(base : String, target : String) -> String {
-  if base == "" || target.has_prefix("http://") || target.has_prefix("https://") {
+  let prefix = target[:8].to_owned().to_lower()
+  if base == "" || prefix.has_prefix("http://") || prefix.has_prefix("https://") {
     return target
   }
   let b = if base.has_suffix("/") {

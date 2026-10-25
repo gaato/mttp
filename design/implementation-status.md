@@ -19,12 +19,14 @@ The implementation starts from design commit
 - U1 in progress: scaffold, Driver, clocks, jsonkit, model, SSE parsing,
   multipart and retry decisions are present. This is not a complete U1.
 - Feed, initial quickcheck generators and SSE encoding are now present.
-- Remaining U1: reusable contract suites, the complete generator inventory,
+- Remaining U1: the complete generator inventory,
   API review and test-gate negative tests. Driver timer callback and cleanup
   budget regressions have been fixed and have dedicated tests.
 - U2 in progress: Backend wrappers, ClientRequest, response readers, request
-  defaults, fallback timers and BackendStub are present. Shared contracts and
-  fault wrappers remain.
+  defaults, fallback timers and BackendStub are present. Shared split, body
+  and backend contract checks and deterministic fault wrappers are present;
+  backend checks currently cover invalid input and closed-state behavior.
+  Runtime-specific deadline and framing contracts remain with U4/U5.
 - U3 in progress: the Client now performs opt-in retries, enforces per-attempt
   and total deadlines, pairs admission with release and reports settled
   attempts. Mature retry presets, WindowLimiter and Paginator are ported with
