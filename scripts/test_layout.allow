@@ -2,3 +2,5 @@
 # Each entry is `<file> <rule> # reason`, one line per use, so every new use
 # needs its own decision. Rules: async-test, async-intrinsic, module-import,
 # package-import, testing-import, wbtest-testing-import, clock.
+mttp/src/client/ratelimit/moon.pkg wbtest-testing-import # Driver replaces legacy raw async intrinsics while retained white-box tests inspect gate holder/waiter cleanup and internal map eviction.
+mttp/src/client/ratelimit/moon.pkg wbtest-testing-import # FakeClock drives retained map-eviction tests across exact reset and sweep boundaries without exposing limiter internals in the public API.

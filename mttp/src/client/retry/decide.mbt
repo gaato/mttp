@@ -47,7 +47,7 @@
 /// ```
 pub fn RetryRule::decide(
   self : RetryRule,
-  outcome : Outcome,
+  outcome : AttemptOutcome,
   request : @model.Request,
   attempt~ : Int32,
   random~ : Double,
@@ -94,7 +94,7 @@ pub fn RetryRule::decide(
 // Step 4: why the outcome may not be retried, if it may not.
 fn RetryRule::refusal(
   self : RetryRule,
-  outcome : Outcome,
+  outcome : AttemptOutcome,
   request : @model.Request,
   idempotent : Bool?,
 ) -> StopReason? {
@@ -166,7 +166,7 @@ fn permit(
       }
     Listed(names) => {
       let verb = request.meth.to_string().to_lower()
-      names.iter().any(name => name.to_lower() == verb)
+      names.iter().any(name => name.to_string().to_lower() == verb)
     }
   }
   if allowed {
@@ -181,7 +181,7 @@ fn permit(
 // backoff, or the reason to stop.
 fn RetryRule::server_delay(
   self : RetryRule,
-  outcome : Outcome,
+  outcome : AttemptOutcome,
   given : Int32?,
   now_unix_ms : Int64?,
 ) -> Result[Int32?, StopReason] {

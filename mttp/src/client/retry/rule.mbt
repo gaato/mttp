@@ -56,7 +56,7 @@ pub(all) enum Methods {
   /// `decide`'s `idempotent` argument.
   Idempotent
   /// These methods, compared ignoring ASCII case.
-  Listed(Array[String])
+  Listed(Array[@model.Method])
   /// Every method.
   Any
 } derive(Eq, Debug)
@@ -252,7 +252,7 @@ pub fn RetryRule::never() -> RetryRule {
 
 ///|
 /// The result of an attempt that did not succeed.
-pub(all) enum Outcome {
+pub(all) enum AttemptOutcome {
   /// A response whose status the caller treats as a failure.
   Response(status~ : Int32, headers~ : @model.Headers)
   /// A transport failure.
@@ -261,7 +261,7 @@ pub(all) enum Outcome {
 
 ///|
 /// Debug representation of an outcome.
-pub extend Outcome with @debug.Debug::{to_repr}
+pub extend AttemptOutcome with @debug.Debug::{to_repr}
 
 ///|
 /// Why `decide` stopped.

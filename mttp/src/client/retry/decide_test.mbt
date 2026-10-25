@@ -6,7 +6,10 @@ fn rule() -> @retry.RetryRule {
     statuses: [
       { statuses: [Code(429)], methods: Any, },
       { statuses: [Code(408), Range(500, 599)], methods: Idempotent, },
-      { statuses: [Code(409)], methods: Listed(["put", "Patch"]), },
+      {
+        statuses: [Code(409)],
+        methods: Listed([Other("put"), Other("Patch")]),
+      },
       { statuses: [Code(418)], methods: Never, },
     ],
     sent_failures: Idempotent,
@@ -22,7 +25,10 @@ fn rule() -> @retry.RetryRule {
 }
 
 ///|
-fn response(status : Int32, pairs : Array[(String, String)]) -> @retry.Outcome {
+fn response(
+  status : Int32,
+  pairs : Array[(String, String)],
+) -> @retry.AttemptOutcome {
   Response(status~, headers=@model.Headers::of(pairs))
 }
 
@@ -426,7 +432,7 @@ test "decide covers every step in order" {
     ),
     (
       "sent failures listed",
-      { ..r, sent_failures: Listed(["POST"]), }.decide(
+      { ..r, sent_failures: Listed([Post]), }.decide(
         Failure(TransportError(kind=Network, phase=Head, detail="reset")),
         post,
         attempt=0,
@@ -436,7 +442,7 @@ test "decide covers every step in order" {
     ),
     (
       "sent failures listed, other method",
-      { ..r, sent_failures: Listed(["POST"]), }.decide(
+      { ..r, sent_failures: Listed([Post]), }.decide(
         Failure(TransportError(kind=Network, phase=Head, detail="reset")),
         get,
         attempt=0,

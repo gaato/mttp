@@ -67,6 +67,24 @@ package tests below.
 | StreamBody and taken stream | Acquisition, declared length, close, sticky EOF | `model/body_test.mbt`; read-loop cancellation also exercised by `testing/feed/feed_test.mbt` |
 | Multipart body | Boundary collision, ownership and cleanup | `multipart/stream_test.mbt`, ported from runtime-tests |
 | Feed | Scripted data, EOF, error, virtual delay and cancellation | `testing/feed/feed_test.mbt` |
+| Client and Backend wrappers | Raw validation, body ownership, one release per successful acquire, head preservation on reader failure, explicit retry policy, replay refusal, deadlines | `client/client_test.mbt`, `client/readers_test.mbt`, `client/loop_test.mbt` |
+| WindowLimiter | Gate handoff and cancellation, shared server windows, global exemptions, pacing, lazy eviction | `client/ratelimit/limiter_test.mbt`, `client/ratelimit/rate_limit_wbtest.mbt` |
+
+## Client attempts
+
+1. Retrying is opt-in. RetryDecider sees transport, rejected-status and
+   buffered-reader errors. Streaming callbacks run once after release and
+   observation, and their errors are never retried.
+2. Every acquire that returns has exactly one release. Cancelled admission
+   waits have none. Release uses the received head even when reading fails.
+3. Body factories run only after admission and a deadline check. Without a
+   factory, stream requests cannot retry, regardless of the decider.
+4. A release failure on success reaches the caller and closes the held body.
+   During failure or cancellation, release failure does not replace the
+   original outcome. Observers run once after release is attempted.
+5. A total deadline is checked before admission and again after it. Admission
+   itself is not interrupted by that deadline. A fallback Timer limits the
+   exchange, with accepted streaming callbacks outside it.
 
 ## Incremental parsers
 

@@ -1,0 +1,63 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/client/ratelimit"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/clock",
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn rate_limit_headers(remaining~ : String, reset_after_seconds? : String, reset_unix_seconds? : String) -> (@model.Headers, Int64) -> RateLimitState?
+
+// Errors
+
+// Types and methods
+pub(all) struct GlobalWindow {
+  limit : Int32
+  window_ms : Int32
+} derive(Eq, @debug.Debug)
+pub fn GlobalWindow::equal(Self, Self) -> Bool
+pub fn GlobalWindow::not_equal(Self, Self) -> Bool
+pub fn GlobalWindow::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+pub(all) enum LimitScope {
+  Bucket
+  Global
+  Shared
+  Ignore
+} derive(Eq, @debug.Debug)
+pub fn LimitScope::equal(Self, Self) -> Bool
+pub fn LimitScope::not_equal(Self, Self) -> Bool
+pub fn LimitScope::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Pace {
+  group : String
+  min_interval_ms : Int32
+} derive(Eq, @debug.Debug)
+pub fn Pace::equal(Self, Self) -> Bool
+pub fn Pace::not_equal(Self, Self) -> Bool
+pub fn Pace::to_repr(Self) -> @debug.Repr
+
+pub(all) struct RateLimitState {
+  remaining : Int32
+  reset_at_unix_ms : Int64
+} derive(Eq, @debug.Debug)
+pub fn RateLimitState::equal(Self, Self) -> Bool
+pub fn RateLimitState::not_equal(Self, Self) -> Bool
+pub fn RateLimitState::to_repr(Self) -> @debug.Repr
+
+pub struct WindowLimiter {
+  // private fields
+}
+pub async fn WindowLimiter::acquire(Self, String, global_exempt~ : Bool) -> Unit
+pub fn WindowLimiter::new(&@clock.Clock, (@model.Headers, Int64) -> RateLimitState?, gate? : () -> &@clock.Gate, pace? : (String) -> Pace, server_key? : (String, @model.Headers) -> String?, scope? : (Int32, @model.Headers) -> LimitScope, global? : GlobalWindow, global_block? : (@model.Headers) -> Bool, default_retry_after_ms? : Int32) -> Self
+pub async fn WindowLimiter::release(Self, String, status~ : Int32, headers~ : @model.Headers) -> Unit
+pub fn WindowLimiter::state(Self, String) -> RateLimitState?
+pub impl @client.RateLimiter for WindowLimiter
+
+// Type aliases
+
+// Traits

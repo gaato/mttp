@@ -23,9 +23,13 @@ The implementation starts from design commit
   API review and test-gate negative tests. Driver timer callback and cleanup
   budget regressions have been fixed and have dedicated tests.
 - U2 in progress: Backend wrappers, ClientRequest, response readers, request
-  defaults, fallback timers and BackendStub are present. The Client currently
-  performs a single attempt. Shared contracts and fault wrappers remain.
-- U3–U9 remain: retry/deadline/rate-limit orchestration,
+  defaults, fallback timers and BackendStub are present. Shared contracts and
+  fault wrappers remain.
+- U3 in progress: the Client now performs opt-in retries, enforces per-attempt
+  and total deadlines, pairs admission with release and reports settled
+  attempts. Mature retry presets, WindowLimiter and Paginator are ported with
+  their tests. API review and the full consumer conformance suite remain.
+- U4–U9 remain:
   runtime and HTTP/1 adapters, socket conformance, client conveniences,
   digest, schema/endpoints, router/server and OpenAPI generation.
 
@@ -49,6 +53,12 @@ The implementation starts from design commit
   the attempt and close their response even when the callback fails.
 - A completed fallback-timer callback wins a simultaneous expiry, retaining
   ownership of its returned stream so it can be consumed and closed.
+- Body factories run after admission. A stream without a factory is never
+  retried, even if a custom decider requests it. Reader failures release with
+  the received response's status and headers.
+- WindowLimiter's white-box cleanup tests retain their internal assertions
+  but use Driver instead of raw coroutine intrinsics. Their two test-only
+  imports are explicitly ledgered rather than exposing private maps.
 
 The latest pinned toolchain is `0.10.17+d971670cd`. Tests must be rerun after
 changes; earlier checkpoint counts are not a completion claim.

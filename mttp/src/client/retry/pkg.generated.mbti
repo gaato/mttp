@@ -11,6 +11,12 @@ import {
 // Errors
 
 // Types and methods
+pub(all) enum AttemptOutcome {
+  Response(status~ : Int32, headers~ : @model.Headers)
+  Failure(@model.TransportError)
+} derive(@debug.Debug)
+pub fn AttemptOutcome::to_repr(Self) -> @debug.Repr
+
 pub(all) struct Backoff {
   base_ms : Int32
   max_ms : Int32
@@ -43,18 +49,12 @@ pub fn Jitter::to_repr(Self) -> @debug.Repr
 pub(all) enum Methods {
   Never
   Idempotent
-  Listed(Array[String])
+  Listed(Array[@model.Method])
   Any
 } derive(Eq, @debug.Debug)
 pub fn Methods::equal(Self, Self) -> Bool
 pub fn Methods::not_equal(Self, Self) -> Bool
 pub fn Methods::to_repr(Self) -> @debug.Repr
-
-pub(all) enum Outcome {
-  Response(status~ : Int32, headers~ : @model.Headers)
-  Failure(@model.TransportError)
-} derive(@debug.Debug)
-pub fn Outcome::to_repr(Self) -> @debug.Repr
 
 pub(all) struct RetryAfter {
   source : RetryAfterSource
@@ -94,7 +94,7 @@ pub(all) struct RetryRule {
   retry_after : RetryAfter
   backoff : Backoff
 } derive(Eq, @debug.Debug)
-pub fn RetryRule::decide(Self, Outcome, @model.Request, attempt~ : Int32, random~ : Double, now_unix_ms? : Int64, remaining_ms? : Int64, server_delay_ms? : Int32, idempotent? : Bool, replayable? : Bool) -> Decision
+pub fn RetryRule::decide(Self, AttemptOutcome, @model.Request, attempt~ : Int32, random~ : Double, now_unix_ms? : Int64, remaining_ms? : Int64, server_delay_ms? : Int32, idempotent? : Bool, replayable? : Bool) -> Decision
 pub fn RetryRule::equal(Self, Self) -> Bool
 pub fn RetryRule::never() -> Self
 pub fn RetryRule::not_equal(Self, Self) -> Bool

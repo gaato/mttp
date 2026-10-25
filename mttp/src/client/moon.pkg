@@ -1,6 +1,7 @@
 import {
   "gaato/mttp/model",
   "gaato/mttp/clock",
+  "gaato/mttp/client/retry",
   "gaato/mttp/sse",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",

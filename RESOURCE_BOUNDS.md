@@ -34,6 +34,9 @@ a test from hanging (the `testing/driver` rows).
 | `model` buffered stream read | Explicit `read_bounded` limit | Closes the stream and raises at the crossing chunk | `mttp/src/model/body_test.mbt`: "read bounded accepts exact limit and closes at crossing chunk" |
 | `client` unsuccessful response excerpt | 1 MiB | Truncates the diagnostic excerpt and closes the response | `mttp/src/client/client_test.mbt`: "unexpected statuses retain at most one MiB and close streams" |
 | `client` buffered response reader | `max_body_bytes`, default 64 MiB | Closes the stream and raises `TooLarge` at the crossing chunk | `mttp/src/client/readers_test.mbt`: "byte readers enforce bounds for all body variants", "default response body limit is 64 MiB" |
+| `client` call duration | Optional attempt `timeout_ms` and call `total_ms`; no default limit. Admission waits count against the total but are not interrupted | Raises `Timeout`, releases acquired admission, and closes received bodies. Backends enforce active deadlines; an injected Timer supplies fallback cancellation | `mttp/src/client/loop_test.mbt`: "an attempt that runs out of time is retried for GET not POST", "total timeout caps backoff and shrinks attempt budgets", "no attempt starts once total timeout has passed even with custom retry", "limiter wait uses total budget and still releases before observation" |
+| `client` paginator collection | Explicit `collect(max)`; retains at most one unused page | Stops collection at max, preserving unused items for the next call | `mttp/src/client/paginator_test.mbt`: "Paginator each visits every item and collect keeps the unused rest" |
+| `client/ratelimit` server-specified wait | One hour for parsed reset times and Retry-After | Clamps server wait to one hour; saturates timestamp arithmetic | `mttp/src/client/ratelimit/rate_limit_wbtest.mbt`: "a response cannot push a bucket's reset or the global block past an hour", "clamp_server_reset keeps resets within an hour and pulls later ones back", "an account-wide 429 cannot block past an hour" |
 | `testing/driver` steps of one `Driver::run` (and of manual `step` calls since it started) | `max_steps`, default 100 000 000 | `step` raises `DriverError(NoQuiescence(steps~))`; `run` cancels and unwinds the live tasks first | `mttp/src/testing/driver/driver_test.mbt`: "max_steps allows exactly that many steps per run", "livelock raises NoQuiescence" |
 | `testing/driver` rounds of cancellation when `run` ends | `max_unwind_rounds` = 8 | `run` raises `DriverError(UnwindIncomplete(live~))`; the surviving tasks stay live | `mttp/src/testing/driver/driver_test.mbt`: "unwinding gives up after max_unwind_rounds rounds" |
 | `testing/driver` timer callbacks per run | `max_steps`, independent of task steps | Raises `NoQuiescence`, discards timers and cancels live tasks | `mttp/src/testing/driver/driver_test.mbt`: "self-rearming due timers obey a callback budget" |
@@ -43,6 +46,7 @@ a test from hanging (the `testing/driver` rows).
 
 | Structure | Grows with | Bound |
 |---|---|---|
+| `client/ratelimit` gate entries | In-flight requests holding or awaiting a pace group's gate | Removed when both holder and waiter counts are zero, including cancelled waits; at most the number of active groups |
 
 ## Left to the caller
 
@@ -53,6 +57,7 @@ Growth that follows what the caller asks for, not what the network sends.
 | `model` headers, URL strings, attribute maps and byte bodies | Values explicitly constructed by the caller | Parsers and backends impose network input limits; these value constructors do not consume network input. |
 | `multipart` framing and part descriptors | Caller-supplied parts | Streaming retains framing plus the supplied byte bodies and stream handles; boundary scanning retains at most the delimiter length. |
 | `testing/driver` ready queue, live-task map, timer heap | tasks the test spawns and timers it arms | A test helper: the test decides how many; `max_steps` stops a run that keeps spawning. Cancelled timers stay in the heap until they reach its top or `run` ends. |
+| `client/ratelimit` states, server-key aliases and pace deadlines | Caller-supplied bucket and group names, optional server key parser | Lazy sweeps at doubled entry count (floor 64) or 60 seconds remove expired states, orphaned aliases and elapsed pace deadlines. States expire within one hour; idle maps persist until subsequent traffic. This preserves the mature limiter and provides no absolute key-count ceiling. |
 
 ## Known gaps
 
