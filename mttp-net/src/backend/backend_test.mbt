@@ -29,7 +29,12 @@ async fn body(response : @model.Response) -> Bytes {
 
 ///|
 async test "H1Backend enforces the shared backend contract" {
-  assert_eq(@testing.check_backend_contract(() => @backend.H1Backend::new()), [])
+  assert_eq(
+    @testing.check_backend_contract(() => {
+      @backend.H1Backend::new(trust_env=false)
+    }),
+    [],
+  )
 }
 
 ///|
@@ -42,7 +47,7 @@ async test "completed responses reuse their socket and close is idempotent" {
       }
     },
     url => {
-      let backend = @backend.H1Backend::new(max_connections=1)
+      let backend = @backend.H1Backend::new(trust_env=false, max_connections=1)
       defer backend.close()
       for _ in 0..<3 {
         let response = backend.send(
@@ -71,7 +76,7 @@ async test "chunk framing consumes trailers before permitting reuse" {
       }
     },
     url => {
-      let backend = @backend.H1Backend::new()
+      let backend = @backend.H1Backend::new(trust_env=false)
       defer backend.close()
       assert_eq(
         body(
@@ -100,7 +105,7 @@ async test "short or malformed bodies fail and discard their connection" {
         conn.write(wire)
       },
       url => {
-        let backend = @backend.H1Backend::new()
+        let backend = @backend.H1Backend::new(trust_env=false)
         defer backend.close()
         try
           body(
@@ -133,7 +138,7 @@ async test "until-close and explicit response close never park sockets" {
         conn.write(wire)
       },
       url => {
-        let backend = @backend.H1Backend::new()
+        let backend = @backend.H1Backend::new(trust_env=false)
         defer backend.close()
         assert_eq(
           body(
@@ -154,7 +159,7 @@ async test "until-close and explicit response close never park sockets" {
       conn.write(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nabc")
     },
     url => {
-      let backend = @backend.H1Backend::new()
+      let backend = @backend.H1Backend::new(trust_env=false)
       defer backend.close()
       let response = backend.send(
         @model.Request::get(url),
@@ -180,7 +185,10 @@ async test "automatic decoding enforces decoded rather than wire length" {
         )
       },
       url => {
-        let backend = @backend.H1Backend::new(max_body_bytes=limit)
+        let backend = @backend.H1Backend::new(
+          trust_env=false,
+          max_body_bytes=limit,
+        )
         defer backend.close()
         let response = backend.send(
           @model.Request::get(url),

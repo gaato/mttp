@@ -9,9 +9,9 @@ async test "body timeout parent cancellation and concurrent reads release their 
     )
     let (peer, _) = listener.accept()
     defer peer.close()
-    let wire = { tcp, tls: None, pending: b"", closed: false, }
+    let wire = { tcp, tls: None, outer_tls: [], pending: b"", closed: false, }
     let clock = ManualClock::new()
-    let backend = H1Backend::new(clock~)
+    let backend = H1Backend::new(trust_env=false, clock~)
     defer backend.close()
     backend.slots.take("origin")
     let reader : &@model.BodyStream = ResponseBody::new(
@@ -62,7 +62,7 @@ async test "body timeout parent cancellation and concurrent reads release their 
 ///|
 async test "closing a backend while acquiring a granted slot prevents a new dial" {
   let clock = ManualClock::new()
-  let backend = H1Backend::new(clock~, max_connections=1)
+  let backend = H1Backend::new(trust_env=false, clock~, max_connections=1)
   backend.slots.take("occupied")
   @async.with_task_group(group => {
     group.spawn_bg(() => {
@@ -91,7 +91,7 @@ async test "a stale pooled connection retries once on a fresh connection" {
   let server = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
   defer server.close()
   let clock = ManualClock::new()
-  let backend = H1Backend::new(clock~, idle_max_ms=10)
+  let backend = H1Backend::new(trust_env=false, clock~, idle_max_ms=10)
   defer backend.close()
   let url = "http://127.0.0.1:\{server.addr.port()}"
   let origin = target(@model.Request::get(url)).origin
@@ -140,6 +140,7 @@ async test "expired and disabled idle pools close rejected sockets" {
     defer server.close()
     let clock = ManualClock::new()
     let backend = H1Backend::new(
+      trust_env=false,
       clock~,
       idle_max_ms=10,
       max_idle_connections=max_idle,

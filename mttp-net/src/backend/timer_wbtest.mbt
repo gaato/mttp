@@ -102,6 +102,7 @@ suberror Broken {
 ///|
 async test "phase mapping preserves typed failures and bounds extreme clocks" {
   let backend = H1Backend::new(
+    trust_env=false,
     timeout_ms=10,
     pool_timeout_ms=1,
     connect_timeout_ms=2,
@@ -125,7 +126,7 @@ async test "phase mapping preserves typed failures and bounds extreme clocks" {
   for ms in [0, -1] {
     let timer = PhaseTimer::exchange(
       clock,
-      H1Backend::new(timeout_ms=ms).limits,
+      H1Backend::new(trust_env=false, timeout_ms=ms).limits,
     )
     timer.run(Dial, () => fail("spent budget")) catch {
       @model.TransportError(kind=Timeout(..), ..) => ()
@@ -139,7 +140,10 @@ async test "phase mapping preserves typed failures and bounds extreme clocks" {
 async test "queued slot waits release on grant timeout refusal and parent cancellation" {
   for mode in 0..<4 {
     let clock = ManualClock::new()
-    let timer = PhaseTimer::exchange(clock, H1Backend::new().limits)
+    let timer = PhaseTimer::exchange(
+      clock,
+      H1Backend::new(trust_env=false).limits,
+    )
     let slots = Slots::new(max_total=1)
     slots.acquire("a", timer)
     let acquired = Ref(false)

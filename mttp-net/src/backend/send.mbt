@@ -133,6 +133,8 @@ pub async fn H1Backend::send(
     )
   }
   let target = target(request)
+  let route = self.proxies.route(target)
+  let key = route.key(target.origin)
   if options.max_body_bytes < 0 || (self.body_ceiling is Some(n) && n < 0) {
     raise @model.TransportError(
       kind=Invalid,
@@ -143,6 +145,9 @@ pub async fn H1Backend::send(
   let negotiated = options.decompress &&
     !request.headers.contains("accept-encoding")
   let mut headers = request.headers.remove("proxy-authorization")
+  if route is Forward(proxy) && proxy.authorization is Some(auth) {
+    headers = headers.add("proxy-authorization", auth)
+  }
   if !headers.contains("host") {
     headers = headers.add("host", target.authority)
   }
@@ -162,7 +167,7 @@ pub async fn H1Backend::send(
   }
   let head = @h1.write_request_head(
     request.meth,
-    target.path,
+    route.target(target.origin, target.path),
     headers,
     framing,
     Http11,
@@ -176,9 +181,9 @@ pub async fn H1Backend::send(
     read: options.read_idle_ms.unwrap_or(self.limits.read),
   }
   let timer = PhaseTimer::exchange(self.clock, limits)
-  self.slots.acquire(target.origin, timer)
+  self.slots.acquire(key, timer)
   let mut transferred = false
-  defer (if !transferred { self.slots.release(target.origin) })
+  defer (if !transferred { self.slots.release(key) })
   let agent = request.headers.get("user-agent")
   let mut fresh = false
   for ;; {
@@ -190,7 +195,7 @@ pub async fn H1Backend::send(
       )
     }
     let (cached, expired) = self.pool.take(
-      target.origin,
+      key,
       agent,
       now=self.clock.now_unix_ms(),
     )
@@ -209,9 +214,7 @@ pub async fn H1Backend::send(
     let wire = match cached {
       Some(wire) => wire
       None =>
-        timer.run(Dial, () => {
-          Wire::dial(target.host, target.port, target.secure)
-        })
+        timer.run(Dial, () => dial_route(target, route, agent, self.head_limits))
     }
     let mut owned = true
     defer (if owned { wire.close() })
@@ -248,7 +251,7 @@ pub async fn H1Backend::send(
       (response, None)
     }
     if framing == NoBody || (framing == Length(0L) && decoder is None) {
-      self.release(target.origin, agent, wire, keep_alive)
+      self.release(key, agent, wire, keep_alive)
       owned = false
       transferred = true
       return @model.Response::new(response.status, headers=response.headers)
@@ -269,15 +272,7 @@ pub async fn H1Backend::send(
       None
     }
     let reader = ResponseBody::new(
-      self,
-      target.origin,
-      agent,
-      wire,
-      framing,
-      decoder,
-      body_timer,
-      limit,
-      keep_alive,
+      self, key, agent, wire, framing, decoder, body_timer, limit, keep_alive,
     )
     let length = if decoder is None {
       match framing {

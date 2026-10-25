@@ -1,7 +1,8 @@
 ///|
 priv struct Wire {
   tcp : @socket.Tcp
-  tls : @tls.Tls?
+  mut tls : @tls.Tls?
+  outer_tls : Array[@tls.Tls]
   mut pending : Bytes
   mut closed : Bool
 }
@@ -15,7 +16,7 @@ async fn Wire::dial(host : String, port : Int32, secure : Bool) -> Wire {
   } else {
     None
   }
-  { tcp, tls, pending: b"", closed: false, }
+  { tcp, tls, outer_tls: [], pending: b"", closed: false, }
 }
 
 ///|
@@ -25,6 +26,10 @@ fn Wire::close(self : Wire) -> Unit {
     if self.tls is Some(tls) {
       tls.close()
     }
+    for tls in self.outer_tls {
+      tls.close()
+    }
+    self.outer_tls.clear()
     self.tcp.close()
     self.pending = b""
   }
@@ -63,13 +68,14 @@ fn Wire::unread(self : Wire, bytes : BytesView) -> Unit {
 async fn Wire::head(
   self : Wire,
   limits : @h1.Limits,
+  phase~ : @model.Phase = Head,
 ) -> (@h1.Version, @model.ResponseHead) {
   let decoder = @h1.HeadDecoder::new(max=limits.max_head_bytes)
   for ;; {
     guard self.read(65536) is Some(bytes) else {
       raise @model.TransportError(
         kind=Network,
-        phase=Head,
+        phase~,
         detail="EOF before response head",
       )
     }

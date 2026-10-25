@@ -42,8 +42,10 @@ The implementation starts from design commit
   bounded response framing, incremental decoding, bounded writes, pooled
   connections, admission and phase/total deadlines. Loopback tests cover
   framing failures, upload lengths, body ownership, stale reuse, cancellation,
-  decoding limits and TLS trust. The global idle cap is 256. Proxy routing,
-  the JS backend and the AsyncBackend facade remain pending.
+  decoding limits and TLS trust. The global idle cap is 256. Mature proxy
+  configuration, NO_PROXY and reference tests are ported; bounded CONNECT
+  and nested TLS have loopback tests. The JS backend and AsyncBackend facade
+  remain pending.
 - `mttp-net/runtime` now provides AsyncClock, ClockTimer and SemaphoreGate
   using the mature adapters. Native, wasm and JS tests cover completion,
   timeout, parent cancellation and admission cancellation. The approximate

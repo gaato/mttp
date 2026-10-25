@@ -18,7 +18,7 @@ pub struct H1Backend {
 }
 pub fn H1Backend::close(Self) -> Unit
 pub fn H1Backend::idle_connections(Self) -> Int32
-pub fn H1Backend::new(timeout_ms? : Int32, connect_timeout_ms? : Int32, write_timeout_ms? : Int32, read_timeout_ms? : Int32, pool_timeout_ms? : Int32, max_connections? : Int32, max_connections_per_origin? : Int32, max_idle_connections? : Int32, max_idle_per_origin? : Int32, idle_max_ms? : Int32, max_body_bytes? : Int32, head_limits? : @h1.Limits, clock? : &@clock.Clock) -> Self
+pub fn H1Backend::new(proxy? : String, trust_env? : Bool, timeout_ms? : Int32, connect_timeout_ms? : Int32, write_timeout_ms? : Int32, read_timeout_ms? : Int32, pool_timeout_ms? : Int32, max_connections? : Int32, max_connections_per_origin? : Int32, max_idle_connections? : Int32, max_idle_per_origin? : Int32, idle_max_ms? : Int32, max_body_bytes? : Int32, head_limits? : @h1.Limits, clock? : &@clock.Clock) -> Self
 pub async fn H1Backend::send(Self, @model.Request, @client.RequestOptions) -> @model.Response raise @model.TransportError
 pub impl @client.Backend for H1Backend
 

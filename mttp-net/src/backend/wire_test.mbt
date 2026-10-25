@@ -25,7 +25,10 @@ async test "hostile response heads and chunk lines have byte limits" {
         conn.write(wire)
       },
       url => {
-        let backend = @backend.H1Backend::new(head_limits=limits)
+        let backend = @backend.H1Backend::new(
+          trust_env=false,
+          head_limits=limits,
+        )
         defer backend.close()
         try
           body(
@@ -89,7 +92,7 @@ async test "known and unknown length uploads use bounded writes and valid framin
         conn.write(b"HTTP/1.1 204 No Content\r\n\r\n")
       },
       url => {
-        let backend = @backend.H1Backend::new()
+        let backend = @backend.H1Backend::new(trust_env=false)
         defer backend.close()
         let request = @model.Request::post(url)
         let request = match mode {
@@ -129,7 +132,7 @@ async test "explicit encoding negotiation and streaming bodies retain caller own
         )
       },
       url => {
-        let backend = @backend.H1Backend::new(max_body_bytes=1)
+        let backend = @backend.H1Backend::new(trust_env=false, max_body_bytes=1)
         defer backend.close()
         let request = @model.Request::get(url).header(
           "proxy-authorization", "private",
@@ -177,7 +180,7 @@ async test "no-body framing and connection tokens honor method and protocol" {
         conn.write(wire)
       },
       url => {
-        let backend = @backend.H1Backend::new()
+        let backend = @backend.H1Backend::new(trust_env=false)
         defer backend.close()
         assert_eq(
           body(
@@ -197,7 +200,7 @@ async test "no-body framing and connection tokens honor method and protocol" {
 ///|
 async test "invalid absolute targets and body limits fail before connecting" {
   for url in ["/relative", "ftp://127.0.0.1/", "http://user:pass@127.0.0.1/"] {
-    let backend = @backend.H1Backend::new()
+    let backend = @backend.H1Backend::new(trust_env=false)
     try
       backend.send(@model.Request::get(url), @client.RequestOptions::default())
     catch {
@@ -209,8 +212,8 @@ async test "invalid absolute targets and body limits fail before connecting" {
   }
   for
     backend in [
-      @backend.H1Backend::new(),
-      @backend.H1Backend::new(max_body_bytes=-1),
+      @backend.H1Backend::new(trust_env=false),
+      @backend.H1Backend::new(trust_env=false, max_body_bytes=-1),
     ] {
     try
       backend.send(@model.Request::get("http://127.0.0.1/"), {
@@ -224,7 +227,7 @@ async test "invalid absolute targets and body limits fail before connecting" {
       _ => fail("expected body limit validation")
     }
   }
-  let backend = @backend.H1Backend::new()
+  let backend = @backend.H1Backend::new(trust_env=false)
   try
     backend.send(
       @model.Request::get("http://127.0.0.1/").header("host", "bad host"),
@@ -250,7 +253,7 @@ async test "empty and truncated encoded responses retain the decoder contract" {
         conn.write(payload)
       },
       url => {
-        let backend = @backend.H1Backend::new()
+        let backend = @backend.H1Backend::new(trust_env=false)
         defer backend.close()
         let response = backend.send(
           @model.Request::get(url),

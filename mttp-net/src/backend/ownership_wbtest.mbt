@@ -11,7 +11,7 @@ async test "body close and framing error release the active slot exactly once" {
           ignore(conn.read_until("\r\n\r\n"))
           conn.write(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nx")
         })
-        let backend = H1Backend::new(max_connections=1)
+        let backend = H1Backend::new(trust_env=false, max_connections=1)
         defer backend.close()
         let response = backend.send(
           @model.Request::get("http://127.0.0.1:\{server.addr.port()}/"),
@@ -39,8 +39,8 @@ async test "body close and framing error release the active slot exactly once" {
 
 ///|
 test "idle pool total bound also bounds the origin index" {
-  assert_eq(H1Backend::new().pool.max_total, 256)
-  assert_eq(H1Backend::new().pool.max_per_origin, 4)
+  assert_eq(H1Backend::new(trust_env=false).pool.max_total, 256)
+  assert_eq(H1Backend::new(trust_env=false).pool.max_per_origin, 4)
   let pool : IdlePool[Int32] = IdlePool::new(
     max_total=2,
     max_per_origin=4,

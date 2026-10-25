@@ -2,7 +2,8 @@
 /// A socket backend using mttp's bounded HTTP/1 codec and verified system
 /// TLS roots. A response owns its connection until consumed or closed.
 /// This backend sends one exchange; compose FollowRedirects for redirects.
-/// Native and moonrun wasm are supported. Proxy routing is not yet provided.
+/// Native and moonrun wasm are supported. HTTP(S) proxies forward HTTP
+/// requests and tunnel HTTPS requests with end-to-end TLS.
 pub struct H1Backend {
   priv clock : &@clock.Clock
   priv limits : Timeouts
@@ -10,13 +11,19 @@ pub struct H1Backend {
   priv body_ceiling : Int32?
   priv pool : IdlePool[Wire]
   priv slots : Slots
+  priv proxies : Proxies
 }
 
 ///|
 /// Creates a backend with the mature 30-second timeout and per-origin idle
 /// pool defaults. Per-request options override attempt and read-idle budgets.
 /// Connection caps bound active exchanges; a parked socket holds no slot.
+/// An explicit proxy wins over the environment. Otherwise trust_env (true
+/// by default) reads HTTP(S)/ALL_PROXY and NO_PROXY once at construction;
+/// lowercase settings win, and CGI ignores uppercase HTTP_PROXY.
 pub fn H1Backend::new(
+  proxy? : String,
+  trust_env~ : Bool = true,
   timeout_ms~ : Int32 = 30000,
   connect_timeout_ms? : Int32,
   write_timeout_ms? : Int32,
@@ -32,6 +39,7 @@ pub fn H1Backend::new(
   clock~ : &@clock.Clock = @runtime.AsyncClock::new(),
 ) -> H1Backend {
   {
+    proxies: configure_proxies(proxy, trust_env~, @env.get_env_var),
     clock,
     limits: {
       total: timeout_ms,
