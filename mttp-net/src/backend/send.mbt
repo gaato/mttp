@@ -1,78 +1,4 @@
 ///|
-async fn send_bytes(
-  wire : Wire,
-  bytes : Bytes,
-  timer : PhaseTimer,
-) -> Unit raise @model.TransportError {
-  for offset = 0; offset < bytes.length(); {
-    let n = (bytes.length() - offset).min(65536)
-    timer.run(Write, () => wire.write(bytes[offset:offset + n].to_owned()))
-    continue offset + n
-  }
-}
-
-///|
-async fn exchange(
-  wire : Wire,
-  request : @model.Request,
-  head : Bytes,
-  framing : @h1.Framing,
-  timer : PhaseTimer,
-  limits : @h1.Limits,
-) -> (@h1.Version, @model.ResponseHead) raise @model.TransportError {
-  let stream = match request.body {
-    Stream(body) => Some(body.take())
-    _ => None
-  }
-  defer (if stream is Some(stream) { stream.close() })
-  // A stream may validate nested multipart ownership on its first read.
-  // Keep that validation, including a false length=0 claim, before the head.
-  let first = match stream {
-    Some(stream) => timer.run(Write, () => stream.read_some())
-    None => None
-  }
-  timer.run(Write, () => wire.write(head))
-  match request.body {
-    Bytes(bytes) => send_bytes(wire, bytes, timer)
-    Empty => ()
-    Stream(_) => {
-      let stream = stream.unwrap()
-      let mut next = first
-      while next is Some(bytes) {
-        for offset = 0; offset < bytes.length(); {
-          let n = (bytes.length() - offset).min(65536)
-          let slice = bytes[offset:offset + n].to_owned()
-          let data = if framing == Chunked {
-            @h1.encode_chunk(slice)
-          } else {
-            slice
-          }
-          timer.run(Write, () => wire.write(data))
-          continue offset + n
-        }
-        next = timer.run(Write, () => stream.read_some())
-      }
-      if framing == Chunked {
-        timer.run(Write, () => wire.write(@h1.encode_chunk(b"")))
-      }
-    }
-  }
-  timer.run(Head, () => {
-    for _ in 0..<17 {
-      let result = wire.head(limits)
-      if result.1.status >= 200 || result.1.status == 101 {
-        return result
-      }
-    }
-    raise @model.TransportError(
-      kind=Protocol,
-      phase=Head,
-      detail="too many informational responses",
-    )
-  })
-}
-
-///|
 /// Sends a validated request with bounded framing, phase deadlines and
 /// incremental content decoding. Stream readers own the connection slot.
 pub async fn H1Backend::send(
@@ -173,7 +99,7 @@ pub async fn H1Backend::send(
     }
     let mut owned = true
     defer (if owned { wire.close() })
-    let (v, response) = exchange(
+    let (v, response, uploaded) = exchange(
       wire,
       request,
       head,
@@ -194,7 +120,8 @@ pub async fn H1Backend::send(
     ) catch {
       error => raise failure(Head, error)
     }
-    let keep_alive = framing != UntilClose &&
+    let keep_alive = uploaded &&
+      framing != UntilClose &&
       response.status != 101 &&
       request.meth != Connect &&
       !connection_token(request.headers, "close") &&

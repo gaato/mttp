@@ -36,6 +36,14 @@ can depend on `gaato/mttp` without importing this module.
 compose with `mttp/client` policies. The `codings` package provides bounded
 incremental gzip/deflate/br/zstd decoding independently of sockets.
 
+The socket backend reads response heads while uploading. A final response
+stops an unfinished upload and closes its source; that connection is not
+reused, even when the peer omitted `Connection: close`. Informational heads
+do not stop the upload. The head idle timer starts after upload completes,
+while write and total deadlines apply during upload. This is a request/response
+adapter, not a full-duplex streaming tunnel: servers must not require further
+request bytes after sending an early final response.
+
 ## License
 
 Apache-2.0.

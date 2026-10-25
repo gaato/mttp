@@ -74,11 +74,12 @@ The implementation starts from design commit
   disconnect cancellation, graceful shutdown and background work are present.
   Static gates pass; six uncovered shutdown/error race guards are explicitly
   queued for deterministic injection in TEST_COVERAGE.md.
-  A loopback test exposed a remaining H1Backend conformance issue: when a
-  server rejects a large upload immediately with 413 and closes, the backend
-  can report Network during Write before reading the final response. The
-  upload/head orchestration must handle early final responses; this remains
-  outstanding rather than being counted as server/client conformance success.
+  The early-upload rejection discovered by a loopback test is fixed: the
+  backend reads response heads concurrently with uploading, cancels an
+  unfinished upload on a final response, and excludes that socket from reuse.
+  Informational responses preserve upload progress; the head idle deadline
+  starts after uploading. Producer failures and source cleanup have regression
+  tests. Full-duplex streaming tunnels are outside this adapter contract.
 - `mttp-net/codings` now also provides bounded gzip/deflate/Brotli encoders,
   quality-weight negotiation and a lazy body wrapper. Each input chunk is
   sync-flushed, and output is at most 64 KiB per pull. Thirty-two coding tests pass

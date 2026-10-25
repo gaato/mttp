@@ -63,6 +63,14 @@ async test "streamed request echo obeys the adapter limit at the exact boundary"
         ),
       )
       assert_true(refused.has_prefix("HTTP/1.1 413"))
+      let rejected = backend.send(
+        @model.Request::post("http://" + address + "/").body_bytes(
+          payload + b"x",
+        ),
+        @client.RequestOptions::default(),
+      )
+      assert_eq(rejected.status, 413)
+      rejected.close()
     },
     limits={
       ..@server.ServerLimits::default(),
