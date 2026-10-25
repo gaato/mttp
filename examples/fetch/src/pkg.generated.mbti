@@ -1,0 +1,19 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-fetch-example"
+
+import {
+  "gaato/mttp-net/fetch",
+}
+
+// Values
+pub fn fetch(@fetch.JsRequest, @fetch.JsBackground) -> @fetch.JsPromise
+
+pub fn fetch_with_env(@fetch.JsRequest, @fetch.JsBackground, @fetch.JsEnv) -> @fetch.JsPromise
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

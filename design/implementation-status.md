@@ -66,9 +66,14 @@ The implementation starts from design commit
   components and omits None query values; curl diagnostics redact sensitive
   headers without consuming streams. The quick facade lazily shares a Client
   and supports explicit close/recreation on native, wasm and JS.
-- Remaining U4–U9 work includes socket/browser conformance, the runtime server,
-  fetch handler, response compression integration, consumer migrations and
-  remaining U1–U3 checks.
+- Remaining U4–U9 work includes full socket/browser/host conformance, consumer
+  migrations and remaining U1–U3 checks.
+- The JS fetch handler now maps Web Requests/Responses, cancellation, bounded
+  request bodies, streaming ownership and synchronous aggregate background
+  registration. Host shims cover Workers, Fastly, Vercel, Deno, Bun and Lambda
+  URLs. Seventeen Node tests and static gates pass, including actual linked
+  ESM exports and host-shim lifecycle contracts; deployment-specific
+  Workers/Fastly and browser runs remain.
 - A native/wasm HTTP/1 server now passes 25 tests on each target: bounded heads and
   bodies, keepalive/draining, lazy 100 Continue, response compression,
   disconnect cancellation, graceful shutdown and background work are present.

@@ -3,7 +3,8 @@
 Runtime adapters for `gaato/mttp`, using `moonbitlang/async` on native,
 moonrun wasm and JavaScript. This module is under development and unpublished.
 The backend provides bounded HTTP/1 sockets and a JS fetch adapter. The server
-adapter is not available yet.
+package serves HTTP/1 on native/wasm; fetch adapts handlers to Web Request and
+Response on JavaScript, with host entry shims and tracked background work.
 
 ## Install
 

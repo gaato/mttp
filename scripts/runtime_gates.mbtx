@@ -18,6 +18,17 @@ suberror GateError {
 
 ///|
 async fn main {
+  // The fetch export smoke test imports an actual linked application, because
+  // checking a source-level function cannot prove ESM export configuration.
+  @shell.Cmd(
+    "moon",
+    ["build", "examples/fetch/src", "--target", "js"],
+    stdout=Discard,
+    stderr=Inherit,
+  ).run(timeout_ms=600000)
+  @fs.write_file(
+    "_build/js/debug/build/gaato/mttp-fetch-example/package.json", "{\"type\":\"module\"}\n",
+  )
   let manifest = @fs.read_file("scripts/runtime_manifest.tsv").text()
   let checked : Map[String, Bool] = Map([])
   let packages : Map[String, Bool] = Map([])
@@ -73,6 +84,12 @@ async fn main {
       raise GateError("runtime test count differs for " + key)
     }
     println("\{pkg} \{target}: \{count} passed")
+  }
+  // moon info uses the module's native canonical backend and skips this
+  // JS-only package. Compare its compiler-produced interface explicitly.
+  if @fs.read_file("mttp-net/src/fetch/pkg.generated.mbti").text() !=
+    @fs.read_file("_build/js/debug/check/gaato/mttp-net/fetch/fetch.mbti").text() {
+    raise GateError("fetch JS interface is stale")
   }
   @fs.walk("mttp-net/src", (dir, entries) => {
     if entries.contains("moon.pkg") {
