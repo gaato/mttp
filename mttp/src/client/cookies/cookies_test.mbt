@@ -1,4 +1,48 @@
 ///|
+test "redirect wrapper stores cookies before following each hop" {
+  @driver.run_sync(() => {
+    let seen = []
+    let jar = @cookie.CookieJar::new(@fake.FakeClock::new())
+    let backend = @client.FollowRedirects::new(
+      @cookies.Cookies::new(
+        @client.from_fn((request, _) => {
+          seen.push(request.headers.get("cookie"))
+          match seen.length() {
+            1 =>
+              @model.Response::new(
+                302,
+                headers=@model.Headers::of([
+                  ("location", "/b"),
+                  ("set-cookie", "sid=one; Path=/"),
+                ]),
+              )
+            2 =>
+              @model.Response::new(
+                302,
+                headers=@model.Headers::of([
+                  ("location", "https://other.example/"),
+                  ("set-cookie", "sid=two; Path=/"),
+                ]),
+              )
+            _ => @model.Response::new(200)
+          }
+        }),
+        jar,
+      ),
+    )
+    defer backend.close()
+    backend
+    .send(
+      @model.Request::get("https://h.example/a"),
+      @client.RequestOptions::default(),
+    )
+    .close()
+    assert_eq(seen, [None, Some("sid=one"), None])
+    assert_eq(jar.header_for("https://h.example/"), Some("sid=two"))
+  })
+}
+
+///|
 test "cookie backend implements the shared backend contract" {
   @driver.run_sync(() => {
     assert_eq(

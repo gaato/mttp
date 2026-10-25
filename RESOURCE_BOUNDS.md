@@ -30,6 +30,7 @@ a test from hanging (the `testing/driver` rows).
 
 | Structure | Bound | On overflow | Tests |
 |---|---|---|---|
+| `client` redirect history and followed hops | `max_redirects`, default 10; no response bodies retained | Closes the last intermediate response and raises `TooManyRedirects` | `mttp/src/client/redirect_wbtest.mbt`: "plan_redirect decides each hop"; `mttp/src/client/redirect_test.mbt`: "redirect refusals close received bodies and retain error classification" |
 | `cookie` stored entries | Default 50 per domain and 3000 per jar; negative limits mean zero | Evicts expired entries, then least-recently-accessed entries (non-Secure first for per-domain overflow), preserving the cookie storage contract | `mttp/src/cookie/jar_wbtest.mbt`: "the default caps are 50 cookies per domain and 3000 in all", "zero or negative caps keep nothing", "the per-domain cap evicts the least recently accessed cookie", "the total cap evicts expired cookies, then the least recently accessed" |
 | `cookie` accepted name/value and attribute bytes | 4096 bytes combined name/value, 1024 bytes per attribute | Ignores oversized cookies or attributes according to the cookie parser contract | `mttp/src/cookie/set_cookie_wbtest.mbt`: "a cookie is ignored past 4096 bytes of name and value and an attribute past 1024" |
 | `cookie` lifetime | 400 days | Clamps Max-Age and Expires | `mttp/src/cookie/jar_wbtest.mbt`: "lifetimes are cut to 400 days" |

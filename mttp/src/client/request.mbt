@@ -7,6 +7,8 @@ pub struct ClientRequest[T] {
   priv timeout : Int32?
   priv idle : Int32?
   priv body_limit : Int32?
+  priv redirects : Bool?
+  priv redirect_limit : Int32?
 }
 
 ///|
@@ -22,6 +24,8 @@ pub fn[T] ClientRequest::new(
     timeout: None,
     idle: None,
     body_limit: None,
+    redirects: None,
+    redirect_limit: None,
   }
 }
 
@@ -38,6 +42,8 @@ pub fn[T, U] ClientRequest::response(
     timeout: self.timeout,
     idle: self.idle,
     body_limit: self.body_limit,
+    redirects: self.redirects,
+    redirect_limit: self.redirect_limit,
   }
 }
 
@@ -109,7 +115,27 @@ fn[T] ClientRequest::options(
       None => defaults.read_idle_ms
     },
     max_body_bytes: self.body_limit.unwrap_or(defaults.max_body_bytes),
+    follow_redirects: self.redirects.unwrap_or(defaults.follow_redirects),
+    max_redirects: self.redirect_limit.unwrap_or(defaults.max_redirects),
   }
+}
+
+///|
+/// Overrides redirect following without resetting other client defaults.
+pub fn[T] ClientRequest::follow_redirects(
+  self : ClientRequest[T],
+  enabled : Bool,
+) -> ClientRequest[T] {
+  { ..self, redirects: Some(enabled), }
+}
+
+///|
+/// Overrides the maximum number of followed redirect hops.
+pub fn[T] ClientRequest::max_redirects(
+  self : ClientRequest[T],
+  max : Int32,
+) -> ClientRequest[T] {
+  { ..self, redirect_limit: Some(max), }
 }
 
 ///|
