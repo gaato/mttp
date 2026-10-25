@@ -50,6 +50,7 @@ async fn read_body(body : @model.Body) -> Result[Bytes, String] {
       } catch {
         error => Err(error_label(error))
       }
+    @model.Body::.. => Err("unsupported body kind")
   }
 }
 

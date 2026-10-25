@@ -15,6 +15,7 @@
 ///   assert_true(request.body.is_replayable())
 /// }
 /// ```
+#non_exhaustive
 pub(all) enum Body {
   /// An empty, replayable body.
   Empty

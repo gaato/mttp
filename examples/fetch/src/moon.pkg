@@ -1,10 +1,19 @@
 import {
   "gaato/mttp/model",
   "gaato/mttp-net/fetch",
+  "gaato/mttp/client",
+  "gaato/mttp-net/backend",
+  "moonbitlang/async/js_async",
+  "moonbitlang/core/encoding/utf8",
 }
 
 supported_targets = "js"
 
 options(
-  link: { "js": { "exports": [ "fetch", "fetch_with_env" ], "format": "esm" } },
+  link: {
+    "js": {
+      "exports": [ "fetch", "fetch_with_env", "get_text" ],
+      "format": "esm",
+    },
+  },
 )

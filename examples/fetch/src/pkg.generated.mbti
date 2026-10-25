@@ -3,12 +3,15 @@ package "gaato/mttp-fetch-example"
 
 import {
   "gaato/mttp-net/fetch",
+  "moonbitlang/async/js_async",
 }
 
 // Values
 pub fn fetch(@fetch.JsRequest, @fetch.JsBackground) -> @fetch.JsPromise
 
 pub fn fetch_with_env(@fetch.JsRequest, @fetch.JsBackground, @fetch.JsEnv) -> @fetch.JsPromise
+
+pub fn get_text(String) -> @js_async.Promise[String]
 
 // Errors
 

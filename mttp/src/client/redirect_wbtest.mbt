@@ -205,6 +205,7 @@ fn plan(
         Bytes(bytes) => @utf8.decode_lossy(bytes)
         Stream(_) if physical_equal(next.body, request.body) => "<same stream>"
         Stream(_) => "<other stream>"
+        @model.Body::.. => "<unsupported body>"
       }
       let headers = next.headers.iter().map(pair => pair.0).collect()
       "\{next.meth} \{next.url} \{body} [\{headers.join(", ")}]"

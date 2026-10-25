@@ -76,6 +76,7 @@ async fn js_body(response : @model.Response) -> Bytes {
     Empty => b""
     Bytes(bytes) => bytes
     Stream(cell) => @model.read_bounded(cell.take(), 20 * 1024 * 1024)
+    @model.Body::.. => fail("unsupported body kind")
   }
 }
 

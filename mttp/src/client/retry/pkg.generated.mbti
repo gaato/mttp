@@ -27,6 +27,7 @@ pub fn Backoff::equal(Self, Self) -> Bool
 pub fn Backoff::not_equal(Self, Self) -> Bool
 pub fn Backoff::to_repr(Self) -> @debug.Repr
 
+#non_exhaustive
 pub(all) enum Decision {
   Wait(Int32)
   Stop(StopReason)

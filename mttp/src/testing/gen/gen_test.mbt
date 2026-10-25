@@ -40,3 +40,23 @@ test "generated controls are refused and text generation is reproducible" {
     assert_eq(headers.get_all("X-TEST"), headers.get_all("x-test"))
   }
 }
+
+///|
+test "generators clamp caller sizes and preserve empty input" {
+  assert_eq(@gen.text().sample(size=0, seed=1), "")
+  assert_eq(@gen.headers().sample(size=0, seed=1).length(), 0)
+  for value in @gen.text().samples(count=32, size=1000000, seed=1) {
+    assert_true(value.length() >= 128 && value.length() <= 256)
+  }
+  for headers in @gen.headers().samples(count=32, size=1000000, seed=1) {
+    assert_eq(headers.length(), 32)
+  }
+  assert_eq(@gen.byte_chunks(b""), [])
+  let splits = Ref(0)
+  @gen.each_split(b"", (left, right) => {
+    assert_eq(left, b"")
+    assert_eq(right, b"")
+    splits.val += 1
+  })
+  assert_eq(splits.val, 1)
+}

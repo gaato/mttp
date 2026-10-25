@@ -67,6 +67,10 @@ Budgets are exact uncovered counts at the last measurement.
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| mttp-net/src/backend/upload.mbt | 1 | Forward-compatible Body arm: every currently constructible body variant is handled first; future unsupported bodies are rejected instead of being written as empty uploads. |
+| mttp/src/client/curl.mbt | 1 | Forward-compatible Body arm: future body variants are omitted from diagnostics without being read; all current variants have tests. |
+| mttp/src/client/response_as.mbt | 2 | Forward-compatible Body arms in successful buffering and error excerpts: current constructors are covered, and future unsupported bodies raise Invalid rather than returning empty data. |
+| mttp/src/multipart/multipart.mbt | 1 | Forward-compatible Body arm: a future body representation cannot be constructed in this release and is refused as an unsupported part. |
 | mttp-net/src/codings/encoded_body.mbt | 1 | Defensive open-error conversion: the private source callback and encoder raise TransportError, handled first. Cancellation propagates as a signal. |
 | mttp-net/src/server/request_body.mbt | 2 | Defensive open-error conversion after timeout and TransportError cases; NoBody is already done and request framing never produces UntilClose or future variants. |
 | mttp-net/src/server/response.mbt | 1 | Forward-compatible EncodingChoice arm; all current negotiation results are handled first. |
@@ -76,7 +80,7 @@ Budgets are exact uncovered counts at the last measurement.
 | mttp/src/endpoint/dynamic_output.mbt | 1 | Named-cookie prefix guard: the private selector filters for that exact prefix before invoking its decoder. |
 | mttp/src/endpoint/input.mbt | 3 | Defensive wrong BodyValue arms: the server chooses Buffered for raw and buffered inputs and Streamed for streaming inputs; these private staged decoders cannot receive the opposite representation through dispatch. |
 | mttp/src/endpoint/output.mbt | 2 | Projection precondition guards: encoding and dynamic status selection follow a successful matches call. Reaching these arms requires a nondeterministic projection, contrary to the documented variant contract. |
-| mttp/src/endpoint/server.mbt | 1 | Defensive outer pipeline catch: current authenticate and handle errors are classified inside their calls; staged decoders raise InputErrors handled at their stage. The private wrapper retains the unhandled policy for future pipeline steps. |
+| mttp/src/endpoint/server.mbt | 4 | Three lines reject future non-exhaustive Body variants as malformed input; those variants cannot be constructed in this release. One defensive outer pipeline catch remains: current authenticate/handle errors and staged InputErrors are classified inside their calls. |
 | mttp/src/openapi/openapi.mbt | 4 | Forward-compatible AuthScheme and Seg arms: all currently constructible variants are handled before these non-exhaustive fallback arms. |
 | mttp/src/router/router.mbt | 1 | Forward-compatible Seg arm: every currently constructible segment is handled before this fallback. |
 | mttp/src/router/ownership.mbt | 1 | Defensive closed-reader guard: the enclosing taken stream returns EOF after close before invoking this private response owner again. Public EOF, failure, cancellation and repeated close paths are tested. |

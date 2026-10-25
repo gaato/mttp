@@ -107,7 +107,8 @@ pub(all) suberror MultipartError {
   BoundaryCollision
   InvalidHeaderValue(String)
   /// The named part is a stream, which `encode` and `encode_segments` cannot
-  /// hold: use `encode_body` or `apply`.
+  /// hold: use `encode_body` or `apply`. Also rejects future body variants
+  /// which this version of the multipart writer cannot represent.
   StreamPart(String)
 } derive(Debug)
 
@@ -335,6 +336,7 @@ fn layout(
         framing.clear()
         pieces.push(Streamed(part.name, stream))
       }
+      @model.Body::.. => raise StreamPart(part.name)
     }
     append_text(framing, "\r\n")
   }

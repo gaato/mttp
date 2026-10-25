@@ -293,6 +293,7 @@ pub extend StopReason with @debug.Debug::{to_repr}
 
 ///|
 /// What to do after a failed attempt.
+#non_exhaustive
 pub(all) enum Decision {
   /// Wait this many milliseconds, then send the request again.
   Wait(Int32)

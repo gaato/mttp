@@ -56,6 +56,12 @@ async fn upload(
       }
       buffer.to_bytes()
     }
+    @model.Body::.. =>
+      raise @model.TransportError(
+        kind=Invalid,
+        phase=Write,
+        detail="unsupported body kind",
+      )
   }
 }
 

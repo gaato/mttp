@@ -73,6 +73,10 @@ extern "js" fn check_hosts() -> @js_async.Promise[Unit] =
   #|   try {lambda(fetch, {maxRequestBytes: -1});} catch(error) {invalidLimit = error instanceof RangeError;}
   #|   check(invalidLimit, 'Lambda config');
   #|   const accepts = lambda(() => new Response(null, {status: 204}));
+  #|   check((await accepts({...event, body: Buffer.alloc(1048576, 97).toString('base64')})).statusCode === 204, 'Lambda base64 input boundary without regexp stack overflow');
+  #|   for (const body of ['YQ=\n', '====', 'YQ', 'YQ=']) {
+  #|     check((await accepts({...event, body})).statusCode === 400, 'Lambda base64 grammar');
+  #|   }
   #|   check((await accepts({...event, body: 'x'.repeat(1048576), isBase64Encoded: false})).statusCode === 204, 'Lambda default input boundary');
   #|   check((await accepts({...event, body: 'x'.repeat(1048577), isBase64Encoded: false})).statusCode === 413, 'Lambda default input overflow');
   #|   for (const size of [4194304, 4194305]) {

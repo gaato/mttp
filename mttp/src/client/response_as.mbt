@@ -65,6 +65,12 @@ pub async fn read_body(
         bytes
       }
     Stream(stream) => @model.read_bounded(stream.take(), limit)
+    @model.Body::.. =>
+      raise @model.TransportError(
+        kind=Invalid,
+        phase=Body,
+        detail="unsupported body kind",
+      )
   }
 }
 
@@ -83,6 +89,12 @@ async fn error_excerpt(body : @model.Body) -> Bytes raise @model.TransportError 
       }
       out.to_bytes()
     }
+    @model.Body::.. =>
+      raise @model.TransportError(
+        kind=Invalid,
+        phase=Body,
+        detail="unsupported body kind",
+      )
   }
 }
 

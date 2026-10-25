@@ -296,6 +296,16 @@ fn[S, I, E, O, P] Endpoint::pipeline(
             }
           Bytes(bytes) => BufferedStream::new(bytes)
           Empty => BufferedStream::new(b"")
+          @model.Body::.. =>
+            return failure(Body, [
+              InputFailure::new(
+                body_atom(self.input.atoms),
+                @schema.DecodeFailure(
+                  kind=Malformed,
+                  message="unsupported body kind",
+                ),
+              ),
+            ])
         }
         Streamed(LimitedInput::{
           reader,

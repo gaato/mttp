@@ -204,6 +204,34 @@ pub fn to_openapi(
     )
   }
   schemas["Problem"] = problem_schema
+  // OAS 3.1 Components keys are narrower than JSON Schema property names.
+  // Enforce this only at projection, retaining general schema composition.
+  for
+    (kind, names) in [
+      ("schema", schemas.keys()),
+      ("security scheme", schemes.keys()),
+    ] {
+    for name in names {
+      if name.is_empty() ||
+        !name
+        .iter()
+        .all(c => {
+          (c >= 'a' && c <= 'z') ||
+          (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') ||
+          c == '.' ||
+          c == '_' ||
+          c == '-'
+        }) {
+        problems.push(
+          @endpoint.DefinitionProblem::new(
+            "",
+            "invalid OpenAPI " + kind + " component name: " + name,
+          ),
+        )
+      }
+    }
+  }
   let spec = @apispec.OpenApi::new(
     info,
     paths,

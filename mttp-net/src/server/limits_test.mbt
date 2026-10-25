@@ -116,6 +116,51 @@ async test "trickling request bytes do not renew the body deadline" {
 }
 
 ///|
+async test "32 slow header connections expire and release admission slots" {
+  let handled = Ref(0)
+  with_server(
+    _ => {
+      handled.val += 1
+      @model.Response::new(200)
+    },
+    address => {
+      @async.with_task_group(group => {
+        let clients : Array[@socket.Tcp] = []
+        defer (for tcp in clients {
+          tcp.close()
+        })
+        for _ in 0..<32 {
+          let tcp = @socket.Tcp::connect(@socket.Addr::parse(address))
+          clients.push(tcp)
+          tcp.write(b"GET / HTTP/1.1\r\nHost:")
+        }
+        let readers = clients.map(tcp => {
+          group.spawn(() => {
+            let response = tcp.read_until("\r\n\r\n").unwrap()
+            assert_true(response.has_prefix("HTTP/1.1 408"))
+          })
+        })
+        for reader in readers {
+          reader.wait()
+        }
+      })
+      assert_eq(handled.val, 0)
+      assert_true(
+        raw(address, b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").has_prefix(
+          "HTTP/1.1 200",
+        ),
+      )
+      assert_eq(handled.val, 1)
+    },
+    limits={
+      ..@server.ServerLimits::default(),
+      max_connections: 32,
+      header_timeout_ms: 500,
+    },
+  )
+}
+
+///|
 async test "Expect continue is lazy and oversized chunked bodies override caught read failures" {
   let handler : @model.Handler = req => {
     if req.headers.get("authorization") is None {
@@ -151,5 +196,43 @@ async test "Expect continue is lazy and oversized chunked bodies override caught
       )
     },
     limits={ ..@server.ServerLimits::default(), max_body_bytes: 3, },
+  )
+}
+
+///|
+async test "repeated header and chunk-line floods stay bounded and leave the server usable" {
+  with_server(
+    request => {
+      ignore(@client.read_body(request.body, 1048576) catch { _ => b"" })
+      @model.Response::new(200)
+    },
+    address => {
+      for
+        (wire, status) in [
+          (
+            b"GET / HTTP/1.1\r\nHost: x\r\n" +
+            @model.encode_utf8("x: a\r\n".repeat(4096)),
+            "431",
+          ),
+          (
+            b"POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n1;" +
+            Bytes::make(8193, b'x'),
+            "400",
+          ),
+        ] {
+        for _ in 0..<32 {
+          let tcp = @socket.Tcp::connect(@socket.Addr::parse(address))
+          defer tcp.close()
+          tcp.write(wire)
+          let response = tcp.read_until("\r\n\r\n").unwrap()
+          assert_true(response.has_prefix("HTTP/1.1 " + status))
+        }
+      }
+      assert_true(
+        raw(address, b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").has_prefix(
+          "HTTP/1.1 200",
+        ),
+      )
+    },
   )
 }

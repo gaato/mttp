@@ -16,7 +16,45 @@ The implementation starts from design commit
   `gaato/requesto.mbt` commit `be3dfa395b960746bd5b7976e0de3d6eac480baf`.
 - `scripts/docs_audit.mbtx` is copied unchanged from `gaato/discord.mbt`.
 
-## Progress
+## Current integration checkpoint
+
+The selected v0.1–v0.4 implementation is present, including the consumer
+migrations. The interrupted h1client probe was rebuilt; it is not a missing
+source dependency. The earlier notes below are chronological checkpoints,
+not the current task list.
+
+- Core, Digest and retained URL/Cookie/SSE conformance suites pass on all four
+  targets with matching counts. Runtime interfaces are compared across their
+  supported targets and checked for leaked async implementation types.
+- H1Backend, codings, runtime, quick, the native/Wasm HTTP server and JS Fetch
+  adapter are implemented. The server passes 29 tests per socket target,
+  including slow body deadlines, 32 slow-header connections, repeated header
+  and chunk-line floods and subsequent successful requests.
+- The generator inventory, API review and negative gate checks are complete.
+  Body and retry Decision are explicitly extensible. Retry still refuses every
+  stream without a factory. OpenAPI component names are validated at projection.
+- The final native coverage measurement is 5,955/5,998 lines (99.3%); its closed
+  ledger passes. The remaining shutdown/accept interleavings are explicitly
+  unexecuted, as detailed in the coverage ledger and validation notes.
+- The SDK gate passes: 105 generated/facade tests on each target, 59 retained
+  behavioural tests on native and JS, 68 Python tests, regeneration and audits.
+  Discord/Voice passes 1,482 native, 1,291 Wasm and 1,262 JS tests. Its native
+  coverage audit and documentation/clock/API audits pass. The CLI gate and
+  its 12 offline tests pass; requesto's deprecation/migration docs audit passes.
+- Packaged candidates resolve outside moon.work through an isolated registry.
+  Actual Chromium tests exercise both server-side Web Request adaptation and
+  a real browser network client. Workerd and local host-shim tests pass.
+
+Reproduction commands, public API decisions, resource measurements and the
+limits of host coverage are in [validation.md](validation.md). No packages,
+branches or PRs have been published. Remote cloud deployments and the separate
+runtime flag day remain outside this implementation checkpoint.
+
+The isolated consumer workspaces are under
+`/var/tmp/mttp-handoff-20261025/{mbt-sdk,discord,discord-cli,requesto}-migration`.
+The original consumer working copies remain untouched.
+
+## Earlier progress checkpoints
 
 - U1 in progress: scaffold, Driver, clocks, jsonkit, model, SSE parsing,
   multipart and retry decisions are present. This is not a complete U1.

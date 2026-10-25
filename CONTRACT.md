@@ -5,10 +5,9 @@ the sans-IO parsers guarantee. A backend, a test double or a wrapper that
 keeps these rules can be used with every client here; a consumer written
 against them needs nothing more.
 
-This ledger distinguishes the local implementations already checked from
-runtime adapters still to be implemented. Shared cross-adapter contract
-suites will be added with those adapters; current evidence is the named
-package tests below.
+This ledger distinguishes common trait rules from transport-specific checks.
+The shared Backend checks cover validation and closed-state behaviour; socket
+and Fetch fixtures exercise deadlines, framing, cancellation and ownership.
 
 ## Clock
 
@@ -63,7 +62,9 @@ package tests below.
 
 | Implementation | Holds | Notes |
 |---|---|---|
-| FakeClock, SimClock, SimTimer, SimGate | Local rules above | `clock/fake/clock_test.mbt`; no runtime adapter has been checked yet |
+| FakeClock, SimClock, SimTimer, SimGate | Local rules above | `clock/fake/clock_test.mbt` and `testing/driver/driver_test.mbt` |
+| AsyncClock, ClockTimer, SemaphoreGate, VirtualClock | Completion/cancellation, admission cleanup and observable clock advancement | `mttp-net/src/runtime` suites on native, Wasm and JS; VirtualClock requires an explicit observation predicate |
+| H1Backend and Fetch backend | Invalid-request refusal and idempotent closed state, plus adapter-specific wire/body/deadline checks | `mttp-net/src/backend/backend_test.mbt`, `fetch.js_test.mbt` and the socket suites; actual browser network smoke in `scripts/browser_gate.mbtx` |
 | StreamBody and taken stream | Acquisition, declared length, close, sticky EOF | `model/body_test.mbt`; read-loop cancellation also exercised by `testing/feed/feed_test.mbt` |
 | Multipart body | Boundary collision, ownership and cleanup | `multipart/stream_test.mbt`, ported from runtime-tests |
 | Feed | Scripted data, EOF, error, virtual delay and cancellation | `testing/feed/feed_test.mbt` |

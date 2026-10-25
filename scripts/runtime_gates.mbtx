@@ -39,6 +39,28 @@ fn portable_backend_interface(source : String) -> String {
 
 ///|
 async fn check_runtime_interfaces() -> Unit {
+  // These enums are explicitly extensible in design section 5.6. Checking the
+  // generated public interface catches an omitted annotation before release.
+  for
+    (path, names) in [
+      ("mttp/src/model/pkg.generated.mbti", ["Body", "Method", "Kind", "Phase"]),
+      ("mttp/src/client/retry/pkg.generated.mbti", ["Decision"]),
+      ("mttp/src/schema/pkg.generated.mbti", ["DecodeKind"]),
+      (
+        "mttp/src/endpoint/pkg.generated.mbti",
+        ["AuthScheme", "Location", "FailureStage"],
+      ),
+      ("mttp/src/h1/pkg.generated.mbti", ["Framing", "ParseKind", "Version"]),
+    ] {
+    let api = @fs.read_file(path).text()
+    for name in names {
+      if !api.contains("#non_exhaustive\npub(all) enum " + name + " {") {
+        raise GateError(
+          "missing extensible enum annotation: " + path + " " + name,
+        )
+      }
+    }
+  }
   let packages = ["backend", "runtime", "codings", "quick", "server", "fetch"]
   @shell.Cmd(
     "moon",
@@ -59,6 +81,12 @@ async fn check_runtime_interfaces() -> Unit {
       ).text()
     }
     let native = interface("native")
+    if native.contains("\"moonbitlang/async") ||
+      interface("js").contains("\"moonbitlang/async") {
+      raise GateError(
+        "runtime implementation type leaked into public interface: " + package,
+      )
+    }
     if native != interface("wasm") {
       raise GateError("native/wasm public interface mismatch: " + package)
     }

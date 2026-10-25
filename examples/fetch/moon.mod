@@ -13,4 +13,5 @@ preferred_target = "js"
 import {
   "gaato/mttp@0.1.0",
   "gaato/mttp-net@0.1.0",
+  "moonbitlang/async@0.22.5",
 }

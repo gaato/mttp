@@ -370,7 +370,7 @@ test "encode_body declares a length only when every stream part has one" {
     let empty = parts.map(part => {
       match part.body {
         Stream(_) => { ..part, body: Bytes(b""), }
-        Empty | Bytes(_) => part
+        _ => part
       }
     })
     @multipart.encode(empty, "B").1.length().to_int64()

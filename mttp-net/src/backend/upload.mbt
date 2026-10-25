@@ -68,6 +68,12 @@ async fn upload(
         timer.run(Write, () => wire.write(@h1.encode_chunk(b"")))
       }
     }
+    @model.Body::.. =>
+      raise @model.TransportError(
+        kind=Invalid,
+        phase=Write,
+        detail="unsupported body kind",
+      )
   }
 }
 

@@ -78,6 +78,7 @@ pub fn[T] ClientRequest::to_curl(
           comment = " # byte body omitted"
         }
       Stream(_) => comment = " # streaming body omitted"
+      @model.Body::.. => comment = " # unsupported body omitted"
     }
   }
   prefix + args.join(" ") + comment

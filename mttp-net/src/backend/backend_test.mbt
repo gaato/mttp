@@ -24,6 +24,7 @@ async fn body(response : @model.Response) -> Bytes {
     Empty => b""
     Bytes(bytes) => bytes
     Stream(stream) => @model.read_bounded(stream.take(), 1000000)
+    @model.Body::.. => fail("unsupported body kind")
   }
 }
 

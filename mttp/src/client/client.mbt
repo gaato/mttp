@@ -146,7 +146,8 @@ pub async fn[T] Client::send(
   let exempt = raw.attributes.get(global_exempt).unwrap_or(false)
   // A stream has no replay source even when a backend failed before taking
   // it. Only an explicit factory can opt into rebuilding an outgoing body.
-  let replayable = request.body_factory is Some(_) || !(raw.body is Stream(_))
+  let replayable = request.body_factory is Some(_) ||
+    raw.body is (Empty | Bytes(_))
   for attempt = 0; ; attempt = attempt + 1 {
     self.check_total(started)
     self.limiter.acquire(bucket, global_exempt=exempt)
@@ -287,8 +288,8 @@ pub async fn[T] Client::send(
           ),
         )
         match decision {
-          Stop(_) => raise error
           Wait(ms) => self.clock.sleep(ms)
+          _ => raise error
         }
       }
     }

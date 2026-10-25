@@ -21,6 +21,8 @@ test "OpenAPI endpoint projection" {
 
 Conflicting schema names, dangling local references and conflicting security
 scheme names are errors. `Problem` is reserved for the framework error schema.
+Schema and security component names must be nonempty and use only ASCII
+letters, digits, `.`, `_` and `-`, as required by OpenAPI's Components Object.
 Reference checking supports local JSON pointers, with a 100,000-node visit
 budget and 128 levels; external documents and named anchors need an external
 resolver and are refused here. Example/default/const values are data and are

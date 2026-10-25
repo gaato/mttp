@@ -27,11 +27,14 @@ export function lambda(fetch, {maxRequestBytes = 1048576, maxResponseBytes = 419
   }
   return async event => {
     const encoded = event.body ?? '';
+    const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0;
     const bytes = event.isBase64Encoded
-      ? Math.floor(encoded.length / 4) * 3 - (encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0)
+      ? Math.floor(encoded.length / 4) * 3 - padding
       : Buffer.byteLength(encoded, 'utf8');
     if (bytes > maxRequestBytes) return {statusCode: 413, body: ''};
-    if (event.isBase64Encoded && !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+    // Avoid a repeated capture-sized group: V8 can exhaust its regexp stack
+    // on an otherwise valid event near the 1 MiB request limit.
+    if (event.isBase64Encoded && (encoded.length % 4 !== 0 || /[^A-Za-z0-9+/]/.test(encoded.slice(0, encoded.length - padding)))) {
       return {statusCode: 400, body: ''};
     }
     const body = Buffer.from(encoded, event.isBase64Encoded ? 'base64' : 'utf8');
