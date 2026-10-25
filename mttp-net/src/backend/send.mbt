@@ -78,13 +78,20 @@ async fn exchange(
     _ => None
   }
   defer (if stream is Some(stream) { stream.close() })
+  // A stream may validate nested multipart ownership on its first read.
+  // Keep that validation, including a false length=0 claim, before the head.
+  let first = match stream {
+    Some(stream) => timer.run(Write, () => stream.read_some())
+    None => None
+  }
   timer.run(Write, () => wire.write(head))
   match request.body {
     Bytes(bytes) => send_bytes(wire, bytes, timer)
     Empty => ()
     Stream(_) => {
       let stream = stream.unwrap()
-      while timer.run(Write, () => stream.read_some()) is Some(bytes) {
+      let mut next = first
+      while next is Some(bytes) {
         for offset = 0; offset < bytes.length(); {
           let n = (bytes.length() - offset).min(65536)
           let slice = bytes[offset:offset + n].to_owned()
@@ -96,6 +103,7 @@ async fn exchange(
           timer.run(Write, () => wire.write(data))
           continue offset + n
         }
+        next = timer.run(Write, () => stream.read_some())
       }
       if framing == Chunked {
         timer.run(Write, () => wire.write(@h1.encode_chunk(b"")))
