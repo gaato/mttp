@@ -201,6 +201,7 @@ static_gates() {
   step moon run scripts/docs_audit.mbtx --self-test
   step moon run scripts/test_layout.mbtx --self-test
   step moon run scripts/bounds_check.mbtx
+  step moon run scripts/runtime_gates.mbtx
   step moon run scripts/coverage_report.mbtx
   check_manifest_file
 }

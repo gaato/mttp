@@ -1,0 +1,5 @@
+import {
+  "gaato/mttp-net/runtime",
+} for "test"
+
+supported_targets = "native + wasm + js"

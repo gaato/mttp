@@ -67,5 +67,6 @@ Budgets are exact uncovered counts at the last measurement.
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| mttp-net/src/runtime/timer.mbt | 1 | Defensive conversion required by the runtime task-group API's open error type: ClockTimer accepts a nonraising callback and Clock.sleep is nonraising. Parent cancellation propagates as a signal, verified by the cancellation test, and cannot enter this ordinary-error catch. |
 | mttp/src/multipart/stream_body.mbt | 1 | Defensive closed-reader guard: the enclosing taken stream returns EOF before delegating again, so this branch cannot be reached through the public body API. |
 | mttp/src/testing/driver/driver.mbt | 1 | Defensive arm, unreachable by construction in `gaato/mttp`: `step` marks a task parked when it suspended through something other than its driver, which needs an async runtime the module does not link. |

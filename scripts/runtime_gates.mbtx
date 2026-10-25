@@ -1,0 +1,81 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/async@0.22.5/shell",
+  "moonbitlang/core/string",
+}
+----
+
+// Target-specific packages have their own manifest because the sans-IO gate
+// requires equal counts across all four targets. Check each package alone so
+// a native abort cannot hide the remaining packages' tests.
+
+///|
+suberror GateError {
+  GateError(String)
+}
+
+///|
+async fn main {
+  let manifest = @fs.read_file("scripts/runtime_manifest.tsv").text()
+  let checked : Map[String, Bool] = Map([])
+  let packages : Map[String, Bool] = Map([])
+  let rows : Map[String, Bool] = Map([])
+  for line in manifest.split("\n") {
+    if line.is_empty() || line.has_prefix("package\t") || line.has_prefix("#") {
+      continue
+    }
+    let columns = line.split("\t").collect()
+    guard columns is [pkg, target, count] else {
+      raise GateError("invalid runtime manifest row")
+    }
+    let pkg = pkg.to_owned()
+    let target = target.to_owned()
+    let count = @string.parse_int(count)
+    if count <= 0 {
+      raise GateError("runtime package has no positive test floor")
+    }
+    let key = pkg + "\t" + target
+    if rows.contains(key) {
+      raise GateError("duplicate runtime manifest row")
+    }
+    rows[key] = true
+    packages[pkg] = true
+    if !checked.contains(target) {
+      @shell.Cmd(
+        "moon",
+        ["check", "--target", target, "--deny-warn"],
+        stdout=Discard,
+        stderr=Inherit,
+      ).run(timeout_ms=600000)
+      checked[target] = true
+    }
+    let result = @shell.Cmd(
+      "moon",
+      ["test", "-p", pkg, "--target", target, "--deny-warn"],
+      env={ "MOON_CC": "cc" },
+    ).output(timeout_ms=600000)
+    result.check()
+    let summaries = result
+      .stdout()
+      .split("\n")
+      .filter(line => line.has_prefix("Total tests:"))
+      .collect()
+    let expected = "Total tests: \{count}, passed: \{count}, failed: 0."
+    if summaries.length() != 1 || summaries[0] != expected {
+      println(result.stdout())
+      println(result.stderr())
+      raise GateError("runtime test count differs for " + key)
+    }
+    println("\{pkg} \{target}: \{count} passed")
+  }
+  @fs.walk("mttp-net/src", (dir, entries) => {
+    if entries.contains("moon.pkg") {
+      let pkg = "gaato/mttp-net" + dir["mttp-net/src".length():].to_owned()
+      if !packages.contains(pkg) {
+        raise GateError("runtime package missing from manifest: " + pkg)
+      }
+    }
+  })
+}

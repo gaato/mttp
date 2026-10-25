@@ -1,0 +1,38 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/runtime"
+
+import {
+  "gaato/mttp/clock",
+}
+
+// Values
+pub async fn[X] with_timeout_opt(&@clock.Clock, Int32, async () -> X) -> X?
+
+// Errors
+
+// Types and methods
+pub struct AsyncClock {
+}
+pub fn AsyncClock::new() -> Self
+pub fn AsyncClock::now_unix_ms(Self) -> Int64
+pub async fn AsyncClock::sleep(Self, Int32) -> Unit noraise
+pub impl @clock.Clock for AsyncClock
+
+pub struct ClockTimer {
+  // private fields
+}
+pub fn ClockTimer::new(clock? : &@clock.Clock) -> Self
+pub async fn ClockTimer::within(Self, Int32, async () -> Unit noraise) -> Bool noraise
+pub impl @clock.Timer for ClockTimer
+
+pub struct SemaphoreGate {
+  // private fields
+}
+pub async fn SemaphoreGate::acquire(Self) -> Unit noraise
+pub fn SemaphoreGate::new(permits? : Int32) -> Self
+pub fn SemaphoreGate::release(Self) -> Unit
+pub impl @clock.Gate for SemaphoreGate
+
+// Type aliases
+
+// Traits

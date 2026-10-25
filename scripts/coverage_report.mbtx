@@ -38,7 +38,7 @@ import {
 
 ///|
 /// The measured modules (workspace member directories).
-let modules : Array[String] = ["mttp"]
+let modules : Array[String] = ["mttp", "mttp-net"]
 
 ///|
 /// Measured sources under a module's `src/` that are left out. JS-only files

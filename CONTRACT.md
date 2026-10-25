@@ -112,4 +112,3 @@ bytes, so they raise `ParseError` (a deliberate refinement of the design's
 nonraising sketch). They replace CL/TE using the supplied framing. A successful
 CONNECT's `NoBody` describes the HTTP message only; the adapter must hand off
 the remaining tunnel bytes. Socket ownership and timeouts remain adapter work.
-

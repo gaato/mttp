@@ -37,6 +37,10 @@ The implementation starts from design commit
   chunk decoder, and wire writers. Split invariance, premature EOF, framing
   conflicts, limits and pipelined-byte ownership have tests. Runtime socket
   integration and adversarial socket conformance remain.
+- `mttp-net/runtime` now provides AsyncClock, ClockTimer and SemaphoreGate
+  using the mature adapters. Native, wasm and JS tests cover completion,
+  timeout, parent cancellation and admission cancellation. The approximate
+  legacy VirtualClock has not been copied; deterministic core tests use Driver.
 - U6 has the mature CookieJar and a Cookies backend wrapper, including its
   bounds, expiry, domain/path and credential-header tests. FollowRedirects
   ports the mature redirect planner, closes intermediate bodies, records

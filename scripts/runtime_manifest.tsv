@@ -1,0 +1,7 @@
+package	target	count
+gaato/mttp-net	native	1
+gaato/mttp-net	wasm	1
+gaato/mttp-net	js	1
+gaato/mttp-net/runtime	native	8
+gaato/mttp-net/runtime	wasm	8
+gaato/mttp-net/runtime	js	8

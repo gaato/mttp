@@ -1,4 +1,4 @@
 {
-  "modules": ["mttp"],
+  "modules": ["mttp", "mttp-net"],
   "generated": []
 }
