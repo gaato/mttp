@@ -56,7 +56,11 @@ async fn main {
       ["test", "-p", pkg, "--target", target, "--deny-warn"],
       env={ "MOON_CC": "cc" },
     ).output(timeout_ms=600000)
-    result.check()
+    if result.exit_code() != 0 {
+      println(result.stdout())
+      println(result.stderr())
+      raise GateError("runtime tests failed for " + key)
+    }
     let summaries = result
       .stdout()
       .split("\n")

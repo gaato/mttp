@@ -1,0 +1,27 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/backend"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/clock",
+  "gaato/mttp/h1",
+  "gaato/mttp/model",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct H1Backend {
+  // private fields
+}
+pub fn H1Backend::close(Self) -> Unit
+pub fn H1Backend::idle_connections(Self) -> Int32
+pub fn H1Backend::new(timeout_ms? : Int32, connect_timeout_ms? : Int32, write_timeout_ms? : Int32, read_timeout_ms? : Int32, pool_timeout_ms? : Int32, max_connections? : Int32, max_connections_per_origin? : Int32, max_idle_connections? : Int32, max_idle_per_origin? : Int32, idle_max_ms? : Int32, max_body_bytes? : Int32, head_limits? : @h1.Limits, clock? : &@clock.Clock) -> Self
+pub async fn H1Backend::send(Self, @model.Request, @client.RequestOptions) -> @model.Response raise @model.TransportError
+pub impl @client.Backend for H1Backend
+
+// Type aliases
+
+// Traits

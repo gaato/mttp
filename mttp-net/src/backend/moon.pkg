@@ -1,0 +1,24 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/client",
+  "gaato/mttp/clock",
+  "gaato/mttp/h1",
+  "gaato/mttp-net/runtime",
+  "gaato/mttp-net/codings",
+  "moonbitlang/async/socket",
+  "moonbitlang/async/tls",
+  "moonbitlang/async/cond_var",
+}
+
+import {
+  "moonbitlang/async",
+  "gaato/mttp/testing",
+} for "test"
+
+import {
+  "moonbitlang/core/random",
+  "moonbitlang/async",
+  "moonbitlang/async/aqueue",
+} for "wbtest"
+
+supported_targets = "native + wasm"

@@ -167,7 +167,7 @@ async fn measure() -> String {
     "moon",
     ["test", "--target", "native", "--enable-coverage", ..drivers],
     env={ "MOON_CC": cc },
-    stdout=Discard,
+    stdout=Inherit,
     stderr=Inherit,
   ).status()
   if tested != 0 {

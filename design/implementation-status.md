@@ -36,7 +36,14 @@ The implementation starts from design commit
   accumulation, strict request/response parsing, framing decisions, a bounded
   chunk decoder, and wire writers. Split invariance, premature EOF, framing
   conflicts, limits and pipelined-byte ownership have tests. Runtime socket
-  integration and adversarial socket conformance remain.
+  integration is now present in H1Backend; the complete adversarial and
+  consumer socket conformance suites remain.
+- `mttp-net/backend` now has native/wasm direct HTTP and verified HTTPS,
+  bounded response framing, incremental decoding, bounded writes, pooled
+  connections, admission and phase/total deadlines. Loopback tests cover
+  framing failures, upload lengths, body ownership, stale reuse, cancellation,
+  decoding limits and TLS trust. The global idle cap is 256. Proxy routing,
+  the JS backend and the AsyncBackend facade remain pending.
 - `mttp-net/runtime` now provides AsyncClock, ClockTimer and SemaphoreGate
   using the mature adapters. Native, wasm and JS tests cover completion,
   timeout, parent cancellation and admission cancellation. The approximate
