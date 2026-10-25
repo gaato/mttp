@@ -9,6 +9,7 @@ import {
 }
 
 import {
+  "moonbitlang/async/shell",
   "gaato/mttp/client",
   "gaato/mttp-net/backend",
   "gaato/mttp-net/runtime",

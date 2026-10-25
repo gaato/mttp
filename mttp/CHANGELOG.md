@@ -26,6 +26,7 @@ never does. Every breaking change is listed with a migration note.
 
 ### Fixed
 
+- Preserve response streams transferred into lazy middleware wrappers.
 - Accept explicit port 80 in CONNECT request parsing and serialization.
 - Reject dot-only endpoint path captures before URL normalization can change
   their route. `Endpoint::request` now raises `InvalidRequest` for these inputs.

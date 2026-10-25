@@ -30,6 +30,54 @@ fn tracked(closes : Ref[Int32]) -> @model.Body {
 }
 
 ///|
+priv struct Wrapped {
+  reader : &@model.BodyStream
+}
+
+///|
+impl @model.BodyStream for Wrapped with fn read_some(self) {
+  self.reader.read_some()
+}
+
+///|
+impl @model.BodyStream for Wrapped with fn close(self) {
+  self.reader.close()
+}
+
+///|
+test "middleware transfers taken response streams into lazy wrappers" {
+  for next_again in [false, true] {
+    let closes = Ref(0)
+    let inner : @router.Middleware = (_, _) => {
+      @model.Response::new(200, body=tracked(closes))
+    }
+    let outer : @router.Middleware = (request, next) => {
+      let response = next(request)
+      guard response.body is Stream(stream) else { return response }
+      let reader = stream.take() catch { _ => return @model.Response::new(500) }
+      if next_again {
+        ignore(next(request))
+      }
+      {
+        ..response,
+        body: Stream(@model.StreamBody::new(Wrapped::{ reader, })),
+      }
+    }
+    let router = @router.Router::new([], options={
+      ..@router.ServerOptions::default(),
+      middleware: [outer, inner],
+    })
+    @driver.run_sync(() => {
+      let response = router.dispatch(@model.Request::get("/"))
+      assert_eq(closes.val, if next_again { 1 } else { 0 })
+      assert_eq(@client.read_body(response.body, 32), b"body")
+      response.close()
+      assert_eq(closes.val, if next_again { 2 } else { 1 })
+    })
+  }
+}
+
+///|
 priv struct Failing {
   closes : Ref[Int32]
 }

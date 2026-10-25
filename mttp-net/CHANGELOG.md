@@ -14,5 +14,8 @@
 
 ### Fixed
 
+- Finish responses after a client closes only its sending half. A read EOF
+  alone no longer cancels a handler; use `handler_timeout_ms` to bound a
+  suspended handler when a graceful full close cannot yet be distinguished.
 - Make the upload-failure regression test wait for the head phase before
   triggering a timeout or malformed response, avoiding wall-clock races.

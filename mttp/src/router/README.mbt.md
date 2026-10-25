@@ -31,4 +31,7 @@ response streams remain usable.
 
 Middleware owns any resources it creates. Calling `next` transfers its forwarded
 request to the inner handler. Router closes an inner response that middleware
-replaces, and retains the original request until a returned stream finishes.
+replaces without taking its reader, and retains the original request until a
+returned stream finishes. Taking an inner stream transfers its ownership to
+middleware: a lazy wrapper must close that reader on completion, failure or
+cancellation, and middleware must close any taken reader it discards.

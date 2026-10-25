@@ -47,11 +47,15 @@ and closes their sockets. As with the runtime, application code that shields
 itself from cancellation can delay shutdown beyond that budget.
 
 After the request body finishes, one read-ahead of at most 64 KiB detects
-read-side EOF or socket failure and cancels a suspended exchange. This treats
-a peer's write-half close as a disconnect. Detection pauses when pipelined
-bytes already occupy the read-ahead buffer, so monitoring cannot accumulate
-unlimited queued requests. Response producers and request readers close when
-their exchange is cancelled.
+socket failures and cancels a suspended exchange. Read-side EOF alone does not
+cancel the response: a client can finish sending and still read its reply.
+A client's half-close does not imply that it no longer wants the response
+([RFC 9112, Section 9.6](https://www.rfc-editor.org/rfc/rfc9112.html#section-9.6)).
+A graceful full close cannot be distinguished from that half-close until a
+write fails; configure `handler_timeout_ms` to bound suspended handlers.
+Detection pauses when pipelined bytes already occupy the read-ahead buffer,
+so monitoring cannot accumulate unlimited queued requests. Response producers
+and request readers close when their exchange is cancelled.
 
 Compression is opt-in. Negotiation selects gzip, deflate or Brotli, adds Vary,
 removes obsolete length/digest fields and weakens strong ETags. Existing content

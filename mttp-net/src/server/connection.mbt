@@ -116,7 +116,9 @@ async fn watch_peer(
     }
   }
   match next {
-    None => work.cancel()
+    // FIN closes only the peer's sending half. The current response must
+    // still be delivered; the next head read will observe EOF and stop.
+    None => ()
     Some(bytes) => wire.unread(bytes)
   }
 }
