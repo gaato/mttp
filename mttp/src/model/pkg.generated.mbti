@@ -42,6 +42,8 @@ pub let replay_safe : AttributeKey[Bool]
 
 pub fn retry_after_ms(Headers, now_unix_ms? : Int64) -> Int32?
 
+pub fn uri((UriBuilder) -> Unit) -> String
+
 pub fn validate_url(String) -> Unit raise TransportError
 
 // Errors
@@ -228,6 +230,19 @@ pub fn StreamBody::to_repr(Self) -> @debug.Repr
 pub impl Eq for StreamBody
 pub impl @debug.Debug for StreamBody
 
+pub(all) struct Trusted(String)
+pub fn Trusted::write_uri(Self, UriBuilder) -> Unit
+pub impl UriPart for Trusted
+
+pub struct UriBuilder {
+  // private fields
+}
+pub fn UriBuilder::new() -> Self
+pub fn UriBuilder::to_string(Self) -> String
+pub fn UriBuilder::write_encoded(Self, String) -> Unit
+pub fn UriBuilder::write_string(Self, String) -> Unit
+pub fn[T : UriPart] UriBuilder::write_string_interpolation(Self, T) -> Unit
+
 pub struct Url {
   scheme : String?
   userinfo : String?
@@ -262,3 +277,14 @@ pub(open) trait BodyStream {
   async fn read_some(Self) -> Bytes? raise TransportError
   fn close(Self) -> Unit
 }
+
+pub(open) trait UriPart {
+  fn write_uri(Self, UriBuilder) -> Unit
+}
+pub impl UriPart for Bool
+pub impl UriPart for Int32
+pub impl UriPart for Int64
+pub impl UriPart for Double
+pub impl UriPart for String
+pub impl[T : UriPart] UriPart for T?
+pub impl UriPart for Array[(String, String)]

@@ -60,8 +60,10 @@ The implementation starts from design commit
   bounds, expiry, domain/path and credential-header tests. FollowRedirects
   ports the mature redirect planner, closes intermediate bodies, records
   final URL/history, and composes with Cookies. Bounded line readers, form
-  decoding and paired response readers are present. URI interpolation, curl
-  diagnostics and the runtime facade remain.
+  decoding and paired response readers are present. URI interpolation encodes
+  components and omits None query values; curl diagnostics redact sensitive
+  headers without consuming streams. The quick facade lazily shares a Client
+  and supports explicit close/recreation on native, wasm and JS.
 - Remaining U4–U9 work:
   runtime and HTTP/1 adapters, socket conformance, client conveniences,
   digest, schema/endpoints, router/server and OpenAPI generation.
