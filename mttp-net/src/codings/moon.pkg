@@ -7,6 +7,7 @@ import {
   "gaato/brotli",
   "gaato/zstd",
   "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/utf8",
 }
 
 import {

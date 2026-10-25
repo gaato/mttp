@@ -30,6 +30,8 @@ a test from hanging (the `testing/driver` rows).
 
 | Structure | Bound | On overflow | Tests |
 |---|---|---|---|
+| `mttp-net/codings` encoder output per pull | 64 KiB | Retains pending input and codec state until subsequent pulls; flushes each input chunk for streaming latency | `mttp-net/src/codings/encoder_wbtest.mbt`: "encoder output stays within 64 KiB and resumes pending input without loss" |
+| `mttp-net/codings` Accept-Encoding negotiation | 16 KiB across all field values and 128 nonempty entries | Raises Invalid before examining excess input; only five fixed quality slots are retained | `mttp-net/src/codings/negotiate_test.mbt`: "encoding negotiation rejects malformed weights and bounds field bytes and entries" |
 | `endpoint` buffered and streamed request bodies | Configurable byte limit, default 1 MiB; an endpoint can override the router default | Closes the source at the first crossing chunk; a handler cannot suppress the rejection by catching its read error | `mttp/src/endpoint/ownership_test.mbt`: "rejected heads close unread bodies and limits survive caught read errors"; `mttp/src/endpoint/failures_test.mbt`: "server bounds buffered streams records read failures and rejects reused streams" |
 | `endpoint` decoded query pairs and reported issues | 256 query pairs; configurable reported issue count, default 100 | Refuses excess query pairs before the handler; truncates the reported failure list after decoding | `mttp/src/endpoint/failures_test.mbt`: "invalid requests excessive queries and issue lists are rejected before the handler" |
 | `openapi` schema traversal depth | 128 nested schema edges; traversal also stops after 100,000 visited nodes | Reports a traversal-limit problem without recursively following references | `mttp/src/openapi/openapi_test.mbt`: "reference pointers handle array indices percent escapes and traversal limits" |
@@ -83,6 +85,7 @@ Growth that follows what the caller asks for, not what the network sends.
 
 | Structure | Grows with | Why it is not bounded here |
 |---|---|---|
+| `mttp-net/codings` retained encoder input | One caller-owned chunk | Feed refuses overwrite until NeedInput. Gzip/deflate have fixed codec buffers with 32 KiB history; Brotli uses a 22-bit window with bounded meta-block and output state from the codec dependency. Socket adapters must bound upstream reads. |
 | `endpoint`, `router` and `openapi` definitions and generated documents | Caller-created endpoints, schemas, variants and middleware | Configuration is caller-owned. Routing retains at most one candidate per configured endpoint. Schema traversal retains pending children from the supplied document; its visit budget does not cap the caller's initial document allocation. |
 | `mttp-net/codings` retained input slice | One caller-supplied wire chunk, plus bounded inter-stage slices | feed accepts a Bytes value already owned by the caller; socket adapters must limit their reads. A second feed before NeedInput is refused, preventing accidental overwrite. |
 | `model` headers, URL strings, attribute maps and byte bodies | Values explicitly constructed by the caller | Parsers and backends impose network input limits; these value constructors do not consume network input. |

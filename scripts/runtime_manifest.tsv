@@ -2,10 +2,10 @@ package	target	count
 gaato/mttp-net/backend	native	46
 gaato/mttp-net/backend	wasm	46
 gaato/mttp-net/backend	js	9
-gaato/mttp-net/codings	native	21
-gaato/mttp-net/codings	wasm	21
-gaato/mttp-net/codings	js	21
-gaato/mttp-net/codings	wasm-gc	21
+gaato/mttp-net/codings	native	30
+gaato/mttp-net/codings	wasm	30
+gaato/mttp-net/codings	js	30
+gaato/mttp-net/codings	wasm-gc	30
 gaato/mttp-net	native	1
 gaato/mttp-net	wasm	1
 gaato/mttp-net	js	1

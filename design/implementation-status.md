@@ -67,8 +67,13 @@ The implementation starts from design commit
   headers without consuming streams. The quick facade lazily shares a Client
   and supports explicit close/recreation on native, wasm and JS.
 - Remaining U4–U9 work includes socket/browser conformance, the runtime server,
-  fetch handler, compression encoding/negotiation, consumer migrations and
+  fetch handler, response compression integration, consumer migrations and
   remaining U1–U3 checks.
+- `mttp-net/codings` now also provides bounded gzip/deflate/Brotli encoders,
+  quality-weight negotiation and a lazy body wrapper. Each input chunk is
+  sync-flushed, and output is at most 64 KiB per pull. Thirty coding tests pass
+  on all four targets, including mid-stream decoding and ownership on EOF,
+  failure and cancellation. Zstd remains decode-only in the codec dependency.
 - The separate `mttp-digest` module now wraps Backends with an origin-scoped
   DigestScheme. Mature requesto hash/parser tests are retained, with additional
   contract, replay/close, cross-origin, stale-nonce and challenge-budget tests.
