@@ -1,0 +1,679 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/core/env",
+}
+----
+
+///|
+/// Check the layout rules that keep gaato/mttp's tests deterministic and
+/// identical on wasm-gc, wasm, js and native (AGENTS.md, "Tests"):
+///
+/// - `async-test`: no `async test` in gaato/mttp. On wasm-gc an async test is
+///   skipped or counted as passed without running; drive async code with
+///   `@driver.run_sync` or a `Driver` from a plain `test`.
+/// - `async-intrinsic`: a `"%async...` intrinsic is declared only in
+///   `mttp/src/testing/driver/intrinsics.mbt`, anywhere in the repository.
+/// - `module-import`: `mttp/moon.mod` imports nothing: gaato/mttp depends on
+///   moonbitlang/core only, so no runtime and no registry module.
+/// - `package-import`: a package of gaato/mttp imports only moonbitlang/core
+///   and gaato/mttp packages, in every block.
+/// - `testing-import`: a production package does not import a testing
+///   package (one with a `testing`, `testkit` or `fake` path component);
+///   its black-box tests may, under `for "test"`.
+/// - `wbtest-testing-import`: no package imports a testing package for its
+///   white-box tests (`for "wbtest"`); such a test is a black-box test.
+/// - `clock`: no wall-clock or global-randomness read (`@env.now`,
+///   `@env.rand`, under whatever alias the package gives moonbitlang/core/env)
+///   in gaato/mttp, tests included. A labelled argument's default is the
+///   injection point itself and passes.
+///
+/// Deliberate exceptions live in `scripts/test_layout.allow`, one
+/// `<file> <rule> # reason` line per use. Unknown, stale and unexplained
+/// entries fail the audit.
+///
+/// Usage, from the repository root:
+///   moon run scripts/test_layout.mbtx [--self-test]
+
+///|
+/// The module whose packages the rules cover, and its directory.
+let module_name : String = "gaato/mttp"
+
+///|
+let module_dir : String = "mttp"
+
+///|
+/// Directories, one per module, in which no `async test` may appear.
+let no_async_test_dirs : Array[String] = ["mttp"]
+
+///|
+/// The one file allowed to declare `%async` intrinsics.
+let intrinsics_file : String = "mttp/src/testing/driver/intrinsics.mbt"
+
+///|
+/// A package with one of these path components is a testing package.
+let testing_components : Array[String] = ["testing", "testkit", "fake"]
+
+///|
+/// The rule names allow entries may use.
+let rules : Array[String] = [
+  "async-test", "async-intrinsic", "module-import", "package-import", "testing-import",
+  "wbtest-testing-import", "clock",
+]
+
+///|
+/// Directory names the walk skips: build output, dependencies, and VCS data.
+let skipped_dirs : Array[String] = [
+  "_build", ".mooncakes", "node_modules", "target", ".git", ".jj", ".wrangler",
+]
+
+///|
+/// Everything the audit reads, so the self-test can change a copy.
+struct Repo {
+  /// Every `.mbt` and `.mbt.md` file, by repository-relative path, with its
+  /// text.
+  files : Array[(String, String)]
+  /// Every package of the module: its directory and its `moon.pkg` text.
+  packages : Array[(String, String)]
+  /// The module's `moon.mod` text.
+  moon_mod : String
+}
+
+///|
+/// Which build an import block serves.
+enum Block {
+  Main
+  Test
+  Wbtest
+}
+
+///|
+/// One entry of an import block.
+struct Import {
+  path : String
+  local_name : String
+  block : Block
+  line : Int32
+}
+
+///|
+/// The last path component of `path`.
+fn last_component(path : String) -> String {
+  match path.rev_find("/") {
+    Some(at) => path[at + 1:].to_owned()
+    None => path
+  }
+}
+
+///|
+/// The block an import block's closing line (the text after `}`) names.
+fn block_of(rest : String) -> Block {
+  if rest.contains("\"wbtest\"") {
+    Wbtest
+  } else if rest.contains("\"test\"") {
+    Test
+  } else {
+    Main
+  }
+}
+
+///|
+/// The quoted entries of `segment` with their aliases (`"a/b" @c,`).
+fn entries_of(
+  segment : String,
+  line : Int32,
+  out : Array[(String, String, Int32)],
+) -> Unit {
+  let parts = segment.split("\"").map(part => part.to_owned()).to_array()
+  for i = 1; i < parts.length(); i = i + 2 {
+    let path = parts[i]
+    let rest = if i + 1 < parts.length() {
+      parts[i + 1].trim().to_owned()
+    } else {
+      ""
+    }
+    let local_name = if rest.has_prefix("@") {
+      let name = rest[1:].to_owned()
+      let name = match name.find(",") {
+        Some(at) => name[:at].to_owned()
+        None => name
+      }
+      name.trim().to_owned()
+    } else {
+      last_component(path)
+    }
+    out.push((path, local_name, line))
+  }
+}
+
+///|
+/// The entries of every `import { ... }` block of a `moon.pkg` or `moon.mod`.
+fn parse_imports(text : String) -> Array[Import] {
+  let out : Array[Import] = []
+  let mut pending : Array[(String, String, Int32)]? = None
+  let finish = (entries : Array[(String, String, Int32)], rest : String) => {
+    let block = block_of(rest)
+    for entry in entries {
+      let (path, local_name, line) = entry
+      out.push({ path, local_name, block, line, })
+    }
+  }
+  for index, raw in text.split("\n").to_array() {
+    let line = raw.trim().to_owned()
+    if line.has_prefix("//") {
+      continue
+    }
+    match pending {
+      None =>
+        if line.has_prefix("import {") {
+          let rest = line["import {".length():].to_owned()
+          let entries = []
+          match rest.find("}") {
+            Some(close) => {
+              entries_of(rest[:close].to_owned(), index + 1, entries)
+              finish(entries, rest[close + 1:].to_owned())
+            }
+            None => {
+              entries_of(rest, index + 1, entries)
+              pending = Some(entries)
+            }
+          }
+        }
+      Some(entries) =>
+        if line.has_prefix("}") {
+          finish(entries, line[1:].to_owned())
+          pending = None
+        } else {
+          entries_of(line, index + 1, entries)
+        }
+    }
+  }
+  out
+}
+
+///|
+/// The package name of a package directory of the module.
+fn package_name(dir : String) -> String {
+  let root = "\{module_dir}/src"
+  if dir == root {
+    module_name
+  } else {
+    module_name + dir[root.length():].to_owned()
+  }
+}
+
+///|
+/// Whether `name` is a testing package of the module.
+fn is_testing_package(name : String) -> Bool {
+  guard name.strip_prefix(module_name + "/") is Some(rest) else { return false }
+  rest
+  .split("/")
+  .any(component => testing_components.contains(component.to_owned()))
+}
+
+///|
+/// Whether `name` is a package a gaato/mttp package may import.
+fn is_allowed_import(name : String) -> Bool {
+  name == "moonbitlang/core" ||
+  name.has_prefix("moonbitlang/core/") ||
+  name == module_name ||
+  name.has_prefix(module_name + "/")
+}
+
+///|
+/// The directory part of a repository-relative path.
+fn dir_of(path : String) -> String {
+  match path.rev_find("/") {
+    Some(at) => path[:at].to_owned()
+    None => ""
+  }
+}
+
+///|
+/// Whether the use at `column` is a labelled argument's default value.
+fn is_injection_default(line : String, column : Int32) -> Bool {
+  let before = line[:column].trim_end().to_owned()
+  before.contains("~ :") &&
+  (before.has_suffix("=") || before.has_suffix("= Ref("))
+}
+
+///|
+/// Whether `c` can continue an identifier.
+fn ident_char(c : Char) -> Bool {
+  c is ('a'..<='z' | 'A'..<='Z' | '0'..<='9' | '_')
+}
+
+///|
+/// The columns at which `needle` occurs on `line` as a whole name: not
+/// followed by an identifier character.
+fn occurrences(line : String, needle : String) -> Array[Int32] {
+  let found = []
+  let mut from = 0
+  while line[from:].find(needle) is Some(offset) {
+    let column = from + offset
+    from = column + needle.length()
+    let next = line[from:].to_owned()
+    if next.iter().next() is Some(c) && ident_char(c) {
+      continue
+    }
+    found.push(column)
+  }
+  found
+}
+
+///|
+/// Records a finding.
+fn note(
+  found : Map[String, Array[String]],
+  file : String,
+  rule : String,
+  line : Int32,
+  message : String,
+) -> Unit {
+  found
+  .get_or_init("\{file} \{rule}", () => [])
+  .push("line \{line}: \{message}")
+}
+
+///|
+/// Every rule violation in `repo`, keyed `<file> <rule>`, with one message
+/// per use.
+fn scan(repo : Repo) -> Map[String, Array[String]] {
+  let found : Map[String, Array[String]] = Map([])
+  // The module manifest.
+  for item in parse_imports(repo.moon_mod) {
+    note(
+      found,
+      "\{module_dir}/moon.mod",
+      "module-import",
+      item.line,
+      "\{module_name} imports \{item.path}; it depends on moonbitlang/core only",
+    )
+  }
+  // Package imports, and each package's aliases of moonbitlang/core/env.
+  let env_aliases : Map[String, Array[String]] = Map([])
+  for pkg in repo.packages {
+    let (dir, text) = pkg
+    let name = package_name(dir)
+    let file = "\{dir}/moon.pkg"
+    let aliases = ["env"]
+    for item in parse_imports(text) {
+      if item.path == "moonbitlang/core/env" &&
+        !aliases.contains(item.local_name) {
+        aliases.push(item.local_name)
+      }
+      if !is_allowed_import(item.path) {
+        note(
+          found,
+          file,
+          "package-import",
+          item.line,
+          "\{name} imports \{item.path}, which is neither moonbitlang/core nor \{module_name}",
+        )
+        continue
+      }
+      guard is_testing_package(item.path) else { continue }
+      match item.block {
+        Main if !is_testing_package(name) =>
+          note(
+            found,
+            file,
+            "testing-import",
+            item.line,
+            "production package \{name} imports testing package \{item.path}; only its black-box tests may (for \"test\")",
+          )
+        Wbtest =>
+          note(
+            found,
+            file,
+            "wbtest-testing-import",
+            item.line,
+            "white-box tests of \{name} import testing package \{item.path}; write a black-box test",
+          )
+        _ => ()
+      }
+    }
+    env_aliases[dir] = aliases
+  }
+  // Sources.
+  for source in repo.files {
+    let (path, text) = source
+    let in_module = path.has_prefix("\{module_dir}/")
+    let no_async_test = no_async_test_dirs
+      .iter()
+      .any(dir => path.has_prefix("\{dir}/"))
+    let aliases = env_aliases.get(dir_of(path)).unwrap_or(["env"])
+    for index, raw in text.split("\n").to_array() {
+      let line = raw.to_owned()
+      let trimmed = line.trim().to_owned()
+      if trimmed.has_prefix("//") {
+        continue
+      }
+      let at = index + 1
+      if no_async_test &&
+        (trimmed.has_prefix("async test ") || trimmed.has_prefix("async test{")) {
+        note(
+          found, path, "async-test", at, "async test: write a plain test that drives the code with @driver.run_sync or a Driver",
+        )
+      }
+      if path != intrinsics_file {
+        for _ in occurrences(line, "\"%async") {
+          note(
+            found,
+            path,
+            "async-intrinsic",
+            at,
+            "%async intrinsic outside \{intrinsics_file}",
+          )
+        }
+      }
+      guard in_module else { continue }
+      for local_name in aliases {
+        for entry in ["now", "rand"] {
+          let needle = "@\{local_name}.\{entry}"
+          for column in occurrences(line, needle) {
+            if !is_injection_default(line, column) {
+              note(
+                found,
+                path,
+                "clock",
+                at,
+                "\{needle} reads the wall clock or global randomness; take an injected Clock or random source",
+              )
+            }
+          }
+        }
+      }
+    }
+  }
+  found
+}
+
+///|
+/// The allowed uses, keyed as `scan` keys them, with how many each key
+/// allows: every use needs its own entry.
+fn parse_allow(text : String) -> Map[String, Int32] raise {
+  let allowed : Map[String, Int32] = Map([])
+  for raw in text.split("\n") {
+    let line = raw.trim().to_owned()
+    if line.is_empty() || line.has_prefix("#") {
+      continue
+    }
+    guard line.find("#") is Some(hash) && !line[hash + 1:].trim().is_empty() else {
+      fail("allow entry requires a reason: \{line}")
+    }
+    let fields = line[:hash]
+      .split(" ")
+      .filter(field => !field.is_empty())
+      .map(field => field.to_owned())
+      .to_array()
+    guard fields is [_, rule] else {
+      fail("allow entry needs <file> <rule>: \{line}")
+    }
+    guard rules.contains(rule) else {
+      fail("allow entry names an unknown rule: \{line}")
+    }
+    let key = fields.join(" ")
+    allowed[key] = allowed.get(key).unwrap_or(0) + 1
+  }
+  allowed
+}
+
+///|
+fn audit(repo : Repo, allow : String) -> Unit raise {
+  let allowed = parse_allow(allow)
+  let found = scan(repo)
+  let problems : Array[String] = []
+  for key, uses in found {
+    let permitted = allowed.get(key).unwrap_or(0)
+    if uses.length() > permitted {
+      for use_ in uses {
+        problems.push("\{key}: \{use_}")
+      }
+      if permitted > 0 {
+        problems.push(
+          "\{key}: \{uses.length()} uses for \{permitted} allow entries; each use needs its own entry",
+        )
+      }
+    }
+  }
+  for key, permitted in allowed {
+    let uses = found.get(key).map(uses => uses.length()).unwrap_or(0)
+    if uses < permitted {
+      problems.push(
+        "stale allow entry: \{key} (\{permitted} entries for \{uses} uses)",
+      )
+    }
+  }
+  if !problems.is_empty() {
+    problems.sort()
+    fail(problems.join("\n"))
+  }
+}
+
+///|
+fn must_fail(run : () -> Unit raise) -> Unit raise {
+  try run() catch {
+    _ => ()
+  } noraise {
+    _ => fail("negative test layout self-test unexpectedly passed")
+  }
+}
+
+///|
+/// Checks every rule against small changes to `repo`.
+fn run_self_test(repo : Repo, allow : String) -> Unit raise {
+  let with_file = (path : String, text : String) => {
+    ..repo,
+    files: repo.files.copy()..push((path, text)),
+  }
+  let with_package = (dir : String, text : String) => {
+    ..repo,
+    packages: repo.packages.copy()..push((dir, text)),
+  }
+  audit(repo, allow)
+  // async test: in the module it fails, in a test or a doc block alike;
+  // in a comment or another module it passes.
+  let async_test = "///|\nasync test \"x\" {\n  ()\n}\n"
+  must_fail(() => audit(with_file("mttp/src/x/x_test.mbt", async_test), allow))
+  must_fail(() => {
+    audit(with_file("mttp/src/x/overview.mbt.md", async_test), allow)
+  })
+  audit(with_file("mttp/src/x/x_test.mbt", "// async test \"x\" {\n"), allow)
+  audit(with_file("net-tests/src/x/x_test.mbt", async_test), allow)
+  audit(with_file("mttp/src/x/x_test.mbt", "///|\ntest \"x\" {\n}\n"), allow)
+  // %async: only the driver's intrinsics file declares it, in any module.
+  let intrinsic = "///|\nfn suspend() -> Unit = \"%async.suspend\"\n"
+  audit(with_file(intrinsics_file, intrinsic), allow)
+  must_fail(() => audit(with_file("mttp/src/x/x.mbt", intrinsic), allow))
+  must_fail(() => audit(with_file("mttp-net/src/x/x.mbt", intrinsic), allow))
+  audit(with_file("mttp/src/x/x.mbt", "/// \"%async.suspend\"\n"), allow)
+  // moon.mod imports nothing.
+  must_fail(() => {
+    audit(
+      {
+        ..repo,
+        moon_mod: repo.moon_mod +
+        "\nimport {\n  \"moonbitlang/async@0.22.5\",\n}\n",
+      },
+      allow,
+    )
+  })
+  must_fail(() => {
+    audit(
+      {
+        ..repo,
+        moon_mod: repo.moon_mod + "\nimport { \"gaato/deflate@0.1.0\" }\n",
+      },
+      allow,
+    )
+  })
+  // Packages import moonbitlang/core and the module only.
+  audit(
+    with_package(
+      "mttp/src/x", "import {\n  \"moonbitlang/core/json\",\n  \"gaato/mttp/model\" @m,\n  \"gaato/mttp\",\n}\n",
+    ),
+    allow,
+  )
+  must_fail(() => {
+    audit(
+      with_package("mttp/src/x", "import {\n  \"moonbitlang/async\",\n}\n"),
+      allow,
+    )
+  })
+  must_fail(() => {
+    audit(
+      with_package(
+        "mttp/src/x", "import {\n  \"gaato/mttpx/y\",\n} for \"test\"\n",
+      ),
+      allow,
+    )
+  })
+  // Testing packages: production code may not import them, its black-box
+  // tests may, white-box tests may not; testing packages may import each
+  // other.
+  must_fail(() => {
+    audit(
+      with_package(
+        "mttp/src/client", "import {\n  \"gaato/mttp/testing\",\n}\n",
+      ),
+      allow,
+    )
+  })
+  must_fail(() => {
+    audit(
+      with_package("mttp/src/client", "import { \"gaato/mttp/clock/fake\" }\n"),
+      allow,
+    )
+  })
+  audit(
+    with_package(
+      "mttp/src/client", "import {\n  \"gaato/mttp/testing\",\n} for \"test\"\n",
+    ),
+    allow,
+  )
+  audit(
+    with_package(
+      "mttp/src/clock/fake", "import {\n  \"gaato/mttp/clock\",\n  \"gaato/mttp/testing/driver\",\n}\n",
+    ),
+    allow,
+  )
+  must_fail(() => {
+    audit(
+      with_package(
+        "mttp/src/client", "import {\n  \"gaato/mttp/testing/feed\",\n} for \"wbtest\"\n",
+      ),
+      allow,
+    )
+  })
+  must_fail(() => {
+    audit(
+      with_package(
+        "mttp/src/testing/feed", "import {\n  \"gaato/mttp/testing/driver\",\n} for \"wbtest\"\n",
+      ),
+      allow,
+    )
+  })
+  // Clock: real time and randomness fail under any alias, in library code
+  // and tests, but not as an injection default, in a comment, as a longer
+  // name, or outside the module.
+  let now = "///|\nfn f() -> UInt64 {\n  @env.now()\n}\n"
+  must_fail(() => audit(with_file("mttp/src/x/x.mbt", now), allow))
+  must_fail(() => audit(with_file("mttp/src/x/x_test.mbt", now), allow))
+  must_fail(() => {
+    audit(with_file("mttp/src/x/x.mbt", "///|\nlet r = @env.rand\n"), allow)
+  })
+  let aliased = with_package(
+    "mttp/src/x", "import {\n  \"moonbitlang/core/env\" @e,\n}\n",
+  )
+  let aliased_file = (text : String) => {
+    ..aliased,
+    files: aliased.files.copy()..push(("mttp/src/x/x.mbt", text)),
+  }
+  must_fail(() => audit(aliased_file("///|\nlet b = @e.rand(8)\n"), allow))
+  audit(aliased_file("///|\nlet b = @e.random(8)\n"), allow)
+  audit(
+    with_file(
+      "mttp/src/x/x.mbt", "///|\npub fn make(now~ : () -> UInt64 = @env.now) -> Unit {\n}\n",
+    ),
+    allow,
+  )
+  audit(with_file("mttp/src/x/x.mbt", "/// @env.now()\n"), allow)
+  audit(with_file("mttp/src/x/x.mbt", "///|\nlet n = @env.nowhere\n"), allow)
+  audit(with_file("mttp-net/src/x/x.mbt", now), allow)
+  // Allow entries: one per use, with a reason; stale and unknown ones fail.
+  let allowed = allow + "\nmttp/src/x/x.mbt clock # self-test\n"
+  audit(with_file("mttp/src/x/x.mbt", now), allowed)
+  let twice = "///|\nfn f() -> UInt64 {\n  @env.now() + @env.now()\n}\n"
+  must_fail(() => audit(with_file("mttp/src/x/x.mbt", twice), allowed))
+  audit(
+    with_file("mttp/src/x/x.mbt", twice),
+    allowed + "mttp/src/x/x.mbt clock # self-test, second use\n",
+  )
+  must_fail(() => audit(repo, allowed))
+  must_fail(() => {
+    audit(
+      with_file("mttp/src/x/x.mbt", now),
+      allow + "\nmttp/src/x/x.mbt clock\n",
+    )
+  })
+  must_fail(() => {
+    audit(
+      with_file("mttp/src/x/x.mbt", now),
+      allow + "\nmttp/src/x/x.mbt time # no such rule\n",
+    )
+  })
+}
+
+///|
+async fn main {
+  let args = @env.args()
+  let self_test = args.length() == 2 && args[1] == "--self-test"
+  if args.length() > 2 || (args.length() == 2 && !self_test) {
+    fail("usage: moon run scripts/test_layout.mbtx [--self-test]")
+  }
+  let file_paths : Array[String] = []
+  let package_dirs : Array[String] = []
+  @fs.walk(
+    ".",
+    (dir, entries) => {
+      let prefix = if dir == "." {
+        ""
+      } else {
+        dir["./".length():].to_owned() + "/"
+      }
+      for entry in entries {
+        let path = prefix + entry
+        if entry.has_suffix(".mbt") || entry.has_suffix(".mbt.md") {
+          file_paths.push(path)
+        } else if entry == "moon.pkg" && path.has_prefix("\{module_dir}/src/") {
+          package_dirs.push(dir_of(path))
+        }
+      }
+    },
+    exclude=path => skipped_dirs.iter().any(name => path.has_suffix("/\{name}")),
+    max_concurrency=1,
+  )
+  file_paths.sort()
+  package_dirs.sort()
+  let files : Array[(String, String)] = []
+  for path in file_paths {
+    files.push((path, @fs.read_file(path).text()))
+  }
+  let packages : Array[(String, String)] = []
+  for dir in package_dirs {
+    packages.push((dir, @fs.read_file("\{dir}/moon.pkg").text()))
+  }
+  let moon_mod = @fs.read_file("\{module_dir}/moon.mod").text()
+  let repo : Repo = { files, packages, moon_mod, }
+  let allow = @fs.read_file("scripts/test_layout.allow").text()
+  if self_test {
+    run_self_test(repo, allow)
+    println("Test layout self-tests: OK")
+  }
+  audit(repo, allow)
+  println(
+    "Test layout: OK (\{files.length()} sources, \{packages.length()} packages of \{module_name})",
+  )
+}

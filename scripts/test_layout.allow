@@ -1,0 +1,4 @@
+# Uses that scripts/test_layout.mbtx accepts although its rules reject them.
+# Each entry is `<file> <rule> # reason`, one line per use, so every new use
+# needs its own decision. Rules: async-test, async-intrinsic, module-import,
+# package-import, testing-import, wbtest-testing-import, clock.

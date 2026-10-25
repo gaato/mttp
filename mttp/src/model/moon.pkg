@@ -1,0 +1,10 @@
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/percent",
+}
+
+import {
+  "gaato/mttp/testing/driver",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/random",
+} for "test"

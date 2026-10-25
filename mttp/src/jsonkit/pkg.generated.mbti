@@ -1,0 +1,49 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/jsonkit"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn expect_object(Json, @json.JsonPath) -> Map[String, Json] raise @json.JsonDecodeError
+
+pub fn[T : @json.FromJson] field(Map[String, Json], String, @json.JsonPath) -> T raise @json.JsonDecodeError
+
+pub fn[T] open_int(Json, @json.JsonPath, (Int32) -> T?, (Int32) -> T) -> T raise @json.JsonDecodeError
+
+pub fn[T] open_string(Json, @json.JsonPath, (String) -> T?, (String) -> T) -> T raise @json.JsonDecodeError
+
+pub fn[T : @json.FromJson] opt_field(Map[String, Json], String, @json.JsonPath) -> T? raise @json.JsonDecodeError
+
+pub fn[T : @json.FromJson] presence_field(Map[String, Json], String, @json.JsonPath) -> Presence[T] raise @json.JsonDecodeError
+
+// Errors
+
+// Types and methods
+pub struct ObjBuilder {
+  // private fields
+}
+pub fn ObjBuilder::build(Self) -> Json
+pub fn[T : ToJson] ObjBuilder::field(Self, String, T) -> Self
+pub fn ObjBuilder::new() -> Self
+pub fn[T : ToJson] ObjBuilder::opt(Self, String, T?) -> Self
+pub fn[T : ToJson] ObjBuilder::presence(Self, String, Presence[T]) -> Self
+
+pub(all) enum Presence[T] {
+  Absent
+  Null
+  Value(T)
+} derive(Eq, @debug.Debug)
+pub fn[T : Eq] Presence::equal(Self[T], Self[T]) -> Bool
+pub fn[T] Presence::from_option(T?) -> Self[T]
+pub fn[T] Presence::is_absent(Self[T]) -> Bool
+pub fn[T, U] Presence::map(Self[T], (T) -> U) -> Self[U]
+pub fn[T : Eq] Presence::not_equal(Self[T], Self[T]) -> Bool
+pub fn[T] Presence::to_option(Self[T]) -> T?
+pub fn[T : @debug.Debug] Presence::to_repr(Self[T]) -> @debug.Repr
+
+// Type aliases
+
+// Traits
