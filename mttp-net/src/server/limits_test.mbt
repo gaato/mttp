@@ -81,6 +81,41 @@ async test "header body and handler deadlines terminate their exchange" {
 }
 
 ///|
+async test "trickling request bytes do not renew the body deadline" {
+  with_server(
+    request => {
+      ignore(@client.read_body(request.body, 1024) catch { _ => b"" })
+      @model.Response::new(200)
+    },
+    address => {
+      let tcp = @socket.Tcp::connect(@socket.Addr::parse(address))
+      defer tcp.close()
+      tcp.write(b"POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 10\r\n\r\n")
+      @async.with_task_group(group => {
+        let sent = Ref(0)
+        let producer = group.spawn(no_wait=true, () => {
+          for _ in 0..<10 {
+            @async.sleep(40)
+            tcp.write(b"x") catch {
+              _ => return
+            }
+            sent.val += 1
+          }
+        })
+        let response = tcp.read_until("\r\n\r\n").unwrap()
+        assert_true(response.has_prefix("HTTP/1.1 408"))
+        assert_true(sent.val < 10)
+        producer.cancel()
+        producer.wait() catch {
+          _ => ()
+        }
+      })
+    },
+    limits={ ..@server.ServerLimits::default(), body_timeout_ms: 160, },
+  )
+}
+
+///|
 async test "Expect continue is lazy and oversized chunked bodies override caught read failures" {
   let handler : @model.Handler = req => {
     if req.headers.get("authorization") is None {

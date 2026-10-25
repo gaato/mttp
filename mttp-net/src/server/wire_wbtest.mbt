@@ -5,6 +5,45 @@ priv struct TimeoutReply {
 }
 
 ///|
+async test "body deadline is shared across chunks and consumer pauses" {
+  let listener = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
+  defer listener.close()
+  let client = @socket.Tcp::connect(listener.addr)
+  defer client.close()
+  let (tcp, _) = listener.accept()
+  let wire = Wire::{ tcp, pending: b"a", closed: false, }
+  defer wire.close()
+  let now = Ref(0L)
+  let source = RequestBody::new(
+    wire,
+    Length(3L),
+    { ..ServerLimits::default(), body_timeout_ms: 100, },
+    false,
+    now=() => now.val,
+  )
+  assert_eq(source.next(), Some(b"a"))
+  now.val = 60L
+  wire.pending = b"b"
+  assert_eq(source.next(), Some(b"b"))
+  assert_eq(source.budget(), 40)
+  now.val = 100L
+  wire.pending = b"c"
+  for _ in 0..<2 {
+    let expired = try {
+      ignore(source.next())
+      false
+    } catch {
+      @model.TransportError(kind=Timeout(ms=100), phase=Body, ..) => true
+      _ => false
+    }
+    assert_true(expired)
+  }
+  // An expired body cannot consume newly available bytes or become reusable.
+  assert_eq(wire.pending, b"c")
+  assert_false(source.drain())
+}
+
+///|
 impl @model.BodyStream for TimeoutReply with fn read_some(self) {
   let error = @model.TransportError(
     kind=Timeout(ms=30),

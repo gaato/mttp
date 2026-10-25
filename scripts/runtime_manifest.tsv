@@ -15,6 +15,6 @@ gaato/mttp-net/runtime	js	14
 gaato/mttp-net/quick	native	2
 gaato/mttp-net/quick	wasm	2
 gaato/mttp-net/quick	js	2
-gaato/mttp-net/server	native	25
-gaato/mttp-net/server	wasm	25
+gaato/mttp-net/server	native	27
+gaato/mttp-net/server	wasm	27
 gaato/mttp-net/fetch	js	17

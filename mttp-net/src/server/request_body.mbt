@@ -13,6 +13,8 @@ priv struct RequestBody {
   mut expect : Bool
   mut failure : @model.TransportError?
   changed : @cond_var.Cond
+  now : () -> Int64
+  mut started_at : Int64?
 }
 
 ///|
@@ -21,6 +23,7 @@ fn RequestBody::new(
   framing : @h1.Framing,
   limits : ServerLimits,
   expect : Bool,
+  now~ : () -> Int64 = @async.now,
 ) -> RequestBody {
   {
     wire,
@@ -39,6 +42,8 @@ fn RequestBody::new(
     expect,
     failure: None,
     changed: @cond_var.Cond(),
+    now,
+    started_at: None,
   }
 }
 
@@ -72,11 +77,33 @@ async fn RequestBody::next(
 }
 
 ///|
+fn RequestBody::budget(self : RequestBody) -> Int32 raise @model.TransportError {
+  if self.done {
+    return self.limits.body_timeout_ms
+  }
+  let now = (self.now)()
+  let started = self.started_at.unwrap_or(now)
+  self.started_at = Some(started)
+  let elapsed = (now - started).max(0L)
+  if elapsed >= self.limits.body_timeout_ms.to_int64() {
+    raise @model.TransportError(
+      kind=Timeout(ms=self.limits.body_timeout_ms),
+      phase=Body,
+      detail="request body timed out",
+    )
+  }
+  self.limits.body_timeout_ms - elapsed.to_int()
+}
+
+///|
 async fn RequestBody::next_raw(
   self : RequestBody,
   max_len : Int32,
 ) -> Bytes? raise @model.TransportError {
   for ;; {
+    // A body owns one budget, including gaps between consumer pulls. Resetting
+    // this for each socket read lets a trickling peer retain a slot indefinitely.
+    let remaining_ms = self.budget()
     if self.index < self.chunks.length() {
       let bytes = self.chunks[self.index]
       self.index += 1
@@ -88,13 +115,10 @@ async fn RequestBody::next_raw(
       return None
     }
     if self.expect {
-      self.wire.write(
-        b"HTTP/1.1 100 Continue\r\n\r\n",
-        self.limits.body_timeout_ms,
-      )
+      self.wire.write(b"HTTP/1.1 100 Continue\r\n\r\n", remaining_ms)
       self.expect = false
     }
-    let bytes = @async.with_timeout(self.limits.body_timeout_ms, () => {
+    let bytes = @async.with_timeout(self.budget(), () => {
       self.wire.read(max_len~)
     }) catch {
       @async.TimeoutError =>

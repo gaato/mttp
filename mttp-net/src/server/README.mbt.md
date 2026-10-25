@@ -13,6 +13,10 @@ pretend to provide a TLS listener.
 )
 ```
 
+The body budget starts with its first read and covers the whole body, including
+gaps between pulls; receiving another chunk does not restart it. Response writes
+use that duration as a per-write budget.
+
 Configuration is checked before binding. Defaults are 1 MiB request bodies,
 16 KiB heads, 256 connections, five-second header and body budgets, 64 KiB of
 unread-body draining and ten seconds of graceful shutdown. The header budget

@@ -79,7 +79,7 @@ The implementation starts from design commit
   URLs. Seventeen Node tests and static gates pass, including actual linked
   ESM exports and host-shim lifecycle contracts; deployment-specific
   Workers/Fastly and browser runs remain.
-- A native/wasm HTTP/1 server now passes 25 tests on each target: bounded heads and
+- A native/wasm HTTP/1 server now passes 27 tests on each target: bounded heads and
   bodies, keepalive/draining, lazy 100 Continue, response compression,
   disconnect cancellation, graceful shutdown and background work are present.
   Static gates pass; six uncovered shutdown/error race guards are explicitly
@@ -90,6 +90,9 @@ The implementation starts from design commit
   Informational responses preserve upload progress; the head idle deadline
   starts after uploading. Producer failures and source cleanup have regression
   tests. Full-duplex streaming tunnels are outside this adapter contract.
+  The request body has one deadline from its first read, including consumer
+  pauses; trickling bytes cannot renew it. Fake-clock and socket regressions
+  pass, as do Discord's ten interaction HTTP integration tests.
 - `mttp-net/codings` now also provides bounded gzip/deflate/Brotli encoders,
   quality-weight negotiation and a lazy body wrapper. Each input chunk is
   sync-flushed, and output is at most 64 KiB per pull. Thirty-two coding tests pass
@@ -164,13 +167,19 @@ The implementation starts from design commit
   listener uses a signed Endpoint, Router and mttp-net/server. Multipart replies
   use the new `stream_body_out` without concatenation. Fetch-backed examples
   pass Node PING/command/deferred tests plus Fastly, Vercel and Lambda lifetime
-  adapter tests. Cross-target Discord validation and real-host runs remain.
+  adapter tests. The full migration suite also passes on Wasm (1,289) and JS
+  (1,260); two subsequent regression cases pass on all three targets. Native
+  coverage passes with every uncovered line ledgered. Fourteen workerd tests
+  pass, including deferred work and request cancellation. Remote deployments
+  have not been tested.
 - Consumer integration exposed two adapter-import requirements: the pinned
   compiler cannot make imports conditional, so server is empty on JS and fetch
   is empty on native/Wasm. The real Fetch interface is checked separately in
   `pkg.generated.js.mbti`. This does not add a JS listener or non-JS Fetch.
   The full core gate passes after these changes, including four-target tests,
   runtime suites, coverage ledgers and documentation checks.
+  The runtime gate now compares generated interfaces across supported targets,
+  allowing only the explicit socket-backend and host-adapter differences.
 - An isolated requesto workspace contains an unreleased deprecation notice and
   feature-by-feature migration map. No requesto runtime or dependency is changed
   and no replacement release has been published.

@@ -12,7 +12,7 @@ pub(all) struct ServerLimits {
 }
 
 ///|
-/// Defaults: 1 MiB bodies, five-second header/body idle budgets, 16 KiB heads,
+/// Defaults: 1 MiB bodies, five-second header/body budgets, 16 KiB heads,
 /// 256 connections, 64 KiB unread-body draining, no handler deadline and a
 /// ten-second graceful shutdown budget.
 pub fn ServerLimits::default() -> ServerLimits {
