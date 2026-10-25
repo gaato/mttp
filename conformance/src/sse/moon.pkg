@@ -1,0 +1,7 @@
+import {
+  "gaato/mttp/model" @http,
+  "gaato/mttp/sse" @events,
+  "gaato/mttp-conformance/harness",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/random",
+} for "test"

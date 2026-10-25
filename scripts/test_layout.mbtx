@@ -45,7 +45,7 @@ let module_dir : String = "mttp"
 
 ///|
 /// Directories, one per module, in which no `async test` may appear.
-let no_async_test_dirs : Array[String] = ["mttp", "mttp-digest"]
+let no_async_test_dirs : Array[String] = ["mttp", "mttp-digest", "conformance"]
 
 ///|
 /// The one file allowed to declare `%async` intrinsics.

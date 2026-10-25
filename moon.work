@@ -3,4 +3,5 @@ members = [
   "mttp-net",
   "mttp-digest",
   "examples/fetch",
+  "conformance",
 ]

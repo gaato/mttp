@@ -21,6 +21,11 @@ The implementation starts from design commit
 - U1 in progress: scaffold, Driver, clocks, jsonkit, model, SSE parsing,
   multipart and retry decisions are present. This is not a complete U1.
 - Feed, initial quickcheck generators and SSE encoding are now present.
+- The unpublished conformance module retains mbt-sdk's HTTP-only URL, Cookie
+  and SSE corpora and split/mutation harness. Its tests exercise public mttp
+  APIs, preserve upstream vectors/exclusions and translate the SSE limit error
+  to TooLarge. All ten tests pass on all four targets and static gates pass.
+  JSON-RPC fixtures remain in the original repository.
 - Remaining U1: the complete generator inventory,
   API review and test-gate negative tests. Driver timer callback and cleanup
   budget regressions have been fixed and have dedicated tests.

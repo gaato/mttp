@@ -29,9 +29,9 @@ cd "$(dirname "$0")/.."
 
 ALL_TARGETS=(wasm-gc js native wasm)
 # Workspace members whose every package builds and tests on all four targets.
-FOUR_TARGET_MODULES=(mttp mttp-digest)
+FOUR_TARGET_MODULES=(mttp mttp-digest conformance)
 # Modules whose test counts must be equal on all four targets.
-EQUAL_COUNT_MODULES=(gaato/mttp gaato/mttp-digest)
+EQUAL_COUNT_MODULES=(gaato/mttp gaato/mttp-digest gaato/mttp-conformance)
 MANIFEST=scripts/test_manifest.tsv
 MANIFEST_HEADER=$'module\tpackage\ttarget\tcount'
 WORK=_build/gates

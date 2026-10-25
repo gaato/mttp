@@ -86,7 +86,7 @@ pub fn SseParser::new(
 /// Feeds any byte chunk and returns complete events in order.
 /// Malformed UTF-8 is replaced with U+FFFD. Feeding after finish is a no-op.
 ///
-/// An event over `max_event_bytes` raises `Protocol` and ends the stream,
+/// An event over `max_event_bytes` raises `TooLarge` and ends the stream,
 /// which is refused rather than read without bound. When the same chunk
 /// completed events before it, those are returned first and the next `feed`
 /// or `finish` raises, so feed an empty chunk to observe it without waiting
