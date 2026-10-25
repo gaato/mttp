@@ -166,7 +166,7 @@ fn find_digest_challenge(
     if value.length() > remaining {
       return None
     }
-    let size = @utf8.encode(value).length()
+    let size = @model.encode_utf8(value).length()
     if size > remaining {
       return None
     }
@@ -258,7 +258,9 @@ fn digest_authorization(
   cnonce : String,
   body : Bytes?,
 ) -> String {
-  let h = (text : String) => digest_hash(challenge.hash, @utf8.encode(text))
+  let h = (text : String) => {
+    digest_hash(challenge.hash, @model.encode_utf8(text))
+  }
   let realm = challenge.realm
   let nonce = challenge.nonce
   let nc = hex8(count)
@@ -354,7 +356,7 @@ fn quote(value : String) -> String {
 /// `attr-char`s.
 fn ext_value(value : String) -> String {
   let buffer = StringBuilder()
-  for byte in @utf8.encode(value) {
+  for byte in @model.encode_utf8(value) {
     let c = byte.to_int().unsafe_to_char()
     let keep = (c >= 'a' && c <= 'z') ||
       (c >= 'A' && c <= 'Z') ||

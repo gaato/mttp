@@ -8,25 +8,18 @@ pub fn form_urldecode(
   input : String,
   max_pairs~ : Int32 = 256,
 ) -> Array[(String, String)] raise TransportError {
-  if max_pairs < 0 {
-    raise TransportError(
-      kind=Invalid,
-      phase=Body,
-      detail="negative form pair limit",
-    )
+  @form.decode(input, max_pairs) catch {
+    @form.InvalidLimit =>
+      raise TransportError(
+        kind=Invalid,
+        phase=Body,
+        detail="negative form pair limit",
+      )
+    @form.TooMany(limit) =>
+      raise TransportError(
+        kind=TooLarge(limit~),
+        phase=Body,
+        detail="too many form pairs",
+      )
   }
-  let pairs = []
-  for piece in input.split("&") {
-    if !piece.is_empty() {
-      if pairs.length() >= max_pairs {
-        raise TransportError(
-          kind=TooLarge(limit=max_pairs),
-          phase=Body,
-          detail="too many form pairs",
-        )
-      }
-      pairs.push(query_pair(piece))
-    }
-  }
-  pairs
 }

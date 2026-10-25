@@ -37,6 +37,14 @@ gaato/mttp	gaato/mttp/h1	js	13
 gaato/mttp	gaato/mttp/h1	native	13
 gaato/mttp	gaato/mttp/h1	wasm	13
 gaato/mttp	gaato/mttp/h1	wasm-gc	13
+gaato/mttp	gaato/mttp/internal/form	js	0
+gaato/mttp	gaato/mttp/internal/form	native	0
+gaato/mttp	gaato/mttp/internal/form	wasm	0
+gaato/mttp	gaato/mttp/internal/form	wasm-gc	0
+gaato/mttp	gaato/mttp/internal/text	js	0
+gaato/mttp	gaato/mttp/internal/text	native	0
+gaato/mttp	gaato/mttp/internal/text	wasm	0
+gaato/mttp	gaato/mttp/internal/text	wasm-gc	0
 gaato/mttp	gaato/mttp/jsonkit	js	8
 gaato/mttp	gaato/mttp/jsonkit	native	8
 gaato/mttp	gaato/mttp/jsonkit	wasm	8
@@ -49,6 +57,10 @@ gaato/mttp	gaato/mttp/multipart	js	34
 gaato/mttp	gaato/mttp/multipart	native	34
 gaato/mttp	gaato/mttp/multipart	wasm	34
 gaato/mttp	gaato/mttp/multipart	wasm-gc	34
+gaato/mttp	gaato/mttp/schema	js	18
+gaato/mttp	gaato/mttp/schema	native	18
+gaato/mttp	gaato/mttp/schema	wasm	18
+gaato/mttp	gaato/mttp/schema	wasm-gc	18
 gaato/mttp	gaato/mttp/sse	js	16
 gaato/mttp	gaato/mttp/sse	native	16
 gaato/mttp	gaato/mttp/sse	wasm	16
@@ -69,7 +81,7 @@ gaato/mttp	gaato/mttp/testing/gen	js	2
 gaato/mttp	gaato/mttp/testing/gen	native	2
 gaato/mttp	gaato/mttp/testing/gen	wasm	2
 gaato/mttp	gaato/mttp/testing/gen	wasm-gc	2
-gaato/mttp-digest	gaato/mttp-digest	js	18
-gaato/mttp-digest	gaato/mttp-digest	native	18
-gaato/mttp-digest	gaato/mttp-digest	wasm	18
-gaato/mttp-digest	gaato/mttp-digest	wasm-gc	18
+gaato/mttp-digest	gaato/mttp-digest	js	19
+gaato/mttp-digest	gaato/mttp-digest	native	19
+gaato/mttp-digest	gaato/mttp-digest	wasm	19
+gaato/mttp-digest	gaato/mttp-digest	wasm-gc	19

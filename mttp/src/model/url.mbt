@@ -694,14 +694,5 @@ fn sub_delim_byte(b : Int32) -> Bool {
 ///|
 /// One query piece split at its first `=` and form-decoded.
 fn query_pair(piece : StringView) -> (String, String) {
-  let (name, value) = match piece.find("=") {
-    Some(i) => (piece[:i], piece[i + 1:])
-    None => (piece, "")
-  }
-  (form_decode(name), form_decode(value))
-}
-
-///|
-fn form_decode(text : StringView) -> String {
-  @percent.decode_lossy(text.to_owned().replace_all(old="+", new=" "))
+  @form.decode_pair(piece)
 }

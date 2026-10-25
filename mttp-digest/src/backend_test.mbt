@@ -264,3 +264,37 @@ test "Digest CONNECT authenticates the authority request target" {
   assert_true(seen[1].unwrap().contains("uri=\"a.test:443\""))
   backend.close()
 }
+
+///|
+test "Digest replaces lone surrogates during hashing and extended username encoding" {
+  let seen : Array[String?] = []
+  let inner = @client.from_fn((request, _) => {
+    seen.push(request.headers.get("authorization"))
+    @model.Response::new(
+      if seen.length() == 1 {
+        401
+      } else {
+        200
+      },
+      headers=challenge(),
+    )
+  })
+  let lone = String::from_array([(0xd800).unsafe_to_char()])
+  let backend = @mttp_digest.DigestScheme::new(
+    inner,
+    lone,
+    lone,
+    origin="https://a.test",
+    random=() => 0.5,
+  )
+  @testing.run_sync(() => {
+    let response = backend.send(
+      @model.Request::get("https://a.test/"),
+      @client.RequestOptions::default(),
+    )
+    assert_eq(response.status, 200)
+    response.close()
+  })
+  assert_true(seen[1].unwrap().contains("username*=UTF-8''%EF%BF%BD"))
+  backend.close()
+}

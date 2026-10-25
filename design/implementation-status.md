@@ -73,6 +73,12 @@ The implementation starts from design commit
   DigestScheme. Mature requesto hash/parser tests are retained, with additional
   contract, replay/close, cross-origin, stale-nonce and challenge-budget tests.
   It imports crypto without adding that dependency to mttp or mttp-net.
+- U8 schema codecs are present: typed text/JSON/body codecs, exact int64
+  numbers, accumulated pointer-path issues, optional/presence fields,
+  object1–object8, bounded recursive codecs, unions and a bounded ECMA pattern
+  subset. Shared internal form/text helpers keep schema independent of model
+  without duplicating encoders. Endpoint interpreters, definition checks and
+  cross-layer schema/document consistency checks still remain.
 
 ## Port decisions
 
