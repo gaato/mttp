@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - run: moon update
       - run: scripts/gates.sh full
-      # The release list is empty until a release is explicitly approved.
-      - run: scripts/release.sh publish --dry-run
+      # Validate real package archives without publishing or requiring a
+      # registry account. Publication is a separately approved local command.
+      - run: moon run scripts/resolver_gate.mbtx

@@ -7,6 +7,8 @@ never does. Every breaking change is listed with a migration note.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-26
+
 ### Added
 
 - Clock traits, deterministic clock/timer/gate fakes, JSON helpers,
@@ -24,6 +26,11 @@ never does. Every breaking change is listed with a migration note.
 
 ### Fixed
 
+- Accept explicit port 80 in CONNECT request parsing and serialization.
+- Reject dot-only endpoint path captures before URL normalization can change
+  their route. `Endpoint::request` now raises `InvalidRequest` for these inputs.
+- Include `Vary: Origin` on denied and missing-origin CORS responses when
+  using an origin allowlist or credentialed origin reflection.
 - Bound Driver timer callbacks and reserve a fresh cancellation cleanup
   budget, including after the main execution budget is exhausted.
 - Preserve URL fragments when appending query parameters.

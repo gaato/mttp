@@ -21,11 +21,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Bottom-up: a module is listed after everything it imports. Empty: nothing is
-# published until the user decides to release (release.yml runs only by hand).
-PUBLISH_MODULES=()
+# Bottom-up: publish the shared model before its runtime and auth adapters.
+# Publication remains an explicit local command; CI only validates candidates.
+PUBLISH_MODULES=(mttp mttp-net mttp-digest)
 # Every module that keeps a CHANGELOG, published or not.
-CHANGELOG_MODULES=(mttp)
+CHANGELOG_MODULES=(mttp mttp-net mttp-digest)
 
 module_name() { sed -nE 's/^name = "(.*)"$/\1/p' "$1/moon.mod"; }
 module_version() { sed -nE 's/^version = "(.*)"$/\1/p' "$1/moon.mod"; }
