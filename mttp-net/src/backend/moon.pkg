@@ -9,6 +9,7 @@ import {
   "moonbitlang/async/tls",
   "moonbitlang/async/cond_var",
   "moonbitlang/core/env",
+  "moonbitlang/async/js_async",
 }
 
 import {
@@ -24,4 +25,42 @@ import {
   "moonbitlang/core/debug",
 } for "wbtest"
 
-supported_targets = "native + wasm"
+supported_targets = "native + wasm + js"
+
+// Platform-specific files use different imports; moon.pkg imports cannot yet
+// be conditional in the pinned toolchain. All other warnings stay enabled.
+
+warnings = "-unused_package"
+
+options(
+  targets: {
+    "platform.js.mbt": [ "js" ],
+    "fetch_ffi.js.mbt": [ "js" ],
+    "fetch.js_test.mbt": [ "js" ],
+    "fetch_body.js.mbt": [ "js" ],
+    "pool.mbt": [ "native", "wasm" ],
+    "send.mbt": [ "native", "wasm" ],
+    "wire.mbt": [ "native", "wasm" ],
+    "proxy.mbt": [ "native", "wasm" ],
+    "backend.mbt": [ "native", "wasm" ],
+    "no_proxy.mbt": [ "native", "wasm" ],
+    "wire_test.mbt": [ "native", "wasm" ],
+    "proxy_test.mbt": [ "native", "wasm" ],
+    "proxy_wire.mbt": [ "native", "wasm" ],
+    "tls_wbtest.mbt": [ "native", "wasm" ],
+    "pool_wbtest.mbt": [ "native", "wasm" ],
+    "upload_test.mbt": [ "native", "wasm" ],
+    "backend_test.mbt": [ "native", "wasm" ],
+    "proxy_wbtest.mbt": [ "native", "wasm" ],
+    "slots_wbtest.mbt": [ "native", "wasm" ],
+    "timer_wbtest.mbt": [ "native", "wasm" ],
+    "response_body.mbt": [ "native", "wasm" ],
+    "no_proxy_wbtest.mbt": [ "native", "wasm" ],
+    "platform.native.mbt": [ "native", "wasm" ],
+    "timeouts_wbtest.mbt": [ "native", "wasm" ],
+    "ownership_wbtest.mbt": [ "native", "wasm" ],
+    "cancellation_wbtest.mbt": [ "native", "wasm" ],
+    "proxy_socket_wbtest.mbt": [ "native", "wasm" ],
+    "no_proxy_reference_wbtest.mbt": [ "native", "wasm" ],
+  },
+)

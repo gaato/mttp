@@ -31,6 +31,12 @@ async fn body(response : @model.Response) -> Bytes {
 async test "H1Backend enforces the shared backend contract" {
   assert_eq(
     @testing.check_backend_contract(() => {
+      @backend.AsyncBackend::new(trust_env=false)
+    }),
+    [],
+  )
+  assert_eq(
+    @testing.check_backend_contract(() => {
       @backend.H1Backend::new(trust_env=false)
     }),
     [],
@@ -47,7 +53,10 @@ async test "completed responses reuse their socket and close is idempotent" {
       }
     },
     url => {
-      let backend = @backend.H1Backend::new(trust_env=false, max_connections=1)
+      let backend = @backend.AsyncBackend::new(
+        trust_env=false,
+        max_connections=1,
+      )
       defer backend.close()
       for _ in 0..<3 {
         let response = backend.send(

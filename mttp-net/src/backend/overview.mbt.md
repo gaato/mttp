@@ -8,7 +8,7 @@ uses the system trust roots and validates the peer name. Compose
 ```mbt check
 ///|
 test "construct and close a bounded connection pool" {
-  let backend = @backend.H1Backend::new(
+  let backend = @backend.AsyncBackend::new(
     trust_env=false,
     max_connections=16,
     max_connections_per_origin=4,
@@ -47,5 +47,36 @@ authentication and sent only to the proxy. User-supplied Proxy-Authorization
 is replaced or removed. Pool keys include the route and canonical origin with
 an explicit port, so forwarded, tunnelled and direct connections cannot mix.
 
-A JS fetch backend remains pending. User-issued successful CONNECT and 101
-responses close their socket because this API does not expose tunnels.
+User-issued successful CONNECT and 101 responses close their socket because
+this API does not expose tunnels.
+
+## Portable backend and JS
+
+`AsyncBackend` selects H1Backend on native/wasm and fetch on JS, keeping the
+same constructor and Backend interface. Fetch uses `redirect: "manual"` so a
+single send never silently follows a redirect. In browsers an opaque redirect
+has no accessible status or Location and is reported as Protocol/Unknown;
+Node exposes its ordinary redirect response. Browser CORS, forbidden headers
+and platform proxy settings remain in effect.
+
+Fetch always negotiates and decodes content codings, even when `decompress`
+is false or Accept-Encoding was supplied; it reports the platform's headers,
+which may still describe encoded bytes. The adapter therefore does not claim
+a stream length from Content-Length. Set-Cookie values are preserved when the
+host exposes getSetCookie; browsers normally hide them.
+
+JS stream uploads are buffered up to 16 MiB, with oversized declared lengths
+refused before taking the stream. Byte bodies are already caller-owned and
+are not subject to that stream-buffer ceiling. GET/HEAD bodies and methods
+forbidden by fetch are refused. Response slices are at most 64 KiB, retaining
+at most one host-provided chunk without repeatedly copying its remainder.
+Buffered decoded byte limits and read deadlines still apply. At most 1024
+consecutive empty host chunks are tolerated before Protocol/Body is raised.
+Header buffering and individual host chunk sizes are controlled by fetch.
+
+Cancellation aborts the fetch and cancels its reader, removes the read's abort
+listener, and returns its admission slot. Before the response head, fetch
+does not expose DNS/connect/write phases, so network failures and timeouts
+are reported in Unknown. Body failures retain Body. Socket idle-pool settings,
+head limits and trust_env have no effect on JS; explicit proxy URLs are
+rejected rather than ignored.
