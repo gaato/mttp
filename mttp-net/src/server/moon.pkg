@@ -1,0 +1,18 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/h1",
+  "gaato/mttp-net/codings",
+  "moonbitlang/async",
+  "moonbitlang/async/socket",
+  "moonbitlang/async/cond_var",
+  "moonbitlang/core/debug",
+}
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp-net/backend",
+  "gaato/mttp-net/runtime",
+  "moonbitlang/core/encoding/utf8",
+} for "test"
+
+supported_targets = "native + wasm"

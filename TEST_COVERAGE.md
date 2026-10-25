@@ -67,6 +67,11 @@ Budgets are exact uncovered counts at the last measurement.
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| mttp-net/src/codings/encoded_body.mbt | 1 | Defensive open-error conversion: the private source callback and encoder raise TransportError, handled first. Cancellation propagates as a signal. |
+| mttp-net/src/server/request_body.mbt | 2 | Defensive open-error conversion after timeout and TransportError cases; NoBody is already done and request framing never produces UntilClose or future variants. |
+| mttp-net/src/server/response.mbt | 1 | Forward-compatible EncodingChoice arm; all current negotiation results are handled first. |
+| mttp-net/src/server/connection.mbt | 1 | Defensive task error propagation: respond handles current ordinary failures, and cancellation has its own case. |
+| mttp-net/src/server/serve.mbt | 6 | Not yet tested: shutdown/accept race guards and open-error fallbacks around nested task groups. Public accept failure, graceful completion, grace expiry, connection cap and cancellation are tested; deterministic injection of these remaining interleavings is pending. |
 | mttp/src/endpoint/client_interp.mbt | 2 | Defensive no-variant guards: accept_head already selected from the same immutable output variants and response head before either reader runs. Decoder failures raise instead of returning no match. |
 | mttp/src/endpoint/dynamic_output.mbt | 1 | Named-cookie prefix guard: the private selector filters for that exact prefix before invoking its decoder. |
 | mttp/src/endpoint/input.mbt | 3 | Defensive wrong BodyValue arms: the server chooses Buffered for raw and buffered inputs and Streamed for streaming inputs; these private staged decoders cannot receive the opposite representation through dispatch. |

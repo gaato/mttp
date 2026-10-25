@@ -38,6 +38,18 @@ test "encoding negotiation honors weights exclusions aliases and identity" {
 
 ///|
 test "encoding negotiation rejects malformed weights and bounds field bytes and entries" {
+  let non_ascii = try {
+    ignore(
+      @codings.negotiate_encoding(
+        @model.Headers::of([("accept-encoding", String::make(8193, 'é'))]),
+      ),
+    )
+    false
+  } catch {
+    @model.TransportError(kind=Invalid, ..) => true
+    _ => false
+  }
+  assert_true(non_ascii)
   for
     value in [
       "gzip;q=",

@@ -1,0 +1,48 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/server"
+
+import {
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub async fn serve(async (@model.Request) -> @model.Response noraise, addr~ : String, on_listen? : (String) -> Unit, limits? : ServerLimits, on_error? : (ServeError) -> Unit, compression? : Bool) -> Unit raise ServerConfigError
+
+// Errors
+pub(all) suberror ServerConfigError {
+  InvalidMaxBodyBytes(value~ : Int32)
+  InvalidBodyTimeoutMs(value~ : Int32)
+  InvalidHeaderTimeoutMs(value~ : Int32)
+  InvalidMaxConnections(value~ : Int32)
+  InvalidMaxHeaderBytes(value~ : Int32)
+  InvalidDrainMaxBytes(value~ : Int32)
+  InvalidHandlerTimeoutMs(value~ : Int32)
+  InvalidDrainMs(value~ : Int32)
+  Bind(detail~ : String)
+  Accept(detail~ : String)
+} derive(@debug.Debug)
+pub fn ServerConfigError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub(all) struct ServeError {
+  kind : @model.Kind
+  phase : @model.Phase
+  detail : String
+}
+
+pub(all) struct ServerLimits {
+  max_body_bytes : Int32
+  header_timeout_ms : Int32
+  body_timeout_ms : Int32
+  max_header_bytes : Int32
+  max_connections : Int32
+  drain_max_bytes : Int32
+  handler_timeout_ms : Int32?
+  drain_ms : Int32
+}
+pub fn ServerLimits::default() -> Self
+
+// Type aliases
+
+// Traits

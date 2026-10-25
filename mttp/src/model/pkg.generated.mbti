@@ -8,6 +8,8 @@ import {
 // Values
 pub fn append_query(String, String, String) -> String
 
+pub let background : AttributeKey[(async () -> Unit) -> Unit]
+
 pub fn encode_path(Array[String]) -> String
 
 pub fn encode_utf8(String) -> Bytes

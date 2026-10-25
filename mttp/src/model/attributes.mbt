@@ -65,6 +65,13 @@ pub fn[T] Attributes::get(self : Attributes, key : AttributeKey[T]) -> T? {
 pub let remote_addr : AttributeKey[String] = AttributeKey::new("remote_addr")
 
 ///|
+/// Adapter-owned scheduling for work that may outlive the response. Invoke
+/// during request handling; the adapter owns completion and shutdown policy.
+pub let background : AttributeKey[(async () -> Unit) -> Unit] = AttributeKey::new(
+  "background",
+)
+
+///|
 /// A caller's statement that resending this request is safe even after it
 /// was written (discord's REPLAY_SAFE_HEADER, without a wire header).
 pub let replay_safe : AttributeKey[Bool] = AttributeKey::new("replay_safe")

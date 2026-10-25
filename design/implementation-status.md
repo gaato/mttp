@@ -69,9 +69,19 @@ The implementation starts from design commit
 - Remaining U4–U9 work includes socket/browser conformance, the runtime server,
   fetch handler, response compression integration, consumer migrations and
   remaining U1–U3 checks.
+- A native/wasm HTTP/1 server now passes 25 tests on each target: bounded heads and
+  bodies, keepalive/draining, lazy 100 Continue, response compression,
+  disconnect cancellation, graceful shutdown and background work are present.
+  Static gates pass; six uncovered shutdown/error race guards are explicitly
+  queued for deterministic injection in TEST_COVERAGE.md.
+  A loopback test exposed a remaining H1Backend conformance issue: when a
+  server rejects a large upload immediately with 413 and closes, the backend
+  can report Network during Write before reading the final response. The
+  upload/head orchestration must handle early final responses; this remains
+  outstanding rather than being counted as server/client conformance success.
 - `mttp-net/codings` now also provides bounded gzip/deflate/Brotli encoders,
   quality-weight negotiation and a lazy body wrapper. Each input chunk is
-  sync-flushed, and output is at most 64 KiB per pull. Thirty coding tests pass
+  sync-flushed, and output is at most 64 KiB per pull. Thirty-two coding tests pass
   on all four targets, including mid-stream decoding and ownership on EOF,
   failure and cancellation. Zstd remains decode-only in the codec dependency.
 - The separate `mttp-digest` module now wraps Backends with an origin-scoped
