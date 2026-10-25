@@ -1,0 +1,103 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/h1"
+
+import {
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn encode_chunk(Bytes) -> Bytes
+
+pub fn parse_request_head(BytesView, limits? : Limits) -> (@model.Method, String, Version, @model.Headers) raise ParseError
+
+pub fn parse_response_head(BytesView, limits? : Limits) -> (Version, Int32, @model.Headers) raise ParseError
+
+pub fn request_framing(@model.Headers) -> Framing raise ParseError
+
+pub fn response_framing(@model.Headers, status~ : Int32, meth? : @model.Method) -> Framing raise ParseError
+
+pub fn scan_head(BytesView, max~ : Int32) -> Int32? raise ParseError
+
+pub fn write_request_head(@model.Method, String, @model.Headers, Framing, Version) -> Bytes raise ParseError
+
+pub fn write_response_head(Int32, @model.Headers, Framing, Version) -> Bytes raise ParseError
+
+// Errors
+pub(all) suberror ParseError {
+  ParseError(kind~ : ParseKind, detail~ : String)
+} derive(@debug.Debug)
+pub fn ParseError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct ChunkedDecoder {
+  // private fields
+}
+pub fn ChunkedDecoder::feed(Self, BytesView) -> Decoded raise ParseError
+pub fn ChunkedDecoder::finish(Self) -> Unit raise ParseError
+pub fn ChunkedDecoder::new(Limits) -> Self
+
+pub struct Decoded {
+  chunks : Array[Bytes]
+  done : Bool
+  trailers : @model.Headers
+  consumed : Int32
+}
+
+#non_exhaustive
+pub(all) enum Framing {
+  NoBody
+  Length(Int64)
+  Chunked
+  UntilClose
+} derive(Eq, @debug.Debug)
+pub fn Framing::equal(Self, Self) -> Bool
+pub fn Framing::not_equal(Self, Self) -> Bool
+pub fn Framing::to_repr(Self) -> @debug.Repr
+
+pub struct HeadDecoder {
+  // private fields
+}
+pub fn HeadDecoder::feed(Self, BytesView) -> HeadResult raise ParseError
+pub fn HeadDecoder::finish(Self) -> Bytes raise ParseError
+pub fn HeadDecoder::new(max? : Int32) -> Self
+
+pub struct HeadResult {
+  head : Bytes?
+  consumed : Int32
+}
+
+pub(all) struct Limits {
+  max_head_bytes : Int32
+  max_chunk_line_bytes : Int32
+  max_trailer_bytes : Int32
+  max_headers : Int32
+} derive(Eq, @debug.Debug)
+pub fn Limits::default() -> Self
+pub fn Limits::equal(Self, Self) -> Bool
+pub fn Limits::not_equal(Self, Self) -> Bool
+pub fn Limits::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+pub(all) enum ParseKind {
+  HeadTooLarge
+  Malformed
+  Smuggling
+  Unsupported
+} derive(Eq, @debug.Debug)
+pub fn ParseKind::equal(Self, Self) -> Bool
+pub fn ParseKind::not_equal(Self, Self) -> Bool
+pub fn ParseKind::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+pub(all) enum Version {
+  Http10
+  Http11
+} derive(Eq, @debug.Debug)
+pub fn Version::equal(Self, Self) -> Bool
+pub fn Version::not_equal(Self, Self) -> Bool
+pub fn Version::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

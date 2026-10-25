@@ -30,6 +30,8 @@ a test from hanging (the `testing/driver` rows).
 
 | Structure | Bound | On overflow | Tests |
 |---|---|---|---|
+| `h1` retained head bytes and fields | Default 16 KiB including CRLF and 100 fields | Raises `HeadTooLarge`; accumulator failures are sticky and release the unfinished buffer | `mttp/src/h1/head_test.mbt`: "head scanner and accumulator enforce exact byte and field limits" |
+| `h1` chunk-size lines and trailers | Default 4 KiB per size line, 16 KiB for all trailers including CRLF, 100 trailer fields | Raises `Malformed` and refuses further input; data chunks are emitted without accumulating their declared length | `mttp/src/h1/chunked_test.mbt`: "chunk lines trailers and field counts enforce exact limits" |
 | `model` decoded form pairs | `max_pairs`, default 256 nonempty pairs; input byte bound belongs to caller | Raises `TooLarge` before decoding an excess pair | `mttp/src/model/form_decode_test.mbt`: "form pair limit accepts exact bounds and defaults to 256" |
 | `client` line reader | `max_line_bytes`, default one MiB, plus one pending CR byte | Closes stream and raises `TooLarge`; previously delivered lines remain delivered | `mttp/src/client/combinators_test.mbt`: "line bounds refuse crossing bytes close streams and default to one MiB", "line reader handles every byte split including UTF-8 and CRLF boundaries" |
 | `client` redirect history and followed hops | `max_redirects`, default 10; no response bodies retained | Closes the last intermediate response and raises `TooManyRedirects` | `mttp/src/client/redirect_wbtest.mbt`: "plan_redirect decides each hop"; `mttp/src/client/redirect_test.mbt`: "redirect refusals close received bodies and retain error classification" |

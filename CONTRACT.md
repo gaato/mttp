@@ -92,3 +92,24 @@ package tests below.
 |---|---|---|
 | SSE | Every byte split, CR/LF/CRLF, split UTF-8, bounded retained fields, sticky finish | `sse/parser_test.mbt`, `sse/encode_test.mbt` |
 | Multipart boundary scanner | Matches across chunk boundaries without emitting a colliding delimiter | `multipart/boundary_scan_wbtest.mbt`, `multipart/stream_test.mbt` |
+# HTTP/1 codec
+
+The `h1` codec follows the message syntax and framing of RFC 9112
+(https://www.rfc-editor.org/rfc/rfc9112.html), with strict CRLF and the design's
+stricter rejection of duplicate Content-Length, even identical duplicates.
+CL+TE is rejected. Only the single transfer coding `chunked` is supported.
+Header values retain Latin-1 octets and duplicate fields in order; obs-fold,
+controls and whitespace before a header colon are refused.
+
+`HeadDecoder` scans incrementally in linear time. `scan_head` is the stateless
+alternative for an already available buffer. Head and chunk decoder errors
+are sticky. `consumed` excludes body or pipelined bytes after completion.
+Chunk payloads are emitted without buffering a declared chunk's entire size;
+size lines and trailer storage have independent byte and count limits.
+
+Wire writers reject invalid fields and framing instead of emitting unsafe
+bytes, so they raise `ParseError` (a deliberate refinement of the design's
+nonraising sketch). They replace CL/TE using the supplied framing. A successful
+CONNECT's `NoBody` describes the HTTP message only; the adapter must hand off
+the remaining tunnel bytes. Socket ownership and timeouts remain adapter work.
+

@@ -31,6 +31,12 @@ The implementation starts from design commit
   and total deadlines, pairs admission with release and reports settled
   attempts. Mature retry presets, WindowLimiter and Paginator are ported with
   their tests. API review and the full consumer conformance suite remain.
+- U4 in progress: the unavailable h1client scratchpad probe is being rebuilt
+  from the accepted design. The runtime-free h1 codec now has bounded head
+  accumulation, strict request/response parsing, framing decisions, a bounded
+  chunk decoder, and wire writers. Split invariance, premature EOF, framing
+  conflicts, limits and pipelined-byte ownership have tests. Runtime socket
+  integration and adversarial socket conformance remain.
 - U6 has the mature CookieJar and a Cookies backend wrapper, including its
   bounds, expiry, domain/path and credential-header tests. FollowRedirects
   ports the mature redirect planner, closes intermediate bodies, records

@@ -33,6 +33,10 @@ gaato/mttp	gaato/mttp/cookie	js	36
 gaato/mttp	gaato/mttp/cookie	native	36
 gaato/mttp	gaato/mttp/cookie	wasm	36
 gaato/mttp	gaato/mttp/cookie	wasm-gc	36
+gaato/mttp	gaato/mttp/h1	js	13
+gaato/mttp	gaato/mttp/h1	native	13
+gaato/mttp	gaato/mttp/h1	wasm	13
+gaato/mttp	gaato/mttp/h1	wasm-gc	13
 gaato/mttp	gaato/mttp/jsonkit	js	8
 gaato/mttp	gaato/mttp/jsonkit	native	8
 gaato/mttp	gaato/mttp/jsonkit	wasm	8
