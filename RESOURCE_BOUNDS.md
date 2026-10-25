@@ -22,7 +22,7 @@ fails when a row names no test or a named test is not declared in the named
 file. Whether a named test really reaches the bound is checked in review. The
 other tables describe where no limit is enforced, so they stay prose.
 
-Scope: every package of `gaato/mttp`. Test helpers (`testing`, `clock/fake`)
+Scope: every package of `gaato/mttp` and `gaato/mttp-net`. Test helpers (`testing`, `clock/fake`)
 record what a test feeds them and are not listed, except the limits that keep
 a test from hanging (the `testing/driver` rows).
 
@@ -30,6 +30,9 @@ a test from hanging (the `testing/driver` rows).
 
 | Structure | Bound | On overflow | Tests |
 |---|---|---|---|
+| `mttp-net/codings` decoder stages | At most five non-identity content codings | Refuses the sixth coding before allocating a decoder; direct constructors refuse empty or oversized plans | `mttp-net/src/codings/content_coding_wbtest.mbt`: "coding_plan undoes known codings from the last applied"; `mttp-net/src/codings/api_test.mbt`: "public decoder rejects invalid plans before allocating stages" |
+| `mttp-net/codings` decoded output per pull | 64 KiB per stage | Returns output slices without eagerly decoding the rest of the body | `mttp-net/src/codings/content_decoder_wbtest.mbt`: "a decompression bomb comes out one bounded slice per pull", "a pull never asks for input while decoded output is pending" |
+| `mttp-net/codings` codec windows | DEFLATE 32 KiB; Brotli at most 16 MiB; zstd at most 8 MiB. Windows grow only as output needs them; codec tables are bounded by the dependency implementations | Refuses unsupported or excessive declared windows | `mttp-net/src/codings/content_decoder_wbtest.mbt`: "ContentDecoder undoes each coding and chain", "@zlib.is_header tells zlib from the raw DEFLATE a deflate body may be" |
 | `h1` retained head bytes and fields | Default 16 KiB including CRLF and 100 fields | Raises `HeadTooLarge`; accumulator failures are sticky and release the unfinished buffer | `mttp/src/h1/head_test.mbt`: "head scanner and accumulator enforce exact byte and field limits" |
 | `h1` chunk-size lines and trailers | Default 4 KiB per size line, 16 KiB for all trailers including CRLF, 100 trailer fields | Raises `Malformed` and refuses further input; data chunks are emitted without accumulating their declared length | `mttp/src/h1/chunked_test.mbt`: "chunk lines trailers and field counts enforce exact limits" |
 | `model` decoded form pairs | `max_pairs`, default 256 nonempty pairs; input byte bound belongs to caller | Raises `TooLarge` before decoding an excess pair | `mttp/src/model/form_decode_test.mbt`: "form pair limit accepts exact bounds and defaults to 256" |
@@ -62,6 +65,7 @@ Growth that follows what the caller asks for, not what the network sends.
 
 | Structure | Grows with | Why it is not bounded here |
 |---|---|---|
+| `mttp-net/codings` retained input slice | One caller-supplied wire chunk, plus bounded inter-stage slices | feed accepts a Bytes value already owned by the caller; socket adapters must limit their reads. A second feed before NeedInput is refused, preventing accidental overwrite. |
 | `model` headers, URL strings, attribute maps and byte bodies | Values explicitly constructed by the caller | Parsers and backends impose network input limits; these value constructors do not consume network input. |
 | `multipart` framing and part descriptors | Caller-supplied parts | Streaming retains framing plus the supplied byte bodies and stream handles; boundary scanning retains at most the delimiter length. |
 | `testing/driver` ready queue, live-task map, timer heap | tasks the test spawns and timers it arms | A test helper: the test decides how many; `max_steps` stops a run that keeps spawning. Cancelled timers stay in the heap until they reach its top or `run` ends. |

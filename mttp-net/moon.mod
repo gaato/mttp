@@ -17,4 +17,8 @@ preferred_target = "native"
 import {
   "gaato/mttp@0.1.0",
   "moonbitlang/async@0.22.5",
+  "gaato/codec_bytes@0.1.1",
+  "gaato/deflate@0.1.0",
+  "gaato/brotli@0.4.1",
+  "gaato/zstd@0.3.1",
 }

@@ -1,4 +1,8 @@
 package	target	count
+gaato/mttp-net/codings	native	21
+gaato/mttp-net/codings	wasm	21
+gaato/mttp-net/codings	js	21
+gaato/mttp-net/codings	wasm-gc	21
 gaato/mttp-net	native	1
 gaato/mttp-net	wasm	1
 gaato/mttp-net	js	1

@@ -1,0 +1,59 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/codings"
+
+import {
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn accept_encoding() -> String
+
+pub fn coding_plan(String) -> Array[Coding] raise @model.TransportError
+
+pub fn coding_plan_fields(Array[String]) -> CodingPlan raise @model.TransportError
+
+pub fn decode_head(@model.ResponseHead) -> (@model.ResponseHead, ContentDecoder?) raise @model.TransportError
+
+pub fn has_body(String, Int32) -> Bool
+
+pub async fn read_decoded(async () -> Bytes?, ContentDecoder?) -> Bytes?
+
+// Errors
+
+// Types and methods
+#non_exhaustive
+pub(all) enum Coding {
+  Gzip
+  Deflate
+  Brotli
+  Zstd
+} derive(Eq, @debug.Debug)
+pub fn Coding::equal(Self, Self) -> Bool
+pub fn Coding::name(Self) -> String
+pub fn Coding::not_equal(Self, Self) -> Bool
+pub fn Coding::to_repr(Self) -> @debug.Repr
+
+pub struct CodingPlan {
+  undo : Array[Coding]
+  remaining : String?
+}
+
+pub struct ContentDecoder {
+  // private fields
+}
+pub fn ContentDecoder::end(Self) -> Unit raise @model.TransportError
+pub fn ContentDecoder::feed(Self, Bytes) -> Unit raise @model.TransportError
+pub fn ContentDecoder::new(Array[Coding]) -> Self raise @model.TransportError
+pub fn ContentDecoder::pull(Self) -> Pulled raise @model.TransportError
+
+#non_exhaustive
+pub(all) enum Pulled {
+  Slice(Bytes)
+  NeedInput
+  Done
+}
+
+// Type aliases
+
+// Traits

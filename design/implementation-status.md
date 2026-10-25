@@ -41,6 +41,10 @@ The implementation starts from design commit
   using the mature adapters. Native, wasm and JS tests cover completion,
   timeout, parent cancellation and admission cancellation. The approximate
   legacy VirtualClock has not been copied; deterministic core tests use Driver.
+- `mttp-net/codings` ports the mature incremental gzip/deflate/br/zstd chain,
+  including retained randomized split, corrupt-stream and decompression-bomb
+  tests. Its public decoder enforces one-to-five stages and refuses feed/end
+  misuse without overwriting unread bytes. All four targets are gated.
 - U6 has the mature CookieJar and a Cookies backend wrapper, including its
   bounds, expiry, domain/path and credential-header tests. FollowRedirects
   ports the mature redirect planner, closes intermediate bodies, records
