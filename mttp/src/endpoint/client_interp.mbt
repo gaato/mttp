@@ -5,7 +5,7 @@ fn[S, I, E, O] Endpoint::encode_request(
   self : Endpoint[S, I, E, O],
   security : S,
   input : I,
-) -> @model.Request {
+) -> @model.Request raise @client.InvalidRequest {
   let sink = RequestSink::new()
   (self.security.encode)(security, sink)
   (self.input.encode)(input, sink)
@@ -17,13 +17,22 @@ fn[S, I, E, O] Endpoint::encode_request(
         path_builder.write_string(@model.percent_encode(text))
       }
       Cap(name) => {
+        let value = sink.captures.get(name).unwrap_or("")
+        reject_dot_segment(value)
         path_builder.write_char('/')
-        path_builder.write_string(
-          @model.percent_encode(sink.captures.get(name).unwrap_or("")),
-        )
+        path_builder.write_string(@model.percent_encode(value))
       }
-      Rest(name) =>
-        path_builder.write_string(sink.captures.get(name).unwrap_or(""))
+      Rest(name) => {
+        let value = sink.captures.get(name).unwrap_or("")
+        for part in value.split("/") {
+          let decoded = @model.percent_decode(part.to_owned()) catch {
+            _ =>
+              raise @client.InvalidRequest(message="invalid rest path encoding")
+          }
+          reject_dot_segment(decoded)
+        }
+        path_builder.write_string(value)
+      }
     }
   }
   let encoded = path_builder.to_string()
@@ -45,6 +54,15 @@ fn[S, I, E, O] Endpoint::encode_request(
     req = req.attribute(@client.rate_limit_bucket, bucket(req))
   }
   req
+}
+
+///|
+fn reject_dot_segment(value : String) -> Unit raise @client.InvalidRequest {
+  // Fetch normalizes even percent-encoded dots, so escaping cannot preserve
+  // these identifiers consistently across the supported transports.
+  if value == "." || value == ".." {
+    raise @client.InvalidRequest(message="dot-only path capture")
+  }
 }
 
 ///|
@@ -70,11 +88,12 @@ fn[S, I, E : Error, O, R] Endpoint::reader(
 
 ///|
 /// Encodes a typed client request; its endpoint definition must pass checking.
+/// Rejects dot-only path captures because URL transports normalize them.
 pub fn[S, I, E : Error, O] Endpoint::request(
   self : Endpoint[S, I, E, O],
   security : S,
   input : I,
-) -> @client.ClientRequest[O] {
+) -> @client.ClientRequest[O] raise @client.InvalidRequest {
   let ra = self.reader(
     (h, body, opts) => {
       let bytes = @client.read_body(body, opts.max_body_bytes)

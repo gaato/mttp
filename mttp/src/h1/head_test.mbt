@@ -4,6 +4,8 @@ test "request target forms and HTTP version framing are unambiguous" {
     (meth, target) in [
       ("GET", "https://h/a?b"),
       ("CONNECT", "h:443"),
+      ("CONNECT", "h:80"),
+      ("CONNECT", "[::1]:80"),
       ("CONNECT", "[::1]:443"),
       ("OPTIONS", "*"),
     ] {
@@ -11,6 +13,14 @@ test "request target forms and HTTP version framing are unambiguous" {
       @model.encode_utf8(meth + " " + target + " HTTP/1.1\r\nHost: h\r\n\r\n"),
     )
     assert_eq(parsed.1, target)
+    let written = @h1.write_request_head(
+      parsed.0,
+      target,
+      parsed.3,
+      @h1.NoBody,
+      parsed.2,
+    )
+    assert_eq(@h1.parse_request_head(written).1, target)
   }
   for
     (meth, target) in [
@@ -20,6 +30,10 @@ test "request target forms and HTTP version framing are unambiguous" {
       ("CONNECT", "h"),
       ("CONNECT", ":443"),
       ("CONNECT", "h:bad"),
+      ("CONNECT", "h:"),
+      ("CONNECT", "[::1]"),
+      ("CONNECT", "[::1]:"),
+      ("CONNECT", "h:65536"),
       ("GET", "http://h:bad/"),
       ("GET", "ftp://h/a"),
       ("GET", "http://u@h/a"),

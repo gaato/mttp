@@ -164,7 +164,7 @@ pub fn[S, I, E, O] Endpoint::path(Self[S, I, E, O], String) -> Self[S, I, E, O]
 pub fn[S, I, E, O] Endpoint::post(Self[S, I, E, O], String) -> Self[S, I, E, O]
 pub fn[S, I, E, O] Endpoint::put(Self[S, I, E, O], String) -> Self[S, I, E, O]
 pub fn[S, I, E, O] Endpoint::rate_limit_bucket(Self[S, I, E, O], (@model.Request) -> String) -> Self[S, I, E, O]
-pub fn[S, I, E : Error, O] Endpoint::request(Self[S, I, E, O], S, I) -> @client.ClientRequest[O]
+pub fn[S, I, E : Error, O] Endpoint::request(Self[S, I, E, O], S, I) -> @client.ClientRequest[O] raise @client.InvalidRequest
 pub fn[I, E, O, S2] Endpoint::security(Self[Unit, I, E, O], Input[S2]) -> Self[S2, I, E, O]
 pub fn[S, I, E, O, P] Endpoint::serve(Self[S, I, E, O], async (S) -> P, async (P, I) -> O) -> ServerEndpoint
 pub fn[I, E, O] Endpoint::serve_public(Self[Unit, I, E, O], async (I) -> O) -> ServerEndpoint

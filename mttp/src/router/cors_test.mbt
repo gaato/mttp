@@ -6,6 +6,16 @@ test "CORS reflects only allowed origins and uses route methods for preflight" {
     middleware: [@router.cors(["https://client.test"])],
   })
   @driver.run_sync(() => {
+    for
+      headers in [
+        @model.Headers::empty(),
+        @model.Headers::of([("origin", "https://other.test")]),
+        @model.Headers::of([("origin", "https://client.test")]),
+        @model.Headers::of([("origin", "a"), ("origin", "b")]),
+      ] {
+      let response = router.dispatch({ ..@model.Request::get("/"), headers, })
+      assert_eq(response.headers.get_all("vary"), ["Origin"])
+    }
     let request = @model.Request::get("/").header(
       "origin", "https://client.test",
     )
@@ -51,6 +61,14 @@ test "CORS reflects only allowed origins and uses route methods for preflight" {
       middleware: [@router.cors(["*"], allow_credentials=credentials)],
     })
     @driver.run_sync(() => {
+      assert_eq(
+        router.dispatch(@model.Request::get("/")).headers.get("vary"),
+        if credentials {
+          Some("Origin")
+        } else {
+          None
+        },
+      )
       let response = router.dispatch(
         @model.Request::get("/").header("origin", "https://client.test"),
       )

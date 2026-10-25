@@ -272,7 +272,8 @@ fn validate_target(
     if target.iter().any(c => "/?#@".contains_char(c)) {
       raise malformed("CONNECT requires authority-form")
     }
-    let url = @model.Url::parse("http://" + target) catch {
+    // An unknown scheme preserves every explicit port, including HTTP's 80.
+    let url = @model.Url::parse("connect://" + target) catch {
       _ => raise malformed("invalid CONNECT authority")
     }
     if url.host is None || url.host == Some("") || url.port is None {

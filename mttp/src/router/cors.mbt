@@ -9,11 +9,18 @@ pub fn cors(
   let origins = allow_origins.copy()
   (request, next) => {
     let response = next(request)
+    let wildcard = origins.contains("*") && !allow_credentials
+    // Cache variation applies to missing and denied origins too: either can
+    // otherwise prime a shared cache with a response lacking CORS headers.
+    let response = if !wildcard {
+      { ..response, headers: response.headers.add("vary", "Origin"), }
+    } else {
+      response
+    }
     guard request.headers.get_all("origin") is [origin] else { return response }
     if !origins.contains(origin) && !origins.contains("*") {
       return response
     }
-    let wildcard = origins.contains("*") && !allow_credentials
     let mut headers = response.headers.set(
       "access-control-allow-origin",
       if wildcard {
@@ -22,9 +29,6 @@ pub fn cors(
         origin
       },
     )
-    if !wildcard {
-      headers = headers.add("vary", "Origin")
-    }
     if allow_credentials {
       headers = headers.set("access-control-allow-credentials", "true")
     }

@@ -31,16 +31,23 @@ async test "a head deadline after an upload network failure retains the original
       closed: false,
     }
     defer wire.close()
-    let backend = H1Backend::new(trust_env=false)
+    let clock = ManualClock::new()
+    let backend = H1Backend::new(trust_env=false, clock~)
     defer backend.close()
     let source = FailedUpload::{ }
     @async.with_task_group(group => {
-      if malformed_head {
-        group.spawn_bg(() => {
-          @async.sleep(5)
+      group.spawn_bg(() => {
+        // A head timer is registered only after the upload has failed. Wait
+        // for that observable phase instead of racing a 5 ms wall-clock sleep.
+        while clock.started.get() != 20 {
+          ()
+        }
+        if malformed_head {
           peer.write(b"not a response\r\n\r\n")
-        })
-      }
+        } else {
+          clock.wake.signal()
+        }
+      })
       try
         duplex(
           wire,
