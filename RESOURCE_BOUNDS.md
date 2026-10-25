@@ -30,6 +30,9 @@ a test from hanging (the `testing/driver` rows).
 
 | Structure | Bound | On overflow | Tests |
 |---|---|---|---|
+| `cookie` stored entries | Default 50 per domain and 3000 per jar; negative limits mean zero | Evicts expired entries, then least-recently-accessed entries (non-Secure first for per-domain overflow), preserving the cookie storage contract | `mttp/src/cookie/jar_wbtest.mbt`: "the default caps are 50 cookies per domain and 3000 in all", "zero or negative caps keep nothing", "the per-domain cap evicts the least recently accessed cookie", "the total cap evicts expired cookies, then the least recently accessed" |
+| `cookie` accepted name/value and attribute bytes | 4096 bytes combined name/value, 1024 bytes per attribute | Ignores oversized cookies or attributes according to the cookie parser contract | `mttp/src/cookie/set_cookie_wbtest.mbt`: "a cookie is ignored past 4096 bytes of name and value and an attribute past 1024" |
+| `cookie` lifetime | 400 days | Clamps Max-Age and Expires | `mttp/src/cookie/jar_wbtest.mbt`: "lifetimes are cut to 400 days" |
 | `sse` retained event fields and unfinished line | `max_event_bytes`, default 16 MiB | Refuses with `TooLarge`; already completed events in the same chunk are delivered before the pending error | `mttp/src/sse/parser_test.mbt`: "one event is bounded by the lines it keeps plus the line being read", "the default bound is 16 MiB" |
 | `model` buffered stream read | Explicit `read_bounded` limit | Closes the stream and raises at the crossing chunk | `mttp/src/model/body_test.mbt`: "read bounded accepts exact limit and closes at crossing chunk" |
 | `client` unsuccessful response excerpt | 1 MiB | Truncates the diagnostic excerpt and closes the response | `mttp/src/client/client_test.mbt`: "unexpected statuses retain at most one MiB and close streams" |

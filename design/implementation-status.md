@@ -31,7 +31,10 @@ The implementation starts from design commit
   and total deadlines, pairs admission with release and reports settled
   attempts. Mature retry presets, WindowLimiter and Paginator are ported with
   their tests. API review and the full consumer conformance suite remain.
-- U4–U9 remain:
+- U6 has the mature CookieJar and a Cookies backend wrapper, including its
+  bounds, expiry, domain/path and credential-header tests. Other conveniences
+  remain.
+- Remaining U4–U9 work:
   runtime and HTTP/1 adapters, socket conformance, client conveniences,
   digest, schema/endpoints, router/server and OpenAPI generation.
 

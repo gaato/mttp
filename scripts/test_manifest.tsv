@@ -9,6 +9,10 @@ gaato/mttp	gaato/mttp/client	js	41
 gaato/mttp	gaato/mttp/client	native	41
 gaato/mttp	gaato/mttp/client	wasm	41
 gaato/mttp	gaato/mttp/client	wasm-gc	41
+gaato/mttp	gaato/mttp/client/cookies	js	3
+gaato/mttp	gaato/mttp/client/cookies	native	3
+gaato/mttp	gaato/mttp/client/cookies	wasm	3
+gaato/mttp	gaato/mttp/client/cookies	wasm-gc	3
 gaato/mttp	gaato/mttp/client/ratelimit	js	37
 gaato/mttp	gaato/mttp/client/ratelimit	native	37
 gaato/mttp	gaato/mttp/client/ratelimit	wasm	37
@@ -25,6 +29,10 @@ gaato/mttp	gaato/mttp/clock/fake	js	8
 gaato/mttp	gaato/mttp/clock/fake	native	8
 gaato/mttp	gaato/mttp/clock/fake	wasm	8
 gaato/mttp	gaato/mttp/clock/fake	wasm-gc	8
+gaato/mttp	gaato/mttp/cookie	js	36
+gaato/mttp	gaato/mttp/cookie	native	36
+gaato/mttp	gaato/mttp/cookie	wasm	36
+gaato/mttp	gaato/mttp/cookie	wasm-gc	36
 gaato/mttp	gaato/mttp/jsonkit	js	8
 gaato/mttp	gaato/mttp/jsonkit	native	8
 gaato/mttp	gaato/mttp/jsonkit	wasm	8
