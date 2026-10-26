@@ -120,6 +120,5 @@ pub fn connection_token(headers : @model.Headers, token : String) -> Bool {
 
 ///|
 pub fn replayable(request : @model.Request) -> Bool {
-  request.body.is_replayable() &&
-  (@model.is_idempotent(request) || request.headers.contains("idempotency-key"))
+  request.body.is_replayable() && @model.is_idempotent(request)
 }

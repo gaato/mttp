@@ -8,10 +8,17 @@ test "security runs before input rejection and malformed credentials are refused
     .input(@endpoint.body(@schema.text_body))
     .serve(
       token => {
-        assert_eq(token, "token")
-        authenticated.val += 1
+        Ok(
+          {
+            assert_eq(token, "token")
+            authenticated.val += 1
+          },
+        )
       },
-      (_, _) => handled.val += 1,
+      (_, _) => {
+        handled.val += 1
+        Ok(())
+      },
     )
   let stages = []
   let ctx = @endpoint.DispatchContext::new(decode_failure=f => {
@@ -48,7 +55,7 @@ test "body media type is exact and raw security body is encoded" {
     .post("/text")
     .input(@endpoint.body(@schema.text_body))
     .output(@endpoint.json_out(@schema.text_body))
-  let server = ep.serve_public(text => text)
+  let server = ep.serve_public(text => Ok(text))
   @driver.run_sync(() => {
     for content_type in ["text/plain junk", "text/plainx", "application/json"] {
       let request = @model.Request::post("/text")

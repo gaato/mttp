@@ -37,6 +37,8 @@ pub impl RateLimiter for NoLimiter with fn release(_, _, status~, headers~) {
 /// the initial send; status zero means no response head arrived.
 pub(all) struct Attempt {
   request : @model.RequestHead
+  /// Explicit caller annotations for observations, separate from the pure head.
+  attributes : @model.Attributes
   bucket : String
   attempt : Int32
   status : Int32

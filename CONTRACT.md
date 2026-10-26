@@ -110,19 +110,34 @@ remain locally mutable; they are owned by a single exchange or reader.
 
 ## Client attempts
 
-1. Retrying is opt-in. RetryDecider sees transport, rejected-status and
-   buffered-reader errors. Streaming callbacks run once after release and
-   observation, and their errors are never retried.
+1. Retrying is opt-in. RetryPolicy is pure data. An optional typed decision
+   function sees a buffered Reply, StreamReady head or TransportFailure and
+   the generic default decision. A streaming callback starts only after the
+   attempt's release and observation; its result or exception is never retried.
 2. Every acquire that returns has exactly one release. Cancelled admission
    waits have none. Release uses the received head even when reading fails.
 3. Body factories run only after admission and a deadline check. Without a
    factory, stream requests cannot retry, regardless of the decider.
-4. A release failure on success reaches the caller and closes the held body.
-   During failure or cancellation, release failure does not replace the
-   original outcome. Observers run once after release is attempted.
-5. A total deadline is checked before admission and again after it. Admission
-   itself is not interrupted by that deadline. A fallback Timer limits the
-   exchange, with accepted streaming callbacks outside it.
+4. A release failure after an exchange produced a value reaches the caller and
+   closes the held body, including when that value is Err. It does not replace
+   an already raised error or cancellation. Observers run once after release
+   is attempted, with the actual HTTP status and response head.
+5. A configured total deadline requires a Timer before admission or body
+   preparation. It covers admission, attempts, retry waits and the streaming
+   consumer. Expiry requests cancellation; necessary cleanup completes or
+   compensates during unwind, so cleanup may finish after the deadline.
+6. Built-in readers return Result values for status and decoding failures.
+   ResponseFailure retains the real head and at most 1 MiB of diagnostic body.
+   TransportError, cancellation and unknown user exceptions remain effects.
+7. RequestPlan and ResponsePlan carry a buffered or streaming mode; from_head
+   preserves the selected branch's actual lifetime. as_both only accepts
+   buffered plans. Endpoint returns nested Results for response and declared
+   application failures; authentication and business handlers return Result
+   without changing the wire representation.
+8. The executor enforces retry count, replay source and remaining budget even
+   for a custom decision function. Idempotency comes from the method or the
+   explicit replay_safe attribute; a header alone is not proof. Vendor retry
+   rules belong to the vendor SDK.
 
 ## Incremental parsers
 

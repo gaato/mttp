@@ -25,6 +25,39 @@ and runs on wasm-gc, wasm, js and native.
 moon add gaato/mttp
 ```
 
+## Usage
+
+Describe a request without opening a connection, then send it through one
+`Client`. Buffered and scoped streaming requests use the same executor.
+
+```mbt check
+///|
+/// Reads JSON while retaining HTTP and decoding failures as values.
+pub async fn fetch_json(
+  client : @client.Client,
+  url : String,
+) -> Result[Json, @client.ResponseFailure] {
+  @client.get(url).response(@client.as_json_value()).send(client).body
+}
+```
+
+Built-in readers return `Result` for rejected HTTP responses and decoding
+failures. `ResponseFailure` keeps the received head and at most 1 MiB of
+diagnostic bytes. Transport failures raise `TransportError`; cancellation and
+unknown callback exceptions propagate. The default buffered body limit is
+64 MiB. Streaming callbacks own their response only until the callback ends.
+
+Use `gaato/mttp-net.new_client()` for a ready platform client, or inject a
+`Backend`, `Clock` and optional `Timer` into `Client::new`. Retries are disabled
+by default. An opt-in policy is constrained by retry count, replayable body
+source and remaining time. A method or explicit `replay_safe` statement must
+establish idempotency; an `Idempotency-Key` header alone does not.
+
+A configured total deadline requires a `Timer` and covers admission, retries,
+backoff and stream processing. Expiry starts cancellation; required cleanup
+may finish afterwards. Custom rate limiters must complete release or safely
+roll back if cancellation interrupts it.
+
 ## Packages
 
 Every package below ships in 0.1.0. Experimental packages may change in a

@@ -4,6 +4,8 @@
 
 ### Added
 
+- new_client supplies the ready backend, clock and timer for whole-call
+  deadlines. The quick facade uses the same typed buffered/streaming pipeline.
 - Portable `h1/client.H1Backend` and `h1/server.serve_conn` over injected
   connection, coordination, clock and timer ports on all four targets.
 - Persistent pure admission/pool/session/lifecycle transitions, with

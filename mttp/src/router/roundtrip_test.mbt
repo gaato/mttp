@@ -13,17 +13,24 @@ test "typed client round trips repeated queries cookies basic auth and headers" 
     .input(input)
     .output(@endpoint.text_out().and_header("x-count", @schema.int))
   let server = ep.serve(
-    credentials => assert_eq(credentials, ("user", "pass:word")),
+    credentials => Ok(assert_eq(credentials, ("user", "pass:word"))),
     (_, input) => {
-      assert_eq(input, ([1, 2], "cookie", 7))
-      ("ok", 2)
+      Ok(
+        {
+          assert_eq(input, ([1, 2], "cookie", 7))
+          ("ok", 2)
+        },
+      )
     },
   )
   let router = @router.Router::new([server])
   let client = @client.Client::new(router, @fake.FakeClock::new())
   @driver.run_sync(() => {
     assert_eq(
-      ep.call(client, ("user", "pass:word"), ([1, 2], "cookie", 7)),
+      ep
+      .call(client, ("user", "pass:word"), ([1, 2], "cookie", 7))
+      .unwrap()
+      .unwrap(),
       ("ok", 2),
     )
   })
@@ -39,12 +46,12 @@ test "rest captures preserve encoded slashes empty segments and empty tails" {
   let exact = @endpoint.endpoint
     .get("/files/special")
     .output(@endpoint.text_out())
-    .serve_public(_ => "specific")
-  let router = @router.Router::new([ep.serve_public(parts => parts), exact])
+    .serve_public(_ => Ok("specific"))
+  let router = @router.Router::new([ep.serve_public(parts => Ok(parts)), exact])
   let client = @client.Client::new(router, @fake.FakeClock::new())
   @driver.run_sync(() => {
     for parts in [[], [""], ["a/b", "", "x y"]] {
-      assert_eq(ep.call(client, (), parts), parts)
+      assert_eq(ep.call(client, (), parts).unwrap().unwrap(), parts)
     }
     assert_eq(
       router.dispatch(@model.Request::get("/files/special")).body,
@@ -72,13 +79,16 @@ test "SSE callback consumes events and closes exactly once" {
     },
     () => closed.val += 1,
   )
-  let router = @router.Router::new([ep.serve_public(_ => source)])
+  let router = @router.Router::new([ep.serve_public(_ => Ok(source))])
   let client = @client.Client::new(router, @fake.FakeClock::new())
   let values = []
   @driver.run_sync(() => {
-    ep.call_with(client, (), (), events => {
+    ep
+    .call_with(client, (), (), events => {
       events.each(value => values.push(value))
     })
+    .unwrap()
+    .unwrap()
   })
   assert_eq(values, [1, 2, 3])
   source.close()
@@ -101,9 +111,11 @@ test "custom inputs work from outside the endpoint package" {
     .get("/custom")
     .input(input)
     .output(@endpoint.text_out())
-  let router = @router.Router::new([ep.serve_public(value => value)])
+  let router = @router.Router::new([ep.serve_public(value => Ok(value))])
   let client = @client.Client::new(router, @fake.FakeClock::new())
-  @driver.run_sync(() => assert_eq(ep.call(client, (), "custom"), "custom"))
+  @driver.run_sync(() => {
+    assert_eq(ep.call(client, (), "custom").unwrap().unwrap(), "custom")
+  })
   client.close()
 }
 
@@ -116,9 +128,11 @@ test "dynamic response status media type and separate cookies round trip" {
     ((("multipart/mixed; boundary=test", b"payload"), 202), "one; Secure"),
     "two; HttpOnly",
   )
-  let router = @router.Router::new([ep.serve_public(_ => value)])
+  let router = @router.Router::new([ep.serve_public(_ => Ok(value))])
   let client = @client.Client::new(router, @fake.FakeClock::new())
-  @driver.run_sync(() => assert_eq(ep.call(client, (), ()), value))
+  @driver.run_sync(() => {
+    assert_eq(ep.call(client, (), ()).unwrap().unwrap(), value)
+  })
   let doc = ep.doc().outputs[0]
   assert_true(doc.dynamic_status)
   assert_true(doc.dynamic_media)

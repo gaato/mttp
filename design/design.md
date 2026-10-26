@@ -1,5 +1,11 @@
 # mttp design (draft)
 
+> The exception-first Client/Endpoint sketches and migration tables in this
+> original design are historical. The accepted follow-up contract is
+> [Typed responses and SDK contracts](result-api-refactor.md); it replaces
+> their response modes, expected failures, retries and whole-call deadlines.
+> Current public signatures are generated in each package's `.mbti` file.
+
 **Status: accepted as the basis for implementation (2026-10-24).** The decisions the user made are listed in §0 and override anything below that says otherwise. Items still marked **[needs-prototype]** are settled by the pre-flight probes or during implementation; remaining **[proposed]** items are the defaults.
 
 This draft revises the first synthesized architecture using six adversarial reviews: cross-layer integration, resolver and release, async runtime and I/O, sttp/tapir completeness, consumer migration, and scope. The design was then rebuilt as a single prototype that compiles and passes on every target. A final critique was checked against the gaato sources, the registry index and the prototypes, and its corrections are folded in. Where a rule is designed but not yet tested in `wf3/rev`, the text says so.

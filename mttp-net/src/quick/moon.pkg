@@ -1,7 +1,6 @@
 import {
   "gaato/mttp/client",
-  "gaato/mttp-net/backend",
-  "gaato/mttp-net/runtime",
+  "gaato/mttp-net" @net,
 }
 
 import {

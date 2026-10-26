@@ -285,7 +285,7 @@ pub fn docs_endpoint(
   @endpoint.endpoint
   .get(path)
   .output(@endpoint.json_out(@schema.jvalue.body()))
-  .serve_public(_ => document)
+  .serve_public(_ => Ok(document))
 }
 
 ///|

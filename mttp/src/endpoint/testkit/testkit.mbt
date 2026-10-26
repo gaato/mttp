@@ -29,14 +29,14 @@ fn matches_template(
 /// Adds a typed endpoint expectation to a stub. A one-endpoint router performs
 /// real input decoding and response encoding, including declared errors.
 /// Security inputs are decoded, but authentication is deliberately bypassed.
-pub fn[S, I, E, O] when_endpoint(
+pub fn[S, I, E, O, M] when_endpoint(
   stub : @testing.BackendStub,
-  endpoint : @endpoint.Endpoint[S, I, E, O],
-  respond : async (I) -> O,
+  endpoint : @endpoint.Endpoint[S, I, E, O, M],
+  respond : async (I) -> Result[O, E],
 ) -> @testing.BackendStub raise @endpoint.DefinitionError {
   let doc = endpoint.doc()
   let router = @router.Router::new([
-    endpoint.serve(_ => (), (_, input) => respond(input)),
+    endpoint.serve(_ => Ok(()), (_, input) => respond(input)),
   ])
   stub.when(
     request => matches_template(doc, request),

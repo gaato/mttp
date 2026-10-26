@@ -77,10 +77,8 @@ pub let background : AttributeKey[(async () -> Unit) -> Unit] = AttributeKey::ne
 pub let replay_safe : AttributeKey[Bool] = AttributeKey::new("replay_safe")
 
 ///|
-/// gaato/http's rule, kept: an idempotent method, an Idempotency-Key
-/// header, or the replay_safe attribute.
+/// An idempotent method or an explicit replay_safe statement. A header alone
+/// cannot establish the remote service's deduplication contract.
 pub fn is_idempotent(req : Request) -> Bool {
-  req.meth.is_idempotent() ||
-  req.headers.get("idempotency-key") is Some(_) ||
-  req.attributes.get(replay_safe) == Some(true)
+  req.meth.is_idempotent() || req.attributes.get(replay_safe) == Some(true)
 }

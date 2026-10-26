@@ -41,13 +41,13 @@ fn parse_template(template : String) -> Array[Seg] {
 
 ///|
 /// A typed endpoint definition interpreted by clients, servers and API docs.
-pub struct Endpoint[S, I, E, O] {
+pub struct Endpoint[S, I, E, O, M] {
   priv meth : @model.Method?
   priv template : String
   priv security : Input[S]
   priv input : Input[I]
-  priv errors : Errors[E]
-  priv output : Out[O]
+  priv errors : Out[E, @client.Buffered]
+  priv output : Out[O, M]
   priv info : Info
   priv max_body_bytes : Int32?
   priv bucket : ((@model.Request) -> String)?
@@ -56,13 +56,13 @@ pub struct Endpoint[S, I, E, O] {
 
 ///|
 /// An empty endpoint builder with Unit inputs and an empty 200 response.
-pub let endpoint : Endpoint[Unit, Unit, NoError, Unit] = {
+pub let endpoint : Endpoint[Unit, Unit, NoError, Unit, @client.Buffered] = {
   meth: None,
   template: "",
   security: unit(),
   input: unit(),
   errors: no_errors(),
-  output: { variants: [empty_variant(200)], },
+  output: { variants: [empty_variant(200)], mode: @client.Buffered::{ }, },
   info: {
     operation_id: None,
     summary: None,
@@ -86,20 +86,20 @@ fn join_template(a : String, b : String) -> String {
 
 ///|
 /// Appends a path template to this endpoint's prefix.
-pub fn[S, I, E, O] Endpoint::path(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::path(
+  self : Endpoint[S, I, E, O, M],
   template : String,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   { ..self, template: join_template(self.template, template), }
 }
 
 ///|
 /// Sets the method and appends a template; repeated method assignment is checked later.
-pub fn[S, I, E, O] Endpoint::with_method(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::with_method(
+  self : Endpoint[S, I, E, O, M],
   meth : @model.Method,
   template : String,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   {
     ..self,
     meth: Some(meth),
@@ -110,37 +110,37 @@ pub fn[S, I, E, O] Endpoint::with_method(
 
 ///|
 /// Sets GET and appends a path template.
-pub fn[S, I, E, O] Endpoint::get(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::get(
+  self : Endpoint[S, I, E, O, M],
   template : String,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   self.with_method(Get, template)
 }
 
 ///|
 /// Sets POST and appends a path template.
-pub fn[S, I, E, O] Endpoint::post(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::post(
+  self : Endpoint[S, I, E, O, M],
   template : String,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   self.with_method(Post, template)
 }
 
 ///|
 /// Sets DELETE and appends a path template.
-pub fn[S, I, E, O] Endpoint::delete(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::delete(
+  self : Endpoint[S, I, E, O, M],
   template : String,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   self.with_method(Delete, template)
 }
 
 ///|
 /// Adds typed security inputs, decoded before regular handler inputs.
-pub fn[I, E, O, S2] Endpoint::security(
-  self : Endpoint[Unit, I, E, O],
+pub fn[I, E, O, S2, M] Endpoint::security(
+  self : Endpoint[Unit, I, E, O, M],
   s : Input[S2],
-) -> Endpoint[S2, I, E, O] {
+) -> Endpoint[S2, I, E, O, M] {
   {
     meth: self.meth,
     template: self.template,
@@ -157,10 +157,10 @@ pub fn[I, E, O, S2] Endpoint::security(
 
 ///|
 /// Adds the typed regular request input.
-pub fn[S, E, O, I2] Endpoint::input(
-  self : Endpoint[S, Unit, E, O],
+pub fn[S, E, O, I2, M] Endpoint::input(
+  self : Endpoint[S, Unit, E, O, M],
   i : Input[I2],
-) -> Endpoint[S, I2, E, O] {
+) -> Endpoint[S, I2, E, O, M] {
   {
     meth: self.meth,
     template: self.template,
@@ -177,10 +177,10 @@ pub fn[S, E, O, I2] Endpoint::input(
 
 ///|
 /// Declares application error classification and response variants.
-pub fn[S, I, O, E2] Endpoint::errors(
-  self : Endpoint[S, I, NoError, O],
-  e : Errors[E2],
-) -> Endpoint[S, I, E2, O] {
+pub fn[S, I, O, E2, M] Endpoint::errors(
+  self : Endpoint[S, I, NoError, O, M],
+  e : Out[E2, @client.Buffered],
+) -> Endpoint[S, I, E2, O, M] {
   {
     meth: self.meth,
     template: self.template,
@@ -197,10 +197,10 @@ pub fn[S, I, O, E2] Endpoint::errors(
 
 ///|
 /// Declares the typed successful response variants.
-pub fn[S, I, E, O2] Endpoint::output(
-  self : Endpoint[S, I, E, Unit],
-  o : Out[O2],
-) -> Endpoint[S, I, E, O2] {
+pub fn[S, I, E, O2, M, N] Endpoint::output(
+  self : Endpoint[S, I, E, Unit, M],
+  o : Out[O2, N],
+) -> Endpoint[S, I, E, O2, N] {
   {
     meth: self.meth,
     template: self.template,
@@ -217,37 +217,37 @@ pub fn[S, I, E, O2] Endpoint::output(
 
 ///|
 /// Sets the short operation summary.
-pub fn[S, I, E, O] Endpoint::summary(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::summary(
+  self : Endpoint[S, I, E, O, M],
   s : String,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   { ..self, info: { ..self.info, summary: Some(s), }, }
 }
 
 ///|
 /// Sets a unique operation identifier for documentation and client observations.
-pub fn[S, I, E, O] Endpoint::operation_id(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::operation_id(
+  self : Endpoint[S, I, E, O, M],
   s : String,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   { ..self, info: { ..self.info, operation_id: Some(s), }, }
 }
 
 ///|
 /// Appends a documentation tag.
-pub fn[S, I, E, O] Endpoint::tag(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::tag(
+  self : Endpoint[S, I, E, O, M],
   t : String,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   { ..self, info: { ..self.info, tags: [..self.info.tags, t], }, }
 }
 
 ///|
 /// Overrides the server's request-body limit for this endpoint.
-pub fn[S, I, E, O] Endpoint::max_body_bytes(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::max_body_bytes(
+  self : Endpoint[S, I, E, O, M],
   n : Int32,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   { ..self, max_body_bytes: Some(n), }
 }
 
@@ -268,7 +268,9 @@ pub struct EndpointDoc {
 
 ///|
 /// Projects this endpoint into documentation metadata.
-pub fn[S, I, E, O] Endpoint::doc(self : Endpoint[S, I, E, O]) -> EndpointDoc {
+pub fn[S, I, E, O, M] Endpoint::doc(
+  self : Endpoint[S, I, E, O, M],
+) -> EndpointDoc {
   {
     meth: self.meth,
     template: self.template,
@@ -276,7 +278,7 @@ pub fn[S, I, E, O] Endpoint::doc(self : Endpoint[S, I, E, O]) -> EndpointDoc {
     security: self.security.atoms.copy(),
     inputs: self.input.atoms.copy(),
     outputs: self.output.docs(),
-    errors: self.errors.out.docs(),
+    errors: self.errors.docs(),
     info: { ..self.info, tags: self.info.tags.copy(), },
     max_body_bytes: self.max_body_bytes,
     method_set_twice: self.method_set_twice,

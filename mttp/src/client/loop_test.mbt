@@ -31,11 +31,15 @@ impl @client.RateLimiter for RecordingLimiter with fn release(
 }
 
 ///|
-priv struct AlwaysRetry {}
+priv struct PassthroughTimer {}
 
 ///|
-impl @client.RetryDecider for AlwaysRetry with fn decide(_, _, _) {
-  Wait(1)
+impl @clock.Timer for PassthroughTimer with fn within(_, ms, callback) {
+  if ms <= 0 {
+    return false
+  }
+  callback()
+  true
 }
 
 ///|
@@ -104,7 +108,7 @@ test "buffered readers that finish after their deadline fail and retain the head
 }
 
 ///|
-test "a release failure does not replace an existing response error" {
+test "release failure propagates after an error-valued response" {
   let clock = @fake.FakeClock::new()
   let limiter = RecordingLimiter::{
     events: [],
@@ -125,11 +129,14 @@ test "a release failure does not replace an existing response error" {
     })
     false
   } catch {
-    @client.UnexpectedStatus(head, ..) => head.status == 503
+    @client.InvalidRequest(message="release failed") => true
     error => raise error
   }
   assert_true(failed)
-  assert_true(observed is [Some(@client.UnexpectedStatus(_, ..))])
+
+  assert_true(
+    observed is [Some(@client.InvalidRequest(message="release failed"))],
+  )
 }
 
 ///|
@@ -254,7 +261,7 @@ test "an attempt that runs out of time is retried for GET not POST" {
           @client.request(@model.Request::new(meth, "/")).timeout_ms(20),
         )
       })
-      assert_eq(reply.body, "ok")
+      assert_eq(reply.body, Ok("ok"))
       true
     } catch {
       @model.TransportError(kind=Timeout(ms=20), ..) => false
@@ -290,19 +297,15 @@ test "total timeout caps backoff and shrinks attempt budgets" {
     }),
     clock,
     total_ms=1000,
+    timer=PassthroughTimer::{ },
     retry=@client.RetryPolicy::conservative(),
     observer=a => attempts.push(a.decision),
     random=() => 0.5,
   )
-  let failed = try {
-    let _ = @driver.run_sync(() => {
-      client.send(@client.request(@model.Request::get("/")).timeout_ms(700))
-    })
-    false
-  } catch {
-    @client.UnexpectedStatus(_, ..) => true
-    error => raise error
-  }
+  let failed = @driver.run_sync(() => {
+      client.send(@client.get("/").timeout_ms(700))
+    }).body
+    is Err(_)
   assert_true(failed)
   assert_eq(budgets, [Some(700), Some(400)])
   assert_eq(clock.slept(), [500])
@@ -322,12 +325,13 @@ test "no attempt starts once total timeout has passed even with custom retry" {
     }),
     clock,
     total_ms=1000,
-    retry=AlwaysRetry::{ },
+    timer=PassthroughTimer::{ },
+    retry=@client.RetryPolicy::conservative().with_max_retries(10),
     observer=a => attempts.push(a.attempt),
   )
   let expired = try {
     let _ = @driver.run_sync(() => {
-      client.send(@client.request(@model.Request::get("/")))
+      client.send(@client.get("/"), decide_retry=(_, _) => Wait(1))
     })
     false
   } catch {
@@ -362,7 +366,7 @@ test "body factory follows admission on every retry and headers survive reader f
     }),
     clock,
     limiter~,
-    retry=AlwaysRetry::{ },
+    retry=@client.RetryPolicy::conservative().with_max_retries(10),
     observer=_ => events.push("observe"),
   )
   let reads = Ref(0)
@@ -377,12 +381,27 @@ test "body factory follows admission on every retry and headers survive reader f
       @client.as_string().map(body => {
         reads.val += 1
         if reads.val == 1 {
-          raise @client.InvalidRequest(message="retry decoded error")
+          return Err("retry decoded error")
         }
-        body
+        Ok(body)
       }),
     )
-  assert_eq(@driver.run_sync(() => client.send(request)).body, "body")
+  assert_eq(
+    @driver.run_sync(() => {
+      client.send(request, decide_retry=(attempt, context) => {
+        match attempt {
+          Buffered(reply) =>
+            if reply.body is Err(_) {
+              Wait(1)
+            } else {
+              Stop(NotRetryable)
+            }
+          _ => context.default_decision
+        }
+      })
+    }).body,
+    Ok(Ok("body")),
+  )
   assert_eq(events, [
     "acquire:b:true", "build", "send:1", "release:b:200:yes", "observe", "acquire:b:true",
     "build", "send:2", "release:b:200:yes", "observe",
@@ -402,17 +421,14 @@ test "custom retry cannot replay any stream without a factory" {
       @model.Response::new(503)
     }),
     @fake.SimClock::new(d),
-    retry=AlwaysRetry::{ },
+    retry=@client.RetryPolicy::conservative().with_max_retries(10),
     observer=a => observed.push(a.decision),
   )
   let raw = @model.Request::post("/").body_stream(feed)
-  let failed = try {
-    let _ = d.run(() => client.send(@client.request(raw)))
-    false
-  } catch {
-    @client.UnexpectedStatus(_, ..) => true
-    error => raise error
-  }
+  let failed = d.run(() => {
+      client.send(@client.request(raw), decide_retry=(_, _) => Wait(1))
+    }).body
+    is Err(_)
   assert_true(failed)
   assert_eq(sends.val, 1)
   assert_eq(observed, [Some(Stop(NotReplayable))])
@@ -438,6 +454,7 @@ test "limiter wait uses total budget and still releases before observation" {
       @client.from_handler(_ => @model.Response::new(200)),
       clock,
       limiter~,
+      timer=PassthroughTimer::{ },
       total_ms=if delay == 0 { 0 } else { 10 },
       observer=_ => events.push("observe"),
     )
@@ -487,7 +504,7 @@ test "release failure closes accepted stream and is not retried" {
     }),
     clock,
     limiter~,
-    retry=AlwaysRetry::{ },
+    retry=@client.RetryPolicy::conservative().with_max_retries(10),
     observer=a => observed.push(a),
   )
   let failed = try {
@@ -508,6 +525,7 @@ test "release failure closes accepted stream and is not retried" {
   assert_eq(feed.closes(), 1)
   assert_eq(observed.length(), 1)
   assert_eq(observed[0].status, 200)
+
   assert_true(observed[0].error is Some(@client.InvalidRequest(..)))
 }
 

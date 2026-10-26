@@ -2,18 +2,15 @@
 fn status_error(
   status : Int32,
   headers~ : @model.Headers = @model.Headers::empty(),
-) -> Error {
-  @client.UnexpectedStatus(
-    @model.Response::new(status, headers~).head(),
-    body=b"",
-  )
+) -> @client.AttemptOutcome {
+  @client.AttemptOutcome::Response(status~, headers~)
 }
 
 ///|
 fn rate_limited(
   retry_after_ms : Int32?,
   headers~ : @model.Headers = @model.Headers::empty(),
-) -> Error {
+) -> @client.AttemptOutcome {
   status_error(
     429,
     headers=match retry_after_ms {
@@ -24,8 +21,8 @@ fn rate_limited(
 }
 
 ///|
-fn transport_error(error : @model.TransportError) -> Error {
-  error
+fn transport_error(error : @model.TransportError) -> @client.AttemptOutcome {
+  @client.AttemptOutcome::Failure(error)
 }
 
 ///|
@@ -34,7 +31,7 @@ test "RetryPolicy presets are the documented rules" {
     rule: {
       max_retries: 2,
       statuses: [
-        { statuses: [Code(429)], methods: Any, },
+        { statuses: [Code(429)], methods: Idempotent, },
         {
           statuses: [
             Code(408),
@@ -93,7 +90,7 @@ test "RetryPolicy presets are the documented rules" {
         },
       },
     }
-    assert_eq(@client.RetryPolicy::stainless(cap~), stainless)
+    assert_eq(custom_retry(cap~), stainless)
   }
   let widened = conservative.allow_non_idempotent()
   assert_eq(widened.rule.sent_failures, Any)
@@ -118,11 +115,13 @@ test "conservative decides every attempt error variant by method" {
   let policy = @client.RetryPolicy::conservative()
   let get = @model.Request::get("/")
   let post = @model.Request::post("/")
-  let keyed_post = post.header("idempotency-key", "key")
+  let keyed_post = post.attribute(@model.replay_safe, true)
   let wait : @client.Decision = Wait(400)
   let not_retryable : @client.Decision = Stop(NotRetryable)
   let refused : @client.Decision = Stop(MethodNotAllowed)
-  let cases : Array[(Error, @client.Decision, @client.Decision)] = [
+  let cases : Array[
+    (@client.AttemptOutcome, @client.Decision, @client.Decision),
+  ] = [
     // A failure that proves nothing was sent is retried for any method.
     (
       transport_error(
@@ -269,21 +268,12 @@ test "conservative decides every attempt error variant by method" {
     (status_error(502), wait, refused),
     (status_error(503), wait, refused),
     (status_error(504), wait, refused),
-    (status_error(429), wait, wait),
+    (status_error(429), wait, refused),
     (status_error(400), not_retryable, not_retryable),
     (status_error(501), not_retryable, not_retryable),
     (status_error(505), not_retryable, not_retryable),
-    (rate_limited(None), wait, wait),
-    (
-      @client.Deserialization(
-        @model.Response::new(200).head(),
-        message="bad",
-        body=b"",
-      ),
-      not_retryable,
-      not_retryable,
-    ),
-    (@client.InvalidRequest(message="bad"), not_retryable, not_retryable),
+    (rate_limited(None), wait, refused),
+    (status_error(200), not_retryable, not_retryable),
   ]
   for i, case in cases {
     let (error, idempotent, non_idempotent) = case
@@ -296,11 +286,7 @@ test "conservative decides every attempt error variant by method" {
     assert_eq(decide(get, 0), idempotent, msg="row \{i} GET")
     assert_eq(decide(keyed_post, 0), idempotent, msg="row \{i} keyed POST")
     assert_eq(decide(post, 0), non_idempotent, msg="row \{i} POST")
-    let exhausted : @client.Decision = if @client.outcome_of(error) is Some(_) {
-      Stop(Exhausted)
-    } else {
-      not_retryable
-    }
+    let exhausted : @client.Decision = Stop(Exhausted)
     assert_eq(decide(get, 2), exhausted, msg="row \{i} exhausted")
     assert_eq(
       @client.RetryPolicy::none().decide(
@@ -334,10 +320,10 @@ test "conservative decides every attempt error variant by method" {
 /// The same table against stainless(): no method restrictions, every 5xx,
 /// backoff 375 ms at random 0.0.
 test "stainless decides every attempt error variant for any method" {
-  let policy = @client.RetryPolicy::stainless(cap=StopAbove(120000))
+  let policy = custom_retry(cap=StopAbove(120000))
   let wait : @client.Decision = Wait(375)
   let not_retryable : @client.Decision = Stop(NotRetryable)
-  let cases : Array[(Error, @client.Decision)] = [
+  let cases : Array[(@client.AttemptOutcome, @client.Decision)] = [
     (
       transport_error(
         @model.TransportError(kind=Connect, phase=Dial, detail="offline"),
@@ -424,15 +410,7 @@ test "stainless decides every attempt error variant for any method" {
     (status_error(400), not_retryable),
     (status_error(404), not_retryable),
     (rate_limited(None), wait),
-    (
-      @client.Deserialization(
-        @model.Response::new(200).head(),
-        message="bad",
-        body=b"",
-      ),
-      not_retryable,
-    ),
-    (@client.InvalidRequest(message="bad"), not_retryable),
+    (status_error(200), not_retryable),
   ]
   for i, case in cases {
     let (error, expected) = case
@@ -478,7 +456,7 @@ test "server delays: sources, caps, zero and HTTP dates" {
       zero_means_backoff: false,
     },
   })
-  let cases : Array[(Error, @client.Decision)] = [
+  let cases : Array[(@client.AttemptOutcome, @client.Decision)] = [
     (rate_limited(Some(0)), Wait(0)),
     (rate_limited(Some(1500)), Wait(1500)),
     (rate_limited(Some(1501)), Stop(RetryAfterTooLong(1501))),
@@ -517,19 +495,13 @@ test "server delays: sources, caps, zero and HTTP dates" {
   )
   // Stainless treats 0 as "no delay given"; the cap decides long delays.
   let zero = rate_limited(Some(0))
-  assert_eq(
-    @client.RetryPolicy::stainless(cap=NoCap).decide(zero, context),
-    Wait(375),
-  )
+  assert_eq(custom_retry(cap=NoCap).decide(zero, context), Wait(375))
   let long = rate_limited(Some(600000))
   assert_eq(
-    @client.RetryPolicy::stainless(cap=StopAbove(120000)).decide(long, context),
+    custom_retry(cap=StopAbove(120000)).decide(long, context),
     Stop(RetryAfterTooLong(600000)),
   )
-  assert_eq(
-    @client.RetryPolicy::stainless(cap=NoCap).decide(long, context),
-    Wait(600000),
-  )
+  assert_eq(custom_retry(cap=NoCap).decide(long, context), Wait(600000))
   // A rule that ignores server delays ignores a parsed retry_after_ms too.
   let ignoring = @client.RetryPolicy::from_rule({
     ..policy.rule,
@@ -579,4 +551,29 @@ test "the context's remaining time and replayability stop a retry" {
     ),
     ("b", 1, 0.25, 7L, None, true),
   )
+}
+
+///|
+// A custom service rule exercises configurable status ranges and header policy.
+fn custom_retry(cap~ : @client.RetryAfterCap) -> @client.RetryPolicy {
+  {
+    rule: {
+      max_retries: 2,
+      statuses: [
+        {
+          statuses: [Code(408), Code(409), Code(429), Range(500, 599)],
+          methods: Any,
+        },
+      ],
+      sent_failures: Any,
+      unsent_failures: true,
+      override_header: Some("x-should-retry"),
+      retry_after: { source: MsThenHeader, cap, zero_means_backoff: true, },
+      backoff: {
+        base_ms: 500,
+        max_ms: 8000,
+        jitter: Proportional(lo=750, hi=1000),
+      },
+    },
+  }
 }

@@ -22,7 +22,7 @@ test "combined readers buffer once and select each interpretation once" {
   let reply = d.run(() => {
     client.send(@client.request(@model.Request::get("/form")).response(reader))
   })
-  assert_eq(reply.body, ("a=1&a=2", [("a", "1"), ("a", "2")]))
+  assert_eq(reply.body, (Ok("a=1&a=2"), Ok([("a", "1"), ("a", "2")])))
   assert_eq(selections.val, 2)
   assert_eq(source.closes(), 1)
   assert_eq(source.reads(), 3)
@@ -36,15 +36,15 @@ suberror ChosenReject {
 ///|
 test "combined readers honor each head rejection and left error priority" {
   for accept_left in [false, true] {
-    let reader = @client.as_both(
-      @client.ResponseAs::new((_, _, _) => 1, accept_head=_ => accept_left, reject=(
-        _,
-        _,
-      ) => raise ChosenReject(1)),
-      @client.ResponseAs::new((_, _, _) => 2, accept_head=_ => false, reject=(
-        _,
-        _,
-      ) => raise ChosenReject(2)),
+    let reader : @client.ResponseAs[(Int32, Int32)] = @client.as_both(
+      @client.ResponsePlan::new((_, _) => {
+        if accept_left {
+          1
+        } else {
+          raise ChosenReject(1)
+        }
+      }),
+      @client.ResponsePlan::new((_, _) => raise ChosenReject(2)),
     )
     let client = @client.Client::new(
       @client.from_fn((_, _) => @model.Response::new(400)),

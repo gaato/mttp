@@ -1,38 +1,92 @@
 ///|
+/// Buffered response processing, including a stream buffered by Client.
+pub(all) struct Buffered {}
+
+///|
+/// Response processing which may hand a live body to a consumer.
+pub(all) struct Streaming {}
+
+///|
+/// Closed set of response-lifetime markers used by typed descriptions.
+pub trait ResponseMode {
+  fn fresh() -> Self
+  fn may_stream(Self) -> Bool
+}
+
+///|
+/// Constructs the buffered marker.
+pub impl ResponseMode for Buffered with fn fresh() {
+  Buffered::{ }
+}
+
+///|
+/// Buffered descriptions never contain live-stream consumers.
+pub impl ResponseMode for Buffered with fn may_stream(_) {
+  false
+}
+
+///|
+/// Constructs the streaming marker.
+pub impl ResponseMode for Streaming with fn fresh() {
+  Streaming::{ }
+}
+
+///|
+/// Streaming descriptions may select buffered or streaming branches.
+pub impl ResponseMode for Streaming with fn may_stream(_) {
+  true
+}
+
+///|
+/// Explicit method promotion for the buffered lifetime marker.
+#deprecated
+pub extend Buffered with ResponseMode::{fresh, may_stream}
+
+///|
+/// Explicit method promotion for the streaming lifetime marker.
+#deprecated
+pub extend Streaming with ResponseMode::{fresh, may_stream}
+
+///|
 priv struct Selected[T] {
-  accept : Bool
-  reject : (@model.ResponseHead, Bytes) -> Unit raise
   read : async (@model.ResponseHead, @model.Body, RequestOptions) -> T
   streaming : Bool
+  excerpt : Bool
 }
 
 ///|
-/// A response interpretation selected once after its head arrives. Buffered
-/// readers participate in attempts; accepted streaming readers run only once.
-pub struct ResponseAs[T] {
-  priv select : (@model.ResponseHead) -> Selected[T]
-  priv streaming : Bool
+/// An immutable response description. Selection after the head arrives decides
+/// the actual lifetime; the marker describes possible streaming.
+pub struct ResponsePlan[T, M] {
+  priv select : (@model.ResponseHead, Bool) -> Selected[T]
+  priv mode : M
+  priv any_status : Bool
 }
 
 ///|
-fn default_reject(head : @model.ResponseHead, body : Bytes) -> Unit raise {
-  raise UnexpectedStatus(head, body~)
-}
+/// A buffered response description.
+pub type ResponseAs[T] = ResponsePlan[T, Buffered]
 
 ///|
-/// Creates an interpretation. By default only 2xx heads are accepted, and
-/// rejected heads raise UnexpectedStatus after reading a bounded excerpt.
-pub fn[T] ResponseAs::new(
-  read : async (@model.ResponseHead, @model.Body, RequestOptions) -> T,
-  accept_head~ : (@model.ResponseHead) -> Bool = head => {
-    @model.is_success(head.status)
-  },
-  reject~ : (@model.ResponseHead, Bytes) -> Unit raise = default_reject,
-  streaming~ : Bool = false,
+/// A response description with a scoped live-stream consumer.
+pub type StreamResponseAs[T] = ResponsePlan[T, Streaming]
+
+///|
+/// Buffers any status within max_body_bytes, then invokes a custom decoder.
+/// The decoder sees immutable bytes, never ownership of the original stream.
+pub fn[T] ResponsePlan::new(
+  decode : (@model.ResponseHead, Bytes) -> T raise,
 ) -> ResponseAs[T] {
   {
-    select: head => { accept: accept_head(head), reject, read, streaming, },
-    streaming,
+    mode: Buffered::{ },
+    any_status: true,
+    select: (_, _) => {
+      streaming: false,
+      excerpt: false,
+      read: (head, body, options) => {
+        decode(head, read_body(body, options.max_body_bytes))
+      },
+    },
   }
 }
 
@@ -75,10 +129,19 @@ pub async fn read_body(
 }
 
 ///|
+fn diagnostic_body(bytes : Bytes) -> Bytes {
+  if bytes.length() <= max_error_body {
+    bytes
+  } else {
+    bytes[:max_error_body].to_owned()
+  }
+}
+
+///|
 async fn error_excerpt(body : @model.Body) -> Bytes raise @model.TransportError {
   match body {
     Empty => b""
-    Bytes(bytes) => bytes[:bytes.length().min(max_error_body)].to_owned()
+    Bytes(bytes) => diagnostic_body(bytes)
     Stream(stream) => {
       let reader = stream.take()
       defer reader.close()
@@ -99,47 +162,127 @@ async fn error_excerpt(body : @model.Body) -> Bytes raise @model.TransportError 
 }
 
 ///|
-/// Buffers successful bodies as bytes, bounded by max_body_bytes.
-pub fn as_bytes() -> ResponseAs[Bytes] {
-  ResponseAs::new((_, body, options) => read_body(body, options.max_body_bytes))
+fn[T] rejected() -> Selected[Result[T, ResponseFailure]] {
+  {
+    streaming: false,
+    excerpt: true,
+    read: (head, body, _) => {
+      Err(UnexpectedStatus(head, body=error_excerpt(body)))
+    },
+  }
 }
 
 ///|
-/// Buffers a UTF-8 string, replacing malformed sequences with U+FFFD.
-pub fn as_string() -> ResponseAs[String] {
-  as_bytes().map(bytes => @utf8.decode_lossy(bytes))
+/// Rejects a head-selected representation with a bounded diagnostic excerpt.
+/// This description always returns UnexpectedStatus, including for HTTP 2xx.
+pub fn[T] ResponsePlan::reject() -> ResponseAs[Result[T, ResponseFailure]] {
+  { mode: Buffered::{ }, any_status: false, select: (_, _) => rejected(), }
 }
 
 ///|
-/// Parses a UTF-8 JSON value; failures retain the head and original bytes.
-pub fn as_json_value() -> ResponseAs[Json] {
-  as_bytes().map_with_head((bytes, head) => {
-    @json.parse(@utf8.decode(bytes)) catch {
-      error =>
-        raise Deserialization(head, message=error.to_string(), body=bytes)
+/// Buffers successful bodies; non-2xx responses are bounded failure values.
+pub fn as_bytes() -> ResponseAs[Result[Bytes, ResponseFailure]] {
+  {
+    mode: Buffered::{ },
+    any_status: false,
+    select: (head, any) => {
+      if !any && !@model.is_success(head.status) {
+        rejected()
+      } else {
+        {
+          streaming: false,
+          excerpt: false,
+          read: (_, body, options) => {
+            Ok(read_body(body, options.max_body_bytes))
+          },
+        }
+      }
+    },
+  }
+}
+
+///|
+/// Decodes UTF-8 lossily while preserving HTTP failures as values.
+pub fn as_string() -> ResponseAs[Result[String, ResponseFailure]] {
+  as_bytes().map_ok(bytes => @utf8.decode_lossy(bytes))
+}
+
+///|
+fn json_value(
+  head : @model.ResponseHead,
+  bytes : Bytes,
+) -> Result[Json, ResponseFailure] {
+  Ok(@json.parse(@utf8.decode(bytes))) catch {
+    error =>
+      Err(
+        Deserialization(
+          head,
+          message=error.to_string(),
+          body=diagnostic_body(bytes),
+        ),
+      )
+  }
+}
+
+///|
+/// Parses JSON; status and decoding failures are received-response values.
+pub fn as_json_value() -> ResponseAs[Result[Json, ResponseFailure]] {
+  as_bytes().map_with_head((result, head) => {
+    match result {
+      Ok(bytes) => json_value(head, bytes)
+      Err(error) => Err(error)
     }
   })
 }
 
 ///|
-/// Parses and decodes JSON using the target type's FromJson implementation.
-pub fn[T : @json.FromJson] as_json() -> ResponseAs[T] {
-  as_bytes().map_with_head((bytes, head) => {
-    let value = @json.parse(@utf8.decode(bytes)) catch {
-      error =>
-        raise Deserialization(head, message=error.to_string(), body=bytes)
-    }
-    @json.from_json(value) catch {
-      error =>
-        raise Deserialization(head, message=error.to_string(), body=bytes)
+/// Parses and decodes JSON without raising received-response failures.
+pub fn[T : @json.FromJson] as_json() -> ResponseAs[Result[T, ResponseFailure]] {
+  as_bytes().map_with_head((result, head) => {
+    match result {
+      Err(error) => Err(error)
+      Ok(bytes) =>
+        match json_value(head, bytes) {
+          Err(error) => Err(error)
+          Ok(value) =>
+            Ok(@json.from_json(value)) catch {
+              error =>
+                Err(
+                  Deserialization(
+                    head,
+                    message=error.to_string(),
+                    body=diagnostic_body(bytes),
+                  ),
+                )
+            }
+        }
     }
   })
 }
 
 ///|
-/// Discards accepted bodies, closing streams without reading them.
-pub fn ignore_body() -> ResponseAs[Unit] {
-  ResponseAs::new((_, body, _) => if body is Stream(stream) { stream.close() })
+/// Discards a successful body; rejected statuses retain a bounded excerpt.
+pub fn ignore_body() -> ResponseAs[Result[Unit, ResponseFailure]] {
+  {
+    mode: Buffered::{ },
+    any_status: false,
+    select: (head, any) => {
+      if !any && !@model.is_success(head.status) {
+        rejected()
+      } else {
+        {
+          streaming: false,
+          excerpt: false,
+          read: (_, body, _) => {
+            if body is Stream(stream) {
+              stream.close()
+            }
+            Ok(())
+          },
+        }
+      }
+    },
+  }
 }
 
 ///|
@@ -171,28 +314,48 @@ fn stream_of(
 }
 
 ///|
-/// Gives the accepted stream to a callback once and closes it on every exit.
+/// Hands a successful stream to a callback once, closing it on every exit.
+/// Rejected responses are buffered failure values before any handoff.
 pub fn[T] as_stream(
-  read : async (@model.ResponseHead, &@model.BodyStream) -> T,
-) -> ResponseAs[T] {
-  ResponseAs::new(
-    (head, body, _) => {
-      let stream = stream_of(body)
-      defer stream.close()
-      read(head, stream)
-    },
-    streaming=true,
-  )
+  use_ : async (@model.ResponseHead, &@model.BodyStream) -> T,
+) -> StreamResponseAs[Result[T, ResponseFailure]] {
+  ResponsePlan::stream((head, stream, _) => use_(head, stream))
 }
 
 ///|
-/// Reads bounded SSE events until EOF or a stop predicate matches. The stop
-/// event is not delivered, allowing protocol sentinels such as [DONE].
+/// Creates a scoped stream interpreter which also receives effective limits.
+/// Client owns cleanup and never retries once this interpreter starts.
+pub fn[T] ResponsePlan::stream(
+  use_ : async (@model.ResponseHead, &@model.BodyStream, RequestOptions) -> T,
+) -> StreamResponseAs[Result[T, ResponseFailure]] {
+  {
+    mode: Streaming::{ },
+    any_status: false,
+    select: (head, any) => {
+      if !any && !@model.is_success(head.status) {
+        rejected()
+      } else {
+        {
+          streaming: true,
+          excerpt: false,
+          read: (head, body, options) => {
+            let stream = stream_of(body)
+            defer stream.close()
+            Ok(use_(head, stream, options))
+          },
+        }
+      }
+    },
+  }
+}
+
+///|
+/// Reads bounded SSE events until EOF or a protocol stop predicate matches.
 pub fn as_sse(
   receive : async (@sse.SseEvent) -> Unit,
   max_event_bytes~ : Int32 = 16 * 1024 * 1024,
   stop~ : (@sse.SseEvent) -> Bool = _ => false,
-) -> ResponseAs[Unit] {
+) -> StreamResponseAs[Result[Unit, ResponseFailure]] {
   as_stream((_, stream) => {
     let parser = @sse.SseParser::new(max_event_bytes~)
     while stream.read_some() is Some(chunk) {
@@ -203,59 +366,80 @@ pub fn as_sse(
         receive(event)
       }
     }
-    // WHATWG EOF discards an incomplete event; finish can still report an
-    // overflow deferred until after the last dispatched event.
     let _ = parser.finish()
   })
 }
 
 ///|
-/// Selects an interpretation exactly once per response head. The selected
-/// reader runs inside the attempt, so this combinator is buffered for deadline
-/// and retry policy even when its callback reads a stream.
-pub fn[T] from_head(
-  choose : (@model.ResponseHead) -> ResponseAs[T],
-) -> ResponseAs[T] {
+/// Selects once per head, preserving the selected branch's actual lifetime.
+pub fn[T, M : ResponseMode] from_head(
+  choose : (@model.ResponseHead) -> ResponsePlan[T, M],
+) -> ResponsePlan[T, M] {
   {
-    select: head => { ..(choose(head).select)(head), streaming: false, },
-    streaming: false,
+    mode: ResponseMode::fresh(),
+    any_status: false,
+    select: (head, any) => {
+      let selected = choose(head)
+      (selected.select)(head, any || selected.any_status)
+    },
   }
 }
 
 ///|
-/// Accepts every status while retaining the selected reader and streaming mode.
-pub fn[T] ResponseAs::any_status(self : ResponseAs[T]) -> ResponseAs[T] {
-  {
-    select: head => { ..(self.select)(head), accept: true, },
-    streaming: self.streaming,
-  }
+/// Widens a buffered description without changing its selected reader.
+pub fn[T] ResponsePlan::as_streaming(
+  self : ResponseAs[T],
+) -> StreamResponseAs[T] {
+  { select: self.select, mode: Streaming::{ }, any_status: self.any_status, }
 }
 
 ///|
-/// Maps the decoded value; mapping failures follow the same attempt policy.
-pub fn[A, B] ResponseAs::map(
-  self : ResponseAs[A],
+/// Interprets every status through the successful branch of this description.
+pub fn[T, M] ResponsePlan::any_status(
+  self : ResponsePlan[T, M],
+) -> ResponsePlan[T, M] {
+  { ..self, any_status: true, }
+}
+
+///|
+/// Transforms the full interpreted value. Unknown mapping errors propagate.
+pub fn[A, B, M] ResponsePlan::map(
+  self : ResponsePlan[A, M],
   f : (A) -> B raise,
-) -> ResponseAs[B] {
+) -> ResponsePlan[B, M] {
   self.map_with_head((value, _) => f(value))
 }
 
 ///|
-/// Maps a decoded value together with its response metadata.
-pub fn[A, B] ResponseAs::map_with_head(
-  self : ResponseAs[A],
+/// Transforms an interpreted value together with actual response metadata.
+pub fn[A, B, M] ResponsePlan::map_with_head(
+  self : ResponsePlan[A, M],
   f : (A, @model.ResponseHead) -> B raise,
-) -> ResponseAs[B] {
+) -> ResponsePlan[B, M] {
   {
-    select: head => {
-      let selected = (self.select)(head)
+    mode: self.mode,
+    any_status: self.any_status,
+    select: (head, any) => {
+      let selected = (self.select)(head, any)
       {
-        accept: selected.accept,
-        reject: selected.reject,
         streaming: selected.streaming,
+        excerpt: selected.excerpt,
         read: (h, body, options) => f((selected.read)(h, body, options), h),
       }
     },
-    streaming: self.streaming,
   }
+}
+
+///|
+/// Transforms successful Result values while retaining their error type.
+pub fn[A, B, E, M] ResponsePlan::map_ok(
+  self : ResponsePlan[Result[A, E], M],
+  f : (A) -> B raise,
+) -> ResponsePlan[Result[B, E], M] {
+  self.map(result => {
+    match result {
+      Ok(value) => Ok(f(value))
+      Err(error) => Err(error)
+    }
+  })
 }

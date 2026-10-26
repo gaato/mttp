@@ -9,6 +9,7 @@ import {
 
 import {
   "moonbitlang/async/aqueue",
+  "gaato/mttp/client",
   "gaato/mttp/testing",
   "moonbitlang/async/cond_var",
 } for "test"

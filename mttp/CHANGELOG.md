@@ -16,6 +16,18 @@ never does. Every breaking change is listed with a migration note.
 
 ### Changed
 
+- Before first publication: buffered and streaming RequestPlan/ResponsePlan
+  descriptions share one Client. Built-in readers return Result with bounded
+  ResponseFailure diagnostics; transport and user exceptions stay raised.
+- Endpoint errors are ordinary values. Client calls return nested Results;
+  server authentication and business handlers return Result with unchanged
+  wire schemas. Stream-only outputs require stream_request.
+- RetryPolicy is data with an optional typed per-send decision function.
+  Generic 429 retries require idempotency; a header alone does not grant it.
+  Provider presets move to their SDKs. Paginator failures are Result values.
+- Total deadlines require Timer and cover admission through stream consumption.
+  Release errors replace a value outcome, including Err, while raised exchange
+  errors and cancellation retain precedence.
 - Before first publication: RetryContext and RetryRule now consume RequestHead
   and explicit idempotency/replayability snapshots. Replace live-request
   `RetryContext::new(request)` calls with `RetryContext::capture(request)`;

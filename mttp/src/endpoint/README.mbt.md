@@ -31,11 +31,17 @@ by the router limit (1 MiB by default); streamed inputs count bytes while the
 handler reads. A raw signature body is buffered before authentication and
 cannot be combined with a streamed regular input.
 
-`serve` classifies authentication and handler errors through `Errors`; an
-unclassified error uses the server policy. `call` reads a bounded buffered
-response. `call_with` owns streaming results only for the callback's lifetime,
-outside the client's retry loop. `EventStream.each` closes its source on EOF,
-failure or cancellation.
+`serve` takes authentication and business handlers returning `Result`. Declare
+ordinary application error values with `.errors(one_of([...]))`; raised errors
+use the server's unhandled-error policy. These Result wrappers do not change
+the wire JSON or generated OpenAPI document.
+
+`request(...).send(client)` reads a buffered output and returns
+`Result[Result[O, E], ResponseFailure]` in the reply body. A stream-only output
+requires `stream_request(..., use_)` through the same send pipeline. It also
+supports buffered outputs. The callback runs once, after retry decisions,
+and its borrowed streams close when it exits. `call` and `call_with` are
+convenience forms. `EventStream.each` closes on EOF, failure or cancellation.
 
 `path` captures one decoded segment. `paths` captures the final `{name...}`
 tail as an array, retaining empty segments and encoded slashes. A custom

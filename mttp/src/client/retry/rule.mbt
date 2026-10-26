@@ -52,7 +52,7 @@ pub(all) enum Methods {
   /// No method.
   Never
   /// Requests that `@model.is_idempotent` accepts (an idempotent method or
-  /// an `Idempotency-Key` header), unless the caller says otherwise with
+  /// an explicit replay_safe statement), unless the caller says otherwise with
   /// `decide`'s `idempotent` argument.
   Idempotent
   /// These methods, compared ignoring ASCII case.

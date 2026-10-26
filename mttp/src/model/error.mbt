@@ -38,7 +38,8 @@ pub(all) suberror TransportError {
 pub fn TransportError::is_unsent(self : TransportError) -> Bool {
   let TransportError(kind~, phase~, ..) = self
   match (kind, phase) {
-    (Connect | Proxy(..), _) | (Timeout(..), Pool | Dial) => true
+    (Connect | Proxy(..), _) | (Timeout(..), Pool | Dial) | (Closed, Pool) =>
+      true
     _ => false
   }
 }

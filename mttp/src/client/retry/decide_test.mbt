@@ -249,7 +249,7 @@ test "decide covers every step in order" {
     (
       "503 POST with idempotency key",
       decide_request(r, s503, keyed, attempt=0, random=0.0),
-      Wait(100),
+      Stop(MethodNotAllowed),
     ),
     (
       "idempotent param true for POST",
@@ -447,7 +447,7 @@ test "decide covers every step in order" {
         attempt=0,
         random=0.0,
       ),
-      Wait(100),
+      Stop(MethodNotAllowed),
     ),
     (
       "sent failures never",

@@ -56,10 +56,9 @@ pub using @retry {type StopReason}
 
 ///|
 /// A retry policy for `Client`: a `RetryRule` of `gaato/mttp/client/retry` applied
-/// to `Error`s.
+/// to HTTP outcome snapshots.
 ///
-/// Start from a preset — `conservative()` (the default), `stainless(cap~)`,
-/// `none()` — or from any rule with `from_rule`, and adjust it with
+/// Start from a preset — `conservative()` (the default), `none()` — or from any rule with `from_rule`, and adjust it with
 /// `with_max_retries`, `allow_non_idempotent` or a struct update of `rule`.
 ///
 pub(all) struct RetryPolicy {
@@ -76,9 +75,8 @@ pub extend RetryPolicy with Eq::{equal, not_equal}
 pub extend RetryPolicy with @debug.Debug::{to_repr}
 
 ///|
-/// An opt-in conservative policy: two retries; 429 for any
-/// method; 408, 409, 500, 502, 503 and 504 only for an idempotent request
-/// (`@model.is_idempotent`, which accepts an `Idempotency-Key`); a failure
+/// An opt-in conservative policy: two retries; 429 and 408, 409, 500, 502, 503 and 504 only for an idempotent request
+/// (`@model.is_idempotent`, using the method or explicit replay_safe); a failure
 /// that proves nothing was sent (`TransportError::is_unsent`) for any method,
 /// and a proxy's refusal only when its status is one of those; a timeout or
 /// network failure after sending only for an idempotent request.
@@ -93,7 +91,7 @@ pub fn RetryPolicy::conservative() -> RetryPolicy {
     rule: {
       max_retries: 2,
       statuses: [
-        { statuses: [Code(429)], methods: Any, },
+        { statuses: [Code(429)], methods: Idempotent, },
         {
           statuses: [
             Code(408),
@@ -127,45 +125,6 @@ pub fn RetryPolicy::conservative() -> RetryPolicy {
 /// `conservative()`.
 pub fn RetryPolicy::default() -> RetryPolicy {
   RetryPolicy::conservative()
-}
-
-///|
-/// The retries of the official Stainless-generated SDKs (`openai-python`
-/// and `anthropic-sdk-python`, `_base_client.py`): two retries; 408, 409,
-/// 429 and every 5xx for any method, as is any transport failure but a
-/// protocol error; `x-should-retry: true` retries any response and `false`
-/// none.
-///
-/// The wait is `retry-after-ms`, else `Retry-After`; `cap` decides what a
-/// long one does (the OpenAI SDK gives up above two minutes,
-/// `StopAbove(120000)`; the Anthropic SDK waits whatever it is told,
-/// `NoCap`), and 0 means no delay was given. Without one, the backoff starts
-/// at 500 ms, doubles up to 8 s and is shortened by up to 25 %.
-///
-/// Retrying a POST after a 5xx or a timeout can run it twice; the official
-/// SDKs accept that for model APIs.
-///
-pub fn RetryPolicy::stainless(cap~ : RetryAfterCap) -> RetryPolicy {
-  {
-    rule: {
-      max_retries: 2,
-      statuses: [
-        {
-          statuses: [Code(408), Code(409), Code(429), Range(500, 599)],
-          methods: Any,
-        },
-      ],
-      sent_failures: Any,
-      unsent_failures: true,
-      override_header: Some("x-should-retry"),
-      retry_after: { source: MsThenHeader, cap, zero_means_backoff: true, },
-      backoff: {
-        base_ms: 500,
-        max_ms: 8000,
-        jitter: Proportional(lo=750, hi=1000),
-      },
-    },
-  }
 }
 
 ///|

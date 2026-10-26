@@ -69,7 +69,8 @@ pub fn[T] json_variant(
     },
     decode_bytes: Some((h, bytes) => {
       codec.decode(bytes) catch {
-        f => raise @client.Deserialization(h, message=f.message(), body=bytes)
+        @schema.DecodeFailure(..) as f =>
+          raise DecodeError(h, message=f.message(), body=bytes)
       }
     }),
     decode_stream: None,
@@ -174,11 +175,7 @@ pub fn[T, H] Variant::and_header(
         Some((h, b) => {
           let t = f(h, b)
           guard h.headers.get(name) is Some(raw) else {
-            raise @client.Deserialization(
-              h,
-              message="missing header \{name}",
-              body=b,
-            )
+            raise DecodeError(h, message="missing header \{name}", body=b)
           }
           (t, codec.decode(raw))
         })
@@ -189,13 +186,11 @@ pub fn[T, H] Variant::and_header(
         Some((h, s) => {
           guard h.headers.get(name) is Some(raw) else {
             s.close()
-            raise @client.Deserialization(
-              h,
-              message="missing header \{name}",
-              body=b"",
-            )
+            raise DecodeError(h, message="missing header \{name}", body=b"")
           }
-          let header = codec.decode(raw)
+          let header = codec.decode(raw) catch {
+            error => raise DecodeError(h, message=error.message(), body=b"")
+          }
           (f(h, s), header)
         })
       None => None
@@ -226,14 +221,15 @@ pub fn[T] Variant::fixed_header(
 
 ///|
 /// An ordered collection of response variants for one output type.
-pub struct Out[T] {
+pub struct Out[T, M] {
+  priv mode : M
   priv variants : Array[Variant[T]]
 }
 
 ///|
 /// Creates an ordered output union; the first matching encoder is selected.
-pub fn[T] one_of(variants : Array[Variant[T]]) -> Out[T] {
-  { variants: variants.copy(), }
+pub fn[T] one_of(variants : Array[Variant[T]]) -> Out[T, @client.Buffered] {
+  { mode: @client.Buffered::{ }, variants: variants.copy(), }
 }
 
 ///|
@@ -241,34 +237,37 @@ pub fn[T] one_of(variants : Array[Variant[T]]) -> Out[T] {
 pub fn[T] json_out(
   codec : @schema.BodyCodec[T],
   status~ : Int32 = 200,
-) -> Out[T] {
-  { variants: [json_variant(status, codec)], }
+) -> Out[T, @client.Buffered] {
+  { mode: @client.Buffered::{ }, variants: [json_variant(status, codec)], }
 }
 
 ///|
 /// Creates a bodyless 204 output.
-pub fn no_content() -> Out[Unit] {
-  { variants: [empty_variant(204)], }
+pub fn no_content() -> Out[Unit, @client.Buffered] {
+  { mode: @client.Buffered::{ }, variants: [empty_variant(204)], }
 }
 
 ///|
 /// Pairs every output variant with a typed response header.
-pub fn[T, H] Out::and_header(
-  self : Out[T],
+pub fn[T, H, M] Out::and_header(
+  self : Out[T, M],
   name : String,
   codec : @schema.TextCodec[H],
-) -> Out[(T, H)] {
-  { variants: self.variants.map(v => v.and_header(name, codec)), }
+) -> Out[(T, H), M] {
+  {
+    mode: self.mode,
+    variants: self.variants.map(v => v.and_header(name, codec)),
+  }
 }
 
 ///|
 /// Returns metadata for each declared output variant.
-pub fn[T] Out::docs(self : Out[T]) -> Array[VariantDoc] {
+pub fn[T, M] Out::docs(self : Out[T, M]) -> Array[VariantDoc] {
   self.variants.map(v => v.doc())
 }
 
 ///|
-fn[T] Out::encode(self : Out[T], v : T) -> @model.Response? {
+fn[T, M] Out::encode(self : Out[T, M], v : T) -> @model.Response? {
   for variant in self.variants {
     if (variant.matches)(v) {
       let status = match variant.status_of {
@@ -303,8 +302,8 @@ fn media_matches(variant_media : String?, ct : String?) -> Bool {
 /// declaration order: a framework problem+json 404 never matches a
 /// declared application/json 404 (I-02), and two declared variants at one
 /// status are tried in turn (SC-04).
-fn[T] Out::for_head(
-  self : Out[T],
+fn[T, M] Out::for_head(
+  self : Out[T, M],
   head : @model.ResponseHead,
 ) -> Array[Variant[T]] {
   let ct = head.headers.get("content-type")
@@ -317,8 +316,8 @@ fn[T] Out::for_head(
 ///|
 /// Buffered decode: first variant that decodes wins; Deserialization only
 /// when every candidate failed.
-fn[T] Out::decode_bytes(
-  self : Out[T],
+fn[T, M] Out::decode_bytes(
+  self : Out[T, M],
   head : @model.ResponseHead,
   body : Bytes,
 ) -> T? raise {
@@ -326,28 +325,25 @@ fn[T] Out::decode_bytes(
   if candidates.is_empty() {
     return None
   }
-  let mut last : Error = @client.Deserialization(
-    head,
-    message="no buffered decoder",
-    body~,
-  )
+  let mut last : Error = DecodeError(head, message="no buffered decoder", body~)
   for v in candidates {
     match v.decode_bytes {
       Some(f) =>
         return Some(f(head, body)) catch {
-          e => {
+          DecodeError(_, ..) as e => {
             last = e
             continue
           }
+          @schema.DecodeFailure(..) as e => {
+            last = DecodeError(head, message=e.message(), body~)
+            continue
+          }
+          error => raise error
         }
-      None =>
-        last = @client.Deserialization(head, message="streaming variant", body~)
+      None => last = DecodeError(head, message="streaming variant", body~)
     }
   }
-  match last {
-    @client.ResponseError::_ as e => raise e
-    e => raise @client.Deserialization(head, message=e.to_string(), body~)
-  }
+  raise last
 }
 
 ///|
@@ -498,7 +494,7 @@ async fn SseReader::next_data(
 pub fn[T] sse_out(
   codec : @schema.JsonCodec[T],
   to_event? : (T) -> @sse.SseEvent,
-) -> Out[EventStream[T]] {
+) -> Out[EventStream[T], @client.Streaming] {
   let variant : Variant[EventStream[T]] = {
     status: 200,
     status_of: None,
@@ -551,21 +547,12 @@ pub fn[T] sse_out(
             None => None
             Some(data) => {
               let j = @json.parse(data) catch {
-                e =>
-                  raise @client.Deserialization(
-                    h,
-                    message=e.to_string(),
-                    body=b"",
-                  )
+                e => raise DecodeError(h, message=e.to_string(), body=b"")
               }
               Some(
                 codec.from_json(j) catch {
                   failure =>
-                    raise @client.Deserialization(
-                      h,
-                      message=failure.message(),
-                      body=b"",
-                    )
+                    raise DecodeError(h, message=failure.message(), body=b"")
                 },
               )
             }
@@ -575,30 +562,23 @@ pub fn[T] sse_out(
       )
     }),
   }
-  { variants: [variant], }
+  { mode: @client.Streaming::{ }, variants: [variant], }
 }
 
 ///|
-/// Classifies raised errors into the declared typed response variants.
-pub struct Errors[E] {
-  priv classify : (Error) -> E?
-  priv out : Out[E]
+/// The uninhabited error value of an endpoint without declared errors.
+pub(all) enum NoError {} derive(Debug, Eq)
+
+///|
+/// Compares the uninhabited error value.
+pub extend NoError with Eq::{equal, not_equal}
+
+///|
+fn no_errors() -> Out[NoError, @client.Buffered] {
+  { mode: @client.Buffered::{ }, variants: [], }
 }
 
 ///|
-/// Creates error classification and its ordered output variants.
-pub fn[E] Errors::new(
-  classify : (Error) -> E?,
-  variants : Array[Variant[E]],
-) -> Errors[E] {
-  { classify, out: { variants: variants.copy(), }, }
-}
-
-///|
-/// The uninhabited error type of an endpoint without declared errors.
-pub(all) suberror NoError derive(Debug)
-
-///|
-fn no_errors() -> Errors[NoError] {
-  { classify: _ => None, out: { variants: [], }, }
-}
+priv suberror DecodeError {
+  DecodeError(@model.ResponseHead, message~ : String, body~ : Bytes)
+} derive(Debug)

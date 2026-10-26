@@ -1,8 +1,8 @@
 ///|
 /// Encodes a relative request target ("/api/v1/users/1?fields=a"); the
 /// Client joins it onto its base URL by prefix. Internal in v0.3 (S-07).
-fn[S, I, E, O] Endpoint::encode_request(
-  self : Endpoint[S, I, E, O],
+fn[S, I, E, O, M] Endpoint::encode_request(
+  self : Endpoint[S, I, E, O, M],
   security : S,
   input : I,
 ) -> @model.Request raise @client.InvalidRequest {
@@ -66,100 +66,130 @@ fn reject_dot_segment(value : String) -> Unit raise @client.InvalidRequest {
 }
 
 ///|
-/// accept: a declared output variant matches (status, media type).
-/// reject: a declared error decodes to E (raised as itself); anything else
-/// is UnexpectedStatus. Both run inside the attempt, so retries see them.
-fn[S, I, E : Error, O, R] Endpoint::reader(
-  self : Endpoint[S, I, E, O],
-  read : async (@model.ResponseHead, @model.Body, @client.RequestOptions) -> R,
-  streaming~ : Bool,
-) -> @client.ResponseAs[R] {
-  @client.ResponseAs::new(
-    read,
-    accept_head=h => !self.output.for_head(h).is_empty(),
-    reject=(h, body) => {
-      if self.errors.out.decode_bytes(h, body) is Some(e) {
-        raise e
-      }
-    },
-    streaming~,
-  )
+fn excerpt(bytes : Bytes) -> Bytes {
+  if bytes.length() <= 1048576 {
+    bytes
+  } else {
+    bytes[:1048576].to_owned()
+  }
 }
 
 ///|
-/// Encodes a typed client request; its endpoint definition must pass checking.
-/// Rejects dot-only path captures because URL transports normalize them.
-pub fn[S, I, E : Error, O] Endpoint::request(
-  self : Endpoint[S, I, E, O],
+fn decode_failure(error : DecodeError) -> @client.ResponseFailure {
+  let DecodeError(head, message~, body~) = error
+  @client.Deserialization(head, message~, body=excerpt(body))
+}
+
+///|
+fn[S, I, E, O, M] Endpoint::decode_reply(
+  self : Endpoint[S, I, E, O, M],
+  head : @model.ResponseHead,
+  bytes : Bytes,
+) -> Result[Result[O, E], @client.ResponseFailure] raise {
+  try {
+    if self.output.decode_bytes(head, bytes) is Some(output) {
+      return Ok(Ok(output))
+    }
+    if self.errors.decode_bytes(head, bytes) is Some(error) {
+      return Ok(Err(error))
+    }
+    Err(@client.UnexpectedStatus(head, body=excerpt(bytes)))
+  } catch {
+    DecodeError(_, ..) as error => Err(decode_failure(error))
+    error => raise error
+  }
+}
+
+///|
+/// Encodes a buffered endpoint. HTTP and decoding failures are values;
+/// transport failures and unknown decoder errors remain raised effects.
+pub fn[S, I, E, O] Endpoint::request(
+  self : Endpoint[S, I, E, O, @client.Buffered],
   security : S,
   input : I,
-) -> @client.ClientRequest[O] raise @client.InvalidRequest {
-  let ra = self.reader(
-    (h, body, opts) => {
-      let bytes = @client.read_body(body, opts.max_body_bytes)
-      match self.output.decode_bytes(h, bytes) {
-        Some(o) => o
-        None => raise @client.UnexpectedStatus(h, body=bytes)
-      }
-    },
-    streaming=false,
-  )
-  @client.ClientRequest::new(self.encode_request(security, input), ra)
+) -> @client.ClientRequest[Result[Result[O, E], @client.ResponseFailure]] raise @client.InvalidRequest {
+  let reader = @client.from_head(head => {
+    if self.output.for_head(head).is_empty() &&
+      self.errors.for_head(head).is_empty() {
+      @client.ResponsePlan::reject()
+    } else {
+      @client.ResponsePlan::new((head, bytes) => self.decode_reply(head, bytes))
+    }
+  })
+  @client.RequestPlan::new(self.encode_request(security, input), reader)
 }
 
 ///|
-/// Sends a typed buffered request through the normal client policy pipeline.
-pub async fn[S, I, E : Error, O] Endpoint::call(
-  self : Endpoint[S, I, E, O],
+/// Encodes a scoped response callback through the same Client executor.
+/// Error responses are decoded before retry decisions; use_ starts only once.
+pub fn[S, I, E, O, R, M] Endpoint::stream_request(
+  self : Endpoint[S, I, E, O, M],
+  security : S,
+  input : I,
+  use_ : async (O) -> R,
+) -> @client.StreamRequest[Result[Result[R, E], @client.ResponseFailure]] raise @client.InvalidRequest {
+  let reader = @client.from_head(head => {
+    if self.output.for_head(head).is_empty() {
+      if self.errors.for_head(head).is_empty() {
+        return @client.ResponsePlan::reject().as_streaming()
+      }
+      @client.ResponsePlan::new((head, bytes) => {
+        match self.decode_reply(head, bytes) {
+          Ok(Err(error)) => Ok(Err(error))
+          Err(error) => Err(error)
+          Ok(Ok(_)) => abort("no output candidate")
+        }
+      }).as_streaming()
+    } else {
+      @client.ResponsePlan::stream((head, stream, options) => {
+        try {
+          for variant in self.output.for_head(head) {
+            if variant.decode_stream is Some(decode) {
+              return Ok(Ok(use_(decode(head, stream))))
+            }
+          }
+          let bytes = @model.read_bounded(stream, options.max_body_bytes)
+          match self.decode_reply(head, bytes) {
+            Ok(Ok(output)) => Ok(Ok(use_(output)))
+            Ok(Err(error)) => Ok(Err(error))
+            Err(error) => Err(error)
+          }
+        } catch {
+          DecodeError(_, ..) as error => Err(decode_failure(error))
+          error => raise error
+        }
+      })
+      .any_status()
+      .map(result => {
+        match result {
+          Ok(result) => result
+          Err(error) => Err(error)
+        }
+      })
+    }
+  })
+  @client.RequestPlan::new(self.encode_request(security, input), reader)
+}
+
+///|
+/// Sends a buffered endpoint through the normal policy pipeline.
+pub async fn[S, I, E, O] Endpoint::call(
+  self : Endpoint[S, I, E, O, @client.Buffered],
   client : @client.Client,
   security : S,
   input : I,
-) -> O {
-  client.send(self.request(security, input)).body
+) -> Result[Result[O, E], @client.ResponseFailure] {
+  self.request(security, input).send(client).body
 }
 
 ///|
-/// Streaming outputs live only inside `use_`, which runs once after the
-/// retry loop; error statuses are decoded inside the attempt (I-03).
-pub async fn[S, I, E : Error, O, R] Endpoint::call_with(
-  self : Endpoint[S, I, E, O],
+/// Sends an endpoint with its output scoped to the callback's lifetime.
+pub async fn[S, I, E, O, R, M] Endpoint::call_with(
+  self : Endpoint[S, I, E, O, M],
   client : @client.Client,
   security : S,
   input : I,
   use_ : async (O) -> R,
-) -> R {
-  let ra = self.reader(
-    (h, body, opts) => {
-      let s : &@model.BodyStream = match body {
-        Stream(s) => s.take()
-        Bytes(b) => BufferedStream::new(b)
-        _ => BufferedStream::new(b"")
-      }
-      defer s.close()
-      // A streaming variant gets the stream; otherwise read the body once
-      // and try every buffered candidate in order, as `call` does.
-      for v in self.output.for_head(h) {
-        if v.decode_stream is Some(f) {
-          let value = f(h, s) catch {
-            error =>
-              raise @client.Deserialization(
-                h,
-                message=error.to_string(),
-                body=b"",
-              )
-          }
-          return use_(value)
-        }
-      }
-      let body = @model.read_bounded(s, opts.max_body_bytes)
-      match self.output.decode_bytes(h, body) {
-        Some(o) => use_(o)
-        None => raise @client.UnexpectedStatus(h, body~)
-      }
-    },
-    streaming=true,
-  )
-  client.send(
-    @client.ClientRequest::new(self.encode_request(security, input), ra),
-  ).body
+) -> Result[Result[R, E], @client.ResponseFailure] {
+  self.stream_request(security, input, use_).send(client).body
 }

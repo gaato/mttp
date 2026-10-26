@@ -16,6 +16,27 @@ moon add gaato/mttp-net
 For a simple request, see the
 [`quick` package example](https://github.com/gaato/mttp/blob/main/mttp-net/src/quick/README.mbt.md).
 
+`new_client()` creates an owned client with the platform backend, clock and
+cancellable timer. Close it when its application scope ends. It follows
+redirects and disables retries by default; policy and total deadline can be
+configured without constructing runtime services individually.
+
+```mbt check
+///|
+/// Fetches text with a deadline covering admission and body processing.
+pub async fn fetch_text(
+  url : String,
+) -> Result[String, @client.ResponseFailure] {
+  let client = @net.new_client(total_ms=5000)
+  defer client.close()
+  @client.get(url).send(client).body
+}
+```
+
+HTTP status and decode failures are `Result` values. Transport failures raise
+the common `TransportError`. Deadlines initiate cancellation; necessary
+resource cleanup can continue after the deadline.
+
 The `runtime` package provides a wall clock, a cancellable timer and a
 semaphore gate implementing the runtime-free `gaato/mttp/clock` traits.
 

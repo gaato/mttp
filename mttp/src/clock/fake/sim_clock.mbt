@@ -61,7 +61,7 @@ pub impl @clock.Timer for SimTimer with fn within(self, ms, f) {
   defer {
     timer.cancel()
     if !child.is_finished() {
-      child.cancel()
+      self.driver.cancel_and_join([child])
     }
   }
   let _ = child.wait() catch { _ => false }

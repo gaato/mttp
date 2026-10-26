@@ -1,0 +1,103 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/async@0.22.5/shell",
+}
+----
+
+// Compile consumers as a separate module so private package access cannot
+// accidentally make the lifetime API look usable or bypass its restrictions.
+
+///|
+suberror ContractError {
+  ContractError(String)
+}
+
+///|
+async fn main {
+  let root = @fs.realpath(".")
+  let scratch = @fs.tmpdir(prefix="mttp-type-contracts-")
+  let consumer = scratch + "/consumer"
+  @fs.mkdir(consumer, recursive=true)
+  @fs.write_file(
+    scratch + "/moon.work",
+    "members = [\"" + root + "/mttp\", \"consumer\"]\n",
+  )
+  @fs.write_file(
+    consumer + "/moon.mod",
+    "name = \"type_contracts/consumer\"\nversion = \"0.1.0\"\nimport { \"gaato/mttp@0.1.0\", }\n",
+  )
+  let imports = "import { \"gaato/mttp/client\", \"gaato/mttp/endpoint\", \"gaato/mttp/schema\", }\n"
+  let positive =
+    #|pub async fn exercise(client : @client.Client) -> Unit {
+    #|  let endpoint = @endpoint.endpoint.get("/")
+    #|    .errors(@endpoint.text_out(status=400)).output(@endpoint.text_out())
+    #|  let result : Result[Result[String, String], @client.ResponseFailure] =
+    #|    endpoint.request((), ()).send(client).body
+    #|  ignore(result)
+    #|  let reader = @client.from_head(head => if head.status == 200 {
+    #|    @client.as_stream((_, _) => ())
+    #|  } else { @client.ignore_body().as_streaming() })
+    #|  let request : @client.StreamRequest[Result[Unit, @client.ResponseFailure]] =
+    #|    @client.get("/").response(reader)
+    #|  ignore(request.send(client))
+    #|  let stream_endpoint = @endpoint.endpoint.get("/events").output(@endpoint.sse_out(@schema.jint))
+    #|  ignore(stream_endpoint.stream_request((), (), _ => ()).send(client))
+    #|  let pair : @client.ResponseAs[(Result[String, @client.ResponseFailure], Result[Bytes, @client.ResponseFailure])] =
+    #|    @client.as_both(@client.as_string(), @client.as_bytes())
+    #|  ignore(pair)
+    #|}
+  let negative_both =
+    #|pub fn rejected() -> Unit {
+    #|  ignore(@client.as_both(@client.as_bytes(), @client.as_stream((_, _) => ())))
+    #|}
+  let negative_endpoint =
+    #|pub fn rejected() -> Unit {
+    #|  let endpoint = @endpoint.endpoint.get("/").output(@endpoint.sse_out(@schema.jint))
+    #|  ignore(endpoint.request((), ()))
+    #|}
+  for
+    (name, source) in [
+      ("positive", positive),
+      ("bad_both", negative_both),
+      ("bad_endpoint", negative_endpoint),
+    ] {
+    @fs.mkdir(consumer + "/" + name)
+    @fs.write_file(consumer + "/" + name + "/moon.pkg", imports)
+    @fs.write_file(consumer + "/" + name + "/probe.mbt", source)
+  }
+  let pass = @shell.Cmd(
+    "moon",
+    ["check", consumer + "/positive", "--target", "all", "--deny-warn"],
+    cwd=scratch,
+  ).output(timeout_ms=120000)
+  if pass.exit_code() != 0 {
+    println(pass.stdout())
+    println(pass.stderr())
+    raise ContractError("public API positive fixture failed")
+  }
+  for target in ["wasm-gc", "wasm", "js", "native"] {
+    for name in ["bad_both", "bad_endpoint"] {
+      let result = @shell.Cmd(
+        "moon",
+        ["check", consumer + "/" + name, "--target", target],
+        cwd=scratch,
+      ).output(timeout_ms=120000)
+      let diagnostic = result.stdout() + result.stderr()
+      @fs.write_file(scratch + "/" + name + "-" + target + ".log", diagnostic)
+      if result.exit_code() == 0 ||
+        !diagnostic.contains("Buffered") ||
+        !diagnostic.contains("Streaming") {
+        println(diagnostic)
+        raise ContractError(
+          "missing expected lifetime rejection: " + name + " on " + target,
+        )
+      }
+    }
+    println(
+      target + ": positive API accepted, both lifetime violations rejected",
+    )
+  }
+  println("type contract evidence: " + scratch)
+}

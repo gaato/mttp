@@ -10,7 +10,9 @@ test "typed Endpoint Router and H1 engines exchange through SimNet" {
       .get("/items/{id}")
       .input(@endpoint.path("id", @schema.int))
       .output(@endpoint.text_out())
-    let router = @router.Router::new([route.serve_public(id => id.to_string())])
+    let router = @router.Router::new([
+      route.serve_public(id => Ok(id.to_string())),
+    ])
     let backend = @http.H1Backend::new(
       dialer=@sim.ScriptedDialer::new([client_conn]),
       clock~,

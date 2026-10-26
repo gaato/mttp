@@ -19,7 +19,7 @@ test "method tokens parse roundtrip and classify idempotence" {
     assert_eq(meth.is_idempotent(), idem)
     assert_eq(@model.is_idempotent(@model.Request::new(meth, "/")), idem)
   }
-  assert_true(
+  assert_false(
     @model.is_idempotent(
       @model.Request::post("/").header("Idempotency-Key", "key"),
     ),
@@ -156,6 +156,8 @@ test "unsent classification is conservative" {
     (Protocol, Head, false),
     (Invalid, Pool, false),
     (Closed, Unknown, false),
+    (Closed, Pool, true),
+    (Closed, Head, false),
   ]
   for (kind, phase, unsent) in cases {
     let error = @model.TransportError(kind~, phase~, detail="test failure")

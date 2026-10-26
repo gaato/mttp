@@ -113,9 +113,9 @@ impl @model.BodyStream for LimitedInput with fn close(self) {
 ///|
 /// Supplies an explicit request-dependent limiter bucket. Without this
 /// builder the client uses its default bucket, independently of operation_id.
-pub fn[S, I, E, O] Endpoint::rate_limit_bucket(
-  self : Endpoint[S, I, E, O],
+pub fn[S, I, E, O, M] Endpoint::rate_limit_bucket(
+  self : Endpoint[S, I, E, O, M],
   f : (@model.Request) -> String,
-) -> Endpoint[S, I, E, O] {
+) -> Endpoint[S, I, E, O, M] {
   { ..self, bucket: Some(f), }
 }

@@ -1,35 +1,35 @@
 ///|
 /// Buffers and decodes form pairs with the model's forgiving UTF-8 and
 /// percent decoding. Both max_body_bytes and max_pairs apply.
-pub fn as_form(max_pairs~ : Int32 = 256) -> ResponseAs[Array[(String, String)]] {
-  as_string().map(text => @model.form_urldecode(text, max_pairs~))
+pub fn as_form(
+  max_pairs~ : Int32 = 256,
+) -> ResponseAs[Result[Array[(String, String)], ResponseFailure]] {
+  as_string().map_ok(text => @model.form_urldecode(text, max_pairs~))
 }
 
 ///|
 /// Buffers once within max_body_bytes, then reads the same immutable bytes
-/// with both interpretations, left first. Both must accept the head; if not,
-/// the first rejecting interpretation handles the bounded error excerpt.
-/// Selectors run once each. This combinator runs inside the attempt even
-/// when either input is a streaming interpretation.
+/// with both interpretations, left first. Streaming readers are excluded by
+/// the argument types. Selectors run once each; rejected bodies stay bounded.
 pub fn[A, B] as_both(
   left : ResponseAs[A],
   right : ResponseAs[B],
 ) -> ResponseAs[(A, B)] {
   {
-    streaming: false,
-    select: head => {
-      let a = (left.select)(head)
-      let b = (right.select)(head)
+    mode: Buffered::{ },
+    any_status: false,
+    select: (head, any) => {
+      let a = (left.select)(head, any || left.any_status)
+      let b = (right.select)(head, any || right.any_status)
       {
         streaming: false,
-        accept: a.accept && b.accept,
-        reject: if !a.accept {
-          a.reject
-        } else {
-          b.reject
-        },
+        excerpt: a.excerpt && b.excerpt,
         read: (head, body, options) => {
-          let bytes = read_body(body, options.max_body_bytes)
+          let bytes = if a.excerpt && b.excerpt {
+            error_excerpt(body)
+          } else {
+            read_body(body, options.max_body_bytes)
+          }
           let first = (a.read)(head, Bytes(bytes), options)
           let second = (b.read)(head, Bytes(bytes), options)
           (first, second)
@@ -48,7 +48,7 @@ pub fn[A, B] as_both(
 pub fn as_lines(
   receive : async (String) -> Unit,
   max_line_bytes~ : Int32 = 1024 * 1024,
-) -> ResponseAs[Unit] {
+) -> StreamResponseAs[Result[Unit, ResponseFailure]] {
   as_stream((_, stream) => {
     if max_line_bytes < 0 {
       raise @model.TransportError(

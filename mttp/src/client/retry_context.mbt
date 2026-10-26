@@ -9,6 +9,7 @@ pub(all) struct RetryContext {
   now_unix_ms : Int64
   remaining_ms : Int64?
   replayable : Bool
+  default_decision : @retry.Decision
 }
 
 ///|
@@ -22,6 +23,7 @@ pub fn RetryContext::new(
   random~ : Double = 0.5,
   now_unix_ms~ : Int64 = 0L,
   remaining_ms? : Int64,
+  default_decision~ : @retry.Decision = Stop(NotRetryable),
 ) -> RetryContext {
   {
     request,
@@ -32,6 +34,7 @@ pub fn RetryContext::new(
     now_unix_ms,
     remaining_ms,
     replayable,
+    default_decision,
   }
 }
 
@@ -60,32 +63,37 @@ pub fn RetryContext::capture(
 }
 
 ///|
-/// Decides whether any attempt error should cause a retry. Reader errors are
-/// included; applications can interpret errors embedded in successful JSON.
-pub(open) trait RetryDecider {
-  fn decide(Self, Error, RetryContext) -> @retry.Decision
+/// A typed value or transport failure offered before any stream handoff.
+pub(all) enum AttemptResult[T] {
+  /// A complete buffered value with actual response metadata.
+  Buffered(Reply[T])
+  /// A selected stream consumer that has not started.
+  StreamReady(@model.ResponseHead)
+  /// A raised transport failure, distinct from response error values.
+  TransportFailure(@model.TransportError)
 }
 
 ///|
-/// Extracts a transport failure or rejected HTTP status for a retry rule.
-/// Decoding and application errors need an application-specific decider.
-pub fn outcome_of(error : Error) -> @retry.AttemptOutcome? {
-  match error {
-    @model.TransportError(..) as failure => Some(Failure(failure))
-    UnexpectedStatus(head, ..) =>
-      Some(Response(status=head.status, headers=head.headers))
-    _ => None
+/// Projects HTTP facts for a generic retry rule without inspecting T.
+pub fn[T] AttemptResult::http_outcome(
+  self : AttemptResult[T],
+) -> @retry.AttemptOutcome {
+  match self {
+    Buffered(reply) =>
+      @retry.Response(status=reply.status, headers=reply.headers)
+    StreamReady(head) =>
+      @retry.Response(status=head.status, headers=head.headers)
+    TransportFailure(error) => @retry.Failure(error)
   }
 }
 
 ///|
-/// Applies this policy to an attempt error.
-pub extend RetryPolicy with RetryDecider::{decide}
-
-///|
-/// Uses the mature status, method, replayability, jitter and budget rules.
-pub impl RetryDecider for RetryPolicy with fn decide(self, error, context) {
-  guard outcome_of(error) is Some(outcome) else { return Stop(NotRetryable) }
+/// Applies pure HTTP retry data to a snapshot.
+pub fn RetryPolicy::decide(
+  self : RetryPolicy,
+  outcome : @retry.AttemptOutcome,
+  context : RetryContext,
+) -> @retry.Decision {
   self.rule.decide(
     outcome,
     context.request,

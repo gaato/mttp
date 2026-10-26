@@ -8,7 +8,7 @@ import {
 // Values
 pub fn close() -> Unit
 
-pub async fn[T] send(@client.ClientRequest[T]) -> @client.Reply[T]
+pub async fn[T, M : @client.ResponseMode] send(@client.RequestPlan[T, M]) -> @client.Reply[T]
 
 // Errors
 

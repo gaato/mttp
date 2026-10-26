@@ -1,6 +1,6 @@
 ///|
 test "definition checker reports malformed methods captures body combinations and headers" {
-  let empty : @endpoint.Out[Unit] = @endpoint.one_of([])
+  let empty : @endpoint.Out[Unit, @client.Buffered] = @endpoint.one_of([])
   let invalid = [
     @endpoint.endpoint.get("/").post("/").doc(),
     @endpoint.endpoint.get("/{bad").doc(),
@@ -79,7 +79,7 @@ test "definition checker reports malformed methods captures body combinations an
     assert_true(!doc.problems().is_empty())
   }
   let variants = [@endpoint.empty_variant(400), @endpoint.empty_variant(400)]
-  let errors = @endpoint.Errors::new(_ => None, variants)
+  let errors = @endpoint.one_of(variants)
   let doc = @endpoint.endpoint.get("/").errors(errors).doc()
   assert_true(@endpoint.check_definitions([doc]).iter().any(p => !p.fatal))
 }

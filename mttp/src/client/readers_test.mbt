@@ -41,7 +41,7 @@ test "completed timer callbacks transfer and close streams even at expiry" {
       .response(@client.as_stream((_, stream) => stream.read_some())),
     )
   })
-  assert_eq(reply.body, Some(b"data"))
+  assert_eq(reply.body, Ok(Some(b"data")))
   assert_eq(source.closes(), 1)
 }
 
@@ -105,11 +105,7 @@ test "streaming readers adapt memory bodies with sticky EOF" {
     })
     assert_eq(
       result.body,
-      if body == Bytes(b"data") {
-        Some(b"data")
-      } else {
-        None
-      },
+      Ok(if body == Bytes(b"data") { Some(b"data") } else { None }),
     )
   }
 }
@@ -139,7 +135,7 @@ test "ignore body closes without consuming it and quick request accepts errors" 
     @driver.run_sync(() => {
       client.send(@client.quick_request(@model.Request::get("/")))
     }).body,
-    "missing",
+    Ok("missing"),
   )
 }
 
@@ -150,17 +146,13 @@ test "error bodies include empty and buffered responses" {
       @client.from_handler(_ => @model.Response::new(400, body~)),
       @fake.FakeClock::new(),
     )
-    let rejected = try {
-      let _ = @driver.run_sync(() => {
-        client.send(@client.request(@model.Request::get("/")))
-      })
-      false
-    } catch {
-      @client.UnexpectedStatus(_, body=excerpt) => {
+    let rejected = match
+      @driver.run_sync(() => client.send(@client.get("/"))).body {
+      Err(@client.UnexpectedStatus(_, body=excerpt)) => {
         assert_eq(Some(excerpt), body.as_bytes())
         true
       }
-      error => raise error
+      _ => false
     }
     assert_true(rejected)
   }
@@ -168,19 +160,10 @@ test "error bodies include empty and buffered responses" {
     @client.from_handler(_ => @model.Response::new(200, body=Bytes(b"invalid"))),
     @fake.FakeClock::new(),
   )
-  let rejected = try {
-    let _ = @driver.run_sync(() => {
-      client.send(
-        @client.request(@model.Request::get("/")).response(
-          @client.as_json_value(),
-        ),
-      )
-    })
-    false
-  } catch {
-    @client.Deserialization(_, ..) => true
-    error => raise error
-  }
+  let rejected = @driver.run_sync(() => {
+      client.send(@client.get("/").response(@client.as_json_value()))
+    }).body
+    is Err(@client.Deserialization(_, ..))
   assert_true(rejected)
 }
 
@@ -213,15 +196,8 @@ test "fallback handles completion errors and a broken timer contract" {
       clock,
       timer=@fake.SimTimer::new(d),
     )
-    let result = try {
-      let _ = d.run(() => {
-        client.send(@client.request(@model.Request::get("/")).timeout_ms(10))
-      })
-      true
-    } catch {
-      @client.UnexpectedStatus(_, ..) => false
-      error => raise error
-    }
+    let result = d.run(() => client.send(@client.get("/").timeout_ms(10))).body
+      is Ok(_)
     assert_eq(result, status == 200)
   }
   let client = @client.Client::new(EmptyBackend::{ }, clock, timer=InvalidTimer::{

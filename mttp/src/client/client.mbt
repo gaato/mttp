@@ -7,7 +7,7 @@ pub struct Client {
   priv headers : @model.Headers
   priv options : RequestOptions
   priv timer : &@clock.Timer?
-  priv retry : &RetryDecider
+  priv retry : RetryPolicy
   priv limiter : &RateLimiter
   priv total_ms : Int32?
   priv observer : (Attempt) -> Unit
@@ -24,7 +24,7 @@ pub fn Client::new(
   headers~ : @model.Headers = @model.Headers::empty(),
   options~ : RequestOptions = RequestOptions::default(),
   timer? : &@clock.Timer,
-  retry~ : &RetryDecider = RetryPolicy::none(),
+  retry~ : RetryPolicy = RetryPolicy::none(),
   limiter~ : &RateLimiter = NoLimiter::new(),
   total_ms? : Int32,
   observer~ : (Attempt) -> Unit = _ => (),
@@ -91,10 +91,10 @@ fn timeout(ms : Int32) -> @model.TransportError {
 }
 
 ///|
-async fn[T] Client::exchange(
+async fn[T, M] Client::exchange(
   self : Client,
   request : @model.Request,
-  reader : ResponseAs[T],
+  reader : ResponsePlan[T, M],
   options : RequestOptions,
   received : Ref[@model.ResponseHead?],
 ) -> ReadResult[T] {
@@ -108,12 +108,7 @@ async fn[T] Client::exchange(
     raise timeout(ms)
   }
   let head = response.head()
-  let selected = (reader.select)(head)
-  if !selected.accept {
-    let body = error_excerpt(response.body)
-    (selected.reject)(head, body)
-    raise UnexpectedStatus(head, body~)
-  }
+  let selected = (reader.select)(head, reader.any_status)
   if selected.streaming {
     transferred = true
     return Streaming(response, selected)
@@ -127,25 +122,62 @@ async fn[T] Client::exchange(
 }
 
 ///|
-/// Sends with merged defaults and decodes the response. Accepted streaming
-/// callbacks run after the head exchange and own the body until they return.
-/// Cancellation is settled by errdefer; the catch reports the actual release
-/// error, which cannot be obtained in a cancellation-only cleanup.
+/// Sends a typed description through one executor. A total deadline needs a
+/// Timer so admission and user stream processing can actually be cancelled.
 #warnings("-fragile_catch_all")
-pub async fn[T] Client::send(
+pub async fn[T, M : ResponseMode] Client::send(
   self : Client,
-  request : ClientRequest[T],
+  request : RequestPlan[T, M],
+  decide_retry? : (AttemptResult[T], RetryContext) -> Decision,
+) -> Reply[T] {
+  let started = self.clock.now_unix_ms()
+  self.check_total(started)
+  match self.total_ms {
+    None => self.send_loop(request, started, decide_retry?)
+    Some(ms) => {
+      let timer = match self.timer {
+        Some(timer) => timer
+        None =>
+          raise InvalidRequest(message="a total deadline requires a Timer")
+      }
+      let result : Ref[Result[Reply[T], Error]?] = Ref(None)
+      // Capture ordinary failures as data across the Timer's noraise callback.
+      // Cancellation bypasses this catch and still unwinds the owned bodies.
+      let completed = timer.within(ms, () => {
+        result.val = Some(
+          Ok(self.send_loop(request, started, decide_retry?)) catch {
+            error => Err(error)
+          },
+        )
+      })
+      match result.val {
+        Some(Ok(reply)) => reply
+        Some(Err(error)) => raise error
+        None if !completed => raise timeout(ms)
+        None =>
+          raise InvalidRequest(
+            message="timer completed without running its callback",
+          )
+      }
+    }
+  }
+}
+
+///|
+#warnings("-fragile_catch_all")
+async fn[T, M : ResponseMode] Client::send_loop(
+  self : Client,
+  request : RequestPlan[T, M],
+  started : Int64,
+  decide_retry? : (AttemptResult[T], RetryContext) -> Decision,
 ) -> Reply[T] {
   let raw = self.prepare(request.raw)
   let defaults = {
     ..request.options(self.options),
-    body_deadline: !request.response_as.streaming,
+    body_deadline: !ResponseMode::may_stream(request.response_as.mode),
   }
-  let started = self.clock.now_unix_ms()
   let bucket = raw.attributes.get(rate_limit_bucket).unwrap_or("default")
   let exempt = raw.attributes.get(global_exempt).unwrap_or(false)
-  // A stream has no replay source even when a backend failed before taking
-  // it. Only an explicit factory can opt into rebuilding an outgoing body.
   let replayable = request.body_factory is Some(_) ||
     raw.body is (Empty | Bytes(_))
   for attempt = 0; ; attempt = attempt + 1 {
@@ -182,6 +214,8 @@ pub async fn[T] Client::send(
       ..defaults,
       timeout_ms: self.budget(defaults.timeout_ms, started),
     }
+    // This catch exists for release/observation and preserves exception identity.
+    // Only TransportError is later offered to retry policy.
     let outcome : Result[ReadResult[T], Error] = try {
       self.check_total(started)
       if options.timeout_ms is Some(ms) && ms <= 0 {
@@ -201,8 +235,6 @@ pub async fn[T] Client::send(
       held = Some(value)
     }
     releasing = true
-    // Do not retry an admission service's own release failure. In
-    // particular, retrying cannot repair a partly released admission.
     self.limiter.release(
       bucket,
       status=received.val.map(h => h.status).unwrap_or(0),
@@ -211,11 +243,7 @@ pub async fn[T] Client::send(
         .unwrap_or(@model.Headers::empty()),
     ) catch {
       error =>
-        // Preserve the exchange error on an already failing attempt, as in
-        // sdk-runtime. A release error only replaces a successful outcome.
-        if outcome is Err(_) {
-          ()
-        } else {
+        if outcome is Ok(_) {
           settled = true
           (self.observer)(
             attempt_info(
@@ -231,51 +259,11 @@ pub async fn[T] Client::send(
           raise error
         }
     }
-    match outcome {
-      Ok(value) => {
-        settled = true
-        (self.observer)(
-          attempt_info(
-            sent,
-            bucket,
-            attempt,
-            received.val,
-            self.clock.now_unix_ms() - attempt_started,
-            None,
-            None,
-          ),
-        )
-        let (body, response) = match value {
-          Buffered(body, response) => (body, response)
-          Streaming(response, selected) => {
-            defer response.close()
-            ((selected.read)(response.head(), response.body, options), response)
-          }
-        }
-        held = None
-        return {
-          status: response.status,
-          headers: response.headers,
-          body,
-          request: sent.head(),
-          attributes: response.attributes,
-        }
-      }
+    let event : AttemptResult[T] = match outcome {
+      Ok(Buffered(body, response)) => Buffered(reply_of(sent, body, response))
+      Ok(Streaming(response, _)) => StreamReady(response.head())
+      Err(@model.TransportError(..) as error) => TransportFailure(error)
       Err(error) => {
-        let context = RetryContext::new(
-          raw.head(),
-          idempotent=@model.is_idempotent(raw),
-          bucket~,
-          attempt~,
-          random=(self.random)(),
-          now_unix_ms=self.clock.now_unix_ms(),
-          remaining_ms?=self.remaining(started),
-          replayable~,
-        )
-        let decision = match self.retry.decide(error, context) {
-          Wait(_) if !replayable => @retry.Decision::Stop(NotReplayable)
-          decision => decision
-        }
         settled = true
         (self.observer)(
           attempt_info(
@@ -285,12 +273,76 @@ pub async fn[T] Client::send(
             received.val,
             self.clock.now_unix_ms() - attempt_started,
             Some(error),
-            Some(decision),
+            None,
           ),
         )
-        match decision {
-          Wait(ms) => self.clock.sleep(ms)
-          _ => raise error
+        raise error
+      }
+    }
+    let context = RetryContext::new(
+      raw.head(),
+      idempotent=@model.is_idempotent(raw),
+      replayable~,
+      bucket~,
+      attempt~,
+      random=(self.random)(),
+      now_unix_ms=self.clock.now_unix_ms(),
+      remaining_ms?=self.remaining(started),
+    )
+    let default_decision = self.retry.decide(event.http_outcome(), context)
+    let context = { ..context, default_decision, }
+    let proposed = match decide_retry {
+      Some(decide) => decide(event, context)
+      None => default_decision
+    }
+    let decision = self.guard_retry(proposed, context)
+    let error : Error? = match outcome {
+      Err(error) => Some(error)
+      _ => None
+    }
+    let observed_decision = if error is Some(_) ||
+      (received.val is Some(head) && !@model.is_success(head.status)) ||
+      decide_retry is Some(_) {
+      Some(decision)
+    } else {
+      None
+    }
+    settled = true
+    (self.observer)(
+      attempt_info(
+        sent,
+        bucket,
+        attempt,
+        received.val,
+        self.clock.now_unix_ms() - attempt_started,
+        error,
+        observed_decision,
+      ),
+    )
+    match decision {
+      Wait(ms) => {
+        if held is Some(value) {
+          discard(value)
+        }
+        held = None
+        self.clock.sleep(ms)
+      }
+      Stop(_) | Decision::.. => {
+        self.check_total(started)
+        match outcome {
+          Err(error) => raise error
+          Ok(Buffered(body, response)) => {
+            held = None
+            return reply_of(sent, body, response)
+          }
+          Ok(Streaming(response, selected)) => {
+            defer response.close()
+            // No retry boundary encloses this consumer, including its errors.
+            let body = (selected.read)(response.head(), response.body, options)
+            self.check_total(started)
+            held = None
+            return reply_of(sent, body, response)
+          }
         }
       }
     }
@@ -298,10 +350,47 @@ pub async fn[T] Client::send(
 }
 
 ///|
-async fn[T] Client::exchange_timed(
+fn Client::guard_retry(
+  self : Client,
+  proposed : Decision,
+  context : RetryContext,
+) -> Decision {
+  match proposed {
+    Stop(_) => proposed
+    Wait(_) if context.attempt >= self.retry.rule.max_retries => Stop(Exhausted)
+    Wait(_) if !context.replayable => Stop(NotReplayable)
+    Wait(ms) => {
+      let ms = ms.max(0)
+      if context.remaining_ms is Some(left) && ms.to_int64() >= left {
+        Stop(Budget(ms))
+      } else {
+        Wait(ms)
+      }
+    }
+    Decision::.. => Stop(NotRetryable)
+  }
+}
+
+///|
+fn[T] reply_of(
+  request : @model.Request,
+  body : T,
+  response : @model.Response,
+) -> Reply[T] {
+  {
+    status: response.status,
+    headers: response.headers,
+    body,
+    request: request.head(),
+    attributes: response.attributes,
+  }
+}
+
+///|
+async fn[T, M] Client::exchange_timed(
   self : Client,
   raw : @model.Request,
-  reader : ResponseAs[T],
+  reader : ResponsePlan[T, M],
   options : RequestOptions,
   received : Ref[@model.ResponseHead?],
 ) -> ReadResult[T] {
@@ -398,6 +487,7 @@ fn attempt_info(
 ) -> Attempt {
   {
     request: request.head(),
+    attributes: request.attributes,
     bucket,
     attempt,
     status: head.map(h => h.status).unwrap_or(0),
@@ -410,12 +500,16 @@ fn attempt_info(
 
 ///|
 /// Pairs a wire request with a UTF-8 string reader accepting successful statuses.
-pub fn request(raw : @model.Request) -> ClientRequest[String] {
+pub fn request(
+  raw : @model.Request,
+) -> ClientRequest[Result[String, ResponseFailure]] {
   ClientRequest::new(raw, as_string())
 }
 
 ///|
 /// Pairs a wire request with a UTF-8 string reader accepting every HTTP status.
-pub fn quick_request(raw : @model.Request) -> ClientRequest[String] {
+pub fn quick_request(
+  raw : @model.Request,
+) -> ClientRequest[Result[String, ResponseFailure]] {
   ClientRequest::new(raw, as_string().any_status())
 }

@@ -16,7 +16,8 @@ test {
 }
 ```
 
-`client.quick_request` returns a string body for any HTTP status. Other
-`ClientRequest[T]` readers keep their result type through `send`. Redirects are
+`client.quick_request` returns `Ok(string)` for any HTTP status. Other
+request readers keep their result and response mode through `send`. HTTP and
+decode failures are values; transport failures remain raised. Redirects are
 enabled by default; retries and cookies are not. The JS backend's fetch
 restrictions also apply here; see the backend package's platform notes.

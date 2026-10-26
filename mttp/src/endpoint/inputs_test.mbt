@@ -9,7 +9,10 @@ async fn[T] decoded(
   let endpoint = @endpoint.endpoint
     .post("/")
     .input(input)
-    .serve_public(value => result.val = Some(value))
+    .serve_public(value => {
+      result.val = Some(value)
+      Ok(())
+    })
   let context = @endpoint.DispatchContext::new(decode_failure=context => {
     failures.append(context.failures)
     @model.Response::new(400)
@@ -221,10 +224,14 @@ test "body mappings report decode failures and optional body encoding is reversi
     let called = Ref(false)
     let server = signed.serve(
       credentials => {
-        assert_eq(credentials, ("sig", b"signed"))
-        called.val = true
+        Ok(
+          {
+            assert_eq(credentials, ("sig", b"signed"))
+            called.val = true
+          },
+        )
       },
-      (_, _) => (),
+      (_, _) => Ok(()),
     )
     let req = signed.request(("sig", b"signed"), ()).raw()
     assert_eq(

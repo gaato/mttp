@@ -9,7 +9,7 @@ import {
 // Values
 pub fn verify(Array[@endpoint.EndpointDoc]) -> Array[@endpoint.DefinitionProblem]
 
-pub fn[S, I, E, O] when_endpoint(@testing.BackendStub, @endpoint.Endpoint[S, I, E, O], async (I) -> O) -> @testing.BackendStub raise @endpoint.DefinitionError
+pub fn[S, I, E, O, M] when_endpoint(@testing.BackendStub, @endpoint.Endpoint[S, I, E, O, M], async (I) -> Result[O, E]) -> @testing.BackendStub raise @endpoint.DefinitionError
 
 // Errors
 

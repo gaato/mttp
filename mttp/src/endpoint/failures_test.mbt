@@ -6,14 +6,16 @@ test "server bounds buffered streams records read failures and rejects reused st
     .post("/")
     .input(@endpoint.body(@schema.raw_bytes))
     .max_body_bytes(3)
-    .serve_public(_ => ())
+    .serve_public(_ => Ok(()))
   let streamed = @endpoint.endpoint
     .post("/")
     .input(@endpoint.stream_body())
     .serve_public(reader => {
-      while reader.read_some() is Some(_) {
+      Ok(
+        while reader.read_some() is Some(_) {
 
-      }
+        },
+      )
     })
   let contexts = []
   let ctx = @endpoint.DispatchContext::new(decode_failure=f => {
@@ -70,7 +72,7 @@ test "server bounds buffered streams records read failures and rejects reused st
       .post("/")
       .security(@endpoint.raw_body())
       .max_body_bytes(1)
-      .serve(_ => (), (_, _) => ())
+      .serve(_ => Ok(()), (_, _) => Ok(()))
     assert_eq(
       signed.dispatch(request.body_bytes(b"abc"), Map([]), ctx).status,
       400,
@@ -96,12 +98,15 @@ test "invalid requests excessive queries and issue lists are rejected before the
     @endpoint.query("a", @schema.int),
     @endpoint.query("b", @schema.int),
   )
-  let endpoint = @endpoint.endpoint.post("/").input(input).serve_public(_ => ())
+  let endpoint = @endpoint.endpoint
+    .post("/")
+    .input(input)
+    .serve_public(_ => Ok(()))
   @driver.run_sync(() => {
     let bounded = @endpoint.endpoint
       .post("/")
       .input(@endpoint.query_params())
-      .serve_public(_ => ())
+      .serve_public(_ => Ok(()))
     assert_eq(
       bounded.dispatch(
         @model.Request::post("/?" + Array::make(256, "q=1").join("&")),
@@ -140,7 +145,7 @@ test "custom body stages without metadata still receive bounded body failures" {
     .post("/")
     .input(input)
     .max_body_bytes(0)
-    .serve_public(_ => ())
+    .serve_public(_ => Ok(()))
   let failures = []
   let ctx = @endpoint.DispatchContext::new(decode_failure=f => {
     failures.append(f.failures)
@@ -189,7 +194,7 @@ test "security decoding and authentication errors use their correct stage and po
   let endpoint = @endpoint.endpoint
     .post("/")
     .security(custom)
-    .serve(_ => (), (_, _) => ())
+    .serve(_ => Ok(()), (_, _) => Ok(()))
   @driver.run_sync(() => {
     assert_eq(
       endpoint.dispatch(@model.Request::post("/"), Map([]), ctx).status,
@@ -198,7 +203,7 @@ test "security decoding and authentication errors use their correct stage and po
     let auth = @endpoint.endpoint
       .get("/")
       .security(@endpoint.bearer())
-      .serve(_ => raise Failure("auth failed"), (_ : Unit, _) => ())
+      .serve(_ => raise Failure("auth failed"), (_ : Unit, _) => Ok(()))
     assert_eq(
       auth.dispatch(
         @model.Request::get("/").header("authorization", "Bearer token"),
@@ -253,7 +258,7 @@ test "output status validation and bodyless statuses are enforced by the interpr
       let endpoint = @endpoint.endpoint
         .get("/")
         .output(@endpoint.text_out().and_status())
-        .serve_public(_ => ("body", status))
+        .serve_public(_ => Ok(("body", status)))
       let response = endpoint.dispatch(
         @model.Request::get("/"),
         Map([]),
@@ -269,11 +274,11 @@ test "output status validation and bodyless statuses are enforced by the interpr
       )
       assert_eq(response.body, @model.Empty)
     }
-    let empty : @endpoint.Out[Unit] = @endpoint.one_of([])
+    let empty : @endpoint.Out[Unit, @client.Buffered] = @endpoint.one_of([])
     let endpoint = @endpoint.endpoint
       .get("/")
       .output(empty)
-      .serve_public(_ => ())
+      .serve_public(_ => Ok(()))
     assert_eq(
       endpoint.dispatch(
         @model.Request::get("/"),
@@ -293,9 +298,11 @@ test "failed event producers close their sources and in-flight request bodies" {
     .post("/")
     .output(@endpoint.sse_out(@schema.jint))
     .serve_public(_ => {
-      @endpoint.EventStream::from_pull(() => raise Failure("producer"), () => {
-        closed.val += 1
-      })
+      Ok(
+        @endpoint.EventStream::from_pull(() => raise Failure("producer"), () => {
+          closed.val += 1
+        }),
+      )
     })
   driver.run(() => {
     let source = @feed.Feed::bytes(driver, [b"request"])

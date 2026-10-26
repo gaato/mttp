@@ -75,7 +75,7 @@ test "client merges defaults and per-field overrides" {
     .body_fn(() => b"built")
     .response(@client.as_string())
   let reply = d.run(() => client.send(request))
-  assert_eq(reply.body, "ok")
+  assert_eq(reply.body, Ok("ok"))
   assert_eq(reply.request.url, "https://h/v1/items")
   assert_eq(seen[0].0.headers.get("accept"), Some("own"))
   assert_eq(seen[0].0.headers.get_all("x"), ["1", "2"])
@@ -102,7 +102,7 @@ test "head selection runs once and any-status permits rejection statuses" {
     choices += 1
     heads.push(head.status)
     @client.as_string().any_status()
-  }).map_with_head((body, head) => "\{head.status}:\{body}")
+  }).map_with_head((body, head) => "\{head.status}:\{body.unwrap()}")
   let result = d.run(() => {
     client.send(@client.request(@model.Request::get("/")).response(reader))
   })
@@ -123,20 +123,14 @@ test "unexpected statuses retain at most one MiB and close streams" {
     }),
     @fake.SimClock::new(d),
   )
-  let failed = try {
-    let _ = d.run(() => client.send(@client.request(@model.Request::get("/"))))
-    false
-  } catch {
-    error =>
-      match error {
-        @client.UnexpectedStatus(head, body~) => {
-          assert_eq(head.status, 503)
-          assert_eq(@client.status_of(error), Some(503))
-          assert_eq(body.length(), @client.max_error_body)
-          true
-        }
-        _ => false
-      }
+  let failed = match d.run(() => client.send(@client.get("/"))).body {
+    Err(@client.UnexpectedStatus(head, body~) as error) => {
+      assert_eq(head.status, 503)
+      assert_eq(@client.status_of(error), Some(503))
+      assert_eq(body.length(), @client.max_error_body)
+      true
+    }
+    _ => false
   }
   assert_true(failed)
   assert_eq(source.closes(), 1)
@@ -150,23 +144,17 @@ test "JSON readers classify syntax UTF-8 and type failures" {
       @client.from_handler(_ => @model.Response::new(200, body=Bytes(bytes))),
       clock,
     )
-    let request : @client.ClientRequest[Int32] = @client.request(
+    let request : @client.ClientRequest[Result[Int32, @client.ResponseFailure]] = @client.request(
       @model.Request::get("/"),
     ).response(@client.as_json())
-    let failed = try {
-      let _ = @driver.run_sync(() => client.send(request))
-      false
-    } catch {
-      error =>
-        match error {
-          @client.Deserialization(head, body~, ..) => {
-            assert_eq(head.status, 200)
-            assert_eq(body, bytes)
-            assert_eq(@client.status_of(error), Some(200))
-            true
-          }
-          _ => false
-        }
+    let failed = match @driver.run_sync(() => client.send(request)).body {
+      Err(@client.Deserialization(head, body~, ..) as error) => {
+        assert_eq(head.status, 200)
+        assert_eq(body, bytes)
+        assert_eq(@client.status_of(error), Some(200))
+        true
+      }
+      _ => false
     }
     assert_true(failed)
   }
@@ -182,13 +170,12 @@ test "JSON readers classify syntax UTF-8 and type failures" {
         ),
       )
     }).body,
-    Json::number(42),
+    Ok(Json::number(42)),
   )
-  let request : @client.ClientRequest[Int32] = @client.request(
+  let request : @client.ClientRequest[Result[Int32, @client.ResponseFailure]] = @client.request(
     @model.Request::get("/"),
   ).response(@client.as_json())
-  assert_eq(@driver.run_sync(() => client.send(request)).body, 42)
-  assert_eq(@client.status_of(@client.InvalidRequest(message="bad")), None)
+  assert_eq(@driver.run_sync(() => client.send(request)).body, Ok(42))
 }
 
 ///|
@@ -203,7 +190,7 @@ test "stream callbacks close on error and accepted streams disable body deadline
     }),
     @fake.SimClock::new(d),
   )
-  let request : @client.ClientRequest[Unit] = @client.request(
+  let request : @client.StreamRequest[Result[Unit, @client.ResponseFailure]] = @client.request(
     @model.Request::get("/"),
   ).response(
     @client.as_stream((_, stream) => {

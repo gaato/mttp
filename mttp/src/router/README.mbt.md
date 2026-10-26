@@ -9,7 +9,7 @@ not fall through to a less specific route.
 ///|
 test "in-process router example" {
   let endpoint = @endpoint.endpoint.get("/hello").output(@endpoint.text_out())
-  let router = @router.Router::new([endpoint.serve_public(_ => "hello")])
+  let router = @router.Router::new([endpoint.serve_public(_ => Ok("hello"))])
   @driver.run_sync(() => {
     let response = router.dispatch(@model.Request::get("/hello"))
     assert_eq(response.body, @model.Bytes(b"hello"))

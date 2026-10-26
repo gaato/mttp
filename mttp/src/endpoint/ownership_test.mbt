@@ -42,7 +42,7 @@ test "rejected heads close unread bodies and limits survive caught read errors" 
     .input(@endpoint.stream_body())
     .max_body_bytes(3)
   let server = endpoint.serve_public(reader => {
-    ignore(reader.read_some() catch { _ => None })
+    Ok(ignore(reader.read_some() catch { _ => None }))
   })
   let failures = []
   let ctx = @endpoint.DispatchContext::new(decode_failure=f => {
@@ -103,14 +103,16 @@ test "request ownership lasts until the streamed response closes" {
     .input(@endpoint.stream_body())
     .output(@endpoint.sse_out(@schema.jint))
   let server = endpoint.serve_public(reader => {
-    @endpoint.EventStream::from_pull(
-      () => {
-        match reader.read_some() {
-          Some(bytes) => Some(bytes.length())
-          None => None
-        }
-      },
-      () => reader.close(),
+    Ok(
+      @endpoint.EventStream::from_pull(
+        () => {
+          match reader.read_some() {
+            Some(bytes) => Some(bytes.length())
+            None => None
+          }
+        },
+        () => reader.close(),
+      ),
     )
   })
   @driver.run_sync(() => {

@@ -11,9 +11,9 @@ gaato/mttp-net/codings	wasm-gc	32
 gaato/mttp-net	native	1
 gaato/mttp-net	wasm	1
 gaato/mttp-net	js	1
-gaato/mttp-net/runtime	native	16
-gaato/mttp-net/runtime	wasm	16
-gaato/mttp-net/runtime	js	16
+gaato/mttp-net/runtime	native	20
+gaato/mttp-net/runtime	wasm	20
+gaato/mttp-net/runtime	js	20
 gaato/mttp-net/quick	native	2
 gaato/mttp-net/quick	wasm	2
 gaato/mttp-net/quick	js	2

@@ -4,8 +4,8 @@ test "literal routes win without falling through and HEAD OPTIONS are automatic"
     .get("/items/{id}")
     .input(@endpoint.path("id", @schema.string))
     .output(@endpoint.json_out(@schema.text_body))
-    .serve_public(id => id)
-  let literal = @endpoint.endpoint.post("/items/new").serve_public(_ => ())
+    .serve_public(id => Ok(id))
+  let literal = @endpoint.endpoint.post("/items/new").serve_public(_ => Ok(()))
   let router = @router.Router::new([dynamic, literal])
   @driver.run_sync(() => {
     assert_eq(router.dispatch(@model.Request::get("/items/new")).status, 405)
@@ -36,7 +36,10 @@ test "definition checks refuse ambiguous routes and repeated operation IDs" {
     .input(@endpoint.path("other", @schema.string))
   let refused = try {
     ignore(
-      @router.Router::new([a.serve_public(_ => ()), b.serve_public(_ => ())]),
+      @router.Router::new([
+        a.serve_public(_ => Ok(())),
+        b.serve_public(_ => Ok(())),
+      ]),
     )
     false
   } catch {
@@ -69,7 +72,7 @@ test "router backend strips local attributes and enforces closed state" {
     .get("/ip")
     .input(@endpoint.attribute(@model.remote_addr))
     .output(@endpoint.json_out(@schema.text_body))
-    .serve_public(address => address.unwrap_or("missing")),
+    .serve_public(address => Ok(address.unwrap_or("missing"))),
   ])
   @driver.run_sync(() => {
     let request = @model.Request::get("/ip").attribute(
@@ -97,12 +100,12 @@ test "exact paths outrank empty rests regardless of route registration order" {
   let exact = @endpoint.endpoint
     .get("/a")
     .output(@endpoint.text_out())
-    .serve_public(_ => "exact")
+    .serve_public(_ => Ok("exact"))
   let rest = @endpoint.endpoint
     .get("/a/{tail...}")
     .input(@endpoint.paths("tail"))
     .output(@endpoint.text_out())
-    .serve_public(_ => "rest")
+    .serve_public(_ => Ok("rest"))
   for endpoints in [[exact, rest], [rest, exact]] {
     let router = @router.Router::new(endpoints)
     assert_eq(router.docs().length(), 2)
@@ -140,7 +143,7 @@ test "authentication failures are opaque with a challenge" {
     @endpoint.endpoint
     .get("/private")
     .security(@endpoint.bearer())
-    .serve(_ => (), (_, _) => ()),
+    .serve(_ => Ok(()), (_, _) => Ok(())),
   ])
   @driver.run_sync(() => {
     let response = router.dispatch(@model.Request::get("/private"))

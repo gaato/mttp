@@ -10,25 +10,15 @@ test "dynamic body outputs require a content type and cookie outputs require one
     .get("/")
     .output(@endpoint.text_out().set_cookie("id"))
   @driver.run_sync(() => {
-    let refused = try {
-      ignore(dynamic.call(client, (), ()))
-      false
-    } catch {
-      @client.Deserialization(_, ..) => true
-      _ => false
-    }
+    let refused = dynamic.call(client, (), ())
+      is Err(@client.Deserialization(_, ..))
     assert_true(refused)
     response.val = {
       ..response.val,
       headers: @model.Headers::of([("content-type", "text/plain")]),
     }
-    let refused = try {
-      ignore(cookies.call(client, (), ()))
-      false
-    } catch {
-      @client.Deserialization(_, ..) => true
-      _ => false
-    }
+    let refused = cookies.call(client, (), ())
+      is Err(@client.Deserialization(_, ..))
     assert_true(refused)
   })
   client.close()
@@ -42,7 +32,7 @@ test "streaming metadata roundtrips dynamic status cookies and typed header fail
     .and_header("x-count", @schema.int)
   let ep = @endpoint.endpoint.get("/").output(output)
   let server = ep.serve_public(_ => {
-    (((@endpoint.EventStream::from_array([7]), 202), "value; Secure"), 3)
+    Ok((((@endpoint.EventStream::from_array([7]), 202), "value; Secure"), 3))
   })
   let headers = Ref(@model.Headers::empty())
   let corrupt = Ref(false)
@@ -62,7 +52,8 @@ test "streaming metadata roundtrips dynamic status cookies and typed header fail
     @fake.FakeClock::new(),
   )
   @driver.run_sync(() => {
-    ep.call_with(client, (), (), value => {
+    ep
+    .call_with(client, (), (), value => {
       assert_eq(value.1, 3)
       assert_eq(value.0.1, "value; Secure")
       assert_eq(value.0.0.1, 202)
@@ -70,6 +61,8 @@ test "streaming metadata roundtrips dynamic status cookies and typed header fail
       value.0.0.0.each(event => events.push(event))
       assert_eq(events, [7])
     })
+    .unwrap()
+    .unwrap()
     corrupt.val = true
     for
       fields in [
@@ -84,13 +77,8 @@ test "streaming metadata roundtrips dynamic status cookies and typed header fail
       headers.val = @model.Headers::of(
         [("content-type", "text/event-stream"), ..fields],
       )
-      let refused = try {
-        ep.call_with(client, (), (), _ => ())
-        false
-      } catch {
-        @client.Deserialization(_, ..) => true
-        _ => false
-      }
+      let refused = ep.call_with(client, (), (), _ => ())
+        is Err(@client.Deserialization(_, ..))
       assert_true(refused)
     }
   })
@@ -116,7 +104,7 @@ test "nested output projections preserve their inner selection and dynamic statu
   @driver.run_sync(() => {
     for (value, expected) in [((1, 201), 201), ((-1, 201), 400)] {
       let response = ep
-        .serve_public(_ => value)
+        .serve_public(_ => Ok(value))
         .dispatch(
           @model.Request::get("/"),
           Map([]),
@@ -151,27 +139,18 @@ test "buffered variants try matching decoders in order and reject unknown repres
     @fake.FakeClock::new(),
   )
   @driver.run_sync(() => {
-    assert_eq(ep.call(client, (), ()), 1)
-    assert_eq(ep.call_with(client, (), (), value => value + 1), 2)
+    assert_eq(ep.call(client, (), ()).unwrap().unwrap(), 1)
+    assert_eq(
+      ep.call_with(client, (), (), value => value + 1).unwrap().unwrap(),
+      2,
+    )
     response.val = { ..response.val, body: @model.Bytes(b"bad"), }
-    let failed = try {
-      ignore(ep.call(client, (), ()))
-      false
-    } catch {
-      @client.Deserialization(_, ..) => true
-      _ => false
-    }
+    let failed = ep.call(client, (), ()) is Err(@client.Deserialization(_, ..))
     assert_true(failed)
     response.val = @model.Response::new(200)
-    let failed = try {
-      ignore(ep.call(client, (), ()))
-      false
-    } catch {
-      @client.UnexpectedStatus(_, ..) => true
-      _ => false
-    }
+    let failed = ep.call(client, (), ()) is Err(@client.UnexpectedStatus(_, ..))
     assert_true(failed)
-    let server = ep.serve_public(_ => 12)
+    let server = ep.serve_public(_ => Ok(12))
     assert_eq(
       server.dispatch(
         @model.Request::get("/"),
@@ -187,7 +166,7 @@ test "buffered variants try matching decoders in order and reject unknown repres
           @endpoint.empty_variant(200).fixed_header("x-fixed", "yes"),
         ]),
       )
-      .serve_public(_ => ())
+      .serve_public(_ => Ok(()))
     assert_eq(
       fixed.dispatch(
         @model.Request::get("/"),
@@ -223,30 +202,20 @@ test "typed response headers fail when absent or malformed" {
         response.val.headers.add("x-int", "bad"),
       ] {
       response.val = { ..response.val, headers, }
-      let failed = try {
-        ignore(ep.call(client, (), ()))
-        false
-      } catch {
-        @client.Deserialization(_, ..) => true
-        _ => false
-      }
+      let failed = ep.call(client, (), ())
+        is Err(@client.Deserialization(_, ..))
       assert_true(failed)
     }
     let no_body = @endpoint.endpoint.get("/").output(@endpoint.no_content())
     response.val = @model.Response::new(204)
-    no_body.call(client, (), ())
-    no_body.call_with(client, (), (), _ => ())
+    no_body.call(client, (), ()).unwrap().unwrap()
+    no_body.call_with(client, (), (), _ => ()).unwrap().unwrap()
     response.val = @model.Response::new(
       204,
       headers=@model.Headers::of([("content-type", "text/plain")]),
     )
-    let failed = try {
-      no_body.call(client, (), ())
-      false
-    } catch {
-      @client.UnexpectedStatus(_, ..) => true
-      _ => false
-    }
+    let failed = no_body.call(client, (), ())
+      is Err(@client.UnexpectedStatus(_, ..))
     assert_true(failed)
   })
   client.close()
@@ -269,41 +238,28 @@ test "SSE malformed payloads and missing streaming headers close sources" {
     @fake.FakeClock::new(),
   )
   @driver.run_sync(() => {
-    let failed = try {
-      ep.call_with(client, (), (), value => value.0.each(_ => ()))
-      false
-    } catch {
-      @client.Deserialization(_, ..) => true
-      _ => false
-    }
+    let failed = ep.call_with(client, (), (), value => value.0.each(_ => ()))
+      is Err(@client.Deserialization(_, ..))
     assert_true(failed)
     response.val = {
       ..response.val,
       headers: response.val.headers.add("x-int", "1"),
     }
-    ep.call_with(client, (), (), value => {
+    ep
+    .call_with(client, (), (), value => {
       assert_eq(value.1, 1)
       value.0.each(value => assert_eq(value, 1))
     })
+    .unwrap()
+    .unwrap()
     for bytes in [b"data: invalid\n\n", b"data: \"text\"\n\n"] {
       response.val = { ..response.val, body: @model.Bytes(bytes), }
-      let failed = try {
-        ep.call_with(client, (), (), value => value.0.each(_ => ()))
-        false
-      } catch {
-        @client.Deserialization(_, ..) => true
-        _ => false
-      }
+      let failed = ep.call_with(client, (), (), value => value.0.each(_ => ()))
+        is Err(@client.Deserialization(_, ..))
       assert_true(failed)
+      // Stream-only request rejection is checked by negative type fixtures.
+
     }
-    let buffered = try {
-      ignore(ep.call(client, (), ()))
-      false
-    } catch {
-      @client.Deserialization(_, ..) => true
-      _ => false
-    }
-    assert_true(buffered)
   })
   client.close()
 }
@@ -336,7 +292,7 @@ test "event streams close once after callbacks fail and custom event metadata is
         retry: Some(100),
       }),
     )
-    .serve_public(_ => @endpoint.EventStream::from_array([1]))
+    .serve_public(_ => Ok(@endpoint.EventStream::from_array([1])))
   @driver.run_sync(() => {
     let response = endpoint.dispatch(
       @model.Request::get("/"),

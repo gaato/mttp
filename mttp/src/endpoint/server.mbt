@@ -177,8 +177,8 @@ async fn read_body(
 }
 
 ///|
-fn[S, I, E, O, P] Endpoint::pipeline(
-  self : Endpoint[S, I, E, O],
+fn[S, I, E, O, P, M] Endpoint::pipeline(
+  self : Endpoint[S, I, E, O, M],
   authenticate : async (@model.Request, DispatchContext, S) -> Result[
     P,
     @model.Response,
@@ -328,14 +328,23 @@ fn[S, I, E, O, P] Endpoint::pipeline(
     let value = (input.finish)(body) catch {
       InputErrors(fs) => return failure(Body, fs)
     }
-    let response = logic(req, ctx, principal, value)
+    // Input read failures take precedence even if user logic propagated the
+    // read exception. Preserve unrelated exceptions for the server policy.
+    let outcome = Ok(logic(req, ctx, principal, value)) catch {
+      error => Err(error)
+    }
     if stream_failure.val is Some(error) {
-      response.close()
+      if outcome is Ok(response) {
+        response.close()
+      }
       return failure(Body, [
         InputFailure::new(body_atom(self.input.atoms), error),
       ])
     }
-    response
+    match outcome {
+      Ok(response) => response
+      Err(error) => raise error
+    }
   }
   {
     doc,
@@ -348,38 +357,38 @@ fn[S, I, E, O, P] Endpoint::pipeline(
 }
 
 ///|
-fn[E] Errors::respond(
-  self : Errors[E],
+fn[E] respond_error(
+  out : Out[E, @client.Buffered],
   req : @model.Request,
-  error : Error,
+  error : E,
   ctx : DispatchContext,
 ) -> @model.Response {
-  match (self.classify)(error) {
-    Some(declared) =>
-      self.out
-      .encode(declared)
-      .unwrap_or_else(() => (ctx.unhandled)(req, error))
-    None => (ctx.unhandled)(req, error)
-  }
+  out
+  .encode(error)
+  .unwrap_or_else(() => {
+    (ctx.unhandled)(req, Failure("no declared error variant matched"))
+  })
 }
 
 ///|
 /// Interprets an endpoint with credentials first, then regular inputs and the
 /// handler. Declared errors use their variants; other errors use server policy.
-pub fn[S, I, E, O, P] Endpoint::serve(
-  self : Endpoint[S, I, E, O],
-  authenticate : async (S) -> P,
-  handle : async (P, I) -> O,
+pub fn[S, I, E, O, P, M] Endpoint::serve(
+  self : Endpoint[S, I, E, O, M],
+  authenticate : async (S) -> Result[P, E],
+  handle : async (P, I) -> Result[O, E],
 ) -> ServerEndpoint {
   self.pipeline(
     (req, ctx, security) => {
-      Ok(authenticate(security)) catch {
-        error => Err(self.errors.respond(req, error, ctx))
+      match authenticate(security) {
+        Ok(principal) => Ok(principal)
+        Err(error) => Err(respond_error(self.errors, req, error, ctx))
       }
     },
     (req, ctx, principal, input) => {
-      let value = handle(principal, input) catch {
-        error => return self.errors.respond(req, error, ctx)
+      let value = match handle(principal, input) {
+        Ok(value) => value
+        Err(error) => return respond_error(self.errors, req, error, ctx)
       }
       self.output
       .encode(value)
@@ -392,9 +401,9 @@ pub fn[S, I, E, O, P] Endpoint::serve(
 
 ///|
 /// Interprets an endpoint with no security input.
-pub fn[I, E, O] Endpoint::serve_public(
-  self : Endpoint[Unit, I, E, O],
-  handle : async (I) -> O,
+pub fn[I, E, O, M] Endpoint::serve_public(
+  self : Endpoint[Unit, I, E, O, M],
+  handle : async (I) -> Result[O, E],
 ) -> ServerEndpoint {
-  self.serve(_ => (), (_, input) => handle(input))
+  self.serve(_ => Ok(()), (_, input) => handle(input))
 }

@@ -95,15 +95,28 @@ pub fn from_handler(handler : @model.Handler) -> &Backend {
 }
 
 ///|
-/// Response failures preserve metadata and a bounded body for diagnostics.
-pub(all) suberror ResponseError {
+/// A received response could not be interpreted as the requested value.
+/// Transport failures remain raised TransportErrors.
+pub(all) enum ResponseFailure {
   UnexpectedStatus(@model.ResponseHead, body~ : Bytes)
   Deserialization(@model.ResponseHead, message~ : String, body~ : Bytes)
-} derive(Debug)
+} derive(Eq, Debug)
 
 ///|
 /// Formats response failures for diagnostics.
-pub extend ResponseError with @debug.Debug::{to_repr}
+pub extend ResponseFailure with @debug.Debug::{to_repr}
+
+///|
+/// Compares response interpretation failures.
+pub extend ResponseFailure with Eq::{equal, not_equal}
+
+///|
+/// Returns the received response metadata.
+pub fn ResponseFailure::head(self : ResponseFailure) -> @model.ResponseHead {
+  match self {
+    UnexpectedStatus(head, ..) | Deserialization(head, ..) => head
+  }
+}
 
 ///|
 /// A request encoder rejected input before anything was sent.
@@ -116,12 +129,9 @@ pub(all) suberror InvalidRequest {
 pub extend InvalidRequest with @debug.Debug::{to_repr}
 
 ///|
-/// Extracts the HTTP status of a response failure, otherwise None.
-pub fn status_of(error : Error) -> Int32? {
-  match error {
-    UnexpectedStatus(head, ..) | Deserialization(head, ..) => Some(head.status)
-    _ => None
-  }
+/// Returns Some of the received HTTP status for a response failure.
+pub fn status_of(error : ResponseFailure) -> Int32? {
+  Some(error.head().status)
 }
 
 ///|

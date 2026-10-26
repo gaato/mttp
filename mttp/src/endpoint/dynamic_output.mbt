@@ -2,8 +2,11 @@
 /// Pairs outputs with a runtime HTTP status. The client returns the received
 /// status; API documentation uses a default response. Invalid status values
 /// use the server's unhandled-error policy.
-pub fn[T] Out::and_status(self : Out[T]) -> Out[(T, Int32)] {
-  { variants: self.variants.map(variant => variant.and_status()), }
+pub fn[T, M] Out::and_status(self : Out[T, M]) -> Out[(T, Int32), M] {
+  {
+    mode: self.mode,
+    variants: self.variants.map(variant => variant.and_status()),
+  }
 }
 
 ///|
@@ -33,7 +36,9 @@ pub fn[T] Variant::and_status(self : Variant[T]) -> Variant[(T, Int32)] {
 ///|
 /// A buffered response whose content type is computed with its bytes, for
 /// example a multipart reply carrying a generated boundary parameter.
-pub fn body_out(status~ : Int32 = 200) -> Out[(String, Bytes)] {
+pub fn body_out(
+  status~ : Int32 = 200,
+) -> Out[(String, Bytes), @client.Buffered] {
   let variant : Variant[(String, Bytes)] = {
     status,
     status_of: None,
@@ -49,17 +54,13 @@ pub fn body_out(status~ : Int32 = 200) -> Out[(String, Bytes)] {
     },
     decode_bytes: Some((head, bytes) => {
       guard head.headers.get("content-type") is Some(media_type) else {
-        raise @client.Deserialization(
-          head,
-          message="missing content-type",
-          body=bytes,
-        )
+        raise DecodeError(head, message="missing content-type", body=bytes)
       }
       (media_type, bytes)
     }),
     decode_stream: None,
   }
-  { variants: [variant], }
+  { mode: @client.Buffered::{ }, variants: [variant], }
 }
 
 ///|
@@ -67,7 +68,9 @@ pub fn body_out(status~ : Int32 = 200) -> Out[(String, Bytes)] {
 /// body. Server encoding transfers body ownership without concatenating it.
 /// `call` buffers within the client's limit; `call_with` borrows a stream only
 /// for the callback's lifetime, which ends by closing that stream.
-pub fn stream_body_out(status~ : Int32 = 200) -> Out[(String?, @model.Body)] {
+pub fn stream_body_out(
+  status~ : Int32 = 200,
+) -> Out[(String?, @model.Body), @client.Buffered] {
   let variant : Variant[(String?, @model.Body)] = {
     status,
     status_of: None,
@@ -95,14 +98,17 @@ pub fn stream_body_out(status~ : Int32 = 200) -> Out[(String?, @model.Body)] {
       )
     }),
   }
-  { variants: [variant], }
+  { mode: @client.Buffered::{ }, variants: [variant], }
 }
 
 ///|
 /// Adds a named Set-Cookie field. The paired string is the value and optional
 /// attributes (for example `abc; Secure; HttpOnly`); callers supply valid cookie
 /// syntax. Unlike ordinary headers, repeated Set-Cookie fields stay separate.
-pub fn[T] Out::set_cookie(self : Out[T], name : String) -> Out[(T, String)] {
+pub fn[T, M] Out::set_cookie(
+  self : Out[T, M],
+  name : String,
+) -> Out[(T, String), M] {
   let codec = @schema.TextCodec::new(
     raw => {
       guard raw.has_prefix(name + "=") else { raise mismatch("named cookie") }
@@ -112,6 +118,7 @@ pub fn[T] Out::set_cookie(self : Out[T], name : String) -> Out[(T, String)] {
     @schema.string.schema(),
   )
   {
+    mode: self.mode,
     variants: self.variants.map(variant => {
       let paired = variant.and_header("set-cookie", codec)
       let select = (head : @model.ResponseHead) => {
@@ -119,13 +126,15 @@ pub fn[T] Out::set_cookie(self : Out[T], name : String) -> Out[(T, String)] {
           .get_all("set-cookie")
           .filter(raw => raw.has_prefix(name + "="))
         guard values is [raw] else {
-          raise @client.Deserialization(
+          raise DecodeError(
             head,
             message="missing or repeated cookie " + name,
             body=b"",
           )
         }
-        codec.decode(raw)
+        codec.decode(raw) catch {
+          error => raise DecodeError(head, message=error.message(), body=b"")
+        }
       }
       {
         ..paired,

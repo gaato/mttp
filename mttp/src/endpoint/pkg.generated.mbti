@@ -24,9 +24,9 @@ pub fn bearer(scheme_name? : String) -> Input[String]
 
 pub fn[T] body(@schema.BodyCodec[T]) -> Input[T]
 
-pub fn body_out(status? : Int32) -> Out[(String, Bytes)]
+pub fn body_out(status? : Int32) -> Out[(String, Bytes), @client.Buffered]
 
-pub fn bytes_out(status? : Int32) -> Out[Bytes]
+pub fn bytes_out(status? : Int32) -> Out[Bytes, @client.Buffered]
 
 pub fn check_definitions(Array[EndpointDoc]) -> Array[DefinitionProblem]
 
@@ -36,21 +36,21 @@ pub fn[T] cookie(String, @schema.TextCodec[T]) -> Input[T]
 
 pub fn empty_variant(Int32, description? : String) -> Variant[Unit]
 
-pub let endpoint : Endpoint[Unit, Unit, NoError, Unit]
+pub let endpoint : Endpoint[Unit, Unit, NoError, Unit, @client.Buffered]
 
 pub fn[T] header(String, @schema.TextCodec[T]) -> Input[T]
 
 pub fn headers() -> Input[@model.Headers]
 
-pub fn[T] json_out(@schema.BodyCodec[T], status? : Int32) -> Out[T]
+pub fn[T] json_out(@schema.BodyCodec[T], status? : Int32) -> Out[T, @client.Buffered]
 
 pub fn[T] json_variant(Int32, @schema.BodyCodec[T], description? : String) -> Variant[T]
 
 pub fn last_event_id() -> Input[String?]
 
-pub fn no_content() -> Out[Unit]
+pub fn no_content() -> Out[Unit, @client.Buffered]
 
-pub fn[T] one_of(Array[Variant[T]]) -> Out[T]
+pub fn[T] one_of(Array[Variant[T]]) -> Out[T, @client.Buffered]
 
 pub fn[A, B] pair(Input[A], Input[B]) -> Input[(A, B)]
 
@@ -70,13 +70,13 @@ pub let route_template : @model.AttributeKey[String]
 
 pub fn signature_header(String) -> Input[String]
 
-pub fn[T] sse_out(@schema.JsonCodec[T], to_event? : (T) -> @sse.SseEvent) -> Out[EventStream[T]]
+pub fn[T] sse_out(@schema.JsonCodec[T], to_event? : (T) -> @sse.SseEvent) -> Out[EventStream[T], @client.Streaming]
 
 pub fn stream_body(media_type? : String) -> Input[&@model.BodyStream]
 
-pub fn stream_body_out(status? : Int32) -> Out[(String?, @model.Body)]
+pub fn stream_body_out(status? : Int32) -> Out[(String?, @model.Body), @client.Buffered]
 
-pub fn text_out(status? : Int32) -> Out[String]
+pub fn text_out(status? : Int32) -> Out[String, @client.Buffered]
 
 pub fn unit() -> Input[Unit]
 
@@ -89,9 +89,6 @@ pub fn DefinitionError::to_repr(Self) -> @debug.Repr
 pub(all) suberror InputErrors {
   InputErrors(Array[InputFailure])
 }
-
-pub(all) suberror NoError derive(@debug.Debug)
-pub fn NoError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
 pub struct Atom {
@@ -142,35 +139,36 @@ pub(all) struct DispatchContext {
 }
 pub fn DispatchContext::new(max_body_bytes? : Int32, max_issues? : Int32, decode_failure? : (FailureContext) -> @model.Response, unhandled? : (@model.Request, Error) -> @model.Response) -> Self
 
-pub struct Endpoint[S, I, E, O] {
+pub struct Endpoint[S, I, E, O, M] {
   // private fields
 }
-pub async fn[S, I, E : Error, O] Endpoint::call(Self[S, I, E, O], @client.Client, S, I) -> O
-pub async fn[S, I, E : Error, O, R] Endpoint::call_with(Self[S, I, E, O], @client.Client, S, I, async (O) -> R) -> R
-pub fn[S, I, E, O] Endpoint::delete(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::deprecated(Self[S, I, E, O], deprecated? : Bool) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::description(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::doc(Self[S, I, E, O]) -> EndpointDoc
-pub fn[S, I, O, E2] Endpoint::errors(Self[S, I, NoError, O], Errors[E2]) -> Self[S, I, E2, O]
-pub fn[S, I, E, O] Endpoint::get(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::head(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, E, O, I2] Endpoint::input(Self[S, Unit, E, O], Input[I2]) -> Self[S, I2, E, O]
-pub fn[S, I, E, O] Endpoint::max_body_bytes(Self[S, I, E, O], Int32) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::operation_id(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::options(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O2] Endpoint::output(Self[S, I, E, Unit], Out[O2]) -> Self[S, I, E, O2]
-pub fn[S, I, E, O] Endpoint::patch(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::path(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::post(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::put(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::rate_limit_bucket(Self[S, I, E, O], (@model.Request) -> String) -> Self[S, I, E, O]
-pub fn[S, I, E : Error, O] Endpoint::request(Self[S, I, E, O], S, I) -> @client.ClientRequest[O] raise @client.InvalidRequest
-pub fn[I, E, O, S2] Endpoint::security(Self[Unit, I, E, O], Input[S2]) -> Self[S2, I, E, O]
-pub fn[S, I, E, O, P] Endpoint::serve(Self[S, I, E, O], async (S) -> P, async (P, I) -> O) -> ServerEndpoint
-pub fn[I, E, O] Endpoint::serve_public(Self[Unit, I, E, O], async (I) -> O) -> ServerEndpoint
-pub fn[S, I, E, O] Endpoint::summary(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::tag(Self[S, I, E, O], String) -> Self[S, I, E, O]
-pub fn[S, I, E, O] Endpoint::with_method(Self[S, I, E, O], @model.Method, String) -> Self[S, I, E, O]
+pub async fn[S, I, E, O] Endpoint::call(Self[S, I, E, O, @client.Buffered], @client.Client, S, I) -> Result[Result[O, E], @client.ResponseFailure]
+pub async fn[S, I, E, O, R, M] Endpoint::call_with(Self[S, I, E, O, M], @client.Client, S, I, async (O) -> R) -> Result[Result[R, E], @client.ResponseFailure]
+pub fn[S, I, E, O, M] Endpoint::delete(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::deprecated(Self[S, I, E, O, M], deprecated? : Bool) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::description(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::doc(Self[S, I, E, O, M]) -> EndpointDoc
+pub fn[S, I, O, E2, M] Endpoint::errors(Self[S, I, NoError, O, M], Out[E2, @client.Buffered]) -> Self[S, I, E2, O, M]
+pub fn[S, I, E, O, M] Endpoint::get(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::head(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, E, O, I2, M] Endpoint::input(Self[S, Unit, E, O, M], Input[I2]) -> Self[S, I2, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::max_body_bytes(Self[S, I, E, O, M], Int32) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::operation_id(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::options(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O2, M, N] Endpoint::output(Self[S, I, E, Unit, M], Out[O2, N]) -> Self[S, I, E, O2, N]
+pub fn[S, I, E, O, M] Endpoint::patch(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::path(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::post(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::put(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::rate_limit_bucket(Self[S, I, E, O, M], (@model.Request) -> String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O] Endpoint::request(Self[S, I, E, O, @client.Buffered], S, I) -> @client.RequestPlan[Result[Result[O, E], @client.ResponseFailure], @client.Buffered] raise @client.InvalidRequest
+pub fn[I, E, O, S2, M] Endpoint::security(Self[Unit, I, E, O, M], Input[S2]) -> Self[S2, I, E, O, M]
+pub fn[S, I, E, O, P, M] Endpoint::serve(Self[S, I, E, O, M], async (S) -> Result[P, E], async (P, I) -> Result[O, E]) -> ServerEndpoint
+pub fn[I, E, O, M] Endpoint::serve_public(Self[Unit, I, E, O, M], async (I) -> Result[O, E]) -> ServerEndpoint
+pub fn[S, I, E, O, R, M] Endpoint::stream_request(Self[S, I, E, O, M], S, I, async (O) -> R) -> @client.RequestPlan[Result[Result[R, E], @client.ResponseFailure], @client.Streaming] raise @client.InvalidRequest
+pub fn[S, I, E, O, M] Endpoint::summary(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::tag(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::with_method(Self[S, I, E, O, M], @model.Method, String) -> Self[S, I, E, O, M]
 
 pub struct EndpointDoc {
   meth : @model.Method?
@@ -185,11 +183,6 @@ pub struct EndpointDoc {
   method_set_twice : Bool
 }
 pub fn EndpointDoc::problems(Self) -> Array[String]
-
-pub struct Errors[E] {
-  // private fields
-}
-pub fn[E] Errors::new((Error) -> E?, Array[Variant[E]]) -> Self[E]
 
 pub struct EventStream[T] {
   // private fields
@@ -269,13 +262,19 @@ pub fn Location::equal(Self, Self) -> Bool
 pub fn Location::not_equal(Self, Self) -> Bool
 pub fn Location::to_repr(Self) -> @debug.Repr
 
-pub struct Out[T] {
+pub(all) enum NoError {
+} derive(Eq, @debug.Debug)
+pub fn NoError::equal(Self, Self) -> Bool
+pub fn NoError::not_equal(Self, Self) -> Bool
+pub fn NoError::to_repr(Self) -> @debug.Repr
+
+pub struct Out[T, M] {
   // private fields
 }
-pub fn[T, H] Out::and_header(Self[T], String, @schema.TextCodec[H]) -> Self[(T, H)]
-pub fn[T] Out::and_status(Self[T]) -> Self[(T, Int32)]
-pub fn[T] Out::docs(Self[T]) -> Array[VariantDoc]
-pub fn[T] Out::set_cookie(Self[T], String) -> Self[(T, String)]
+pub fn[T, H, M] Out::and_header(Self[T, M], String, @schema.TextCodec[H]) -> Self[(T, H), M]
+pub fn[T, M] Out::and_status(Self[T, M]) -> Self[(T, Int32), M]
+pub fn[T, M] Out::docs(Self[T, M]) -> Array[VariantDoc]
+pub fn[T, M] Out::set_cookie(Self[T, M], String) -> Self[(T, String), M]
 
 pub struct RequestSink {
   // private fields

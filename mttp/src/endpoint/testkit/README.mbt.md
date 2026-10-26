@@ -2,9 +2,9 @@
 
 `when_endpoint` adds a typed route to BackendStub. It uses a one-endpoint Router
 to perform actual input decoding and output encoding. Security inputs are
-decoded, but authentication itself is intentionally bypassed. A callback can
-raise a declared application error, which the typed client decodes as that
-same error type.
+decoded, but authentication itself is intentionally bypassed. A callback
+returns `Result[O, E]`; the typed client retains a declared application error
+as the same ordinary value type.
 
 ```mbt check
 ///|

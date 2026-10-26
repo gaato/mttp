@@ -1,6 +1,6 @@
 ///|
 test "CORS reflects only allowed origins and uses route methods for preflight" {
-  let endpoint = @endpoint.endpoint.get("/").serve_public(_ => ())
+  let endpoint = @endpoint.endpoint.get("/").serve_public(_ => Ok(()))
   let router = @router.Router::new([endpoint], options={
     ..@router.ServerOptions::default(),
     middleware: [@router.cors(["https://client.test"])],

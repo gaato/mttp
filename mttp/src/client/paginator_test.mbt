@@ -1,118 +1,136 @@
 ///|
-test "Paginator starts with None follows the cursor and stays finished" {
-  @driver.run_sync(() => {
-    let cursors : Array[String?] = []
-    let paginator = @client.Paginator::with_cursor(cursor => {
-      cursors.push(cursor)
-      match cursor {
-        None => @client.Page::{ items: [0], next: Some("second"), }
-        Some("second") => @client.Page::{ items: [1, 2], next: None, }
-        _ => raise @client.InvalidRequest(message="unexpected cursor")
-      }
-    })
-    assert_eq(paginator.next_page(), Some([0]))
-    assert_eq(paginator.next_page(), Some([1, 2]))
-    assert_eq(paginator.next_page(), None)
-    assert_eq(paginator.next_page(), None)
-    assert_eq(cursors, [None, Some("second")])
-  })
-}
-
-///|
-test "Paginator ends at an empty page even when a cursor follows" {
-  @driver.run_sync(() => {
-    let cursors : Array[String?] = []
-    let paginator : @client.Paginator[Int32, @client.InvalidRequest] = @client.Paginator::with_cursor(cursor => {
-        cursors.push(cursor)
-        match cursor {
-          None => @client.Page::{ items: [], next: Some("second"), }
-          _ => raise @client.InvalidRequest(message="unexpected cursor")
-        }
-      },
-    )
-    assert_eq(paginator.next_page(), None)
-    assert_eq(paginator.next_page(), None)
-    assert_eq(cursors, [None])
-  })
-}
-
-///|
-test "Paginator each visits every item and collect keeps the unused rest" {
-  @driver.run_sync(() => {
-    let each_paginator = @client.Paginator::with_cursor(cursor => {
-      match cursor {
-        None => @client.Page::{ items: [1, 2], next: Some("next"), }
-        Some("next") => @client.Page::{ items: [3], next: None, }
-        _ => raise @client.InvalidRequest(message="unexpected cursor")
-      }
-    })
-    let seen = []
-    each_paginator.each(item => seen.push(item))
-    assert_eq(seen, [1, 2, 3])
-
-    let fetched : Array[String?] = []
-    let collect_paginator = @client.Paginator::with_cursor(cursor => {
-      fetched.push(cursor)
-      match cursor {
-        None => @client.Page::{ items: [1, 2, 3], next: Some("next"), }
-        Some("next") => @client.Page::{ items: [4], next: None, }
-        _ => raise @client.InvalidRequest(message="unexpected cursor")
-      }
-    })
-    assert_eq(collect_paginator.collect(max=2), [1, 2])
-    assert_eq(fetched, [None])
-    // The unused rest of the page comes back before the next fetch.
-    assert_eq(collect_paginator.next_page(), Some([3]))
-    assert_eq(fetched, [None])
-    assert_eq(collect_paginator.next_page(), Some([4]))
-    assert_eq(collect_paginator.next_page(), None)
-    let zero : @client.Paginator[Int32, @client.InvalidRequest] = @client.Paginator::with_cursor(_ => @client.Page::{
-        items: [1],
-        next: None,
-      },
-    )
-    assert_eq(zero.collect(max=0), [])
-  })
-}
-
-///|
-test "Paginator failed fetch retries the same cursor" {
-  @driver.run_sync(() => {
-    let cursors : Array[String?] = []
-    let paginator = @client.Paginator::with_cursor(cursor => {
-      cursors.push(cursor)
-      if cursors.length() == 1 {
-        raise @client.InvalidRequest(message="temporary")
-      }
-      @client.Page::{ items: [7], next: None, }
-    })
-    try paginator.next_page() catch {
-      @client.InvalidRequest(message="temporary") => ()
-      _ => fail("expected fetch error")
-    } noraise {
-      _ => fail("expected fetch error")
-    }
-    assert_eq(paginator.next_page(), Some([7]))
-    assert_eq(cursors, [None, None])
-  })
-}
-
-///|
-test "Paginator::new lets the fetch own any cursor and stops at None" {
+test "collect and each propagate expected failures without converting them to effects" {
   @driver.run_sync(() => {
     let calls = Ref(0)
-    let paginator : @client.Paginator[Int32, @client.InvalidRequest] = @client.Paginator::new(() => {
-        calls.val += 1
-        match calls.val {
-          1 => Some([1, 2])
-          2 => Some([3])
-          _ => None
-        }
-      },
+    let p : @client.Paginator[Int32, String] = @client.Paginator::new(() => {
+      calls.val += 1
+      match calls.val {
+        1 | 2 => Err("fetch")
+        3 => Ok(Some([1, 2]))
+        _ => Ok(None)
+      }
+    })
+    assert_eq(p.collect(max=2), Err("fetch"))
+    assert_eq(p.each(_ => fail("failed fetch delivered an item")), Err("fetch"))
+    let seen = []
+    assert_eq(
+      p.each(item => {
+        seen.push(item)
+        Err("consumer")
+      }),
+      Err("consumer"),
     )
-    assert_eq(paginator.collect(max=10), [1, 2, 3])
-    assert_eq(calls.val, 3)
-    assert_eq(paginator.next_page(), None)
-    assert_eq(calls.val, 3)
+    assert_eq(seen, [1])
+    assert_eq(p.next_page(), Ok(None))
+  })
+}
+
+///|
+test "Paginator follows cursors and stays finished" {
+  @driver.run_sync(() => {
+    let seen = []
+    let p : @client.Paginator[Int32, String] = @client.Paginator::with_cursor(cursor => {
+      seen.push(cursor)
+      Ok(
+        match cursor {
+          None => @client.Page::{ items: [0], next: Some("second"), }
+          Some("second") => @client.Page::{ items: [1, 2], next: None, }
+          _ => abort("unexpected cursor")
+        },
+      )
+    })
+    assert_eq(p.next_page(), Ok(Some([0])))
+    assert_eq(p.next_page(), Ok(Some([1, 2])))
+    assert_eq(p.next_page(), Ok(None))
+    assert_eq(p.next_page(), Ok(None))
+    assert_eq(seen, [None, Some("second")])
+  })
+}
+
+///|
+test "Paginator empty pages end even with a next cursor" {
+  @driver.run_sync(() => {
+    let calls = Ref(0)
+    let p : @client.Paginator[Int32, String] = @client.Paginator::with_cursor(_ => {
+      calls.val += 1
+      Ok(@client.Page::{ items: [], next: Some("next"), })
+    })
+    assert_eq(p.next_page(), Ok(None))
+    assert_eq(p.next_page(), Ok(None))
+    assert_eq(calls.val, 1)
+  })
+}
+
+///|
+test "Paginator collect keeps unused items and zero does not fetch" {
+  @driver.run_sync(() => {
+    let seen = []
+    let p : @client.Paginator[Int32, String] = @client.Paginator::with_cursor(cursor => {
+      seen.push(cursor)
+      Ok(
+        if cursor is None {
+          @client.Page::{ items: [1, 2, 3], next: Some("next"), }
+        } else {
+          @client.Page::{ items: [4], next: None, }
+        },
+      )
+    })
+    assert_eq(p.collect(max=0), Ok([]))
+    assert_eq(seen, [])
+    assert_eq(p.collect(max=2), Ok([1, 2]))
+    assert_eq(p.next_page(), Ok(Some([3])))
+    assert_eq(seen, [None])
+    assert_eq(p.next_page(), Ok(Some([4])))
+    assert_eq(p.next_page(), Ok(None))
+    let items = []
+    let q : @client.Paginator[Int32, String] = @client.Paginator::new(() => {
+      if items.is_empty() {
+        items.push(1)
+        Ok(Some([7, 8]))
+      } else {
+        Ok(None)
+      }
+    })
+    let visited = []
+    assert_eq(
+      q.each(item => {
+        visited.push(item)
+        Ok(())
+      }),
+      Ok(()),
+    )
+    assert_eq(visited, [7, 8])
+  })
+}
+
+///|
+test "Paginator failures leave cursor unchanged for expected and transport errors" {
+  @driver.run_sync(() => {
+    let seen = []
+    let p : @client.Paginator[Int32, String] = @client.Paginator::with_cursor(cursor => {
+      seen.push(cursor)
+      match seen.length() {
+        1 => Ok(@client.Page::{ items: [1], next: Some("next"), })
+        2 => Err("expected")
+        3 =>
+          raise @model.TransportError(
+            kind=Network,
+            phase=Head,
+            detail="offline",
+          )
+        _ => Ok(@client.Page::{ items: [2], next: None, })
+      }
+    })
+    assert_eq(p.next_page(), Ok(Some([1])))
+    assert_eq(p.next_page(), Err("expected"))
+    try {
+      let _ = p.next_page()
+      fail("transport error lost")
+    } catch {
+      @model.TransportError(kind=Network, ..) => ()
+      other => raise other
+    }
+    assert_eq(p.collect(max=10), Ok([2]))
+    assert_eq(seen, [None, Some("next"), Some("next"), Some("next")])
   })
 }
