@@ -38,9 +38,27 @@
 ///   let post = @model.Request::post("/messages")
 ///   let headers = @model.Headers::of([("Retry-After", "3")])
 ///   let limited = @retry.Response(status=429, headers~)
-///   assert_eq(rule.decide(limited, post, attempt=0, random=0.5), Wait(3000))
 ///   assert_eq(
-///     rule.decide(limited, post, attempt=0, random=0.5, remaining_ms=2000),
+///     rule.decide(
+///       limited,
+///       post.head(),
+///       attempt=0,
+///       random=0.5,
+///       idempotent=false,
+///       replayable=true,
+///     ),
+///     Wait(3000),
+///   )
+///   assert_eq(
+///     rule.decide(
+///       limited,
+///       post.head(),
+///       attempt=0,
+///       random=0.5,
+///       remaining_ms=2000,
+///       idempotent=false,
+///       replayable=true,
+///     ),
 ///     Stop(Budget(3000)),
 ///   )
 /// }
@@ -48,21 +66,17 @@
 pub fn RetryRule::decide(
   self : RetryRule,
   outcome : AttemptOutcome,
-  request : @model.Request,
+  request : @model.RequestHead,
   attempt~ : Int32,
   random~ : Double,
   now_unix_ms? : Int64,
   remaining_ms? : Int64,
   server_delay_ms? : Int32,
-  idempotent? : Bool,
-  replayable? : Bool,
+  idempotent~ : Bool,
+  replayable~ : Bool,
 ) -> Decision {
   if attempt >= self.max_retries {
     return Stop(Exhausted)
-  }
-  let replayable = match replayable {
-    Some(replayable) => replayable
-    None => request.body.is_replayable()
   }
   if !replayable {
     return Stop(NotReplayable)
@@ -95,8 +109,8 @@ pub fn RetryRule::decide(
 fn RetryRule::refusal(
   self : RetryRule,
   outcome : AttemptOutcome,
-  request : @model.Request,
-  idempotent : Bool?,
+  request : @model.RequestHead,
+  idempotent : Bool,
 ) -> StopReason? {
   match outcome {
     Response(status~, ..) =>
@@ -153,17 +167,13 @@ fn RetryRule::status_rule(self : RetryRule, status : Int32) -> StatusRule? {
 // None when `methods` allows the request, else `MethodNotAllowed`.
 fn permit(
   methods : Methods,
-  request : @model.Request,
-  idempotent : Bool?,
+  request : @model.RequestHead,
+  idempotent : Bool,
 ) -> StopReason? {
   let allowed = match methods {
     Never => false
     Any => true
-    Idempotent =>
-      match idempotent {
-        Some(idempotent) => idempotent
-        None => @model.is_idempotent(request)
-      }
+    Idempotent => idempotent
     Listed(names) => {
       let verb = request.meth.to_string().to_lower()
       names.iter().any(name => name.to_string().to_lower() == verb)

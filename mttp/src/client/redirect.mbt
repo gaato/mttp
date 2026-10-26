@@ -122,8 +122,9 @@ pub async fn FollowRedirects::send(
     errdefer response.close()
     let planned = if options.follow_redirects {
       plan_redirect(
-        request,
+        request.head(),
         response.head(),
+        replayable=request.body.is_replayable(),
         followed~,
         max_redirects=options.max_redirects,
         allow_downgrade=self.allow_downgrade,
@@ -134,7 +135,7 @@ pub async fn FollowRedirects::send(
     } else {
       None
     }
-    guard planned is Some(next) else {
+    guard planned is Some(plan) else {
       return {
         ..response,
         attributes: response.attributes
@@ -142,6 +143,7 @@ pub async fn FollowRedirects::send(
         .put(redirect_history, history),
       }
     }
+    let next = apply_redirect(request, plan)
     response.close()
     let hop = RedirectHop::{
       request: request.head(),
@@ -153,6 +155,24 @@ pub async fn FollowRedirects::send(
       callback(hop)
     }
     request = next
+  }
+}
+
+///|
+fn apply_redirect(
+  request : @model.Request,
+  plan : RedirectPlan,
+) -> @model.Request {
+  {
+    ..request,
+    meth: plan.head.meth,
+    url: plan.head.url,
+    headers: plan.head.headers,
+    body: if plan.drop_body {
+      Bytes(b"")
+    } else {
+      request.body
+    },
   }
 }
 

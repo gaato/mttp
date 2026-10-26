@@ -203,8 +203,28 @@ pub extend Backoff with @debug.Debug::{to_repr}
 ///   }
 ///   let get = @model.Request::get("/items")
 ///   let busy = @retry.Response(status=503, headers=@model.Headers::empty())
-///   assert_eq(rule.decide(busy, get, attempt=1, random=0.0), Wait(1000))
-///   assert_eq(rule.decide(busy, get, attempt=2, random=0.0), Stop(Exhausted))
+///   assert_eq(
+///     rule.decide(
+///       busy,
+///       get.head(),
+///       attempt=1,
+///       random=0.0,
+///       idempotent=true,
+///       replayable=true,
+///     ),
+///     Wait(1000),
+///   )
+///   assert_eq(
+///     rule.decide(
+///       busy,
+///       get.head(),
+///       attempt=2,
+///       random=0.0,
+///       idempotent=true,
+///       replayable=true,
+///     ),
+///     Stop(Exhausted),
+///   )
 /// }
 /// ```
 pub(all) struct RetryRule {

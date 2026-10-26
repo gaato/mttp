@@ -184,8 +184,9 @@ fn plan(
   }
   try
     plan_redirect(
-      request,
+      request.head(),
       { status, headers, },
+      replayable=request.body.is_replayable(),
       followed~,
       max_redirects~,
       allow_downgrade~,
@@ -199,7 +200,8 @@ fn plan(
     UnreplayableBody(location~) => "unreplayable: " + location
   } noraise {
     None => "stop"
-    Some(next) => {
+    Some(plan) => {
+      let next = apply_redirect(request, plan)
       let body = match next.body {
         Empty => ""
         Bytes(bytes) => @utf8.decode_lossy(bytes)

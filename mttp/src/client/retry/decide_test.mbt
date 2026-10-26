@@ -61,17 +61,30 @@ test "decide covers every step in order" {
   let date_ms = 784111777000L
   let cases : Array[(String, @retry.Decision, @retry.Decision)] = [
     // 1. Exhausted
-    ("first failure", r.decide(s503, get, attempt=0, random=0.0), Wait(100)),
-    ("last retry", r.decide(s503, get, attempt=2, random=0.0), Wait(400)),
-    ("exhausted", r.decide(s503, get, attempt=3, random=0.0), Stop(Exhausted)),
+    (
+      "first failure",
+      decide_request(r, s503, get, attempt=0, random=0.0),
+      Wait(100),
+    ),
+    (
+      "last retry",
+      decide_request(r, s503, get, attempt=2, random=0.0),
+      Wait(400),
+    ),
+    (
+      "exhausted",
+      decide_request(r, s503, get, attempt=3, random=0.0),
+      Stop(Exhausted),
+    ),
     (
       "exhausted before replayable",
-      r.decide(s503, get, attempt=3, random=0.0, replayable=false),
+      decide_request(r, s503, get, attempt=3, random=0.0, replayable=false),
       Stop(Exhausted),
     ),
     (
       "exhausted before override",
-      r.decide(
+      decide_request(
+        r,
         response(503, [("x-should-retry", "true")]),
         get,
         attempt=4,
@@ -81,28 +94,35 @@ test "decide covers every step in order" {
     ),
     (
       "never retries",
-      @retry.RetryRule::never().decide(s503, get, attempt=0, random=0.0),
+      decide_request(
+        @retry.RetryRule::never(),
+        s503,
+        get,
+        attempt=0,
+        random=0.0,
+      ),
       Stop(Exhausted),
     ),
     // 2. Replayable
     (
       "replayable param false",
-      r.decide(s503, get, attempt=0, random=0.0, replayable=false),
+      decide_request(r, s503, get, attempt=0, random=0.0, replayable=false),
       Stop(NotReplayable),
     ),
     (
       "sent stream body",
-      r.decide(response(429, []), sent_stream, attempt=0, random=0.0),
+      decide_request(r, response(429, []), sent_stream, attempt=0, random=0.0),
       Stop(NotReplayable),
     ),
     (
       "untaken stream body",
-      r.decide(response(429, []), fresh_stream, attempt=0, random=0.0),
+      decide_request(r, response(429, []), fresh_stream, attempt=0, random=0.0),
       Wait(100),
     ),
     (
       "replayable param true overrides",
-      r.decide(
+      decide_request(
+        r,
         response(429, []),
         sent_stream,
         attempt=0,
@@ -113,7 +133,8 @@ test "decide covers every step in order" {
     ),
     (
       "replayable before override",
-      r.decide(
+      decide_request(
+        r,
         response(503, [("x-should-retry", "true")]),
         get,
         attempt=0,
@@ -125,7 +146,8 @@ test "decide covers every step in order" {
     // 3. Override header
     (
       "override true retries a 200 POST",
-      r.decide(
+      decide_request(
+        r,
         response(200, [("X-Should-Retry", " TRUE ")]),
         post,
         attempt=0,
@@ -135,7 +157,8 @@ test "decide covers every step in order" {
     ),
     (
       "override true retries a forbidden method",
-      r.decide(
+      decide_request(
+        r,
         response(418, [("x-should-retry", "true")]),
         get,
         attempt=1,
@@ -145,7 +168,8 @@ test "decide covers every step in order" {
     ),
     (
       "override false stops a retryable status",
-      r.decide(
+      decide_request(
+        r,
         response(429, [("x-should-retry", "False")]),
         get,
         attempt=0,
@@ -155,7 +179,8 @@ test "decide covers every step in order" {
     ),
     (
       "override garbage is ignored: retryable",
-      r.decide(
+      decide_request(
+        r,
         response(503, [("x-should-retry", "maybe")]),
         get,
         attempt=0,
@@ -165,7 +190,8 @@ test "decide covers every step in order" {
     ),
     (
       "override garbage is ignored: not retryable",
-      r.decide(
+      decide_request(
+        r,
         response(200, [("x-should-retry", "1")]),
         get,
         attempt=0,
@@ -175,7 +201,8 @@ test "decide covers every step in order" {
     ),
     (
       "no override header configured",
-      { ..r, override_header: None, }.decide(
+      decide_request(
+        { ..r, override_header: None, },
         response(200, [("x-should-retry", "true")]),
         get,
         attempt=0,
@@ -186,57 +213,58 @@ test "decide covers every step in order" {
     // 4. Statuses and methods
     (
       "429 any method",
-      r.decide(response(429, []), post, attempt=0, random=0.0),
+      decide_request(r, response(429, []), post, attempt=0, random=0.0),
       Wait(100),
     ),
     (
       "408 code idempotent",
-      r.decide(response(408, []), get, attempt=0, random=0.0),
+      decide_request(r, response(408, []), get, attempt=0, random=0.0),
       Wait(100),
     ),
     (
       "range low bound",
-      r.decide(response(500, []), get, attempt=0, random=0.0),
+      decide_request(r, response(500, []), get, attempt=0, random=0.0),
       Wait(100),
     ),
     (
       "range high bound",
-      r.decide(response(599, []), get, attempt=0, random=0.0),
+      decide_request(r, response(599, []), get, attempt=0, random=0.0),
       Wait(100),
     ),
     (
       "below range",
-      r.decide(response(499, []), get, attempt=0, random=0.0),
+      decide_request(r, response(499, []), get, attempt=0, random=0.0),
       Stop(NotRetryable),
     ),
     (
       "above range",
-      r.decide(response(600, []), get, attempt=0, random=0.0),
+      decide_request(r, response(600, []), get, attempt=0, random=0.0),
       Stop(NotRetryable),
     ),
     (
       "503 POST not idempotent",
-      r.decide(s503, post, attempt=0, random=0.0),
+      decide_request(r, s503, post, attempt=0, random=0.0),
       Stop(MethodNotAllowed),
     ),
     (
       "503 POST with idempotency key",
-      r.decide(s503, keyed, attempt=0, random=0.0),
+      decide_request(r, s503, keyed, attempt=0, random=0.0),
       Wait(100),
     ),
     (
       "idempotent param true for POST",
-      r.decide(s503, post, attempt=0, random=0.0, idempotent=true),
+      decide_request(r, s503, post, attempt=0, random=0.0, idempotent=true),
       Wait(100),
     ),
     (
       "idempotent param false for GET",
-      r.decide(s503, get, attempt=0, random=0.0, idempotent=false),
+      decide_request(r, s503, get, attempt=0, random=0.0, idempotent=false),
       Stop(MethodNotAllowed),
     ),
     (
       "listed method",
-      r.decide(
+      decide_request(
+        r,
         response(409, []),
         @model.Request::put("/"),
         attempt=0,
@@ -246,7 +274,8 @@ test "decide covers every step in order" {
     ),
     (
       "listed ignores case",
-      r.decide(
+      decide_request(
+        r,
         response(409, []),
         @model.Request::new(Other("pAtCh"), "/"),
         attempt=0,
@@ -256,18 +285,19 @@ test "decide covers every step in order" {
     ),
     (
       "unlisted method",
-      r.decide(response(409, []), post, attempt=0, random=0.0),
+      decide_request(r, response(409, []), post, attempt=0, random=0.0),
       Stop(MethodNotAllowed),
     ),
     (
       "never methods",
-      r.decide(response(418, []), get, attempt=0, random=0.0),
+      decide_request(r, response(418, []), get, attempt=0, random=0.0),
       Stop(MethodNotAllowed),
     ),
     // 4. Failures
     (
       "protocol never",
-      r.decide(
+      decide_request(
+        r,
         Failure(TransportError(kind=Protocol, phase=Head, detail="bad")),
         get,
         attempt=0,
@@ -277,7 +307,8 @@ test "decide covers every step in order" {
     ),
     (
       "connect any method",
-      r.decide(
+      decide_request(
+        r,
         Failure(TransportError(kind=Connect, phase=Dial, detail="refused")),
         post,
         attempt=0,
@@ -287,7 +318,8 @@ test "decide covers every step in order" {
     ),
     (
       "pool timeout any method",
-      r.decide(
+      decide_request(
+        r,
         Failure(
           TransportError(kind=Timeout(ms=10), phase=Pool, detail="timeout"),
         ),
@@ -299,7 +331,8 @@ test "decide covers every step in order" {
     ),
     (
       "dial timeout any method",
-      r.decide(
+      decide_request(
+        r,
         Failure(
           TransportError(kind=Timeout(ms=10), phase=Dial, detail="timeout"),
         ),
@@ -311,7 +344,8 @@ test "decide covers every step in order" {
     ),
     (
       "unsent failures off",
-      { ..r, unsent_failures: false, }.decide(
+      decide_request(
+        { ..r, unsent_failures: false, },
         Failure(TransportError(kind=Connect, phase=Dial, detail="refused")),
         get,
         attempt=0,
@@ -321,7 +355,8 @@ test "decide covers every step in order" {
     ),
     (
       "proxy status matches a rule, method ignored",
-      r.decide(
+      decide_request(
+        r,
         Failure(
           TransportError(
             kind=Proxy(status=502),
@@ -337,7 +372,8 @@ test "decide covers every step in order" {
     ),
     (
       "proxy status matches no rule",
-      r.decide(
+      decide_request(
+        r,
         Failure(
           TransportError(kind=Proxy(status=407), phase=Dial, detail="auth"),
         ),
@@ -349,7 +385,8 @@ test "decide covers every step in order" {
     ),
     (
       "proxy with unsent failures off",
-      { ..r, unsent_failures: false, }.decide(
+      decide_request(
+        { ..r, unsent_failures: false, },
         Failure(
           TransportError(
             kind=Proxy(status=502),
@@ -365,7 +402,8 @@ test "decide covers every step in order" {
     ),
     (
       "head timeout idempotent",
-      r.decide(
+      decide_request(
+        r,
         Failure(
           TransportError(kind=Timeout(ms=10), phase=Head, detail="timeout"),
         ),
@@ -377,7 +415,8 @@ test "decide covers every step in order" {
     ),
     (
       "head timeout POST",
-      r.decide(
+      decide_request(
+        r,
         Failure(
           TransportError(kind=Timeout(ms=10), phase=Head, detail="timeout"),
         ),
@@ -389,7 +428,8 @@ test "decide covers every step in order" {
     ),
     (
       "network POST declared idempotent",
-      r.decide(
+      decide_request(
+        r,
         Failure(TransportError(kind=Network, phase=Write, detail="reset")),
         post,
         attempt=0,
@@ -400,7 +440,8 @@ test "decide covers every step in order" {
     ),
     (
       "network keyed POST",
-      r.decide(
+      decide_request(
+        r,
         Failure(TransportError(kind=Network, phase=Body, detail="reset")),
         keyed,
         attempt=0,
@@ -410,7 +451,8 @@ test "decide covers every step in order" {
     ),
     (
       "sent failures never",
-      { ..r, sent_failures: Never, }.decide(
+      decide_request(
+        { ..r, sent_failures: Never, },
         Failure(
           TransportError(kind=Timeout(ms=10), phase=Unknown, detail="timeout"),
         ),
@@ -422,7 +464,8 @@ test "decide covers every step in order" {
     ),
     (
       "sent failures any",
-      { ..r, sent_failures: Any, }.decide(
+      decide_request(
+        { ..r, sent_failures: Any, },
         Failure(TransportError(kind=Network, phase=Head, detail="reset")),
         post,
         attempt=0,
@@ -432,7 +475,8 @@ test "decide covers every step in order" {
     ),
     (
       "sent failures listed",
-      { ..r, sent_failures: Listed([Post]), }.decide(
+      decide_request(
+        { ..r, sent_failures: Listed([Post]), },
         Failure(TransportError(kind=Network, phase=Head, detail="reset")),
         post,
         attempt=0,
@@ -442,7 +486,8 @@ test "decide covers every step in order" {
     ),
     (
       "sent failures listed, other method",
-      { ..r, sent_failures: Listed([Post]), }.decide(
+      decide_request(
+        { ..r, sent_failures: Listed([Post]), },
         Failure(TransportError(kind=Network, phase=Head, detail="reset")),
         get,
         attempt=0,
@@ -453,7 +498,8 @@ test "decide covers every step in order" {
     // 5. Server delay
     (
       "retry-after-ms first",
-      r.decide(
+      decide_request(
+        r,
         response(429, [("retry-after-ms", "1500"), ("retry-after", "9")]),
         get,
         attempt=0,
@@ -463,7 +509,8 @@ test "decide covers every step in order" {
     ),
     (
       "retry-after seconds",
-      r.decide(
+      decide_request(
+        r,
         response(429, [("retry-after", "2")]),
         get,
         attempt=0,
@@ -473,10 +520,15 @@ test "decide covers every step in order" {
     ),
     (
       "header source reads only retry-after",
-      {
-        ..r,
-        retry_after: { source: Header, cap: NoCap, zero_means_backoff: false, },
-      }.decide(
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: Header,
+            cap: NoCap,
+            zero_means_backoff: false,
+          },
+        },
         response(429, [("retry-after-ms", "1500")]),
         get,
         attempt=1,
@@ -486,10 +538,15 @@ test "decide covers every step in order" {
     ),
     (
       "header source seconds",
-      {
-        ..r,
-        retry_after: { source: Header, cap: NoCap, zero_means_backoff: false, },
-      }.decide(
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: Header,
+            cap: NoCap,
+            zero_means_backoff: false,
+          },
+        },
         response(429, [("retry-after", "2.5")]),
         get,
         attempt=0,
@@ -499,10 +556,15 @@ test "decide covers every step in order" {
     ),
     (
       "header source date with now",
-      {
-        ..r,
-        retry_after: { source: Header, cap: NoCap, zero_means_backoff: false, },
-      }.decide(
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: Header,
+            cap: NoCap,
+            zero_means_backoff: false,
+          },
+        },
         response(429, [("retry-after", date)]),
         get,
         attempt=0,
@@ -513,7 +575,8 @@ test "decide covers every step in order" {
     ),
     (
       "http date with now",
-      r.decide(
+      decide_request(
+        r,
         response(429, [("retry-after", date)]),
         get,
         attempt=0,
@@ -524,7 +587,8 @@ test "decide covers every step in order" {
     ),
     (
       "http date without now uses backoff",
-      r.decide(
+      decide_request(
+        r,
         response(429, [("retry-after", date)]),
         get,
         attempt=1,
@@ -534,10 +598,15 @@ test "decide covers every step in order" {
     ),
     (
       "ignored source uses backoff",
-      {
-        ..r,
-        retry_after: { source: Ignore, cap: NoCap, zero_means_backoff: false, },
-      }.decide(
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: Ignore,
+            cap: NoCap,
+            zero_means_backoff: false,
+          },
+        },
         response(429, [("retry-after", "2")]),
         get,
         attempt=1,
@@ -547,7 +616,8 @@ test "decide covers every step in order" {
     ),
     (
       "zero means now",
-      r.decide(
+      decide_request(
+        r,
         response(429, [("retry-after", "0")]),
         get,
         attempt=1,
@@ -557,14 +627,15 @@ test "decide covers every step in order" {
     ),
     (
       "zero means backoff",
-      {
-        ..r,
-        retry_after: {
-          source: MsThenHeader,
-          cap: NoCap,
-          zero_means_backoff: true,
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: MsThenHeader,
+            cap: NoCap,
+            zero_means_backoff: true,
+          },
         },
-      }.decide(
         response(429, [("retry-after", "0")]),
         get,
         attempt=1,
@@ -574,14 +645,15 @@ test "decide covers every step in order" {
     ),
     (
       "stop cap at the limit",
-      {
-        ..r,
-        retry_after: {
-          source: MsThenHeader,
-          cap: StopAbove(1000),
-          zero_means_backoff: false,
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: MsThenHeader,
+            cap: StopAbove(1000),
+            zero_means_backoff: false,
+          },
         },
-      }.decide(
         response(429, [("retry-after-ms", "1000")]),
         get,
         attempt=0,
@@ -591,14 +663,15 @@ test "decide covers every step in order" {
     ),
     (
       "stop cap over the limit",
-      {
-        ..r,
-        retry_after: {
-          source: MsThenHeader,
-          cap: StopAbove(1000),
-          zero_means_backoff: false,
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: MsThenHeader,
+            cap: StopAbove(1000),
+            zero_means_backoff: false,
+          },
         },
-      }.decide(
         response(429, [("retry-after-ms", "1001")]),
         get,
         attempt=0,
@@ -608,14 +681,15 @@ test "decide covers every step in order" {
     ),
     (
       "fallback cap at the limit",
-      {
-        ..r,
-        retry_after: {
-          source: MsThenHeader,
-          cap: BackoffAbove(1000),
-          zero_means_backoff: false,
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: MsThenHeader,
+            cap: BackoffAbove(1000),
+            zero_means_backoff: false,
+          },
         },
-      }.decide(
         response(429, [("retry-after-ms", "1000")]),
         get,
         attempt=0,
@@ -625,14 +699,15 @@ test "decide covers every step in order" {
     ),
     (
       "fallback cap over the limit",
-      {
-        ..r,
-        retry_after: {
-          source: MsThenHeader,
-          cap: BackoffAbove(1000),
-          zero_means_backoff: false,
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: MsThenHeader,
+            cap: BackoffAbove(1000),
+            zero_means_backoff: false,
+          },
         },
-      }.decide(
         response(429, [("retry-after", "60")]),
         get,
         attempt=2,
@@ -642,7 +717,8 @@ test "decide covers every step in order" {
     ),
     (
       "no cap",
-      r.decide(
+      decide_request(
+        r,
         response(429, [("retry-after", "3600")]),
         get,
         attempt=0,
@@ -652,7 +728,8 @@ test "decide covers every step in order" {
     ),
     (
       "server delay param wins over headers",
-      r.decide(
+      decide_request(
+        r,
         response(429, [("retry-after", "2")]),
         get,
         attempt=0,
@@ -663,7 +740,8 @@ test "decide covers every step in order" {
     ),
     (
       "server delay param applies to failures",
-      r.decide(
+      decide_request(
+        r,
         Failure(TransportError(kind=Connect, phase=Dial, detail="refused")),
         get,
         attempt=0,
@@ -674,7 +752,8 @@ test "decide covers every step in order" {
     ),
     (
       "failures have no server delay",
-      r.decide(
+      decide_request(
+        r,
         Failure(TransportError(kind=Connect, phase=Dial, detail="refused")),
         get,
         attempt=2,
@@ -684,47 +763,62 @@ test "decide covers every step in order" {
     ),
     (
       "negative server delay counts as zero",
-      r.decide(s503, get, attempt=0, random=0.0, server_delay_ms=-5),
+      decide_request(r, s503, get, attempt=0, random=0.0, server_delay_ms=-5),
       Wait(0),
     ),
     (
       "server delay param zero means backoff",
-      {
-        ..r,
-        retry_after: {
-          source: MsThenHeader,
-          cap: NoCap,
-          zero_means_backoff: true,
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: MsThenHeader,
+            cap: NoCap,
+            zero_means_backoff: true,
+          },
         },
-      }.decide(s503, get, attempt=1, random=0.0, server_delay_ms=0),
+        s503,
+        get,
+        attempt=1,
+        random=0.0,
+        server_delay_ms=0,
+      ),
       Wait(200),
     ),
     (
       "server delay param is capped",
-      {
-        ..r,
-        retry_after: {
-          source: MsThenHeader,
-          cap: StopAbove(500),
-          zero_means_backoff: false,
+      decide_request(
+        {
+          ..r,
+          retry_after: {
+            source: MsThenHeader,
+            cap: StopAbove(500),
+            zero_means_backoff: false,
+          },
         },
-      }.decide(s503, get, attempt=0, random=0.0, server_delay_ms=750),
+        s503,
+        get,
+        attempt=0,
+        random=0.0,
+        server_delay_ms=750,
+      ),
       Stop(RetryAfterTooLong(750)),
     ),
     // 7. Budget
     (
       "wait equal to budget stops",
-      r.decide(s503, get, attempt=2, random=0.0, remaining_ms=400L),
+      decide_request(r, s503, get, attempt=2, random=0.0, remaining_ms=400L),
       Stop(Budget(400)),
     ),
     (
       "wait under budget",
-      r.decide(s503, get, attempt=2, random=0.0, remaining_ms=401L),
+      decide_request(r, s503, get, attempt=2, random=0.0, remaining_ms=401L),
       Wait(400),
     ),
     (
       "server delay over budget",
-      r.decide(
+      decide_request(
+        r,
         response(429, [("retry-after", "2")]),
         get,
         attempt=0,
@@ -735,7 +829,8 @@ test "decide covers every step in order" {
     ),
     (
       "spent budget stops even a zero wait",
-      r.decide(
+      decide_request(
+        r,
         s503,
         get,
         attempt=0,
@@ -759,7 +854,10 @@ test "decide passes random to the backoff" {
     backoff: { base_ms: 1000, max_ms: 30000, jitter: Full, },
   }
   let get = @model.Request::get("/")
-  assert_eq(r.decide(response(503, []), get, attempt=1, random=0.25), Wait(500))
+  assert_eq(
+    decide_request(r, response(503, []), get, attempt=1, random=0.25),
+    Wait(500),
+  )
 }
 
 ///|
@@ -770,5 +868,31 @@ test "outcome debug representation" {
   debug_inspect(
     outcome,
     content="Failure(TransportError(kind=Connect, phase=Dial, detail=\"refused\"))",
+  )
+}
+
+///|
+fn decide_request(
+  rule : @retry.RetryRule,
+  outcome : @retry.AttemptOutcome,
+  request : @model.Request,
+  attempt~ : Int32,
+  random~ : Double,
+  now_unix_ms? : Int64,
+  remaining_ms? : Int64,
+  server_delay_ms? : Int32,
+  idempotent? : Bool,
+  replayable? : Bool,
+) -> @retry.Decision {
+  rule.decide(
+    outcome,
+    request.head(),
+    attempt~,
+    random~,
+    now_unix_ms?,
+    remaining_ms?,
+    server_delay_ms?,
+    idempotent=idempotent.unwrap_or_else(() => @model.is_idempotent(request)),
+    replayable=replayable.unwrap_or_else(() => request.body.is_replayable()),
   )
 }

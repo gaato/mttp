@@ -290,7 +290,7 @@ test "conservative decides every attempt error variant by method" {
     let decide = (request, attempt) => {
       policy.decide(
         error,
-        @client.RetryContext::new(request, attempt~, random=0.0),
+        @client.RetryContext::capture(request, attempt~, random=0.0),
       )
     }
     assert_eq(decide(get, 0), idempotent, msg="row \{i} GET")
@@ -303,7 +303,10 @@ test "conservative decides every attempt error variant by method" {
     }
     assert_eq(decide(get, 2), exhausted, msg="row \{i} exhausted")
     assert_eq(
-      @client.RetryPolicy::none().decide(error, @client.RetryContext::new(get)),
+      @client.RetryPolicy::none().decide(
+        error,
+        @client.RetryContext::capture(get),
+      ),
       exhausted,
       msg="row \{i} none",
     )
@@ -314,14 +317,14 @@ test "conservative decides every attempt error variant by method" {
       transport_error(
         @model.TransportError(kind=Timeout(ms=1), phase=Head, detail="timeout"),
       ),
-      @client.RetryContext::new(post, random=0.0),
+      @client.RetryContext::capture(post, random=0.0),
     ),
     wait,
   )
   assert_eq(
     widened.decide(
       status_error(503),
-      @client.RetryContext::new(post, random=0.0),
+      @client.RetryContext::capture(post, random=0.0),
     ),
     wait,
   )
@@ -435,7 +438,7 @@ test "stainless decides every attempt error variant for any method" {
     let (error, expected) = case
     for request in [@model.Request::get("/"), @model.Request::post("/")] {
       assert_eq(
-        policy.decide(error, @client.RetryContext::new(request, random=0.0)),
+        policy.decide(error, @client.RetryContext::capture(request, random=0.0)),
         expected,
         msg="row \{i} \{request.meth.to_string()}",
       )
@@ -445,7 +448,7 @@ test "stainless decides every attempt error variant for any method" {
   let post = @model.Request::post("/")
   let yes = @model.Headers::of([("x-should-retry", "true")])
   let no = @model.Headers::of([("x-should-retry", "false")])
-  let context = @client.RetryContext::new(post, random=0.0)
+  let context = @client.RetryContext::capture(post, random=0.0)
   assert_eq(policy.decide(status_error(400, headers=yes), context), wait)
   assert_eq(
     policy.decide(status_error(500, headers=no), context),
@@ -466,7 +469,7 @@ test "stainless decides every attempt error variant for any method" {
 ///|
 test "server delays: sources, caps, zero and HTTP dates" {
   let request = @model.Request::get("/")
-  let context = @client.RetryContext::new(request, random=0.0)
+  let context = @client.RetryContext::capture(request, random=0.0)
   let policy = @client.RetryPolicy::from_rule({
     ..@client.RetryPolicy::conservative().rule,
     retry_after: {
@@ -508,7 +511,7 @@ test "server delays: sources, caps, zero and HTTP dates" {
   assert_eq(
     @client.RetryPolicy::conservative().decide(
       dated,
-      @client.RetryContext::new(request, now_unix_ms=500L),
+      @client.RetryContext::capture(request, now_unix_ms=500L),
     ),
     Wait(1500),
   )
@@ -543,22 +546,22 @@ test "the context's remaining time and replayability stop a retry" {
   assert_eq(
     policy.decide(
       error,
-      @client.RetryContext::new(get, random=0.0, remaining_ms=401L),
+      @client.RetryContext::capture(get, random=0.0, remaining_ms=401L),
     ),
     Wait(400),
   )
   assert_eq(
     policy.decide(
       error,
-      @client.RetryContext::new(get, random=0.0, remaining_ms=400L),
+      @client.RetryContext::capture(get, random=0.0, remaining_ms=400L),
     ),
     Stop(Budget(400)),
   )
   assert_eq(
-    policy.decide(error, @client.RetryContext::new(get, replayable=false)),
+    policy.decide(error, @client.RetryContext::capture(get, replayable=false)),
     Stop(NotReplayable),
   )
-  let context = @client.RetryContext::new(
+  let context = @client.RetryContext::capture(
     get,
     bucket="b",
     attempt=1,

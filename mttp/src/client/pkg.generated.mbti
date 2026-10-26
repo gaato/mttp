@@ -174,7 +174,8 @@ pub fn[A, B] ResponseAs::map_with_head(Self[A], (A, @model.ResponseHead) -> B ra
 pub fn[T] ResponseAs::new(async (@model.ResponseHead, @model.Body, RequestOptions) -> T, accept_head? : (@model.ResponseHead) -> Bool, reject? : (@model.ResponseHead, Bytes) -> Unit raise, streaming? : Bool) -> Self[T]
 
 pub(all) struct RetryContext {
-  request : @model.Request
+  request : @model.RequestHead
+  idempotent : Bool
   bucket : String
   attempt : Int32
   random : Double
@@ -182,7 +183,8 @@ pub(all) struct RetryContext {
   remaining_ms : Int64?
   replayable : Bool
 }
-pub fn RetryContext::new(@model.Request, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, replayable? : Bool) -> Self
+pub fn RetryContext::capture(@model.Request, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, replayable? : Bool) -> Self
+pub fn RetryContext::new(@model.RequestHead, idempotent~ : Bool, replayable~ : Bool, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64) -> Self
 
 pub(all) struct RetryPolicy {
   rule : @retry.RetryRule

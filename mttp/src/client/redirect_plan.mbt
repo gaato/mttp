@@ -1,14 +1,22 @@
 ///|
-/// The request to send after a response with this head, or None when it is
+/// A body-free plan, computed without acquiring or inspecting a live stream.
+priv struct RedirectPlan {
+  head : @model.RequestHead
+  drop_body : Bool
+}
+
+///|
+/// The request head to send after a response, or None when it is
 /// not a redirect to follow.
 fn plan_redirect(
-  request : @model.Request,
+  request : @model.RequestHead,
   response : @model.ResponseHead,
+  replayable~ : Bool,
   followed~ : Int32,
   max_redirects~ : Int32,
   allow_downgrade~ : Bool,
   credential_headers~ : Array[String],
-) -> @model.Request? raise RedirectError {
+) -> RedirectPlan? raise RedirectError {
   guard redirect_status(response.status) &&
     response.headers.get("location") is Some(location) else {
     return None
@@ -24,7 +32,7 @@ fn plan_redirect(
   }
   let http_method = redirect_method(response.status, request.meth.to_string())
   let drop_body = http_method != request.meth.to_string()
-  if !drop_body && !request.body.is_replayable() {
+  if !drop_body && !replayable {
     raise UnreplayableBody(location=to.to_string())
   }
   let headers = redirect_headers(
@@ -35,15 +43,12 @@ fn plan_redirect(
     credential_headers~,
   )
   Some({
-    ..request,
-    meth: @model.Method::parse(http_method),
-    url: to.without_fragment().to_string(),
-    headers,
-    body: if drop_body {
-      Bytes(b"")
-    } else {
-      request.body
+    head: {
+      meth: @model.Method::parse(http_method),
+      url: to.without_fragment().to_string(),
+      headers,
     },
+    drop_body,
   })
 }
 

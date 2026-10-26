@@ -263,7 +263,8 @@ pub async fn[T] Client::send(
       }
       Err(error) => {
         let context = RetryContext::new(
-          raw,
+          raw.head(),
+          idempotent=@model.is_idempotent(raw),
           bucket~,
           attempt~,
           random=(self.random)(),
