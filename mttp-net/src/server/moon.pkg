@@ -1,5 +1,10 @@
 import {
   "gaato/mttp/model",
+  "gaato/mttp-net/h1" @config,
+  "gaato/mttp-net/internal/control",
+  "gaato/mttp-net/internal/h1server" @engine,
+  "gaato/mttp-net/internal/socketconn" @socket_conn,
+  "gaato/mttp-net/runtime",
   "gaato/mttp/h1",
   "gaato/mttp-net/codings",
   "moonbitlang/async",
@@ -12,7 +17,6 @@ import {
   "moonbitlang/async/shell",
   "gaato/mttp/client",
   "gaato/mttp-net/backend",
-  "gaato/mttp-net/runtime",
   "moonbitlang/core/encoding/utf8",
 } for "test"
 
@@ -26,11 +30,7 @@ warnings = "-unused_package"
 options(
   targets: {
     "config.mbt": [ "native", "wasm" ],
-    "connection.mbt": [ "native", "wasm" ],
-    "request_body.mbt": [ "native", "wasm" ],
-    "response.mbt": [ "native", "wasm" ],
     "serve.mbt": [ "native", "wasm" ],
-    "wire.mbt": [ "native", "wasm" ],
     "README.mbt.md": [ "native", "wasm" ],
     "background_test.mbt": [ "native", "wasm" ],
     "bounds_test.mbt": [ "native", "wasm" ],
@@ -42,6 +42,7 @@ options(
     "server_test.mbt": [ "native", "wasm" ],
     "shutdown_test.mbt": [ "native", "wasm" ],
     "wire_wbtest.mbt": [ "native", "wasm" ],
+    "lifecycle_wbtest.mbt": [ "native", "wasm" ],
     "pkg.generated.mbti": [ "native", "wasm" ],
   },
 )

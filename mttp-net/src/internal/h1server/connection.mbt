@@ -1,18 +1,18 @@
 ///|
-async fn exchange(
+pub async fn exchange(
   connection : Connection,
   peer : String,
   authority : String,
   handler : @model.Handler,
   limits : ServerLimits,
-  state : ServerState,
+  stopping : () -> Bool,
   observer : (ServeError) -> Unit,
   compression : Bool,
-  background : (async () -> Unit) -> Unit,
+  background : ((async () -> Unit) -> Unit)?,
 ) -> Unit {
   let wire = connection.wire
-  while !state.stopping {
-    connection.busy = false
+  while !stopping() {
+    connection.set_busy(false)
     let head = wire.head(limits) catch {
       error => {
         report(error, observer)
@@ -26,7 +26,7 @@ async fn exchange(
       }
     }
     guard head is Some((meth, target, version, headers)) else { return }
-    connection.busy = true
+    connection.set_busy(true)
     if meth is Connect {
       reject(wire, 501, limits)
       return
@@ -65,42 +65,41 @@ async fn exchange(
     } else {
       target
     }
+    let attributes = @model.Attributes::empty().put(@model.remote_addr, peer)
+    let attributes = match background {
+      Some(schedule) => attributes.put(@model.background, schedule)
+      None => attributes
+    }
     let request = @model.Request::{
       ..@model.Request::new(meth, url),
       headers,
       body,
-      attributes: @model.Attributes::empty()
-      .put(@model.remote_addr, peer)
-      .put(@model.background, background),
+      attributes,
     }
     defer (if body is Stream(stream) { stream.close() })
-    let keep = @async.with_task_group(group => {
-      let work = group.spawn(
-        () => {
-          respond(
-            wire, request, source, version, handler, limits, state, observer, compression,
-          )
-        },
-        allow_failure=true,
-      )
-      group.spawn_bg(no_wait=true, () => watch_peer(wire, source, work))
-      work.wait() catch {
-        @async.WaitedTaskAlreadyCancelled => false
-        error => raise error
-      }
-    })
-    if !keep {
+    let keep = Ref(false)
+    wire.coordination.supervise(
+      primary=() => {
+        keep.val = respond(
+          wire, request, source, version, handler, limits, stopping, observer, compression,
+        )
+      },
+      monitor=() => watch_peer(connection, source),
+    ) catch {
+      error => if connection.control.failed { return } else { raise error }
+    }
+    if !keep.val {
       return
     }
   }
 }
 
 ///|
-async fn watch_peer(
-  wire : Wire,
+pub async fn watch_peer(
+  connection : Connection,
   source : RequestBody,
-  work : @async.Task[Bool],
-) -> Unit {
+) -> Unit raise @model.TransportError {
+  let wire = connection.wire
   while !source.done {
     source.changed.wait()
   }
@@ -110,35 +109,39 @@ async fn watch_peer(
     return
   }
   let next = wire.read() catch {
-    _ => {
-      work.cancel()
+    error => {
+      let change = connection.control.step(PeerFailure)
+      connection.control = change.state
+      if change.cancel_exchange {
+        raise error
+      }
       return
     }
   }
   match next {
     // FIN closes only the peer's sending half. The current response must
     // still be delivered; the next head read will observe EOF and stop.
-    None => ()
+    None => connection.control = connection.control.step(PeerEof).state
     Some(bytes) => wire.unread(bytes)
   }
 }
 
 ///|
-async fn respond(
+pub async fn respond(
   wire : Wire,
   request : @model.Request,
   source : RequestBody,
   version : @h1.Version,
   handler : @model.Handler,
   limits : ServerLimits,
-  state : ServerState,
+  stopping : () -> Bool,
   observer : (ServeError) -> Unit,
   compression : Bool,
-) -> Bool {
+) -> Bool noraise {
   let response = match limits.handler_timeout_ms {
     None => handler(request)
     Some(timeout) =>
-      @async.with_timeout(
+      wire.with_timeout(
         timeout,
         () => handler(request),
         error=@model.TransportError(
@@ -189,7 +192,7 @@ async fn respond(
   } else {
     response
   }
-  let close = state.stopping ||
+  let close = stopping() ||
     version == @h1.Http10 ||
     has_token(request.headers, "connection", "close") ||
     response.closes_connection() ||

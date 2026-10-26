@@ -1,5 +1,9 @@
 ///|
-fn has_token(headers : @model.Headers, name : String, wanted : String) -> Bool {
+pub fn has_token(
+  headers : @model.Headers,
+  name : String,
+  wanted : String,
+) -> Bool {
   headers
   .get_all(name)
   .iter()
@@ -11,7 +15,7 @@ fn has_token(headers : @model.Headers, name : String, wanted : String) -> Bool {
 }
 
 ///|
-fn compress_response(
+pub fn compress_response(
   request : @model.Request,
   response : @model.Response,
 ) -> @model.Response raise @model.TransportError {
@@ -60,7 +64,7 @@ fn compress_response(
 }
 
 ///|
-async fn write_response(
+pub async fn write_response(
   wire : Wire,
   response : @model.Response,
   meth : @model.Method,
@@ -96,7 +100,7 @@ async fn write_response(
   match response.body {
     Stream(stream) => {
       let reader = stream.take()
-      let first = @async.with_timeout(
+      let first = wire.with_timeout(
         limits.body_timeout_ms,
         () => reader.read_some(),
         error=@model.TransportError(
@@ -134,7 +138,7 @@ async fn write_response(
           )
           continue end
         }
-        next = @async.with_timeout(
+        next = wire.with_timeout(
           limits.body_timeout_ms,
           () => reader.read_some(),
           error=@model.TransportError(
@@ -164,7 +168,11 @@ async fn write_response(
 }
 
 ///|
-async fn reject(wire : Wire, status : Int32, limits : ServerLimits) -> Unit {
+pub async fn reject(
+  wire : Wire,
+  status : Int32,
+  limits : ServerLimits,
+) -> Unit noraise {
   let response = @model.Response::new(status)
   write_response(wire, response, Get, Http11, true, limits, Ref(false)) catch {
     _ => ()
@@ -172,7 +180,7 @@ async fn reject(wire : Wire, status : Int32, limits : ServerLimits) -> Unit {
 }
 
 ///|
-fn report(error : Error, observer : (ServeError) -> Unit) -> Unit {
+pub fn report(error : Error, observer : (ServeError) -> Unit) -> Unit {
   let failure = match error {
     @model.TransportError(kind~, phase~, detail~) =>
       ServeError::{ kind, phase, detail, }

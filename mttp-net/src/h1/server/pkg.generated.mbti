@@ -1,0 +1,25 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/h1/server"
+
+import {
+  "gaato/mttp-net/h1",
+  "gaato/mttp/clock",
+  "gaato/mttp/conn",
+  "gaato/mttp/model",
+}
+
+// Values
+pub async fn serve_conn(&@conn.Conn, async (@model.Request) -> @model.Response noraise, clock~ : &@clock.Clock, timer~ : &@clock.Timer, coordination~ : &@conn.Coordination, limits? : @h1.ServerLimits, peer? : String, authority? : String, on_error? : (@h1.ServeError) -> Unit, compression? : Bool, stopping? : () -> Bool, background? : (async () -> Unit) -> Unit) -> Unit
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+pub using @h1 {type ServeError}
+
+pub using @h1 {type ServerConfigError}
+
+pub using @h1 {type ServerLimits}
+
+// Traits

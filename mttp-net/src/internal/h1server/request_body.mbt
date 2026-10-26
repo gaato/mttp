@@ -1,5 +1,5 @@
 ///|
-priv struct RequestBody {
+pub(all) struct RequestBody {
   wire : Wire
   framing : @h1.Framing
   limits : ServerLimits
@@ -12,18 +12,18 @@ priv struct RequestBody {
   mut closed : Bool
   mut expect : Bool
   mut failure : @model.TransportError?
-  changed : @cond_var.Cond
+  changed : &@connection.Signal
   now : () -> Int64
   mut started_at : Int64?
 }
 
 ///|
-fn RequestBody::new(
+pub fn RequestBody::new(
   wire : Wire,
   framing : @h1.Framing,
   limits : ServerLimits,
   expect : Bool,
-  now~ : () -> Int64 = @async.now,
+  now? : () -> Int64,
 ) -> RequestBody {
   {
     wire,
@@ -41,14 +41,14 @@ fn RequestBody::new(
     closed: false,
     expect,
     failure: None,
-    changed: @cond_var.Cond(),
-    now,
+    changed: wire.coordination.signal(),
+    now: now.unwrap_or(() => wire.clock.now_unix_ms()),
     started_at: None,
   }
 }
 
 ///|
-async fn RequestBody::next(
+pub async fn RequestBody::next(
   self : RequestBody,
   max_len~ : Int32 = 65536,
 ) -> Bytes? raise @model.TransportError {
@@ -77,7 +77,9 @@ async fn RequestBody::next(
 }
 
 ///|
-fn RequestBody::budget(self : RequestBody) -> Int32 raise @model.TransportError {
+pub fn RequestBody::budget(
+  self : RequestBody,
+) -> Int32 raise @model.TransportError {
   if self.done {
     return self.limits.body_timeout_ms
   }
@@ -96,7 +98,7 @@ fn RequestBody::budget(self : RequestBody) -> Int32 raise @model.TransportError 
 }
 
 ///|
-async fn RequestBody::next_raw(
+pub async fn RequestBody::next_raw(
   self : RequestBody,
   max_len : Int32,
 ) -> Bytes? raise @model.TransportError {
@@ -118,15 +120,15 @@ async fn RequestBody::next_raw(
       self.wire.write(b"HTTP/1.1 100 Continue\r\n\r\n", remaining_ms)
       self.expect = false
     }
-    let bytes = @async.with_timeout(self.budget(), () => {
-      self.wire.read(max_len~)
-    }) catch {
-      @async.TimeoutError =>
-        raise @model.TransportError(
-          kind=Timeout(ms=self.limits.body_timeout_ms),
-          phase=Body,
-          detail="request body timed out",
-        )
+    let bytes = self.wire.with_timeout(
+      self.budget(),
+      () => self.wire.read(max_len~),
+      error=@model.TransportError(
+        kind=Timeout(ms=self.limits.body_timeout_ms),
+        phase=Body,
+        detail="request body timed out",
+      ),
+    ) catch {
       @model.TransportError(..) as error => raise error
       _ =>
         raise @model.TransportError(
@@ -148,7 +150,7 @@ async fn RequestBody::next_raw(
         self.remaining -= take.to_int64()
         self.done = self.remaining == 0L
         if self.done {
-          self.changed.broadcast()
+          self.changed.notify()
         }
         self.wire.unread(bytes[take:])
         return Some(bytes[:take].to_owned())
@@ -165,7 +167,7 @@ async fn RequestBody::next_raw(
         self.chunks = result.chunks
         self.done = result.done
         if self.done {
-          self.changed.broadcast()
+          self.changed.notify()
         }
         self.wire.unread(bytes[result.consumed:])
       }
@@ -178,7 +180,10 @@ async fn RequestBody::next_raw(
 }
 
 ///|
-impl @model.BodyStream for RequestBody with fn read_some(self) {
+pub extend RequestBody with @model.BodyStream::{read_some, close}
+
+///|
+pub impl @model.BodyStream for RequestBody with fn read_some(self) {
   if self.closed {
     return None
   }
@@ -195,12 +200,12 @@ impl @model.BodyStream for RequestBody with fn read_some(self) {
 ///|
 // Closing the application reader must still allow the server to send a final
 // error response and drain a small unread body before deciding on reuse.
-impl @model.BodyStream for RequestBody with fn close(self) {
+pub impl @model.BodyStream for RequestBody with fn close(self) {
   self.closed = true
 }
 
 ///|
-async fn RequestBody::drain(self : RequestBody) -> Bool {
+pub async fn RequestBody::drain(self : RequestBody) -> Bool noraise {
   if self.failure is Some(_) || self.expect {
     return false
   }

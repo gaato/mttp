@@ -39,7 +39,7 @@ async test "configuration is rejected before binding or calling on_listen" {
     @server.serve(_ => @model.Response::new(200), addr="invalid")
     false
   } catch {
-    @server.Bind(..) => true
+    @server.ServerConfigError::Bind(..) => true
     _ => false
   }
   assert_true(failed)

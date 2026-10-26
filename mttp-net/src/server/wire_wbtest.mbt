@@ -1,4 +1,20 @@
 ///|
+using @engine {type RequestBody, respond, watch_peer, reject}
+
+///|
+fn test_wire(tcp : @socket.Tcp, pending~ : Bytes = b"") -> Wire {
+  let clock = @runtime.AsyncClock::new()
+  let wire = Wire::new(
+    @socket_conn.from_tcp(tcp),
+    clock~,
+    timer=@runtime.ClockTimer::new(clock~),
+    coordination=@runtime.RuntimeCoordination::new(),
+  )
+  wire.pending = pending
+  wire
+}
+
+///|
 priv struct TimeoutReply {
   source : RequestBody
   record_failure : Bool
@@ -11,7 +27,7 @@ async test "body deadline is shared across chunks and consumer pauses" {
   let client = @socket.Tcp::connect(listener.addr)
   defer client.close()
   let (tcp, _) = listener.accept()
-  let wire = Wire::{ tcp, pending: b"a", closed: false, }
+  let wire = test_wire(tcp, pending=b"a")
   defer wire.close()
   let now = Ref(0L)
   let source = RequestBody::new(
@@ -69,17 +85,10 @@ async test "a request timeout recorded during first response production still yi
     let client = @socket.Tcp::connect(listener.addr)
     defer client.close()
     let (tcp, _) = listener.accept()
-    let wire = Wire::{ tcp, pending: b"", closed: false, }
+    let wire = test_wire(tcp)
     defer wire.close()
     let limits = ServerLimits::default()
     let source = RequestBody::new(wire, Length(1L), limits, false)
-    let state = ServerState::{
-      stopping: false,
-      connections: {},
-      changed: @cond_var.Cond(),
-      stop_accept: None,
-      background: {},
-    }
     let handler : @model.Handler = _ => {
       @model.Response::new(
         200,
@@ -96,7 +105,7 @@ async test "a request timeout recorded during first response production still yi
         Http11,
         handler,
         limits,
-        state,
+        () => false,
         _ => (),
         false,
       ),
@@ -122,7 +131,7 @@ async test "listener failures are surfaced as Accept without leaking runtime err
     )
     false
   } catch {
-    Accept(..) => true
+    @config.Accept(..) => true
     _ => false
   }
   assert_true(refused)
@@ -135,7 +144,7 @@ async test "closed sockets preserve read and write error phases and body failure
   let client = @socket.Tcp::connect(listener.addr)
   defer client.close()
   let (tcp, _) = listener.accept()
-  let wire = Wire::{ tcp, pending: b"", closed: false, }
+  let wire = test_wire(tcp)
   wire.close()
   let read_failed = try {
     ignore(wire.read())
@@ -153,28 +162,28 @@ async test "closed sockets preserve read and write error phases and body failure
     _ => false
   }
   assert_true(head_failed)
-  @async.with_task_group(group => {
+  {
     let cleaned = Ref(false)
-    let work = group.spawn(allow_failure=true, () => {
-      defer {
-        cleaned.val = true
-      }
-      @cond_var.Cond().wait()
-      false
-    })
-    watch_peer(
-      wire,
-      RequestBody::new(wire, NoBody, ServerLimits::default(), false),
-      work,
-    )
-    try work.wait() catch {
-      @async.WaitedTaskAlreadyCancelled => ()
-      error => raise error
-    } noraise {
-      _ => fail("disconnected exchange survived")
+    let session = @engine.Connection::new(wire)
+    session.set_busy(true)
+    @runtime.RuntimeCoordination::new().supervise(
+      primary=() => {
+        defer {
+          cleaned.val = true
+        }
+        @cond_var.Cond().wait()
+      },
+      monitor=() => {
+        watch_peer(
+          session,
+          RequestBody::new(wire, NoBody, ServerLimits::default(), false),
+        )
+      },
+    ) catch {
+      _ => ()
     }
     assert_true(cleaned.val)
-  })
+  }
   let write_failed = try {
     wire.write(b"x", 100)
     false
@@ -206,7 +215,7 @@ async test "write deadlines bound a peer which never reads" {
   let client = @socket.Tcp::connect(listener.addr)
   defer client.close()
   let (tcp, _) = listener.accept()
-  let wire = Wire::{ tcp, pending: b"", closed: false, }
+  let wire = test_wire(tcp)
   defer wire.close()
   let chunk = Bytes::make(65536, b'x')
   let timed_out = @async.with_timeout(2000, () => {
