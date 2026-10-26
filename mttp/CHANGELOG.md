@@ -7,6 +7,21 @@ never does. Every breaking change is listed with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- Runtime-independent Conn, Dialer, Signal and Coordination extension traits;
+  deterministic SimConn pairs, ScriptedConn and ScriptedDialer test fixtures.
+- Shared connection and coordination contract checks, including half-close,
+  first-outcome delivery and structured cancellation cleanup.
+
+### Changed
+
+- Before first publication: RetryContext and RetryRule now consume RequestHead
+  and explicit idempotency/replayability snapshots. Replace live-request
+  `RetryContext::new(request)` calls with `RetryContext::capture(request)`;
+  callers constructing a pure context pass `request.head()`, `idempotent~`
+  and `replayable~` explicitly.
+
 ## [0.1.0] - 2026-10-26
 
 ### Added

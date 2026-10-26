@@ -1,0 +1,12 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/client",
+  "gaato/mttp-net/backend",
+  "moonbitlang/async",
+  "moonbitlang/async/socket",
+  "moonbitlang/core/bench",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "native"

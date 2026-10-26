@@ -1,5 +1,19 @@
 # Implementation status
 
+## Portable-engine refactor, 2026-10-26
+
+The follow-up to baseline `81adeb5` separates persistent pure control states,
+locally mutable parsing buffers and runtime effects. Public Conn/Dialer and
+coordination ports support a shared HTTP/1 client/server engine on all four
+targets, including deterministic Endpoint/Router round trips on Wasm-GC.
+Retry/redirect decisions consume snapshots; SDK and Discord follow-ups adapt
+their retry calls and server error constructor references. The socket facade
+keeps its existing defaults. Details, measurements and remaining physical
+race/TLS coverage limits are in [pure-core-refactor.md](pure-core-refactor.md).
+
+The measurements and source-recovery notes below describe the earlier
+integration checkpoint; they are not the refactor's current coverage totals.
+
 The implementation starts from design commit
 `eeed2049d84d1412447780cf13eede401454981a`. The local integration branch is
 `ccr-eae554e2-r0xapl-u1`. No implementation has been published.

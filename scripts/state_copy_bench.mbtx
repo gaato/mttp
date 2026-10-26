@@ -1,0 +1,169 @@
+----
+import {
+  "moonbitlang/core/bench",
+  "moonbitlang/core/immut/hashmap" @persistent,
+  "moonbitlang/core/immut/vector" @vector,
+}
+----
+
+fn measure(name : String, work : (Int) -> Int) -> Unit {
+  let mut repeats = 1
+  let mut checksum = 0
+  for ;; {
+    let start = @bench.monotonic_clock_start()
+    checksum = checksum ^ work(repeats)
+    let elapsed = @bench.monotonic_clock_end(start)
+    if elapsed >= 40000.0 || repeats >= 1048576 { break }
+    repeats *= 2
+  }
+  let times : Array[Double] = []
+  for _ in 0..<3 {
+    let start = @bench.monotonic_clock_start()
+    checksum = checksum ^ work(repeats)
+    times.push(@bench.monotonic_clock_end(start) * 1000.0 / repeats.to_double())
+  }
+  times.sort()
+  println("\{name} median_ns_per_op=\{times[1]} repeats=\{repeats} checksum=\{checksum}")
+}
+
+fn map_work(size : Int, repeats : Int, variant : Int) -> Int {
+  let keys = Array::makei(size, i => "origin-" + i.to_string())
+  let mut checksum = 0
+  if variant == 2 {
+    let mut state : @persistent.HashMap[String, Int] = @persistent.HashMap::new()
+    for i in 0..<size { state = state.add(keys[i], i) }
+    for i in 0..<repeats {
+      let key = keys[i % size]
+      state = state.add(key, state[key] + 1)
+      checksum += state[key]
+    }
+  } else {
+    let mut state : Map[String, Int] = Map([])
+    for i in 0..<size { state[keys[i]] = i }
+    for i in 0..<repeats {
+      let key = keys[i % size]
+      if variant == 1 { state = state.copy() }
+      state[key] = state[key] + 1
+      checksum += state[key]
+    }
+  }
+  checksum
+}
+
+fn pool_work(origins : Int, repeats : Int, variant : Int) -> Int {
+  let keys = Array::makei(origins, i => "origin-" + i.to_string())
+  let mut checksum = 0
+  if variant == 2 {
+    let mut state : @persistent.HashMap[String, @vector.Vector[Int]] = @persistent.HashMap::new()
+    for key in keys { state = state.add(key, @vector.Vector::make(4, 0)) }
+    for i in 0..<repeats {
+      let key = keys[i % origins]
+      let values = state[key]
+      state = state.add(key, values.set(i % 4, i))
+      checksum += state[key][i % 4]
+    }
+  } else {
+    let mut state : Map[String, Array[Int]] = Map([])
+    for key in keys { state[key] = Array::make(4, 0) }
+    for i in 0..<repeats {
+      let key = keys[i % origins]
+      if variant == 1 {
+        let next = state.copy()
+        let values = state[key].copy()
+        values[i % 4] = i
+        next[key] = values
+        state = next
+      } else {
+        state[key][i % 4] = i
+      }
+      checksum += state[key][i % 4]
+    }
+  }
+  checksum
+}
+
+fn queue_work(size : Int, repeats : Int, variant : Int) -> Int {
+  let mut checksum = 0
+  if variant == 2 {
+    let mut state = @vector.Vector::makei(size, i => i)
+    for _ in 0..<repeats {
+      let item = state[0]
+      state = state.drop(1).push(item + 1)
+      checksum += state[0]
+    }
+  } else {
+    let mut state = Array::makei(size, i => i)
+    for _ in 0..<repeats {
+      if variant == 1 { state = state.copy() }
+      let item = state.remove(0)
+      state.push(item + 1)
+      checksum += state[0]
+    }
+  }
+  checksum
+}
+
+fn buffer_work(chunk : Int, repeats : Int, variant : Int) -> Int {
+  let piece = Bytes::make(chunk, b'x')
+  let chunks = 16384 / chunk
+  let mut checksum = 0
+  for _ in 0..<repeats {
+    if variant == 0 {
+      let buffer = Buffer()
+      for _ in 0..<chunks { buffer.write_bytes(piece) }
+      let bytes = buffer.to_bytes()
+      checksum += bytes.length() + bytes[0].to_int()
+    } else if variant == 1 {
+      let mut bytes = b""
+      for _ in 0..<chunks { bytes = bytes + piece }
+      checksum += bytes.length() + bytes[0].to_int()
+    } else {
+      let mut pieces : @vector.Vector[Bytes] = @vector.Vector::new()
+      for _ in 0..<chunks { pieces = pieces.push(piece) }
+      let buffer = Buffer()
+      for bytes in pieces { buffer.write_bytes(bytes) }
+      let bytes = buffer.to_bytes()
+      checksum += bytes.length() + bytes[0].to_int()
+    }
+  }
+  checksum
+}
+
+fn main {
+  for size in [16, 256, 4096] {
+    let expected = map_work(size, 128, 0)
+    assert_eq(map_work(size, 128, 1), expected) catch { _ => abort("map variant mismatch") }
+    assert_eq(map_work(size, 128, 2), expected) catch { _ => abort("map persistent mismatch") }
+    let expected = queue_work(size, 128, 0)
+    assert_eq(queue_work(size, 128, 1), expected) catch { _ => abort("queue variant mismatch") }
+    assert_eq(queue_work(size, 128, 2), expected) catch { _ => abort("queue persistent mismatch") }
+  }
+  for size in [4, 64, 1024] {
+    let expected = pool_work(size, 128, 0)
+    assert_eq(pool_work(size, 128, 1), expected) catch { _ => abort("pool variant mismatch") }
+    assert_eq(pool_work(size, 128, 2), expected) catch { _ => abort("pool persistent mismatch") }
+  }
+  for chunk in [1, 64, 4096] {
+    let expected = buffer_work(chunk, 2, 0)
+    assert_eq(buffer_work(chunk, 2, 1), expected) catch { _ => abort("buffer variant mismatch") }
+    assert_eq(buffer_work(chunk, 2, 2), expected) catch { _ => abort("buffer persistent mismatch") }
+  }
+  println("variant correctness: OK")
+
+  for size in [16, 256, 4096] {
+    for variant in 0..<3 {
+      measure("map/\{size}/\{variant}", n => map_work(size, n, variant))
+      measure("queue/\{size}/\{variant}", n => queue_work(size, n, variant))
+    }
+  }
+  for origins in [4, 64, 1024] {
+    for variant in 0..<3 {
+      measure("pool/\{origins * 4}/\{variant}", n => pool_work(origins, n, variant))
+    }
+  }
+  for chunk in [1, 64, 4096] {
+    for variant in 0..<3 {
+      measure("buffer16k/chunk\{chunk}/\{variant}", n => buffer_work(chunk, n, variant))
+    }
+  }
+}

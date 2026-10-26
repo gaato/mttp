@@ -81,6 +81,33 @@ async fn run(program : String, args : Array[String], cwd~ : String) -> String {
 }
 
 ///|
+async fn copy_module(source : String, destination : String) -> Unit {
+  let excluded = ["_build", ".mooncakes", ".git", ".jj", "moon.work"]
+  @fs.walk(
+    source,
+    (dir, entries) => {
+      let target = destination + dir[source.length():].to_owned()
+      @fs.mkdir(target, recursive=true, allow_exist=true)
+      let files = []
+      for entry in entries {
+        if excluded.contains(entry) {
+          continue
+        }
+        let path = dir + "/" + entry
+        if @fs.kind(path, follow_symlink=false) != Directory {
+          files.push(path)
+        }
+      }
+      if !files.is_empty() {
+        run("cp", ["-a", ..files, target + "/"], cwd=source) |> ignore
+      }
+    },
+    exclude=path => excluded.any(name => path.has_suffix("/" + name)),
+    max_concurrency=1,
+  )
+}
+
+///|
 async fn stage(candidate : Module, registry : String) -> Unit {
   let index = registry + "/index/user/" + candidate.name + ".index"
   let mut rows : Array[String] = []
@@ -112,7 +139,20 @@ async fn stage(candidate : Module, registry : String) -> Unit {
       )
     }
   }
-  let output = run("moon", ["package"], cwd=candidate.dir)
+  // Packaging performs a check. Copy the module outside its original
+  // workspace so sibling overrides cannot validate different dependency code.
+  let source = registry + "/../sources/" + candidate.name
+  @fs.mkdir(source, recursive=true, allow_exist=true)
+  copy_module(candidate.dir, source)
+  let packaged = @shell.Cmd("moon", ["package"], cwd=source, env={
+    "MOON_HOME": registry + "/..",
+  }).output(timeout_ms=600000)
+  if packaged.exit_code() != 0 {
+    println(packaged.stdout())
+    println(packaged.stderr())
+    raise GateError("isolated packaging failed: " + candidate.name)
+  }
+  let output = packaged.stdout() + packaged.stderr()
   let archives = output
     .split("\n")
     .filter(line => line.has_prefix("Package to "))
@@ -121,6 +161,17 @@ async fn stage(candidate : Module, registry : String) -> Unit {
     raise GateError("moon package did not report exactly one archive")
   }
   let archive = archive[11:].to_owned()
+  let archive = if archive.has_prefix("/") {
+    archive
+  } else {
+    source + "/" + archive
+  }
+  let contents = run("unzip", ["-Z1", archive], cwd=source)
+  if !contents
+    .split("\n")
+    .any(path => path == "moon.mod" || path == "moon.mod.json") {
+    raise GateError("archive omits its module manifest: " + candidate.name)
+  }
   let checksum = run("sha256sum", [archive], cwd=candidate.dir)
     .split(" ")
     .next()
@@ -159,12 +210,17 @@ async fn check() -> Unit {
   let modules = [
     module_at(
       root + "/mttp",
-      ["model", "client", "endpoint", "router", "openapi", "testing"],
+      [
+        "model", "client", "conn", "endpoint", "router", "openapi", "testing", "testing/conn",
+      ],
       all,
     ),
     module_at(
       root + "/mttp-net",
-      ["backend", "runtime", "codings", "quick", "server", "fetch"],
+      [
+        "backend", "runtime", "codings", "quick", "server", "fetch", "conn", "h1",
+        "h1/client", "h1/server",
+      ],
       runtime,
     ),
     module_at(root + "/mttp-digest", [""], all),
@@ -193,11 +249,27 @@ async fn check() -> Unit {
   let home = @env.get_env_var("MOON_HOME").unwrap_or(
     @env.get_env_var("HOME").unwrap() + "/.moon",
   )
-  let scratch = @fs.tmpdir(prefix="mttp-resolver-")
+  // Native build artifacts can exceed a tmpfs quota. Stay outside the
+  // checkout too: an ancestor .gitignore can silently exclude archive files.
+  let scratch_base = @env.get_env_var("MTTP_RESOLVER_TMPDIR").unwrap_or(
+    "/var/tmp",
+  )
+  @fs.mkdir(scratch_base, recursive=true, allow_exist=true)
+  let scratch = run(
+      "mktemp",
+      ["-d", scratch_base + "/mttp-resolver.XXXXXXXX"],
+      cwd=root,
+    )
+    .trim()
+    .to_owned()
   println("resolver scratch: " + scratch)
   let isolated = scratch + "/moon"
   @fs.mkdir(isolated)
-  run("cp", ["-a", home + "/registry", isolated + "/registry"], cwd=root)
+  run(
+    "cp",
+    ["-a", "--reflink=auto", home + "/registry", isolated + "/registry"],
+    cwd=root,
+  )
   |> ignore
   @fs.symlink(target=home + "/lib", isolated + "/lib")
   for candidate in modules {
@@ -261,6 +333,9 @@ async fn check() -> Unit {
         stdout=Discard,
         stderr=Inherit,
       ).run(timeout_ms=600000)
+    }
+    if @fs.exists(consumer + "/_build") {
+      @fs.rmdir(consumer + "/_build", recursive=true)
     }
   }
   println("resolver gate: OK (isolated registry; no workspace overrides)")

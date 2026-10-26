@@ -13,9 +13,16 @@ empty; none of these checks uploads packages or changes GitHub state.
 | Actual browser | `moon run scripts/browser_gate.mbtx` | Chromium with a new temporary profile: Unicode streaming, synchronous background registration, pre-abort, cancellation cleanup, overflow before/after response headers and a real loopback network GET through AsyncBackend |
 
 The resolver requires the regular Moon registry cache/index used by the
-workspace and command-line `cp`, `sha256sum` and `unzip`. The browser check uses
+workspace and command-line `cp`, `mktemp`, `sha256sum` and `unzip`. Packaging
+copies modules outside their source workspaces, so sibling overrides cannot
+mask a dependency mismatch. The browser check uses
 `chromium` (or `CHROMIUM`), Python's standard-library HTTP server, and a temporary
 directory containing only its test artifacts. Both print their evidence paths.
+
+Resolver artifacts default to `/var/tmp`; `MTTP_RESOLVER_TMPDIR` can select a
+different disk-backed directory. Native builds can exceed a tmpfs quota, and
+staging beneath an ignored checkout directory can make `moon package` omit
+files. The gate checks each archive for its module manifest before resolving it.
 
 ## Public interface review
 

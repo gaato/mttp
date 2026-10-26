@@ -58,6 +58,43 @@ and Fetch fixtures exercise deadlines, framing, cancellation and ownership.
    first chunk that would exceed the limit using overflow-safe arithmetic.
 6. Concurrent reads on the same stream are outside this contract.
 
+## Connections and coordination
+
+`gaato/mttp/conn` contains runtime-independent extension traits. Conn reads
+return nonempty chunks of at most `max_len`; EOF permanently ends only the
+read half. Writes consume all supplied bytes. One reader and one writer may
+run concurrently. Close is idempotent and wakes pending operations; a write
+after close raises TransportError. Cancellation finishes an operation's
+cleanup before another operation in that direction begins.
+
+A successful Dialer TLS upgrade owns its input connection. A failed upgrade
+leaves that connection owned by the caller, which closes it. The runtime
+TcpDialer verifies certificates; ScriptedDialer records upgrades without
+performing cryptography.
+
+Signal is a sticky one-shot notification. Coordination runs primary and
+monitor as structured children: monitor completion permits primary to
+continue, monitor failure cancels primary, primary completion cancels monitor,
+and every exit joins cleanup. The first delivered outcome wins. Parent
+cancellation propagates after both children finish cleanup. The shared
+coordination suite runs against RuntimeCoordination and SimCoordination;
+nested deterministic and runtime cancellation tests check cleanup separately.
+
+## Decision snapshots
+
+RetryRule consumes RequestHead plus explicit idempotency and replayability.
+RetryContext::capture reads live request facts once at the application
+boundary. Later acquisition or closure of a stream cannot change a captured
+decision. The Client still requires a body factory before automatically
+resending a stream.
+
+Admission, pool metadata, peer EOF/failure and listener lifecycle transitions
+return new persistent states and effect descriptions. Old snapshots remain
+valid. Connections, tasks, waiters and notifications belong to adapters and
+are absent from those states. The adapters commit each new state before
+performing its close/cancel/wake actions. Decoder buffers and body cursors
+remain locally mutable; they are owned by a single exchange or reader.
+
 ## Implementations checked against the rules
 
 | Implementation | Holds | Notes |

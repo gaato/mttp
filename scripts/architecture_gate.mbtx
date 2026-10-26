@@ -1,0 +1,85 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+}
+----
+
+///|
+suberror ArchitectureError {
+  ArchitectureError(String)
+}
+
+///|
+fn check(source : String, pure~ : Bool) -> Unit raise ArchitectureError {
+  if source.contains("moonbitlang/async") ||
+    source.contains("extern ") ||
+    source.contains("async test") ||
+    [
+      "gaato/mttp-net/runtime", "gaato/mttp-net/internal/socketconn", "gaato/mttp-net/backend",
+      "gaato/mttp-net/server\"", "gaato/mttp-net/conn\"",
+    ].any(name => source.contains(name)) {
+    raise ArchitectureError("portable code depends on a host runtime")
+  }
+  if pure &&
+    (
+      source.contains("async fn") ||
+      source.contains("  mut ") ||
+      source.contains("Ref[") ||
+      source.contains("Ref(")
+    ) {
+    raise ArchitectureError("control state contains effects or mutable fields")
+  }
+}
+
+///|
+async fn main {
+  for
+    (source, pure) in [
+      ("import { \"moonbitlang/async/socket\" }", false),
+      ("async fn decide() {}", true),
+      ("struct State {\n  mut count : Int\n}", true),
+    ] {
+    let refused = try {
+      check(source, pure~)
+      false
+    } catch {
+      _ => true
+    }
+    if !refused {
+      raise ArchitectureError("negative architecture fixture accepted")
+    }
+  }
+  for
+    root in [
+      "mttp/src/conn", "mttp/src/testing/conn", "mttp-net/src/internal/control",
+      "mttp-net/src/internal/h1client", "mttp-net/src/internal/h1server", "mttp-net/src/h1",
+    ] {
+    let paths = []
+    @fs.walk(root, (dir, entries) => {
+      for entry in entries {
+        if entry == "moon.pkg" || entry.has_suffix(".mbt") {
+          paths.push(dir + "/" + entry)
+        }
+      }
+    })
+    for path in paths {
+      let source = @fs.read_file(path).text()
+      let pure = root == "mttp-net/src/internal/control" &&
+        !path.has_suffix("moon.pkg") &&
+        !path.has_suffix("_test.mbt")
+      if root == "mttp-net/src/internal/control" &&
+        path.has_suffix("moon.pkg") &&
+        source.contains("gaato/") {
+        raise ArchitectureError(
+          "pure control imports a runtime or application package",
+        )
+      }
+      check(source, pure~) catch {
+        ArchitectureError(message) =>
+          raise ArchitectureError(path + ": " + message)
+      }
+    }
+  }
+  println("architecture gate: portable engines and pure control states OK")
+}

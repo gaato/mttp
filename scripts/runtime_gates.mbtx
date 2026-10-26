@@ -61,7 +61,10 @@ async fn check_runtime_interfaces() -> Unit {
       }
     }
   }
-  let packages = ["backend", "runtime", "codings", "quick", "server", "fetch"]
+  let packages = [
+    "backend", "runtime", "codings", "quick", "server", "fetch", "conn", "h1", "h1/client",
+    "h1/server",
+  ]
   @shell.Cmd(
     "moon",
     ["info", "--target", "all", ..packages.map(p => "mttp-net/src/" + p)],
@@ -76,7 +79,7 @@ async fn check_runtime_interfaces() -> Unit {
         "/debug/check/gaato/mttp-net/" +
         package +
         "/" +
-        package +
+        package.split("/").last().unwrap().to_owned() +
         ".mbti",
       ).text()
     }
@@ -95,11 +98,17 @@ async fn check_runtime_interfaces() -> Unit {
       if portable_backend_interface(native) != portable_backend_interface(js) {
         raise GateError("AsyncBackend public interface mismatch on JS")
       }
-    } else if package != "server" && package != "fetch" && native != js {
+    } else if package != "server" &&
+      package != "fetch" &&
+      package != "conn" &&
+      native != js {
       raise GateError("native/JS public interface mismatch: " + package)
     }
-    if package == "codings" && native != interface("wasm-gc") {
-      raise GateError("codings public interface mismatch on wasm-gc")
+    if (package == "codings" || package.has_prefix("h1")) &&
+      native != interface("wasm-gc") {
+      raise GateError(
+        "portable public interface mismatch on wasm-gc: " + package,
+      )
     }
     let absent = if package == "server" {
       Some(js)
@@ -195,7 +204,13 @@ async fn main {
   @fs.walk("mttp-net/src", (dir, entries) => {
     if entries.contains("moon.pkg") {
       let pkg = "gaato/mttp-net" + dir["mttp-net/src".length():].to_owned()
-      if !packages.contains(pkg) {
+      // Internal engines are exercised through both public portable facades
+      // and host adapters; empty configuration/adapter packages own no tests.
+      let indirect = [
+        "gaato/mttp-net/conn", "gaato/mttp-net/h1", "gaato/mttp-net/internal/h1client",
+        "gaato/mttp-net/internal/h1server", "gaato/mttp-net/internal/socketconn",
+      ]
+      if !packages.contains(pkg) && !indirect.contains(pkg) {
         raise GateError("runtime package missing from manifest: " + pkg)
       }
     }
