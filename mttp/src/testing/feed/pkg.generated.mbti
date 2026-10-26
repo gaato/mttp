@@ -1,0 +1,37 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/testing/feed"
+
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/testing/driver",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Feed {
+  // private fields
+}
+pub fn Feed::bytes(@driver.Driver, Array[Bytes]) -> Self
+pub fn Feed::cancellations(Self) -> Int32
+pub fn Feed::close(Self) -> Unit
+pub fn Feed::closes(Self) -> Int32
+pub fn Feed::is_closed(Self) -> Bool
+pub fn Feed::new(@driver.Driver, Array[Step]) -> Self
+pub async fn Feed::read_some(Self) -> Bytes? raise @model.TransportError
+pub fn Feed::reads(Self) -> Int32
+pub impl @model.BodyStream for Feed
+
+#non_exhaustive
+pub(all) enum Step {
+  Chunk(Bytes)
+  Wait(Int32)
+  Fail(@model.TransportError)
+  End
+}
+
+// Type aliases
+
+// Traits

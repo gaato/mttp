@@ -1,0 +1,86 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/async@0.22.5/socket",
+  "moonbitlang/async@0.22.5/shell",
+  "moonbitlang/core/env",
+}
+----
+
+///|
+suberror BrowserFailed {
+  BrowserFailed
+}
+
+// Run the linked example in an actual browser. Only the three public test
+// artifacts are served, and a fresh profile prevents use of personal state.
+
+///|
+async fn main {
+  @shell.Cmd(
+    "moon",
+    ["build", "examples/fetch/src", "--target", "js", "--deny-warn"],
+    stdout=Inherit,
+    stderr=Inherit,
+  ).run()
+  let root = @fs.tmpdir(prefix="mttp-browser-")
+  @shell.Cmd("cp", ["examples/fetch/browser.test.html", root + "/index.html"]).run()
+  @shell.Cmd("cp", [
+    "_build/js/debug/build/gaato/mttp-fetch-example/mttp-fetch-example.js",
+    root + "/mttp-fetch-example.js",
+  ]).run()
+  @fs.write_file(root + "/fixture.txt", "browser backend 日本🙂")
+  let reserve = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
+  let address = reserve.addr.to_string()
+  let port = address.split(":").last().unwrap().to_owned()
+  reserve.close()
+  @async.with_task_group(group => {
+    let server = group.spawn(() => {
+      @shell.Cmd(
+        "python3",
+        ["-m", "http.server", port, "--bind", "127.0.0.1", "--directory", root],
+        stdout=Discard,
+        stderr=Discard,
+      ).run()
+    })
+    defer server.cancel()
+    let mut ready = false
+    for _ in 0..<100 {
+      ready = try {
+        let connection = @socket.Tcp::connect(@socket.Addr::parse(address))
+        connection.close()
+        true
+      } catch {
+        _ => false
+      }
+      if ready {
+        break
+      }
+      @async.sleep(20)
+    }
+    if !ready {
+      raise BrowserFailed
+    }
+    let browser = @env.get_env_var("CHROMIUM").unwrap_or("chromium")
+    let output = @shell.Cmd(browser, [
+      "--headless",
+      "--disable-gpu",
+      "--no-first-run",
+      "--user-data-dir=" + root + "/profile",
+      "--dump-dom",
+      "--virtual-time-budget=10000",
+      "http://" + address + "/index.html",
+    ]).output(timeout_ms=60000)
+    @fs.write_file(root + "/result.html", output.stdout())
+    @fs.write_file(root + "/browser.log", output.stderr())
+    println("browser evidence: " + root)
+    if output.exit_code() != 0 ||
+      !output.stdout().contains("<pre id=\"result\">PASS 5</pre>") {
+      println(output.stdout())
+      println(output.stderr())
+      raise BrowserFailed
+    }
+    println("browser gate: 5 passed")
+  })
+}

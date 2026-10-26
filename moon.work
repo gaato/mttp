@@ -1,0 +1,8 @@
+members = [
+  "mttp",
+  "mttp-net",
+  "mttp-digest",
+  "examples/fetch",
+  "conformance",
+  "benchmarks/transport",
+]

@@ -1,0 +1,36 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/conn"
+
+import {
+  "gaato/mttp/model",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+pub(open) trait Conn {
+  async fn read(Self, max_len~ : Int32) -> Bytes? raise @model.TransportError
+  async fn write(Self, Bytes) -> Unit raise @model.TransportError
+  fn close(Self) -> Unit
+}
+
+pub(open) trait Coordination {
+  fn signal(Self) -> &Signal
+  async fn supervise(Self, primary~ : async () -> Unit raise @model.TransportError, monitor~ : async () -> Unit raise @model.TransportError) -> Unit raise @model.TransportError
+}
+
+pub(open) trait Dialer {
+  async fn connect(Self, host~ : String, port~ : Int32) -> &Conn raise @model.TransportError
+  async fn start_tls(Self, &Conn, host~ : String) -> &Conn raise @model.TransportError
+}
+
+pub(open) trait Signal {
+  async fn wait(Self) -> Unit noraise
+  fn notify(Self) -> Unit
+}

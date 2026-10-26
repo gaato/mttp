@@ -1,0 +1,21 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/conn" @connection,
+  "gaato/mttp/clock",
+  "gaato/mttp-net/h1" @config,
+  "gaato/mttp-net/internal/h1server" @engine,
+}
+
+import {
+  "gaato/mttp/testing/driver",
+  "gaato/mttp/testing/conn" @sim,
+  "gaato/mttp/clock/fake",
+  "gaato/mttp-net/h1/client" @http,
+  "gaato/mttp/client" @httpclient,
+  "gaato/mttp/endpoint",
+  "gaato/mttp/router",
+  "gaato/mttp/schema",
+  "moonbitlang/core/encoding/utf8",
+} for "test"
+
+supported_targets = "native + wasm + js + wasm-gc"

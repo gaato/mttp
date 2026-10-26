@@ -1,0 +1,24 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-digest"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/model",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct DigestScheme {
+  // private fields
+}
+pub fn DigestScheme::close(Self) -> Unit
+pub fn DigestScheme::new(&@client.Backend, String, String, origin~ : String, random~ : () -> Double) -> Self raise @model.TransportError
+pub async fn DigestScheme::send(Self, @model.Request, @client.RequestOptions) -> @model.Response raise @model.TransportError
+pub impl @client.Backend for DigestScheme
+
+// Type aliases
+
+// Traits

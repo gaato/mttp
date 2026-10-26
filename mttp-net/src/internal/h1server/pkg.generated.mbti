@@ -1,0 +1,84 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/internal/h1server"
+
+import {
+  "gaato/mttp-net/internal/control",
+  "gaato/mttp/clock",
+  "gaato/mttp/conn",
+  "gaato/mttp/model",
+  "moonbitlang/core/ref",
+}
+
+// Values
+pub fn compress_response(@model.Request, @model.Response) -> @model.Response raise @model.TransportError
+
+pub async fn exchange(Connection, String, String, async (@model.Request) -> @model.Response noraise, @gaato/mttp-net/h1.ServerLimits, () -> Bool, (@gaato/mttp-net/h1.ServeError) -> Unit, Bool, ((async () -> Unit) -> Unit)?) -> Unit
+
+pub fn has_token(@model.Headers, String, String) -> Bool
+
+pub async fn reject(Wire, Int32, @gaato/mttp-net/h1.ServerLimits) -> Unit noraise
+
+pub fn report(Error, (@gaato/mttp-net/h1.ServeError) -> Unit) -> Unit
+
+pub async fn respond(Wire, @model.Request, RequestBody, @gaato/mttp/h1.Version, async (@model.Request) -> @model.Response noraise, @gaato/mttp-net/h1.ServerLimits, () -> Bool, (@gaato/mttp-net/h1.ServeError) -> Unit, Bool) -> Bool noraise
+
+pub async fn watch_peer(Connection, RequestBody) -> Unit raise @model.TransportError
+
+pub async fn write_response(Wire, @model.Response, @model.Method, @gaato/mttp/h1.Version, Bool, @gaato/mttp-net/h1.ServerLimits, @ref.Ref[Bool]) -> Unit
+
+// Errors
+
+// Types and methods
+pub(all) struct Connection {
+  wire : Wire
+  mut control : @control.SessionState
+  activity : (Bool) -> Unit
+}
+pub fn Connection::new(Wire, activity? : (Bool) -> Unit) -> Self
+pub fn Connection::set_busy(Self, Bool) -> Unit
+
+pub(all) struct RequestBody {
+  wire : Wire
+  framing : @gaato/mttp/h1.Framing
+  limits : @gaato/mttp-net/h1.ServerLimits
+  decoder : @gaato/mttp/h1.ChunkedDecoder
+  mut remaining : Int64
+  mut count : Int64
+  mut chunks : Array[Bytes]
+  mut index : Int32
+  mut done : Bool
+  mut closed : Bool
+  mut expect : Bool
+  mut failure : @model.TransportError?
+  changed : &@conn.Signal
+  now : () -> Int64
+  mut started_at : Int64?
+}
+pub fn RequestBody::budget(Self) -> Int32 raise @model.TransportError
+pub fn RequestBody::close(Self) -> Unit
+pub async fn RequestBody::drain(Self) -> Bool noraise
+pub fn RequestBody::new(Wire, @gaato/mttp/h1.Framing, @gaato/mttp-net/h1.ServerLimits, Bool, now? : () -> Int64) -> Self
+pub async fn RequestBody::next(Self, max_len? : Int32) -> Bytes? raise @model.TransportError
+pub async fn RequestBody::next_raw(Self, Int32) -> Bytes? raise @model.TransportError
+pub async fn RequestBody::read_some(Self) -> Bytes? raise @model.TransportError
+pub impl @model.BodyStream for RequestBody
+
+pub(all) struct Wire {
+  conn : &@conn.Conn
+  clock : &@clock.Clock
+  timer : &@clock.Timer
+  coordination : &@conn.Coordination
+  mut pending : Bytes
+  mut closed : Bool
+}
+pub fn Wire::close(Self) -> Unit
+pub async fn Wire::head(Self, @gaato/mttp-net/h1.ServerLimits) -> (@model.Method, String, @gaato/mttp/h1.Version, @model.Headers)?
+pub fn Wire::new(&@conn.Conn, clock~ : &@clock.Clock, timer~ : &@clock.Timer, coordination~ : &@conn.Coordination) -> Self
+pub async fn Wire::read(Self, max_len? : Int32) -> Bytes? raise @model.TransportError
+pub fn Wire::unread(Self, BytesView) -> Unit
+pub async fn[X] Wire::with_timeout(Self, Int32, async () -> X, error~ : @model.TransportError) -> X
+pub async fn Wire::write(Self, Bytes, Int32) -> Unit raise @model.TransportError
+
+// Type aliases
+
+// Traits

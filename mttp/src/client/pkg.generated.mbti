@@ -1,0 +1,291 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/client"
+
+import {
+  "gaato/mttp/client/retry",
+  "gaato/mttp/clock",
+  "gaato/mttp/model",
+  "gaato/mttp/sse",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn[A, B] as_both(ResponsePlan[A, Buffered], ResponsePlan[B, Buffered]) -> ResponsePlan[(A, B), Buffered]
+
+pub fn as_bytes() -> ResponsePlan[Result[Bytes, ResponseFailure], Buffered]
+
+pub fn as_form(max_pairs? : Int32) -> ResponsePlan[Result[Array[(String, String)], ResponseFailure], Buffered]
+
+pub fn[T : @json.FromJson] as_json() -> ResponsePlan[Result[T, ResponseFailure], Buffered]
+
+pub fn as_json_value() -> ResponsePlan[Result[Json, ResponseFailure], Buffered]
+
+pub fn as_lines(async (String) -> Unit, max_line_bytes? : Int32) -> ResponsePlan[Result[Unit, ResponseFailure], Streaming]
+
+pub fn as_sse(async (@sse.SseEvent) -> Unit, max_event_bytes? : Int32, stop? : (@sse.SseEvent) -> Bool) -> ResponsePlan[Result[Unit, ResponseFailure], Streaming]
+
+pub fn[T] as_stream(async (@model.ResponseHead, &@model.BodyStream) -> T) -> ResponsePlan[Result[T, ResponseFailure], Streaming]
+
+pub fn as_string() -> ResponsePlan[Result[String, ResponseFailure], Buffered]
+
+pub let final_url : @model.AttributeKey[String]
+
+pub fn from_fn(async (@model.Request, RequestOptions) -> @model.Response raise @model.TransportError, on_close? : () -> Unit) -> &Backend
+
+pub fn from_handler(async (@model.Request) -> @model.Response noraise) -> &Backend
+
+pub fn[T, M : ResponseMode] from_head((@model.ResponseHead) -> ResponsePlan[T, M]) -> ResponsePlan[T, M]
+
+pub fn get(String) -> RequestPlan[Result[String, ResponseFailure], Buffered]
+
+pub let global_exempt : @model.AttributeKey[Bool]
+
+pub fn ignore_body() -> ResponsePlan[Result[Unit, ResponseFailure], Buffered]
+
+pub let max_error_body : Int32
+
+pub let operation_id : @model.AttributeKey[String]
+
+pub fn post(String) -> RequestPlan[Result[String, ResponseFailure], Buffered]
+
+pub fn quick_request(@model.Request) -> RequestPlan[Result[String, ResponseFailure], Buffered]
+
+pub let rate_limit_bucket : @model.AttributeKey[String]
+
+pub async fn read_body(@model.Body, Int32) -> Bytes raise @model.TransportError
+
+pub let redirect_history : @model.AttributeKey[Array[RedirectHop]]
+
+pub fn request(@model.Request) -> RequestPlan[Result[String, ResponseFailure], Buffered]
+
+pub fn status_of(ResponseFailure) -> Int32?
+
+// Errors
+pub(all) suberror InvalidRequest {
+  InvalidRequest(message~ : String)
+} derive(@debug.Debug)
+pub fn InvalidRequest::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub(all) struct Attempt {
+  request : @model.RequestHead
+  attributes : @model.Attributes
+  bucket : String
+  attempt : Int32
+  status : Int32
+  headers : @model.Headers
+  duration_ms : Int64
+  error : Error?
+  decision : @retry.Decision?
+}
+
+pub(all) enum AttemptResult[T] {
+  Buffered(Reply[T])
+  StreamReady(@model.ResponseHead)
+  TransportFailure(@model.TransportError)
+}
+pub fn[T] AttemptResult::http_outcome(Self[T]) -> @retry.AttemptOutcome
+
+pub(all) struct Buffered {
+}
+#deprecated
+pub fn Buffered::fresh() -> Self
+#deprecated
+pub fn Buffered::may_stream(Self) -> Bool
+pub impl ResponseMode for Buffered
+
+pub struct Client {
+  // private fields
+}
+pub fn Client::close(Self) -> Unit
+pub fn Client::new(&Backend, &@clock.Clock, base_url? : String, headers? : @model.Headers, options? : RequestOptions, timer? : &@clock.Timer, retry? : RetryPolicy, limiter? : &RateLimiter, total_ms? : Int32, observer? : (Attempt) -> Unit, random? : () -> Double) -> Self
+pub async fn[T, M : ResponseMode] Client::send(Self, RequestPlan[T, M], decide_retry? : (AttemptResult[T], RetryContext) -> @retry.Decision) -> Reply[T]
+
+pub struct FollowRedirects {
+  // private fields
+}
+pub fn FollowRedirects::close(Self) -> Unit
+pub fn FollowRedirects::new(&Backend, allow_downgrade? : Bool, credential_headers? : Array[String], on_redirect? : (RedirectHop) -> Unit) -> Self
+pub async fn FollowRedirects::send(Self, @model.Request, RequestOptions) -> @model.Response raise @model.TransportError
+pub impl Backend for FollowRedirects
+
+pub struct NoLimiter {
+}
+pub async fn NoLimiter::acquire(Self, String, global_exempt~ : Bool) -> Unit
+pub fn NoLimiter::new() -> Self
+pub async fn NoLimiter::release(Self, String, status~ : Int32, headers~ : @model.Headers) -> Unit
+pub impl RateLimiter for NoLimiter
+
+pub(all) struct Page[T] {
+  items : Array[T]
+  next : String?
+}
+
+pub struct Paginator[T, E] {
+  // private fields
+}
+pub async fn[T, E] Paginator::collect(Self[T, E], max~ : Int32) -> Result[Array[T], E]
+pub async fn[T, E] Paginator::each(Self[T, E], async (T) -> Result[Unit, E]) -> Result[Unit, E]
+pub fn[T, E] Paginator::new(async () -> Result[Array[T]?, E]) -> Self[T, E]
+pub async fn[T, E] Paginator::next_page(Self[T, E]) -> Result[Array[T]?, E]
+pub fn[T, E] Paginator::with_cursor(async (String?) -> Result[Page[T], E]) -> Self[T, E]
+
+pub struct RedirectHop {
+  request : @model.RequestHead
+  head : @model.ResponseHead
+  next : @model.RequestHead
+} derive(Eq, @debug.Debug)
+pub fn RedirectHop::equal(Self, Self) -> Bool
+pub fn RedirectHop::not_equal(Self, Self) -> Bool
+pub fn RedirectHop::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Reply[T] {
+  status : Int32
+  headers : @model.Headers
+  body : T
+  request : @model.RequestHead
+  attributes : @model.Attributes
+}
+
+pub(all) struct RequestOptions {
+  timeout_ms : Int32?
+  body_deadline : Bool
+  read_idle_ms : Int32?
+  max_body_bytes : Int32
+  follow_redirects : Bool
+  max_redirects : Int32
+  decompress : Bool
+} derive(Eq, @debug.Debug)
+pub fn RequestOptions::default() -> Self
+pub fn RequestOptions::equal(Self, Self) -> Bool
+pub fn RequestOptions::not_equal(Self, Self) -> Bool
+pub fn RequestOptions::to_repr(Self) -> @debug.Repr
+
+pub struct RequestPlan[T, M] {
+  // private fields
+}
+pub fn[T, A, M] RequestPlan::attribute(Self[T, M], @model.AttributeKey[A], A) -> Self[T, M]
+pub fn[T, M] RequestPlan::bearer(Self[T, M], String) -> Self[T, M]
+pub fn[T, M] RequestPlan::body_bytes(Self[T, M], Bytes) -> Self[T, M]
+pub fn[T, M] RequestPlan::body_fn(Self[T, M], () -> Bytes) -> Self[T, M]
+pub fn[T, M] RequestPlan::body_json(Self[T, M], Json) -> Self[T, M]
+pub fn[T, M] RequestPlan::follow_redirects(Self[T, M], Bool) -> Self[T, M]
+pub fn[T, M] RequestPlan::header(Self[T, M], String, String) -> Self[T, M]
+pub fn[T, M] RequestPlan::max_body_bytes(Self[T, M], Int32) -> Self[T, M]
+pub fn[T, M] RequestPlan::max_redirects(Self[T, M], Int32) -> Self[T, M]
+pub fn[T, M] RequestPlan::new(@model.Request, ResponsePlan[T, M]) -> Self[T, M]
+pub fn[T, M] RequestPlan::raw(Self[T, M]) -> @model.Request
+pub fn[T, M] RequestPlan::read_idle_ms(Self[T, M], Int32) -> Self[T, M]
+pub fn[T, U, M, N] RequestPlan::response(Self[T, M], ResponsePlan[U, N]) -> Self[U, N]
+pub async fn[T, M : ResponseMode] RequestPlan::send(Self[T, M], Client, decide_retry? : (AttemptResult[T], RetryContext) -> @retry.Decision) -> Reply[T]
+pub fn[T, M] RequestPlan::timeout_ms(Self[T, M], Int32) -> Self[T, M]
+pub fn[T] RequestPlan::to_curl(Self[T, Buffered], sensitive_headers? : Array[String], include_body? : Bool) -> String
+
+pub(all) enum ResponseFailure {
+  UnexpectedStatus(@model.ResponseHead, body~ : Bytes)
+  Deserialization(@model.ResponseHead, message~ : String, body~ : Bytes)
+} derive(Eq, @debug.Debug)
+pub fn ResponseFailure::equal(Self, Self) -> Bool
+pub fn ResponseFailure::head(Self) -> @model.ResponseHead
+pub fn ResponseFailure::not_equal(Self, Self) -> Bool
+pub fn ResponseFailure::to_repr(Self) -> @debug.Repr
+
+pub struct ResponsePlan[T, M] {
+  // private fields
+}
+pub fn[T, M] ResponsePlan::any_status(Self[T, M]) -> Self[T, M]
+pub fn[T] ResponsePlan::as_streaming(Self[T, Buffered]) -> Self[T, Streaming]
+pub fn[A, B, M] ResponsePlan::map(Self[A, M], (A) -> B raise) -> Self[B, M]
+pub fn[A, B, E, M] ResponsePlan::map_ok(Self[Result[A, E], M], (A) -> B raise) -> Self[Result[B, E], M]
+pub fn[A, B, M] ResponsePlan::map_with_head(Self[A, M], (A, @model.ResponseHead) -> B raise) -> Self[B, M]
+pub fn[T] ResponsePlan::new((@model.ResponseHead, Bytes) -> T raise) -> Self[T, Buffered]
+pub fn[T] ResponsePlan::reject() -> Self[Result[T, ResponseFailure], Buffered]
+pub fn[T] ResponsePlan::stream(async (@model.ResponseHead, &@model.BodyStream, RequestOptions) -> T) -> Self[Result[T, ResponseFailure], Streaming]
+
+pub(all) struct RetryContext {
+  request : @model.RequestHead
+  idempotent : Bool
+  bucket : String
+  attempt : Int32
+  random : Double
+  now_unix_ms : Int64
+  remaining_ms : Int64?
+  replayable : Bool
+  default_decision : @retry.Decision
+}
+pub fn RetryContext::capture(@model.Request, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, replayable? : Bool) -> Self
+pub fn RetryContext::new(@model.RequestHead, idempotent~ : Bool, replayable~ : Bool, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, default_decision? : @retry.Decision) -> Self
+
+pub(all) struct RetryPolicy {
+  rule : @retry.RetryRule
+} derive(Eq, @debug.Debug)
+pub fn RetryPolicy::allow_non_idempotent(Self) -> Self
+pub fn RetryPolicy::conservative() -> Self
+pub fn RetryPolicy::decide(Self, @retry.AttemptOutcome, RetryContext) -> @retry.Decision
+pub fn RetryPolicy::default() -> Self
+pub fn RetryPolicy::equal(Self, Self) -> Bool
+pub fn RetryPolicy::from_rule(@retry.RetryRule) -> Self
+pub fn RetryPolicy::none() -> Self
+pub fn RetryPolicy::not_equal(Self, Self) -> Bool
+pub fn RetryPolicy::to_repr(Self) -> @debug.Repr
+pub fn RetryPolicy::with_max_retries(Self, Int32) -> Self
+
+pub(all) struct Streaming {
+}
+#deprecated
+pub fn Streaming::fresh() -> Self
+#deprecated
+pub fn Streaming::may_stream(Self) -> Bool
+pub impl ResponseMode for Streaming
+
+// Type aliases
+pub using @retry {type AttemptOutcome}
+
+pub using @retry {type Backoff}
+
+pub type ClientRequest[T] = RequestPlan[T, Buffered]
+
+pub using @retry {type Decision}
+
+pub using @retry {type Jitter}
+
+pub using @retry {type Methods}
+
+pub type ResponseAs[T] = ResponsePlan[T, Buffered]
+
+pub using @retry {type RetryAfter}
+
+pub using @retry {type RetryAfterCap}
+
+pub using @retry {type RetryAfterSource}
+
+pub using @retry {type RetryRule}
+
+pub type SendFn = async (@model.Request, RequestOptions) -> @model.Response raise @model.TransportError
+
+pub using @retry {type StatusMatch}
+
+pub using @retry {type StatusRule}
+
+pub using @retry {type StopReason}
+
+pub type StreamRequest[T] = RequestPlan[T, Streaming]
+
+pub type StreamResponseAs[T] = ResponsePlan[T, Streaming]
+
+// Traits
+pub(open) trait Backend {
+  async fn send(Self, @model.Request, RequestOptions) -> @model.Response raise @model.TransportError
+  fn close(Self) -> Unit = _
+}
+
+pub(open) trait RateLimiter {
+  async fn acquire(Self, String, global_exempt~ : Bool) -> Unit
+  async fn release(Self, String, status~ : Int32, headers~ : @model.Headers) -> Unit
+}
+
+pub trait ResponseMode {
+  fn fresh() -> Self
+  fn may_stream(Self) -> Bool
+}

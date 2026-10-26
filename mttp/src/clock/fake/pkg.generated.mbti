@@ -1,0 +1,51 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/clock/fake"
+
+import {
+  "gaato/mttp/clock",
+  "gaato/mttp/testing/driver",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct FakeClock {
+  // private fields
+}
+pub fn FakeClock::advance(Self, Int32) -> Unit
+pub fn FakeClock::new(start_unix_ms? : Int64) -> Self
+pub fn FakeClock::now_unix_ms(Self) -> Int64
+pub async fn FakeClock::sleep(Self, Int32) -> Unit noraise
+pub fn FakeClock::slept(Self) -> Array[Int32]
+pub impl @clock.Clock for FakeClock
+
+pub struct SimClock {
+  // private fields
+}
+pub fn SimClock::new(@driver.Driver) -> Self
+pub fn SimClock::now_unix_ms(Self) -> Int64
+pub async fn SimClock::sleep(Self, Int32) -> Unit noraise
+pub impl @clock.Clock for SimClock
+
+pub struct SimGate {
+  // private fields
+}
+pub async fn SimGate::acquire(Self) -> Unit noraise
+pub fn SimGate::available(Self) -> Int32
+pub fn SimGate::new(@driver.Driver, permits? : Int32) -> Self
+pub fn SimGate::release(Self) -> Unit
+pub fn SimGate::waiting(Self) -> Int32
+pub impl @clock.Gate for SimGate
+
+pub struct SimTimer {
+  // private fields
+}
+pub fn SimTimer::new(@driver.Driver) -> Self
+pub async fn SimTimer::within(Self, Int32, async () -> Unit noraise) -> Bool noraise
+pub impl @clock.Timer for SimTimer
+
+// Type aliases
+
+// Traits

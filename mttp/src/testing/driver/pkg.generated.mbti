@@ -1,0 +1,100 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/testing/driver"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn current() -> Driver raise DriverError
+
+pub let max_unwind_rounds : Int32
+
+pub fn now() -> Int64 raise DriverError
+
+pub async fn pause() -> Unit raise DriverError
+
+pub async fn[X] raise_cancellation() -> X noraise
+
+pub fn[X] run_sync(async () -> X) -> X raise
+
+pub async fn sleep(Int32) -> Unit raise DriverError
+
+pub fn spawn(async () -> Unit, label? : String, allow_failure? : Bool) -> Task raise DriverError
+
+// Errors
+pub(all) suberror DriverError {
+  DriverError(kind~ : DriverErrorKind, detail~ : String)
+} derive(@debug.Debug)
+pub fn DriverError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct Driver {
+  // private fields
+}
+pub fn Driver::add_timer(Self, Int64, () -> Unit) -> TimerHandle
+pub fn Driver::advance(Self, Int32) -> Unit
+pub fn Driver::advance_to_next_timer(Self) -> Bool
+pub async fn Driver::cancel_and_join(Self, Array[Task]) -> Unit noraise + nocancel
+pub fn Driver::current_task(Self) -> Task raise DriverError
+pub fn Driver::live_tasks(Self) -> Int32
+pub fn Driver::new(auto_advance? : Bool, max_steps? : Int32, start_ms? : Int64) -> Self
+pub fn Driver::now(Self) -> Int64
+pub async fn Driver::park(Self, (Waker) -> Unit) -> Unit noraise
+pub async fn Driver::park_check_cancel(Self, (Waker) -> Unit) -> Resume noraise + nocancel
+pub async fn Driver::pause(Self) -> Unit noraise
+pub fn Driver::pending_timers(Self) -> Int32
+pub fn Driver::ready_tasks(Self) -> Int32
+pub fn[X] Driver::run(Self, async () -> X) -> X raise
+pub async fn Driver::sleep(Self, Int32) -> Unit noraise
+pub fn Driver::spawn(Self, async () -> Unit, label? : String, allow_failure? : Bool) -> Task
+pub fn Driver::step(Self) -> Bool raise DriverError
+pub fn Driver::steps(Self) -> Int32
+
+#non_exhaustive
+pub(all) enum DriverErrorKind {
+  Deadlock(parked~ : Int32)
+  Suspended(parked~ : Int32)
+  NoQuiescence(steps~ : Int32)
+  UnwindIncomplete(live~ : Int32)
+  TaskFailed(label~ : String, cause~ : Error)
+  MainCancelled
+  Reentrant
+  NotInTask
+} derive(@debug.Debug)
+pub fn DriverErrorKind::to_repr(Self) -> @debug.Repr
+
+pub(all) enum Resume {
+  Woken
+  Cancelled
+} derive(Eq, @debug.Debug)
+pub fn Resume::equal(Self, Self) -> Bool
+pub fn Resume::not_equal(Self, Self) -> Bool
+pub fn Resume::to_repr(Self) -> @debug.Repr
+
+pub struct Task {
+  // private fields
+}
+pub fn Task::cancel(Self) -> Unit
+pub fn Task::is_cancel_requested(Self) -> Bool
+pub fn Task::is_cancelled(Self) -> Bool
+pub fn Task::is_done(Self) -> Bool
+pub fn Task::is_finished(Self) -> Bool
+pub fn Task::is_parked(Self) -> Bool
+pub fn Task::label(Self) -> String
+pub async fn Task::wait(Self) -> Bool
+
+pub struct TimerHandle {
+  // private fields
+}
+pub fn TimerHandle::cancel(Self) -> Unit
+
+pub struct Waker {
+  // private fields
+}
+pub fn Waker::task(Self) -> Task
+pub fn Waker::wake(Self) -> Unit
+
+// Type aliases
+
+// Traits

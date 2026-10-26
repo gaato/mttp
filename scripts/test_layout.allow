@@ -1,0 +1,10 @@
+# Uses that scripts/test_layout.mbtx accepts although its rules reject them.
+# Each entry is `<file> <rule> # reason`, one line per use, so every new use
+# needs its own decision. Rules: async-test, async-intrinsic, module-import,
+# package-import, testing-import, wbtest-testing-import, clock.
+mttp/src/clock/random.mbt clock # The default random provider is the host boundary; clients accept an injected source so deterministic tests never depend on host entropy.
+mttp/src/client/ratelimit/moon.pkg wbtest-testing-import # Driver replaces legacy raw async intrinsics while retained white-box tests inspect gate holder/waiter cleanup and internal map eviction.
+mttp/src/client/ratelimit/moon.pkg wbtest-testing-import # FakeClock drives retained map-eviction tests across exact reset and sweep boundaries without exposing limiter internals in the public API.
+mttp/src/endpoint/moon.pkg wbtest-testing-import # The shared BodyStream contract checks private ownership/limit adapters directly because the public take-once wrapper otherwise masks their own sticky-EOF and close behavior.
+mttp/src/endpoint/moon.pkg wbtest-testing-import # Feed supplies deterministic chunks to those private adapter contracts without duplicating stream fixtures or exposing implementation types publicly.
+mttp/src/endpoint/moon.pkg wbtest-testing-import # Driver runs the private adapter contracts identically on all four targets without runtime imports or raw async intrinsics.

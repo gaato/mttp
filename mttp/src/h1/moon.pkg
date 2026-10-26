@@ -1,0 +1,8 @@
+import {
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+}
+
+import {
+  "gaato/mttp/testing",
+} for "test"

@@ -1,0 +1,16 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/client",
+  "moonbitlang/x/crypto",
+}
+
+import {
+  "moonbitlang/core/debug",
+} for "wbtest"
+
+import {
+  "gaato/mttp-digest" @mttp_digest,
+  "gaato/mttp/testing/driver",
+  "gaato/mttp/testing/feed",
+  "gaato/mttp/testing",
+} for "test"

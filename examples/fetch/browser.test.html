@@ -1,0 +1,62 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>mttp browser conformance</title>
+<pre id="result">pending</pre>
+<script type="module">
+import { fetch as handle, get_text } from './mttp-fetch-example.js';
+const check = (condition, message) => { if (!condition) throw new Error(message); };
+const text = new TextEncoder();
+let count = 0;
+async function run(name, test) { await test(); ++count; }
+try {
+  await run('streamed Unicode body and synchronous background registration', async () => {
+    let calls = 0, background;
+    const input = new ReadableStream({start(c) {
+      c.enqueue(text.encode('日本')); c.enqueue(text.encode('🙂')); c.close();
+    }});
+    const response = handle(new Request(location.href, {method: 'POST', body: input, duplex: 'half'}), task => {
+      ++calls; background = task;
+    });
+    check(calls === 1, 'background registration was deferred');
+    check(await (await response).text() === '日本🙂', 'streamed Unicode echo');
+    await background;
+  });
+  await run('pre-aborted request', async () => {
+    const controller = new AbortController(); controller.abort();
+    let background, failed = false;
+    try {
+      await handle(new Request(location.href, {signal: controller.signal}), task => {background = task;});
+    } catch { failed = true; }
+    check(failed, 'pre-aborted request succeeded');
+    await background;
+  });
+  await run('cancelled response closes the input stream', async () => {
+    let cancelled = 0, background;
+    const body = new ReadableStream({pull(c) {c.enqueue(text.encode('chunk'));}, cancel() {++cancelled;}}, {highWaterMark: 0});
+    const response = await handle(new Request(location.href, {method: 'POST', body, duplex: 'half'}), task => {background = task;});
+    const reader = response.body.getReader();
+    await reader.read(); await reader.cancel(); reader.releaseLock();
+    await background;
+    check(cancelled === 1, 'response cancellation did not close the source once');
+  });
+  await run('request body limit', async () => {
+    for (const prefix of [false, true]) {
+      let background, failed = false;
+      const body = new ReadableStream({start(c) {
+        if (prefix) c.enqueue(text.encode('first'));
+        c.enqueue(new Uint8Array(1048577)); c.close();
+      }});
+      const response = await handle(new Request(location.href, {method: 'POST', body, duplex: 'half'}), task => {background = task;});
+      try {await response.arrayBuffer();} catch {failed = true;}
+      await background;
+      check(prefix ? failed : response.status === 413, 'oversized streaming echo was accepted');
+    }
+  });
+  await run('real browser network backend', async () => {
+    check(await get_text(new URL('fixture.txt', location.href).href) === 'browser backend 日本🙂', 'network backend body mismatch');
+  });
+  document.querySelector('#result').textContent = `PASS ${count}`;
+} catch (error) {
+  document.querySelector('#result').textContent = `FAIL ${error.stack ?? error}`;
+}
+</script>

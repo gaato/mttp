@@ -1,0 +1,193 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/schema"
+
+import {
+  "gaato/mttp/jsonkit",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn[T] any_of(String, Array[Case[T]]) -> JsonCodec[T] raise DecodeFailure
+
+pub fn[T] array(JsonCodec[T]) -> JsonCodec[Array[T]]
+
+pub let bool : TextCodec[Bool]
+
+pub fn[T, A] case_(String, JsonCodec[A], (T) -> A?, (A) -> T) -> Case[T]
+
+pub fn[T] custom((T) -> String?, keywords? : Map[String, Json]) -> Validator[T]
+
+pub let double : TextCodec[Double]
+
+pub fn enum_of(Array[String]) -> TextCodec[String]
+
+pub fn[T, A] field(String, JsonCodec[A], (T) -> A) -> Field[T, A]
+
+pub fn form_body(max_pairs? : Int32) -> BodyCodec[Array[(String, String)]]
+
+pub let int : TextCodec[Int32]
+
+pub let int64 : TextCodec[Int64]
+
+pub let jbool : JsonCodec[Bool]
+
+pub let jdouble : JsonCodec[Double]
+
+pub let jint : JsonCodec[Int32]
+
+pub let jint64 : JsonCodec[Int64]
+
+pub fn[T : @json.FromJson + ToJson + JsonSchema] json() -> JsonCodec[T]
+
+pub let jstring : JsonCodec[String]
+
+pub let jvalue : JsonCodec[Json]
+
+pub fn[T] map_of(JsonCodec[T]) -> JsonCodec[Map[String, T]]
+
+pub fn max_length(Int32) -> Validator[String]
+
+pub fn maximum(Int32) -> Validator[Int32]
+
+pub fn min_length(Int32) -> Validator[String]
+
+pub fn minimum(Int32) -> Validator[Int32]
+
+pub fn[T, A0] object1(String, Field[T, A0], (A0) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1] object2(String, Field[T, A0], Field[T, A1], (A0, A1) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2] object3(String, Field[T, A0], Field[T, A1], Field[T, A2], (A0, A1, A2) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3] object4(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], (A0, A1, A2, A3) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4] object5(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], (A0, A1, A2, A3, A4) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5] object6(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], (A0, A1, A2, A3, A4, A5) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5, A6] object7(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], (A0, A1, A2, A3, A4, A5, A6) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7] object8(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], (A0, A1, A2, A3, A4, A5, A6, A7) -> T) -> JsonCodec[T]
+
+pub fn[T : Eq + ToJson] one_of_values(Array[T]) -> Validator[T]
+
+pub fn open_string(Array[String]) -> JsonCodec[String]
+
+pub fn[T] option(JsonCodec[T]) -> JsonCodec[T?]
+
+pub fn pattern(String) -> Validator[String] raise UnsupportedPattern
+
+pub fn[T] presence(JsonCodec[T]) -> JsonCodec[@jsonkit.Presence[T]]
+
+pub let raw_bytes : BodyCodec[Bytes]
+
+pub fn[T] recursive(String, (JsonCodec[T]) -> JsonCodec[T], max_depth? : Int32) -> JsonCodec[T]
+
+pub let string : TextCodec[String]
+
+pub fn string_enum(String, Array[String]) -> JsonCodec[String]
+
+pub fn[T] tagged(String, String, Array[Case[T]]) -> JsonCodec[T] raise DecodeFailure
+
+pub let text_body : BodyCodec[String]
+
+// Errors
+pub(all) suberror DecodeFailure {
+  DecodeFailure(kind~ : DecodeKind, message~ : String)
+} derive(@debug.Debug)
+pub fn DecodeFailure::message(Self) -> String
+pub fn DecodeFailure::to_repr(Self) -> @debug.Repr
+
+pub(all) suberror UnsupportedPattern {
+  UnsupportedPattern(String)
+} derive(@debug.Debug)
+pub fn UnsupportedPattern::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct BodyCodec[T] {
+  // private fields
+}
+pub fn[T] BodyCodec::decode(Self[T], Bytes) -> T raise DecodeFailure
+pub fn[T] BodyCodec::encode(Self[T], T) -> Bytes
+pub fn[T] BodyCodec::media_type(Self[T]) -> String
+pub fn[T] BodyCodec::new(String, (Bytes) -> T raise DecodeFailure, (T) -> Bytes, Schema) -> Self[T]
+pub fn[T] BodyCodec::schema(Self[T]) -> Schema
+
+pub struct Case[T] {
+  // private fields
+}
+
+#non_exhaustive
+pub(all) enum DecodeKind {
+  Missing
+  Multiple(Int32)
+  Malformed
+  Invalid(Array[Issue])
+  Mismatch(expected~ : String, actual~ : String)
+  TooLarge(limit~ : Int32)
+  UnsupportedMediaType(String)
+} derive(@debug.Debug)
+pub fn DecodeKind::to_repr(Self) -> @debug.Repr
+
+pub struct Field[T, A] {
+  // private fields
+}
+
+pub(all) struct Issue {
+  path : String
+  code : String
+  message : String
+} derive(Eq, ToJson, @debug.Debug)
+pub fn Issue::equal(Self, Self) -> Bool
+pub fn Issue::new(String, String, path? : String) -> Self
+pub fn Issue::not_equal(Self, Self) -> Bool
+pub fn Issue::to_json(Self) -> Json
+pub fn Issue::to_repr(Self) -> @debug.Repr
+
+pub struct JsonCodec[T] {
+  // private fields
+}
+pub fn[T] JsonCodec::body(Self[T]) -> BodyCodec[T]
+pub fn[T : @json.FromJson + ToJson] JsonCodec::derived(Schema) -> Self[T]
+pub fn[T] JsonCodec::from_json(Self[T], Json) -> T raise DecodeFailure
+pub fn[T, U] JsonCodec::map(Self[T], (T) -> U raise DecodeFailure, (U) -> T) -> Self[U]
+pub fn[T] JsonCodec::new((Json) -> T raise DecodeFailure, (T) -> Json, Schema) -> Self[T]
+pub fn[T] JsonCodec::schema(Self[T]) -> Schema
+pub fn[T] JsonCodec::to_json(Self[T], T) -> Json
+pub fn[T] JsonCodec::validate(Self[T], Validator[T]) -> Self[T]
+
+pub(all) struct Schema {
+  name : String?
+  json : Json
+  defs : Map[String, Json]
+  problems : Array[String]
+} derive(Eq, @debug.Debug)
+pub fn Schema::equal(Self, Self) -> Bool
+pub fn Schema::named(Self, String) -> Self
+pub fn Schema::not_equal(Self, Self) -> Bool
+pub fn Schema::of(Json) -> Self
+pub fn Schema::patch(Self, Map[String, Json]) -> Self
+pub fn Schema::reference(Self, Map[String, Json], problems? : Array[String]) -> Json
+pub fn Schema::to_repr(Self) -> @debug.Repr
+
+pub struct TextCodec[T] {
+  // private fields
+}
+pub fn[T] TextCodec::decode(Self[T], String) -> T raise DecodeFailure
+pub fn[T] TextCodec::encode(Self[T], T) -> String
+pub fn[T, U] TextCodec::map(Self[T], (T) -> U raise DecodeFailure, (U) -> T) -> Self[U]
+pub fn[T] TextCodec::new((String) -> T raise DecodeFailure, (T) -> String, Schema) -> Self[T]
+pub fn[T] TextCodec::schema(Self[T]) -> Schema
+pub fn[T] TextCodec::validate(Self[T], Validator[T]) -> Self[T]
+
+pub struct Validator[T] {
+  // private fields
+}
+
+// Type aliases
+
+// Traits
+pub(open) trait JsonSchema {
+  fn json_schema(Self?) -> Schema
+}

@@ -1,0 +1,294 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/model"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn append_query(String, String, String) -> String
+
+pub let background : AttributeKey[(async () -> Unit) -> Unit]
+
+pub fn encode_path(Array[String]) -> String
+
+pub fn encode_utf8(String) -> Bytes
+
+pub fn form_urldecode(String, max_pairs? : Int32) -> Array[(String, String)] raise TransportError
+
+pub fn form_urlencode(ArrayView[(String, String)]) -> String
+
+pub fn is_idempotent(Request) -> Bool
+
+pub fn is_success(Int32) -> Bool
+
+pub fn join_url(String, String) -> String
+
+pub fn parse_link_next(Headers) -> String?
+
+pub fn parse_retry_after(String, now_unix_ms? : Int64) -> Int32?
+
+pub fn percent_decode(String) -> String raise UrlError
+
+pub fn percent_encode(String) -> String
+
+pub fn percent_encode_path(String) -> String
+
+pub async fn read_bounded(&BodyStream, Int32) -> Bytes raise TransportError
+
+pub fn reason_phrase(Int32) -> String
+
+pub let remote_addr : AttributeKey[String]
+
+pub let replay_safe : AttributeKey[Bool]
+
+pub fn retry_after_ms(Headers, now_unix_ms? : Int64) -> Int32?
+
+pub fn uri((UriBuilder) -> Unit) -> String
+
+pub fn validate_url(String) -> Unit raise TransportError
+
+// Errors
+pub(all) suberror TransportError {
+  TransportError(kind~ : Kind, phase~ : Phase, detail~ : String)
+} derive(@debug.Debug)
+pub fn TransportError::is_unsent(Self) -> Bool
+pub fn TransportError::message(Self) -> String
+pub fn TransportError::to_repr(Self) -> @debug.Repr
+
+pub(all) suberror UrlError {
+  Invalid(String)
+} derive(Eq, @debug.Debug)
+pub fn UrlError::equal(Self, Self) -> Bool
+pub fn UrlError::not_equal(Self, Self) -> Bool
+pub fn UrlError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct AttributeKey[T] {
+  // private fields
+}
+pub fn[T] AttributeKey::name(Self[T]) -> String
+pub fn[T] AttributeKey::new(String) -> Self[T]
+
+pub struct Attributes {
+  // private fields
+}
+pub fn Attributes::empty() -> Self
+pub fn[T] Attributes::get(Self, AttributeKey[T]) -> T?
+pub fn[T] Attributes::put(Self, AttributeKey[T], T) -> Self
+
+#non_exhaustive
+pub(all) enum Body {
+  Empty
+  Bytes(Bytes)
+  Stream(StreamBody)
+} derive(Eq, @debug.Debug)
+pub fn Body::as_bytes(Self) -> Bytes?
+pub fn Body::equal(Self, Self) -> Bool
+pub fn Body::is_replayable(Self) -> Bool
+pub fn Body::length(Self) -> Int64?
+pub fn Body::not_equal(Self, Self) -> Bool
+pub fn Body::to_repr(Self) -> @debug.Repr
+
+pub struct Headers {
+  // private fields
+} derive(Eq, @debug.Debug)
+pub fn Headers::add(Self, String, String) -> Self
+pub fn Headers::contains(Self, String) -> Bool
+pub fn Headers::each(Self, (String, String) -> Unit raise?) -> Unit raise?
+pub fn Headers::empty() -> Self
+pub fn Headers::equal(Self, Self) -> Bool
+pub fn Headers::get(Self, String) -> String?
+pub fn Headers::get_all(Self, String) -> Array[String]
+pub fn Headers::iter(Self) -> Iter[(String, String)]
+pub fn Headers::length(Self) -> Int32
+pub fn Headers::not_equal(Self, Self) -> Bool
+pub fn Headers::of(ArrayView[(String, String)]) -> Self
+pub fn Headers::remove(Self, String) -> Self
+pub fn Headers::set(Self, String, String) -> Self
+pub fn Headers::to_repr(Self) -> @debug.Repr
+pub fn Headers::validate(Self) -> Unit raise TransportError
+
+#non_exhaustive
+pub(all) enum Kind {
+  Invalid
+  Connect
+  Timeout(ms~ : Int32)
+  Network
+  Protocol
+  Proxy(status~ : Int32)
+  TooLarge(limit~ : Int32)
+  TooManyRedirects(max~ : Int32)
+  RedirectRefused
+  Unreplayable
+  Closed
+} derive(Eq, @debug.Debug)
+pub fn Kind::equal(Self, Self) -> Bool
+pub fn Kind::not_equal(Self, Self) -> Bool
+pub fn Kind::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+pub(all) enum Method {
+  Get
+  Head
+  Post
+  Put
+  Delete
+  Connect
+  Options
+  Trace
+  Patch
+  Other(String)
+} derive(Eq, Hash, @debug.Debug)
+pub fn Method::equal(Self, Self) -> Bool
+pub fn Method::hash(Self) -> Int32
+pub fn Method::hash_combine(Self, Hasher) -> Unit
+pub fn Method::is_idempotent(Self) -> Bool
+pub fn Method::not_equal(Self, Self) -> Bool
+pub fn Method::output(Self, &Logger) -> Unit
+pub fn Method::parse(String) -> Self
+pub fn Method::to_repr(Self) -> @debug.Repr
+pub fn Method::to_string(Self) -> String
+pub impl Show for Method
+
+#non_exhaustive
+pub(all) enum Phase {
+  Pool
+  Dial
+  Write
+  Head
+  Body
+  Unknown
+} derive(Eq, @debug.Debug)
+pub fn Phase::equal(Self, Self) -> Bool
+pub fn Phase::not_equal(Self, Self) -> Bool
+pub fn Phase::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Request {
+  meth : Method
+  url : String
+  headers : Headers
+  body : Body
+  attributes : Attributes
+}
+pub fn[T] Request::attribute(Self, AttributeKey[T], T) -> Self
+pub fn Request::basic(Self, String, String) -> Self
+pub fn Request::bearer(Self, String) -> Self
+pub fn Request::body_bytes(Self, Bytes, content_type? : String) -> Self
+pub fn Request::body_form(Self, ArrayView[(String, String)]) -> Self
+pub fn Request::body_json(Self, Json) -> Self
+pub fn Request::body_stream(Self, &BodyStream, length? : Int64, content_type? : String) -> Self
+pub fn Request::body_text(Self, String) -> Self
+pub fn Request::delete(String) -> Self
+pub fn Request::get(String) -> Self
+pub fn Request::head(Self) -> RequestHead
+pub fn Request::header(Self, String, String) -> Self
+pub fn Request::new(Method, String) -> Self
+pub fn Request::options(String) -> Self
+pub fn Request::patch(String) -> Self
+pub fn Request::post(String) -> Self
+pub fn Request::put(String) -> Self
+pub fn Request::query(Self, String, String) -> Self
+pub fn Request::set_header(Self, String, String) -> Self
+pub fn Request::validate(Self) -> Unit raise TransportError
+
+pub(all) struct RequestHead {
+  meth : Method
+  url : String
+  headers : Headers
+} derive(Eq, @debug.Debug)
+pub fn RequestHead::equal(Self, Self) -> Bool
+pub fn RequestHead::not_equal(Self, Self) -> Bool
+pub fn RequestHead::to_repr(Self) -> @debug.Repr
+
+pub(all) struct Response {
+  status : Int32
+  headers : Headers
+  body : Body
+  attributes : Attributes
+}
+pub fn Response::close(Self) -> Unit
+pub fn Response::close_if_unclaimed(Self) -> Unit
+pub fn Response::closes_connection(Self) -> Bool
+pub fn Response::head(Self) -> ResponseHead
+pub fn Response::new(Int32, headers? : Headers, body? : Body) -> Self
+
+pub(all) struct ResponseHead {
+  status : Int32
+  headers : Headers
+} derive(Eq, @debug.Debug)
+pub fn ResponseHead::equal(Self, Self) -> Bool
+pub fn ResponseHead::not_equal(Self, Self) -> Bool
+pub fn ResponseHead::to_repr(Self) -> @debug.Repr
+
+pub struct StreamBody {
+  // private fields
+}
+pub fn StreamBody::close(Self) -> Unit
+pub fn StreamBody::equal(Self, Self) -> Bool
+pub fn StreamBody::length(Self) -> Int64?
+pub fn StreamBody::new(&BodyStream, length? : Int64) -> Self
+pub fn StreamBody::not_equal(Self, Self) -> Bool
+pub fn StreamBody::take(Self) -> &BodyStream raise TransportError
+pub fn StreamBody::to_repr(Self) -> @debug.Repr
+pub impl Eq for StreamBody
+pub impl @debug.Debug for StreamBody
+
+pub(all) struct Trusted(String)
+pub fn Trusted::write_uri(Self, UriBuilder) -> Unit
+pub impl UriPart for Trusted
+
+pub struct UriBuilder {
+  // private fields
+}
+pub fn UriBuilder::new() -> Self
+pub fn UriBuilder::to_string(Self) -> String
+pub fn UriBuilder::write_encoded(Self, String) -> Unit
+pub fn UriBuilder::write_string(Self, String) -> Unit
+pub fn[T : UriPart] UriBuilder::write_string_interpolation(Self, T) -> Unit
+
+pub struct Url {
+  scheme : String?
+  userinfo : String?
+  host : String?
+  port : Int32?
+  path : String
+  query : String?
+  fragment : String?
+} derive(Eq, @debug.Debug)
+pub fn Url::append_query_params(Self, Array[(String, String)]) -> Self
+pub fn Url::equal(Self, Self) -> Bool
+pub fn Url::is_absolute(Self) -> Bool
+pub fn Url::merge_query_params(Self, Array[(String, String)]) -> Self
+pub fn Url::not_equal(Self, Self) -> Bool
+pub fn Url::output(Self, &Logger) -> Unit
+pub fn Url::parse(String) -> Self raise UrlError
+pub fn Url::path_segments(Self) -> Array[String] raise UrlError
+pub fn Url::port_or_default(Self) -> Int32?
+pub fn Url::query_params(Self) -> Array[(String, String)]
+pub fn Url::resolve(Self, Self) -> Self
+pub fn Url::same_origin(Self, Self) -> Bool
+pub fn Url::to_repr(Self) -> @debug.Repr
+pub fn Url::to_string(Self) -> String
+pub fn Url::without_fragment(Self) -> Self
+pub impl Show for Url
+
+// Type aliases
+pub type Handler = async (Request) -> Response noraise
+
+// Traits
+pub(open) trait BodyStream {
+  async fn read_some(Self) -> Bytes? raise TransportError
+  fn close(Self) -> Unit
+}
+
+pub(open) trait UriPart {
+  fn write_uri(Self, UriBuilder) -> Unit
+}
+pub impl UriPart for Bool
+pub impl UriPart for Int32
+pub impl UriPart for Int64
+pub impl UriPart for Double
+pub impl UriPart for String
+pub impl[T : UriPart] UriPart for T?
+pub impl UriPart for Array[(String, String)]

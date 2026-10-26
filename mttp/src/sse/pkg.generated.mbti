@@ -1,0 +1,34 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/sse"
+
+import {
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn encode(SseEvent) -> Bytes raise @model.TransportError
+
+// Errors
+
+// Types and methods
+pub(all) struct SseEvent {
+  event : String
+  data : String
+  id : String?
+  retry : Int32?
+} derive(Eq, @debug.Debug)
+pub fn SseEvent::equal(Self, Self) -> Bool
+pub fn SseEvent::not_equal(Self, Self) -> Bool
+pub fn SseEvent::to_repr(Self) -> @debug.Repr
+
+pub struct SseParser {
+  // private fields
+}
+pub fn SseParser::feed(Self, Bytes) -> Array[SseEvent] raise @model.TransportError
+pub fn SseParser::finish(Self) -> Array[SseEvent] raise @model.TransportError
+pub fn SseParser::new(max_event_bytes? : Int32) -> Self
+
+// Type aliases
+
+// Traits

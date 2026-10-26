@@ -1,0 +1,11 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/h1",
+  "gaato/mttp/conn" @connection,
+  "gaato/mttp/clock",
+  "gaato/mttp-net/codings",
+  "gaato/mttp-net/h1" @config,
+  "gaato/mttp-net/internal/control",
+}
+
+supported_targets = "native + wasm + js + wasm-gc"

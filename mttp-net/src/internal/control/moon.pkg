@@ -1,0 +1,6 @@
+import {
+  "moonbitlang/core/immut/hashmap" @persistent,
+  "moonbitlang/core/immut/vector",
+}
+
+supported_targets = "native + wasm + js + wasm-gc"

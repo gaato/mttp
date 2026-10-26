@@ -1,0 +1,23 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/conn"
+
+import {
+  "gaato/mttp/model",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct TcpDialer {
+  // private fields
+}
+pub async fn TcpDialer::connect(Self, host~ : String, port~ : Int32) -> &@gaato/mttp/conn.Conn raise @model.TransportError
+pub fn TcpDialer::new(ca_file? : String) -> Self
+pub async fn TcpDialer::start_tls(Self, &@gaato/mttp/conn.Conn, host~ : String) -> &@gaato/mttp/conn.Conn raise @model.TransportError
+pub impl @gaato/mttp/conn.Dialer for TcpDialer
+
+// Type aliases
+
+// Traits

@@ -1,0 +1,13 @@
+import {
+  "gaato/mttp/internal/text",
+  "gaato/mttp/internal/form",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/percent",
+  "moonbitlang/core/encoding/base64",
+}
+
+import {
+  "gaato/mttp/testing/driver",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/random",
+} for "test"

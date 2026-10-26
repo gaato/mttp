@@ -1,0 +1,11 @@
+import {
+  "gaato/mttp/client",
+  "gaato/mttp-net" @net,
+}
+
+import {
+  "gaato/mttp/model",
+  "moonbitlang/async",
+} for "test"
+
+supported_targets = "native + wasm + js"

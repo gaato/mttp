@@ -1,0 +1,12 @@
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/model",
+  "gaato/mttp-net/backend",
+  "gaato/mttp-net/runtime",
+}
+
+import {
+  "gaato/mttp-net" @net,
+} for "test"
+
+supported_targets = "native + wasm + js"

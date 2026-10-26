@@ -1,0 +1,48 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp-net/h1" @config,
+  "gaato/mttp-net/internal/control",
+  "gaato/mttp-net/internal/h1server" @engine,
+  "gaato/mttp-net/internal/socketconn" @socket_conn,
+  "gaato/mttp-net/runtime",
+  "gaato/mttp/h1",
+  "gaato/mttp-net/codings",
+  "moonbitlang/async",
+  "moonbitlang/async/socket",
+  "moonbitlang/async/cond_var",
+  "moonbitlang/core/debug",
+}
+
+import {
+  "moonbitlang/async/shell",
+  "gaato/mttp/client",
+  "gaato/mttp-net/backend",
+  "moonbitlang/core/encoding/utf8",
+} for "test"
+
+// The pinned toolchain cannot make imports conditional. Keep this package
+// empty on JS so portable facades can import it without claiming a JS listener.
+
+supported_targets = "native + wasm + js"
+
+warnings = "-unused_package"
+
+options(
+  targets: {
+    "config.mbt": [ "native", "wasm" ],
+    "serve.mbt": [ "native", "wasm" ],
+    "README.mbt.md": [ "native", "wasm" ],
+    "background_test.mbt": [ "native", "wasm" ],
+    "bounds_test.mbt": [ "native", "wasm" ],
+    "disconnect_test.mbt": [ "native", "wasm" ],
+    "drain_test.mbt": [ "native", "wasm" ],
+    "failures_test.mbt": [ "native", "wasm" ],
+    "limits_test.mbt": [ "native", "wasm" ],
+    "response_test.mbt": [ "native", "wasm" ],
+    "server_test.mbt": [ "native", "wasm" ],
+    "shutdown_test.mbt": [ "native", "wasm" ],
+    "wire_wbtest.mbt": [ "native", "wasm" ],
+    "lifecycle_wbtest.mbt": [ "native", "wasm" ],
+    "pkg.generated.mbti": [ "native", "wasm" ],
+  },
+)

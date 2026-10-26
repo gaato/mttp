@@ -1,0 +1,22 @@
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/schema",
+  "gaato/mttp/client",
+  "gaato/mttp/sse",
+  "moonbitlang/core/json",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/base64",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "gaato/mttp/testing/driver",
+  "gaato/mttp/clock/fake",
+  "gaato/mttp/testing/feed",
+} for "test"
+
+import {
+  "gaato/mttp/testing",
+  "gaato/mttp/testing/feed",
+  "gaato/mttp/testing/driver",
+} for "wbtest"

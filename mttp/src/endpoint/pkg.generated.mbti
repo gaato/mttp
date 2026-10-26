@@ -1,0 +1,332 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/endpoint"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/model",
+  "gaato/mttp/schema",
+  "gaato/mttp/sse",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn api_key_cookie(String, scheme_name? : String) -> Input[String]
+
+pub fn api_key_header(String, scheme_name? : String) -> Input[String]
+
+pub fn api_key_query(String, scheme_name? : String) -> Input[String]
+
+pub fn[T] attribute(@model.AttributeKey[T]) -> Input[T?]
+
+pub fn basic(scheme_name? : String) -> Input[(String, String)]
+
+pub fn bearer(scheme_name? : String) -> Input[String]
+
+pub fn[T] body(@schema.BodyCodec[T]) -> Input[T]
+
+pub fn body_out(status? : Int32) -> Out[(String, Bytes), @client.Buffered]
+
+pub fn bytes_out(status? : Int32) -> Out[Bytes, @client.Buffered]
+
+pub fn check_definitions(Array[EndpointDoc]) -> Array[DefinitionProblem]
+
+pub fn client_ip(trust_forwarded? : Bool) -> Input[String?]
+
+pub fn[T] cookie(String, @schema.TextCodec[T]) -> Input[T]
+
+pub fn empty_variant(Int32, description? : String) -> Variant[Unit]
+
+pub let endpoint : Endpoint[Unit, Unit, NoError, Unit, @client.Buffered]
+
+pub fn[T] header(String, @schema.TextCodec[T]) -> Input[T]
+
+pub fn headers() -> Input[@model.Headers]
+
+pub fn[T] json_out(@schema.BodyCodec[T], status? : Int32) -> Out[T, @client.Buffered]
+
+pub fn[T] json_variant(Int32, @schema.BodyCodec[T], description? : String) -> Variant[T]
+
+pub fn last_event_id() -> Input[String?]
+
+pub fn no_content() -> Out[Unit, @client.Buffered]
+
+pub fn[T] one_of(Array[Variant[T]]) -> Out[T, @client.Buffered]
+
+pub fn[A, B] pair(Input[A], Input[B]) -> Input[(A, B)]
+
+pub fn[T] path(String, @schema.TextCodec[T]) -> Input[T]
+
+pub fn paths(String) -> Input[Array[String]]
+
+pub fn[T] query(String, @schema.TextCodec[T]) -> Input[T]
+
+pub fn[T] query_list(String, @schema.TextCodec[T]) -> Input[Array[T]]
+
+pub fn query_params() -> Input[Array[(String, String)]]
+
+pub fn raw_body() -> Input[Bytes]
+
+pub let route_template : @model.AttributeKey[String]
+
+pub fn signature_header(String) -> Input[String]
+
+pub fn[T] sse_out(@schema.JsonCodec[T], to_event? : (T) -> @sse.SseEvent) -> Out[EventStream[T], @client.Streaming]
+
+pub fn stream_body(media_type? : String) -> Input[&@model.BodyStream]
+
+pub fn stream_body_out(status? : Int32) -> Out[(String?, @model.Body), @client.Buffered]
+
+pub fn text_out(status? : Int32) -> Out[String, @client.Buffered]
+
+pub fn unit() -> Input[Unit]
+
+// Errors
+pub(all) suberror DefinitionError {
+  DefinitionError(Array[DefinitionProblem])
+} derive(@debug.Debug)
+pub fn DefinitionError::to_repr(Self) -> @debug.Repr
+
+pub(all) suberror InputErrors {
+  InputErrors(Array[InputFailure])
+}
+
+// Types and methods
+pub struct Atom {
+  location : Location
+  name : String
+  schema : @schema.Schema
+  required : Bool
+  description : String?
+  rest : Bool
+}
+pub fn Atom::new(Location, String, @schema.Schema, required? : Bool, description? : String, rest? : Bool) -> Self
+
+#non_exhaustive
+pub(all) enum AuthScheme {
+  Bearer(format~ : String?)
+  Basic
+  ApiKeyHeader(String)
+  ApiKeyQuery(String)
+  ApiKeyCookie(String)
+  Signature(String)
+} derive(Eq, @debug.Debug)
+pub fn AuthScheme::equal(Self, Self) -> Bool
+pub fn AuthScheme::not_equal(Self, Self) -> Bool
+pub fn AuthScheme::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+pub(all) enum BodyValue {
+  NoBody
+  Buffered(Bytes)
+  Streamed(&@model.BodyStream)
+}
+
+pub(all) struct DefinitionProblem {
+  template : String
+  message : String
+  fatal : Bool
+} derive(Eq, @debug.Debug)
+pub fn DefinitionProblem::equal(Self, Self) -> Bool
+pub fn DefinitionProblem::new(String, String, fatal? : Bool) -> Self
+pub fn DefinitionProblem::not_equal(Self, Self) -> Bool
+pub fn DefinitionProblem::to_repr(Self) -> @debug.Repr
+
+pub(all) struct DispatchContext {
+  max_body_bytes : Int32
+  max_issues : Int32
+  decode_failure : (FailureContext) -> @model.Response
+  unhandled : (@model.Request, Error) -> @model.Response
+}
+pub fn DispatchContext::new(max_body_bytes? : Int32, max_issues? : Int32, decode_failure? : (FailureContext) -> @model.Response, unhandled? : (@model.Request, Error) -> @model.Response) -> Self
+
+pub struct Endpoint[S, I, E, O, M] {
+  // private fields
+}
+pub async fn[S, I, E, O] Endpoint::call(Self[S, I, E, O, @client.Buffered], @client.Client, S, I) -> Result[Result[O, E], @client.ResponseFailure]
+pub async fn[S, I, E, O, R, M] Endpoint::call_with(Self[S, I, E, O, M], @client.Client, S, I, async (O) -> R) -> Result[Result[R, E], @client.ResponseFailure]
+pub fn[S, I, E, O, M] Endpoint::delete(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::deprecated(Self[S, I, E, O, M], deprecated? : Bool) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::description(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::doc(Self[S, I, E, O, M]) -> EndpointDoc
+pub fn[S, I, O, E2, M] Endpoint::errors(Self[S, I, NoError, O, M], Out[E2, @client.Buffered]) -> Self[S, I, E2, O, M]
+pub fn[S, I, E, O, M] Endpoint::get(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::head(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, E, O, I2, M] Endpoint::input(Self[S, Unit, E, O, M], Input[I2]) -> Self[S, I2, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::max_body_bytes(Self[S, I, E, O, M], Int32) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::operation_id(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::options(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O2, M, N] Endpoint::output(Self[S, I, E, Unit, M], Out[O2, N]) -> Self[S, I, E, O2, N]
+pub fn[S, I, E, O, M] Endpoint::patch(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::path(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::post(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::put(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::rate_limit_bucket(Self[S, I, E, O, M], (@model.Request) -> String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O] Endpoint::request(Self[S, I, E, O, @client.Buffered], S, I) -> @client.RequestPlan[Result[Result[O, E], @client.ResponseFailure], @client.Buffered] raise @client.InvalidRequest
+pub fn[I, E, O, S2, M] Endpoint::security(Self[Unit, I, E, O, M], Input[S2]) -> Self[S2, I, E, O, M]
+pub fn[S, I, E, O, P, M] Endpoint::serve(Self[S, I, E, O, M], async (S) -> Result[P, E], async (P, I) -> Result[O, E]) -> ServerEndpoint
+pub fn[I, E, O, M] Endpoint::serve_public(Self[Unit, I, E, O, M], async (I) -> Result[O, E]) -> ServerEndpoint
+pub fn[S, I, E, O, R, M] Endpoint::stream_request(Self[S, I, E, O, M], S, I, async (O) -> R) -> @client.RequestPlan[Result[Result[R, E], @client.ResponseFailure], @client.Streaming] raise @client.InvalidRequest
+pub fn[S, I, E, O, M] Endpoint::summary(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::tag(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::with_method(Self[S, I, E, O, M], @model.Method, String) -> Self[S, I, E, O, M]
+
+pub struct EndpointDoc {
+  meth : @model.Method?
+  template : String
+  segments : Array[Seg]
+  security : Array[Atom]
+  inputs : Array[Atom]
+  outputs : Array[VariantDoc]
+  errors : Array[VariantDoc]
+  info : Info
+  max_body_bytes : Int32?
+  method_set_twice : Bool
+}
+pub fn EndpointDoc::problems(Self) -> Array[String]
+
+pub struct EventStream[T] {
+  // private fields
+}
+pub fn[T] EventStream::close(Self[T]) -> Unit
+pub async fn[T] EventStream::each(Self[T], async (T) -> Unit) -> Unit
+pub fn[T] EventStream::from_array(Array[T]) -> Self[T]
+pub fn[T] EventStream::from_pull(async () -> T?, () -> Unit) -> Self[T]
+
+pub(all) struct FailureContext {
+  request : @model.Request
+  endpoint : EndpointDoc
+  failures : Array[InputFailure]
+  stage : FailureStage
+}
+pub fn FailureContext::new(@model.Request, EndpointDoc, Array[InputFailure], FailureStage) -> Self
+
+#non_exhaustive
+pub(all) enum FailureStage {
+  Security
+  Head
+  Body
+} derive(Eq, @debug.Debug)
+pub fn FailureStage::equal(Self, Self) -> Bool
+pub fn FailureStage::not_equal(Self, Self) -> Bool
+pub fn FailureStage::to_repr(Self) -> @debug.Repr
+
+pub struct Head {
+  request : @model.Request
+  captures : Map[String, String]
+  query : Array[(String, String)]
+}
+pub fn Head::new(@model.Request, captures? : Map[String, String], query? : Array[(String, String)]) -> Self
+
+pub(all) struct Info {
+  operation_id : String?
+  summary : String?
+  description : String?
+  tags : Array[String]
+  deprecated : Bool
+}
+pub fn Info::new(operation_id? : String, summary? : String, description? : String, tags? : Array[String], deprecated? : Bool) -> Self
+
+pub struct Input[T] {
+  // private fields
+}
+pub fn[T] Input::atoms(Self[T]) -> Array[Atom]
+pub fn[T, U] Input::map(Self[T], (T) -> U raise @schema.DecodeFailure, (U) -> T) -> Self[U]
+pub fn[A, B, T] Input::map2(Self[A], Self[B], (A, B) -> T, (T) -> (A, B)) -> Self[T]
+pub fn[A0, A1, A2, T] Input::map3(Self[A0], Self[A1], Self[A2], (A0, A1, A2) -> T, (T) -> (A0, A1, A2)) -> Self[T]
+pub fn[A0, A1, A2, A3, T] Input::map4(Self[A0], Self[A1], Self[A2], Self[A3], (A0, A1, A2, A3) -> T, (T) -> (A0, A1, A2, A3)) -> Self[T]
+pub fn[A0, A1, A2, A3, A4, T] Input::map5(Self[A0], Self[A1], Self[A2], Self[A3], Self[A4], (A0, A1, A2, A3, A4) -> T, (T) -> (A0, A1, A2, A3, A4)) -> Self[T]
+pub fn[A0, A1, A2, A3, A4, A5, T] Input::map6(Self[A0], Self[A1], Self[A2], Self[A3], Self[A4], Self[A5], (A0, A1, A2, A3, A4, A5) -> T, (T) -> (A0, A1, A2, A3, A4, A5)) -> Self[T]
+pub fn[A0, A1, A2, A3, A4, A5, A6, T] Input::map7(Self[A0], Self[A1], Self[A2], Self[A3], Self[A4], Self[A5], Self[A6], (A0, A1, A2, A3, A4, A5, A6) -> T, (T) -> (A0, A1, A2, A3, A4, A5, A6)) -> Self[T]
+pub fn[A0, A1, A2, A3, A4, A5, A6, A7, T] Input::map8(Self[A0], Self[A1], Self[A2], Self[A3], Self[A4], Self[A5], Self[A6], Self[A7], (A0, A1, A2, A3, A4, A5, A6, A7) -> T, (T) -> (A0, A1, A2, A3, A4, A5, A6, A7)) -> Self[T]
+pub fn[T] Input::new(Array[Atom], (Head) -> Staged[T] raise InputErrors, (T, RequestSink) -> Unit) -> Self[T]
+pub fn[T] Input::optional(Self[T]) -> Self[T?]
+
+pub(all) struct InputFailure {
+  atom : Atom
+  failure : @schema.DecodeFailure
+}
+pub fn InputFailure::new(Atom, @schema.DecodeFailure) -> Self
+
+#non_exhaustive
+pub(all) enum Location {
+  Path
+  Query
+  Header
+  Cookie
+  Auth(scheme~ : AuthScheme, scheme_name~ : String)
+  Body(media_type~ : String, streamed~ : Bool)
+  RawBody
+  Derived
+} derive(Eq, @debug.Debug)
+pub fn Location::equal(Self, Self) -> Bool
+pub fn Location::not_equal(Self, Self) -> Bool
+pub fn Location::to_repr(Self) -> @debug.Repr
+
+pub(all) enum NoError {
+} derive(Eq, @debug.Debug)
+pub fn NoError::equal(Self, Self) -> Bool
+pub fn NoError::not_equal(Self, Self) -> Bool
+pub fn NoError::to_repr(Self) -> @debug.Repr
+
+pub struct Out[T, M] {
+  // private fields
+}
+pub fn[T, H, M] Out::and_header(Self[T, M], String, @schema.TextCodec[H]) -> Self[(T, H), M]
+pub fn[T, M] Out::and_status(Self[T, M]) -> Self[(T, Int32), M]
+pub fn[T, M] Out::docs(Self[T, M]) -> Array[VariantDoc]
+pub fn[T, M] Out::set_cookie(Self[T, M], String) -> Self[(T, String), M]
+
+pub struct RequestSink {
+  // private fields
+}
+pub fn RequestSink::add_query(Self, String, String) -> Unit
+pub fn RequestSink::set_body(Self, @model.Body) -> Unit
+pub fn RequestSink::set_capture(Self, String, String) -> Unit
+pub fn RequestSink::set_header(Self, String, String) -> Unit
+
+#non_exhaustive
+pub(all) enum Seg {
+  Lit(String)
+  Cap(String)
+  Rest(String)
+} derive(Eq, @debug.Debug)
+pub fn Seg::equal(Self, Self) -> Bool
+pub fn Seg::not_equal(Self, Self) -> Bool
+pub fn Seg::to_repr(Self) -> @debug.Repr
+
+pub struct ServerEndpoint {
+  // private fields
+}
+pub async fn ServerEndpoint::dispatch(Self, @model.Request, Map[String, String], DispatchContext) -> @model.Response noraise
+pub fn ServerEndpoint::doc(Self) -> EndpointDoc
+
+pub struct Staged[T] {
+  // private fields
+}
+pub fn[T] Staged::after_body((BodyValue) -> T raise InputErrors) -> Self[T]
+pub fn[T] Staged::ready(T) -> Self[T]
+
+pub struct Variant[T] {
+  // private fields
+}
+pub fn[T, H] Variant::and_header(Self[T], String, @schema.TextCodec[H]) -> Self[(T, H)]
+pub fn[T] Variant::and_status(Self[T]) -> Self[(T, Int32)]
+pub fn[A, T] Variant::contramap(Self[A], (T) -> A?, (A) -> T) -> Self[T]
+pub fn[T] Variant::doc(Self[T]) -> VariantDoc
+pub fn[T] Variant::fixed_header(Self[T], String, String) -> Self[T]
+
+pub struct VariantDoc {
+  status : Int32
+  dynamic_status : Bool
+  dynamic_media : Bool
+  media_type : String?
+  schema : @schema.Schema?
+  headers : Array[String]
+  header_schemas : Map[String, @schema.Schema]
+  description : String
+}
+pub fn VariantDoc::new(Int32, media_type? : String, schema? : @schema.Schema, headers? : Array[String], description? : String, header_schemas? : Map[String, @schema.Schema], dynamic_status? : Bool, dynamic_media? : Bool) -> Self
+
+// Type aliases
+
+// Traits

@@ -1,0 +1,23 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/server"
+
+import {
+  "gaato/mttp-net/h1",
+  "gaato/mttp/model",
+}
+
+// Values
+pub async fn serve(async (@model.Request) -> @model.Response noraise, addr~ : String, on_listen? : (String) -> Unit, limits? : @h1.ServerLimits, on_error? : (@h1.ServeError) -> Unit, compression? : Bool) -> Unit raise @h1.ServerConfigError
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+pub using @h1 {type ServeError}
+
+pub using @h1 {type ServerConfigError}
+
+pub using @h1 {type ServerLimits}
+
+// Traits

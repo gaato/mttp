@@ -1,0 +1,132 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/internal/control"
+
+import {
+  "moonbitlang/core/immut/hashmap",
+  "moonbitlang/core/immut/vector",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub(all) struct Idle {
+  id : Int64
+  user_agent : String?
+  parked_at_ms : Int64
+}
+
+pub(all) struct Lifecycle {
+  phase : ServerPhase
+  connections : @hashmap.HashMap[Int64, Bool]
+  background : @hashmap.HashMap[Int64, Unit]
+}
+pub fn Lifecycle::drained(Self) -> Bool
+pub fn Lifecycle::new() -> Self
+pub fn Lifecycle::step(Self, ServerEvent) -> ServerChange
+pub fn Lifecycle::stopping(Self) -> Bool
+
+pub(all) struct Pending {
+  id : Int64
+  origin : String
+}
+
+pub(all) struct PoolChange {
+  state : PoolState
+  close : @vector.Vector[Int64]
+}
+
+pub(all) struct PoolState {
+  max_total : Int32
+  max_per_origin : Int32
+  idle_max_ms : Int32
+  parked : @hashmap.HashMap[String, @vector.Vector[Idle]]
+  closed : Bool
+}
+pub fn PoolState::count(Self) -> Int32
+pub fn PoolState::drain(Self) -> PoolChange
+pub fn PoolState::new(max_total? : Int32, max_per_origin~ : Int32, idle_max_ms~ : Int32) -> Self
+pub fn PoolState::put(Self, String, Idle, now~ : Int64) -> PoolChange
+pub fn PoolState::sweep(Self, now~ : Int64) -> PoolChange
+pub fn PoolState::take(Self, String, String?, now~ : Int64) -> (PoolChange, Int64?)
+
+pub(all) enum ServerAction {
+  StopAccept
+  CloseConnection(Int64)
+  CancelConnection(Int64)
+  CancelBackground(Int64)
+  ReportAccept
+}
+
+pub(all) struct ServerChange {
+  state : Lifecycle
+  actions : @vector.Vector[ServerAction]
+}
+
+pub(all) enum ServerEvent {
+  Accepted(Int64)
+  Activity(Int64, Bool)
+  Finished(Int64)
+  BackgroundStarted(Int64)
+  BackgroundFinished(Int64)
+  Stop
+  DrainExpired
+  AcceptFailed
+}
+
+pub(all) enum ServerPhase {
+  Running
+  Draining
+  Stopped
+}
+
+pub(all) struct SessionChange {
+  state : SessionState
+  cancel_exchange : Bool
+}
+
+pub(all) enum SessionEvent {
+  Begin
+  Finish
+  PeerEof
+  PeerFailure
+}
+
+pub(all) struct SessionState {
+  busy : Bool
+  peer_eof : Bool
+  failed : Bool
+}
+pub fn SessionState::new() -> Self
+pub fn SessionState::step(Self, SessionEvent) -> SessionChange
+
+pub(all) struct SlotChange {
+  state : SlotState
+  notifications : @vector.Vector[(Int64, TicketState)]
+}
+
+pub(all) struct SlotState {
+  max_total : Int32?
+  max_per_origin : Int32?
+  in_use : Int32
+  per_origin : @hashmap.HashMap[String, Int32]
+  waiting : @vector.Vector[Pending]
+  closed : Bool
+}
+pub fn SlotState::abandon(Self, Int64) -> SlotChange
+pub fn SlotState::acquire(Self, Int64, String) -> SlotChange
+pub fn SlotState::fits(Self, String) -> Bool
+pub fn SlotState::new(max_total? : Int32, max_per_origin? : Int32) -> Self
+pub fn SlotState::release(Self, String) -> SlotChange
+pub fn SlotState::stop(Self) -> SlotChange
+
+pub(all) enum TicketState {
+  Waiting
+  Granted
+  Refused
+}
+
+// Type aliases
+
+// Traits

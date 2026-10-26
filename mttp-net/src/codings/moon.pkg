@@ -1,0 +1,22 @@
+import {
+  "gaato/mttp/model",
+  "gaato/codec_bytes",
+  "gaato/deflate",
+  "gaato/deflate/gzip",
+  "gaato/deflate/zlib",
+  "gaato/brotli",
+  "gaato/zstd",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "gaato/mttp/testing/driver",
+  "moonbitlang/core/random",
+} for "wbtest"
+
+import {
+  "gaato/mttp/testing/driver",
+} for "test"
+
+supported_targets = "native + wasm + js + wasm-gc"

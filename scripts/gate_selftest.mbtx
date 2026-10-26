@@ -1,0 +1,89 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/async@0.22.5/shell",
+}
+----
+
+///|
+suberror SelfTestFailed {
+  SelfTestFailed
+}
+
+///|
+async fn probe(root : String, name : String, expected : String?) -> Unit {
+  let output = @shell.Cmd(
+    "bash",
+    ["scripts/gates.sh", "quick", "--target", "native"],
+    cwd=root,
+  ).output(timeout_ms=120000)
+  let log = output.stdout() + output.stderr()
+  @fs.write_file(root + "/" + name + ".log", log)
+  let correct = match expected {
+    None => output.exit_code() == 0 && log.contains("gates: OK")
+    Some(message) => output.exit_code() != 0 && log.contains(message)
+  }
+  if !correct {
+    println(log)
+    println("gate self-test failed: " + name)
+    raise SelfTestFailed
+  }
+  println("gate self-test: " + name + " OK")
+}
+
+// Exercise the real shell entry point, not a copy of its count parser. Tiny
+// standalone modules keep failures independent of this repository's tests.
+
+///|
+async fn main {
+  let root = @fs.tmpdir(prefix="mttp-gate-selftest-")
+  @fs.mkdir(root + "/scripts")
+  @fs.write_file(root + "/scripts/gates.sh", @fs.read_file("scripts/gates.sh"))
+  @fs.write_file(root + "/moonbit-version", @fs.read_file("moonbit-version"))
+  @fs.write_file(
+    root + "/moon.work",
+    "members = [\"mttp\", \"mttp-digest\", \"conformance\"]\n",
+  )
+  let rows = ["module\tpackage\ttarget\tcount"]
+  for
+    (dir, name) in [
+      ("mttp", "gaato/mttp"),
+      ("mttp-digest", "gaato/mttp-digest"),
+      ("conformance", "gaato/mttp-conformance"),
+    ] {
+    @fs.mkdir(root + "/" + dir + "/src", recursive=true)
+    @fs.write_file(
+      root + "/" + dir + "/moon.mod",
+      "name = \"" + name + "\"\nversion = \"0.0.1\"\nsource = \"src\"\n",
+    )
+    @fs.write_file(root + "/" + dir + "/src/moon.pkg", "")
+    @fs.write_file(
+      root + "/" + dir + "/src/check_test.mbt",
+      "test \"visible\" { assert_true(true) }\n",
+    )
+    for target in ["native", "js", "wasm", "wasm-gc"] {
+      rows.push(name + "\t" + name + "\t" + target + "\t1")
+    }
+  }
+  let manifest = rows.join("\n") + "\n"
+  let source = root + "/mttp/src/check_test.mbt"
+  @fs.write_file(root + "/scripts/test_manifest.tsv", manifest)
+  probe(root, "passing baseline", None)
+  @fs.write_file(source, "")
+  probe(root, "unexpected zero", Some("0 tests, and"))
+  @fs.write_file(source, "test \"failed\" { assert_true(false) }\n")
+  probe(root, "failed assertion", Some("moon test exited with status"))
+  @fs.write_file(
+    source, "test \"visible\" { assert_true(true) }\ntest \"extra\" { assert_true(true) }\n",
+  )
+  probe(root, "unexpected extra test", Some("test counts differ from"))
+  @fs.write_file(source, "test \"visible\" { assert_true(true) }\n")
+  @fs.write_file(
+    root + "/scripts/test_manifest.tsv",
+    rows.filter(row => !row.has_prefix("gaato/mttp\tgaato/mttp\t")).join("\n") +
+    "\n",
+  )
+  probe(root, "missing manifest entry", Some("test counts differ from"))
+  println("gate self-test evidence: " + root)
+}

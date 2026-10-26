@@ -1,0 +1,63 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/testing"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/conn",
+  "gaato/mttp/model",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub async fn check_backend_contract(() -> &@client.Backend, url? : String) -> Array[String]
+
+pub async fn check_body_stream_contract(() -> &@model.BodyStream, Bytes, max_reads? : Int32) -> Array[String]
+
+pub async fn check_conn_pair_contract(&@conn.Conn, &@conn.Conn, finish_left~ : () -> Unit) -> Unit
+
+pub async fn check_coordination_contract(&@conn.Coordination, suspend~ : async () -> Unit noraise) -> Unit
+
+pub fn[T : Eq + @debug.Debug] check_splits(Bytes, (Array[Bytes]) -> T raise) -> Unit raise
+
+pub fn fail_after(&@model.BodyStream, Int32, @model.TransportError) -> &@model.BodyStream raise @model.TransportError
+
+pub fn fail_sends(&@client.Backend, @model.TransportError, times? : Int32) -> &@client.Backend
+
+pub fn[X] run_sync(async () -> X) -> X raise
+
+// Errors
+
+// Types and methods
+pub struct BackendStub {
+  // private fields
+}
+pub fn BackendStub::close(Self) -> Unit
+pub fn BackendStub::expect(Self, (@model.Request) -> Bool, Canned) -> Self
+pub fn BackendStub::new() -> Self
+pub fn BackendStub::remaining(Self) -> Int32
+pub async fn BackendStub::send(Self, @model.Request, @client.RequestOptions) -> @model.Response raise @model.TransportError
+pub fn BackendStub::sent(Self) -> Array[Recorded]
+pub fn BackendStub::verify(Self) -> Unit raise
+pub fn BackendStub::when(Self, (@model.Request) -> Bool, Canned) -> Self
+pub impl @client.Backend for BackendStub
+
+#non_exhaustive
+pub(all) enum Canned {
+  Response(status~ : Int32, headers~ : @model.Headers, body~ : Bytes)
+  Failure(@model.TransportError)
+  Factory(async (@model.Request, @client.RequestOptions) -> @model.Response raise @model.TransportError)
+}
+pub fn Canned::bytes(Int32, body? : Bytes, headers? : @model.Headers) -> Self
+
+pub(all) struct Recorded {
+  request : @model.RequestHead
+  options : @client.RequestOptions
+  body : Bytes?
+} derive(Eq, @debug.Debug)
+pub fn Recorded::equal(Self, Self) -> Bool
+pub fn Recorded::not_equal(Self, Self) -> Bool
+pub fn Recorded::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

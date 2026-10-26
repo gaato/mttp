@@ -1,0 +1,18 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net"
+
+import {
+  "gaato/mttp/client",
+  "gaato/mttp/model",
+}
+
+// Values
+pub fn new_client(base_url? : String, headers? : @model.Headers, options? : @client.RequestOptions, retry? : @client.RetryPolicy, limiter? : &@client.RateLimiter, total_ms? : Int32, observer? : (@client.Attempt) -> Unit) -> @client.Client
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

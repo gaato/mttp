@@ -1,0 +1,218 @@
+----
+import {
+  "moonbitlang/async@0.22.5",
+  "moonbitlang/async@0.22.5/fs",
+  "moonbitlang/async@0.22.5/shell",
+  "moonbitlang/core/string",
+}
+----
+
+// Target-specific packages have their own manifest because the sans-IO gate
+// requires equal counts across all four targets. Check each package alone so
+// a native abort cannot hide the remaining packages' tests.
+
+///|
+suberror GateError {
+  GateError(String)
+}
+
+///|
+fn portable_backend_interface(source : String) -> String {
+  let lines = []
+  let mut h1_struct = false
+  for line in source.split("\n") {
+    if line.has_prefix("pub struct H1Backend {") {
+      h1_struct = true
+    } else if h1_struct {
+      if line == "}" {
+        h1_struct = false
+      }
+    } else if !line.has_prefix("pub fn H1Backend::") &&
+      !line.has_prefix("pub async fn H1Backend::") &&
+      line != "pub impl @client.Backend for H1Backend" &&
+      !line.is_empty() {
+      lines.push(line.to_owned())
+    }
+  }
+  lines.join("\n")
+}
+
+///|
+async fn check_runtime_interfaces() -> Unit {
+  // These enums are explicitly extensible in design section 5.6. Checking the
+  // generated public interface catches an omitted annotation before release.
+  for
+    (path, names) in [
+      ("mttp/src/model/pkg.generated.mbti", ["Body", "Method", "Kind", "Phase"]),
+      ("mttp/src/client/retry/pkg.generated.mbti", ["Decision"]),
+      ("mttp/src/schema/pkg.generated.mbti", ["DecodeKind"]),
+      (
+        "mttp/src/endpoint/pkg.generated.mbti",
+        ["AuthScheme", "Location", "FailureStage"],
+      ),
+      ("mttp/src/h1/pkg.generated.mbti", ["Framing", "ParseKind", "Version"]),
+    ] {
+    let api = @fs.read_file(path).text()
+    for name in names {
+      if !api.contains("#non_exhaustive\npub(all) enum " + name + " {") {
+        raise GateError(
+          "missing extensible enum annotation: " + path + " " + name,
+        )
+      }
+    }
+  }
+  let packages = [
+    "backend", "runtime", "codings", "quick", "server", "fetch", "conn", "h1", "h1/client",
+    "h1/server",
+  ]
+  @shell.Cmd(
+    "moon",
+    ["info", "--target", "all", ..packages.map(p => "mttp-net/src/" + p)],
+    stdout=Discard,
+    stderr=Inherit,
+  ).run(timeout_ms=600000)
+  for package in packages {
+    let interface = (target : String) => {
+      @fs.read_file(
+        "_build/" +
+        target +
+        "/debug/check/gaato/mttp-net/" +
+        package +
+        "/" +
+        package.split("/").last().unwrap().to_owned() +
+        ".mbti",
+      ).text()
+    }
+    let native = interface("native")
+    if native.contains("\"moonbitlang/async") ||
+      interface("js").contains("\"moonbitlang/async") {
+      raise GateError(
+        "runtime implementation type leaked into public interface: " + package,
+      )
+    }
+    if native != interface("wasm") {
+      raise GateError("native/wasm public interface mismatch: " + package)
+    }
+    let js = interface("js")
+    if package == "backend" {
+      if portable_backend_interface(native) != portable_backend_interface(js) {
+        raise GateError("AsyncBackend public interface mismatch on JS")
+      }
+    } else if package != "server" &&
+      package != "fetch" &&
+      package != "conn" &&
+      native != js {
+      raise GateError("native/JS public interface mismatch: " + package)
+    }
+    if (package == "codings" || package.has_prefix("h1")) &&
+      native != interface("wasm-gc") {
+      raise GateError(
+        "portable public interface mismatch on wasm-gc: " + package,
+      )
+    }
+    let absent = if package == "server" {
+      Some(js)
+    } else if package == "fetch" {
+      Some(native)
+    } else {
+      None
+    }
+    if absent is Some(source) &&
+      source.split("\n").any(line => line.has_prefix("pub ")) {
+      raise GateError("unsupported host adapter exports an API: " + package)
+    }
+  }
+  println("runtime public interfaces: paired targets agree")
+}
+
+///|
+async fn main {
+  check_runtime_interfaces()
+  // The fetch export smoke test imports an actual linked application, because
+  // checking a source-level function cannot prove ESM export configuration.
+  @shell.Cmd(
+    "moon",
+    ["build", "examples/fetch/src", "--target", "js"],
+    stdout=Discard,
+    stderr=Inherit,
+  ).run(timeout_ms=600000)
+  @fs.write_file(
+    "_build/js/debug/build/gaato/mttp-fetch-example/package.json", "{\"type\":\"module\"}\n",
+  )
+  let manifest = @fs.read_file("scripts/runtime_manifest.tsv").text()
+  let checked : Map[String, Bool] = Map([])
+  let packages : Map[String, Bool] = Map([])
+  let rows : Map[String, Bool] = Map([])
+  for line in manifest.split("\n") {
+    if line.is_empty() || line.has_prefix("package\t") || line.has_prefix("#") {
+      continue
+    }
+    let columns = line.split("\t").collect()
+    guard columns is [pkg, target, count] else {
+      raise GateError("invalid runtime manifest row")
+    }
+    let pkg = pkg.to_owned()
+    let target = target.to_owned()
+    let count = @string.parse_int(count)
+    if count <= 0 {
+      raise GateError("runtime package has no positive test floor")
+    }
+    let key = pkg + "\t" + target
+    if rows.contains(key) {
+      raise GateError("duplicate runtime manifest row")
+    }
+    rows[key] = true
+    packages[pkg] = true
+    if !checked.contains(target) {
+      @shell.Cmd(
+        "moon",
+        ["check", "--target", target, "--deny-warn"],
+        stdout=Discard,
+        stderr=Inherit,
+      ).run(timeout_ms=600000)
+      checked[target] = true
+    }
+    let result = @shell.Cmd(
+      "moon",
+      ["test", "-p", pkg, "--target", target, "--deny-warn"],
+      env={ "MOON_CC": "cc" },
+    ).output(timeout_ms=600000)
+    if result.exit_code() != 0 {
+      println(result.stdout())
+      println(result.stderr())
+      raise GateError("runtime tests failed for " + key)
+    }
+    let summaries = result
+      .stdout()
+      .split("\n")
+      .filter(line => line.has_prefix("Total tests:"))
+      .collect()
+    let expected = "Total tests: \{count}, passed: \{count}, failed: 0."
+    if summaries.length() != 1 || summaries[0] != expected {
+      println(result.stdout())
+      println(result.stderr())
+      raise GateError("runtime test count differs for " + key)
+    }
+    println("\{pkg} \{target}: \{count} passed")
+  }
+  // The canonical native interface is empty because portable facades import
+  // this package on every target. Keep the actual JS interface checked too.
+  if @fs.read_file("mttp-net/src/fetch/pkg.generated.js.mbti").text() !=
+    @fs.read_file("_build/js/debug/check/gaato/mttp-net/fetch/fetch.mbti").text() {
+    raise GateError("fetch JS interface is stale")
+  }
+  @fs.walk("mttp-net/src", (dir, entries) => {
+    if entries.contains("moon.pkg") {
+      let pkg = "gaato/mttp-net" + dir["mttp-net/src".length():].to_owned()
+      // Internal engines are exercised through both public portable facades
+      // and host adapters; empty configuration/adapter packages own no tests.
+      let indirect = [
+        "gaato/mttp-net/conn", "gaato/mttp-net/h1", "gaato/mttp-net/internal/h1client",
+        "gaato/mttp-net/internal/h1server", "gaato/mttp-net/internal/socketconn",
+      ]
+      if !packages.contains(pkg) && !indirect.contains(pkg) {
+        raise GateError("runtime package missing from manifest: " + pkg)
+      }
+    }
+  })
+}

@@ -1,0 +1,25 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/openapi"
+
+import {
+  "gaato/mttp/apispec",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/model",
+}
+
+// Values
+pub fn check_documented(@apispec.OpenApi, String, @model.Method, Int32) -> String?
+
+pub fn check_references(@apispec.OpenApi) -> Array[String]
+
+pub fn docs_endpoint(@apispec.OpenApi, path? : String) -> @endpoint.ServerEndpoint
+
+pub fn to_openapi(Array[@endpoint.EndpointDoc], @apispec.Info, servers? : Array[@apispec.Server]) -> @apispec.OpenApi raise @endpoint.DefinitionError
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
