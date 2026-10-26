@@ -1,0 +1,219 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/internal/h1client"
+
+import {
+  "gaato/mttp-net/codings",
+  "gaato/mttp-net/internal/control",
+  "gaato/mttp/client",
+  "gaato/mttp/clock",
+  "gaato/mttp/conn",
+  "gaato/mttp/h1",
+  "gaato/mttp/model",
+}
+
+// Values
+pub fn basic_credentials(String) -> String?
+
+pub fn bypasses_proxy(Array[NoProxyRule], String, Int32) -> Bool
+
+pub fn configure_proxies(String?, trust_env~ : Bool, (String) -> String?) -> Proxies
+
+pub fn connection_token(@model.Headers, String) -> Bool
+
+pub async fn dial_route(&@conn.Dialer, Target, Route, String?, @h1.Limits) -> Wire
+
+pub async fn duplex(Wire, @model.Body, &@model.BodyStream?, Bytes?, @h1.Framing, PhaseTimer, @h1.Limits, &@conn.Coordination) -> (@h1.Version, @model.ResponseHead, Bool) raise @model.TransportError
+
+pub fn env_value((String) -> String?, String, upper~ : Bool) -> (String, String)?
+
+pub async fn exchange(Wire, @model.Request, Bytes, @h1.Framing, PhaseTimer, @h1.Limits, &@conn.Coordination) -> (@h1.Version, @model.ResponseHead, Bool) raise @model.TransportError
+
+pub fn failure(@model.Phase, Error) -> @model.TransportError
+
+pub async fn final_head(Wire, @h1.Limits) -> (@h1.Version, @model.ResponseHead) raise @model.TransportError
+
+pub fn hex_digit_value(Char) -> Int32
+
+pub fn in_network(Array[Int32], Array[Int32], Int32) -> Bool
+
+pub fn ipv4_bytes(String) -> Array[Int32]?
+
+pub fn ipv6_bytes(String) -> Array[Int32]?
+
+pub fn network_rule(String, port~ : Int32?) -> NoProxyRule?
+
+pub fn no_proxy_rule(String) -> NoProxyRule?
+
+pub async fn open_tunnel(Wire, Target, ProxyServer, String?, @h1.Limits) -> Unit
+
+pub fn parse_no_proxy(String) -> Array[NoProxyRule]
+
+pub fn parse_proxy(String, source~ : String) -> Result[ProxyServer, String]
+
+pub fn phase_budget(Int32, total~ : Int32, remaining~ : Int64?) -> (Int32, Int32)
+
+pub fn port_matches(Int32?, Int32) -> Bool
+
+pub fn port_number(String) -> Int32?
+
+pub fn replayable(@model.Request) -> Bool
+
+pub async fn send_bytes(Wire, Bytes, PhaseTimer) -> Unit raise @model.TransportError
+
+pub fn target(@model.Request) -> Target raise @model.TransportError
+
+pub async fn upload(Wire, @model.Body, &@model.BodyStream?, Bytes?, @h1.Framing, PhaseTimer) -> Unit raise @model.TransportError
+
+// Errors
+
+// Types and methods
+pub(all) struct Client {
+  dialer : &@conn.Dialer
+  timer : &@clock.Timer
+  coordination : &@conn.Coordination
+  clock : &@clock.Clock
+  limits : Timeouts
+  head_limits : @h1.Limits
+  body_ceiling : Int32?
+  pool : IdlePool[Wire]
+  slots : Slots
+  proxies : Proxies
+}
+pub fn Client::close(Self) -> Unit
+pub fn Client::idle_connections(Self) -> Int32
+pub fn Client::new(dialer~ : &@conn.Dialer, timer~ : &@clock.Timer, coordination~ : &@conn.Coordination, lookup? : (String) -> String?, proxy? : String, trust_env? : Bool, timeout_ms? : Int32, connect_timeout_ms? : Int32, write_timeout_ms? : Int32, read_timeout_ms? : Int32, pool_timeout_ms? : Int32, max_connections? : Int32, max_connections_per_origin? : Int32, max_idle_connections? : Int32, max_idle_per_origin? : Int32, idle_max_ms? : Int32, max_body_bytes? : Int32, head_limits? : @h1.Limits, clock~ : &@clock.Clock) -> Self
+pub fn Client::release(Self, String, String?, Wire, Bool) -> Unit
+pub async fn Client::send(Self, @model.Request, @client.RequestOptions) -> @model.Response raise @model.TransportError
+
+pub(all) struct IdlePool[C] {
+  mut control : @control.PoolState
+  resources : Map[Int64, C]
+  mut next_id : Int64
+}
+pub fn[C] IdlePool::count(Self[C]) -> Int32
+pub fn[C] IdlePool::drain(Self[C]) -> Array[C]
+pub fn[C] IdlePool::new(max_total? : Int32, max_per_origin~ : Int32, idle_max_ms~ : Int32) -> Self[C]
+pub fn[C] IdlePool::put(Self[C], String, String?, C, now~ : Int64) -> Array[C]
+pub fn[C] IdlePool::take(Self[C], String, String?, now~ : Int64) -> (C?, Array[C])
+
+pub(all) enum NoProxyRule {
+  Everything
+  Domain(name~ : String, port~ : Int32?)
+  Network(address~ : Array[Int32], prefix~ : Int32, port~ : Int32?)
+}
+
+pub(all) struct PhaseTimer {
+  timer : &@clock.Timer
+  clock : &@clock.Clock
+  limits : Timeouts
+  deadline : Int64?
+}
+pub fn PhaseTimer::exchange(&@clock.Clock, Timeouts, timer~ : &@clock.Timer) -> Self
+pub async fn[X] PhaseTimer::run(Self, @model.Phase, async () -> X) -> X raise @model.TransportError
+pub fn PhaseTimer::stream(&@clock.Clock, Timeouts, timer~ : &@clock.Timer) -> Self
+
+pub(all) struct Proxies {
+  http : Result[ProxyServer, String]?
+  https : Result[ProxyServer, String]?
+  bypass : Array[NoProxyRule]
+}
+pub fn Proxies::route(Self, Target) -> Route raise @model.TransportError
+
+pub(all) struct ProxyServer {
+  origin : String
+  authorization : String?
+}
+
+pub(all) struct ResponseBody {
+  backend : Client
+  key : String
+  agent : String?
+  wire : Wire
+  framing : @h1.Framing
+  chunked : @h1.ChunkedDecoder
+  decoder : @codings.ContentDecoder?
+  timer : PhaseTimer
+  limit : Int32?
+  reusable : Bool
+  mut remaining : Int64
+  mut count : Int64
+  mut chunks : Array[Bytes]
+  mut index : Int32
+  mut raw_done : Bool
+  mut closed : Bool
+  mut busy : Bool
+}
+pub fn ResponseBody::close(Self) -> Unit
+pub fn ResponseBody::finish(Self, Bool) -> Unit
+pub fn ResponseBody::new(Client, String, String?, Wire, @h1.Framing, @codings.ContentDecoder?, PhaseTimer, Int32?, Bool) -> Self
+pub async fn ResponseBody::read_raw(Self) -> Bytes?
+pub async fn ResponseBody::read_some(Self) -> Bytes? raise @model.TransportError
+pub impl @model.BodyStream for ResponseBody
+
+pub(all) enum Route {
+  Direct
+  Forward(ProxyServer)
+  Tunnel(ProxyServer)
+}
+pub fn Route::key(Self, String) -> String
+pub fn Route::target(Self, String, String, @model.Method) -> String
+
+pub(all) struct Slots {
+  coordination : &@conn.Coordination
+  mut control : @control.SlotState
+  tickets : Map[Int64, Ticket]
+  mut next_id : Int64
+}
+pub fn Slots::abandon(Self, Ticket) -> Unit
+pub async fn Slots::acquire(Self, String, PhaseTimer) -> Unit raise @model.TransportError
+pub fn Slots::enqueue(Self, String) -> Ticket
+pub fn Slots::fits(Self, String) -> Bool
+pub fn Slots::new(coordination~ : &@conn.Coordination, max_total? : Int32, max_per_origin? : Int32) -> Self
+pub fn Slots::refuse_waiting(Self) -> Unit
+pub fn Slots::release(Self, String) -> Unit
+pub fn Slots::take(Self, String) -> Unit
+pub fn Slots::waiting(Self) -> Array[Ticket]
+
+pub(all) struct Target {
+  host : String
+  port : Int32
+  secure : Bool
+  authority : String
+  origin : String
+  path : String
+}
+
+pub(all) struct Ticket {
+  id : Int64
+  origin : String
+  mut state : @control.TicketState
+  cond : &@conn.Signal
+}
+pub async fn Ticket::wait(Self) -> Unit raise @model.TransportError
+
+pub(all) struct Timeouts {
+  total : Int32
+  pool : Int32
+  connect : Int32
+  write : Int32
+  read : Int32
+}
+pub fn Timeouts::of(Self, @model.Phase) -> Int32
+
+pub(all) struct Wire {
+  mut conn : &@conn.Conn
+  mut pending : Bytes
+  mut closed : Bool
+}
+pub fn Wire::close(Self) -> Unit
+pub async fn Wire::dial(&@conn.Dialer, String, Int32, Bool) -> Self raise @model.TransportError
+pub async fn Wire::head(Self, @h1.Limits, phase? : @model.Phase) -> (@h1.Version, @model.ResponseHead) raise @model.TransportError
+pub fn Wire::new(&@conn.Conn) -> Self
+pub async fn Wire::read(Self, Int32) -> Bytes? raise @model.TransportError
+pub async fn Wire::start_tls(Self, &@conn.Dialer, String) -> Unit
+pub fn Wire::unread(Self, BytesView) -> Unit
+pub async fn Wire::write(Self, Bytes) -> Unit raise @model.TransportError
+
+// Type aliases
+
+// Traits

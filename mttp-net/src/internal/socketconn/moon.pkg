@@ -1,0 +1,13 @@
+import {
+  "gaato/mttp/conn" @connection,
+  "gaato/mttp/model",
+  "moonbitlang/async/socket",
+}
+
+supported_targets = "native + wasm + js"
+
+warnings = "-unused_package"
+
+options(
+  targets: { "socket.mbt": [ "native", "wasm" ] },
+)

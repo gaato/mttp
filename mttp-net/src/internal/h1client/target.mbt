@@ -2,7 +2,7 @@
 // The socket implementation consumes the separated address fields; fetch
 // consumes only the canonical origin and path.
 #warnings("-unused_field")
-priv struct Target {
+pub(all) struct Target {
   host : String
   port : Int32
   secure : Bool
@@ -12,7 +12,7 @@ priv struct Target {
 }
 
 ///|
-fn target(request : @model.Request) -> Target raise @model.TransportError {
+pub fn target(request : @model.Request) -> Target raise @model.TransportError {
   request.validate()
   let url = @model.Url::parse(request.url) catch {
     _ =>

@@ -1,0 +1,24 @@
+import {
+  "gaato/mttp/conn" @connection,
+  "gaato/mttp/model",
+  "gaato/mttp-net/internal/socketconn" @socket_conn,
+  "moonbitlang/async/socket",
+  "moonbitlang/async/tls",
+  "moonbitlang/async/io",
+}
+
+import {
+  "moonbitlang/async",
+} for "wbtest"
+
+supported_targets = "native + wasm + js"
+// The io bridge must implement Reader's internal buffer hook for TLS wrapping.
+
+warnings = "-unused_package-alert_internal"
+
+options(
+  targets: {
+    "socket.mbt": [ "native", "wasm" ],
+    "socket_wbtest.mbt": [ "native", "wasm" ],
+  },
+)

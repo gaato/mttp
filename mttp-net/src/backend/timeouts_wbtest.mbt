@@ -23,7 +23,7 @@ test "phase_budget takes the phase's limit unless the exchange ends first" {
 
 ///|
 test "Timeouts gives the head and body the read limit" {
-  let limits = { total: 1, pool: 2, connect: 3, write: 4, read: 5, }
+  let limits : Timeouts = { total: 1, pool: 2, connect: 3, write: 4, read: 5, }
   let phases : Array[@model.Phase] = [Pool, Dial, Write, Head, Body, Unknown]
   assert_eq(phases.map(phase => limits.of(phase)), [2, 3, 4, 5, 5, 5])
 }

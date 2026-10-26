@@ -1,6 +1,6 @@
 ///|
 /// A proxy server: where to dial, and what to tell it.
-priv struct ProxyServer {
+pub(all) struct ProxyServer {
   /// `http://host:port` or `https://host:port`, the port always written.
   origin : String
   /// `Basic` credentials from the proxy URL's userinfo, for the
@@ -10,7 +10,7 @@ priv struct ProxyServer {
 
 ///|
 /// How a request reaches its origin.
-priv enum Route {
+pub(all) enum Route {
   Direct
   /// An `http://` request handed to the proxy, its target in absolute form
   /// (RFC 9112 §3.2.2), on a connection to the proxy.
@@ -25,7 +25,7 @@ priv enum Route {
 /// requests and one for `https://`, each a server or why the setting
 /// cannot be used, and the hosts that skip them. A request whose proxy
 /// setting is unusable fails rather than going direct.
-priv struct Proxies {
+pub(all) struct Proxies {
   http : Result[ProxyServer, String]?
   https : Result[ProxyServer, String]?
   bypass : Array[NoProxyRule]
@@ -42,7 +42,7 @@ priv struct Proxies {
 ///   unset. Upper-case `HTTP_PROXY` is ignored when `REQUEST_METHOD` is
 ///   set, since a CGI program gets it from a request's `Proxy` header
 ///   (httpoxy, CVE-2016-5385), as Go and Python ignore it.
-fn configure_proxies(
+pub fn configure_proxies(
   proxy : String?,
   trust_env~ : Bool,
   lookup : (String) -> String?,
@@ -73,7 +73,7 @@ fn configure_proxies(
 ///|
 /// The first non-empty of `name` and, when `upper`, its upper-case form,
 /// with the spelling found.
-fn env_value(
+pub fn env_value(
   lookup : (String) -> String?,
   name : String,
   upper~ : Bool,
@@ -92,7 +92,10 @@ fn env_value(
 /// when missing (curl, httpx's environment), the port as the scheme's
 /// default when missing, and `user:password@` percent-decoded into `Basic`
 /// credentials. A path is ignored. `source` names the setting in the error.
-fn parse_proxy(text : String, source~ : String) -> Result[ProxyServer, String] {
+pub fn parse_proxy(
+  text : String,
+  source~ : String,
+) -> Result[ProxyServer, String] {
   let text = text.trim().to_owned()
   let text = if text.contains("://") { text } else { "http://" + text }
   let url = @model.Url::parse(text) catch {
@@ -125,7 +128,7 @@ fn parse_proxy(text : String, source~ : String) -> Result[ProxyServer, String] {
 /// `Basic` credentials (RFC 7617) for a URL's userinfo, its user and
 /// password percent-decoded; a userinfo without `:` is a user with an empty
 /// password, as httpx takes it.
-fn basic_credentials(userinfo : String) -> String? {
+pub fn basic_credentials(userinfo : String) -> String? {
   let (user, password) = match userinfo.find(":") {
     Some(colon) => (userinfo[:colon], userinfo[colon + 1:])
     None => (userinfo[:], "")
@@ -143,7 +146,7 @@ fn basic_credentials(userinfo : String) -> String? {
 /// (`https://`). A request is routed by its own URL, so a redirect to another
 /// origin is routed afresh. An unusable proxy setting raises `Protocol`
 /// before anything is sent.
-fn Proxies::route(
+pub fn Proxies::route(
   self : Proxies,
   origin : Target,
 ) -> Route raise @model.TransportError {
@@ -164,7 +167,7 @@ fn Proxies::route(
 /// The key that parks and counts connections for `origin` on this route: a
 /// connection to the proxy or through its tunnel is never handed to a
 /// request that goes direct, or through another proxy.
-fn Route::key(self : Route, origin : String) -> String {
+pub fn Route::key(self : Route, origin : String) -> String {
   match self {
     Direct => origin
     Forward(server) | Tunnel(server) => origin + " via " + server.origin
@@ -174,7 +177,7 @@ fn Route::key(self : Route, origin : String) -> String {
 ///|
 /// The request target: CONNECT uses its authority on every route; other
 /// requests use `path` directly or an absolute URL through a forward proxy.
-fn Route::target(
+pub fn Route::target(
   self : Route,
   origin : String,
   path : String,

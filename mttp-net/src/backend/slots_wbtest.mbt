@@ -4,11 +4,13 @@
 /// The slots in use, as `total origin=count ...`, and the origins of the
 /// waiting tickets in queue order.
 fn slots_label(slots : Slots) -> String {
-  let origins = slots.per_origin.keys().collect()
+  let origins = slots.control.per_origin.keys().collect()
   origins.sort()
-  let counts = origins.map(origin => "\{origin}=\{slots.per_origin[origin]}")
-  let waiting = slots.waiting.map(ticket => ticket.origin)
-  let used = [slots.in_use.to_string(), ..counts].join(" ")
+  let counts = origins.map(origin => {
+    "\{origin}=\{slots.control.per_origin[origin]}"
+  })
+  let waiting = slots.waiting().map(ticket => ticket.origin)
+  let used = [slots.control.in_use.to_string(), ..counts].join(" ")
   "\{used} waiting [\{waiting.join(",")}]"
 }
 
@@ -23,7 +25,7 @@ fn ticket_state(ticket : Ticket) -> String {
 
 ///|
 test "slots go to the earliest waiter they fit" {
-  let slots = Slots::new(max_total=2, max_per_origin=1)
+  let slots = slots_new(max_total=2, max_per_origin=1)
   let a = slots.enqueue("a")
   let b = slots.enqueue("b")
   let a2 = slots.enqueue("a") // `a` is at its cap and the total is full
@@ -52,12 +54,12 @@ test "slots go to the earliest waiter they fit" {
 
 ///|
 test "unset caps never queue and caps below 1 count as 1" {
-  let open = Slots::new()
+  let open = slots_new()
   for _ in 0..<100 {
     assert_eq(ticket_state(open.enqueue("a")), "granted")
   }
-  assert_eq(open.in_use, 100)
-  let one = Slots::new(max_total=0, max_per_origin=-3)
+  assert_eq(open.control.in_use, 100)
+  let one = slots_new(max_total=0, max_per_origin=-3)
   assert_eq(ticket_state(one.enqueue("a")), "granted")
   assert_eq(ticket_state(one.enqueue("b")), "waiting")
   assert_eq(ticket_state(one.enqueue("a")), "waiting")
@@ -72,7 +74,7 @@ test "slot bookkeeping holds its invariants under random use" {
     let rand = @random.Rand::chacha8(seed=Bytes::make(32, seed.to_byte()))
     let max_total = 1 + rand.int(limit=4)
     let max_per_origin = 1 + rand.int(limit=3)
-    let slots = Slots::new(max_total~, max_per_origin~)
+    let slots = slots_new(max_total~, max_per_origin~)
     // Tickets still waiting, in arrival order, and those holding a slot.
     let pending : Array[Ticket] = []
     let holding : Array[Ticket] = []
@@ -111,21 +113,22 @@ test "slot bookkeeping holds its invariants under random use" {
       pending.append(still)
       // The queue is exactly the waiting tickets, in arrival order.
       assert_true(
-        slots.waiting.length() == pending.length() &&
-        slots.waiting
+        slots.waiting().length() == pending.length() &&
+        slots
+        .waiting()
         .iter()
         .zip(pending.iter())
         .all(pair => physical_equal(pair.0, pair.1)),
       )
-      assert_eq(slots.in_use, holding.length())
-      assert_true(slots.in_use <= max_total)
+      assert_eq(slots.control.in_use, holding.length())
+      assert_true(slots.control.in_use <= max_total)
       for origin in origins {
         let held = holding.filter(t => t.origin == origin).length()
-        assert_eq(slots.per_origin.get(origin).unwrap_or(0), held)
+        assert_eq(slots.control.per_origin.get(origin).unwrap_or(0), held)
         assert_true(held <= max_per_origin)
       }
       // No waiter is left behind a slot it fits.
-      assert_true(slots.waiting.iter().all(t => !slots.fits(t.origin)))
+      assert_true(slots.waiting().iter().all(t => !slots.fits(t.origin)))
     }
   }
 }

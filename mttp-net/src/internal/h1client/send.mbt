@@ -1,12 +1,12 @@
 ///|
 /// Sends a validated request with bounded framing, phase deadlines and
 /// incremental content decoding. Stream readers own the connection slot.
-pub async fn H1Backend::send(
-  self : H1Backend,
+pub async fn Client::send(
+  self : Client,
   request : @model.Request,
   options : @client.RequestOptions,
 ) -> @model.Response raise @model.TransportError {
-  if self.pool.closed {
+  if self.pool.control.closed {
     raise @model.TransportError(
       kind=Closed,
       phase=Pool,
@@ -61,14 +61,14 @@ pub async fn H1Backend::send(
     total: options.timeout_ms.unwrap_or(self.limits.total),
     read: options.read_idle_ms.unwrap_or(self.limits.read),
   }
-  let timer = PhaseTimer::exchange(self.clock, limits)
+  let timer = PhaseTimer::exchange(self.clock, limits, timer=self.timer)
   self.slots.acquire(key, timer)
   let mut transferred = false
   defer (if !transferred { self.slots.release(key) })
   let agent = request.headers.get("user-agent")
   let mut fresh = false
   for ;; {
-    if self.pool.closed {
+    if self.pool.control.closed {
       raise @model.TransportError(
         kind=Closed,
         phase=Pool,
@@ -95,7 +95,9 @@ pub async fn H1Backend::send(
     let wire = match cached {
       Some(wire) => wire
       None =>
-        timer.run(Dial, () => dial_route(target, route, agent, self.head_limits))
+        timer.run(Dial, () => {
+          dial_route(self.dialer, target, route, agent, self.head_limits)
+        })
     }
     let mut owned = true
     defer (if owned { wire.close() })
@@ -106,6 +108,7 @@ pub async fn H1Backend::send(
       framing,
       timer,
       self.head_limits,
+      self.coordination,
     ) catch {
       @model.TransportError(kind=Network, ..) if reused && replayable(request) => {
         fresh = true
@@ -141,7 +144,7 @@ pub async fn H1Backend::send(
     let body_timer = if options.body_deadline {
       timer
     } else {
-      PhaseTimer::stream(self.clock, limits)
+      PhaseTimer::stream(self.clock, limits, timer=self.timer)
     }
     let limit = if options.body_deadline {
       Some(

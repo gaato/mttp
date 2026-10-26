@@ -1,4 +1,7 @@
 ///|
+using @engine {type Slots, type PhaseTimer, target}
+
+///|
 priv struct FetchDriver {
   settings : Settings
   slots : Slots
@@ -10,6 +13,7 @@ fn platform_backend(settings : Settings) -> AsyncBackend {
   let driver = FetchDriver::{
     settings,
     slots: Slots::new(
+      coordination=@runtime.RuntimeCoordination::new(),
       max_total?=settings.max_connections,
       max_per_origin?=settings.max_connections_per_origin,
     ),
@@ -103,7 +107,11 @@ impl @client.Backend for FetchDriver with fn send(self, request, options) {
     total: options.timeout_ms.unwrap_or(self.settings.timeouts.total),
     read: options.read_idle_ms.unwrap_or(self.settings.timeouts.read),
   }
-  let timer = PhaseTimer::exchange(self.settings.clock, limits)
+  let timer = PhaseTimer::exchange(
+    self.settings.clock,
+    limits,
+    timer=@runtime.ClockTimer::new(clock=self.settings.clock),
+  )
   self.slots.acquire(destination.origin, timer)
   let mut transferred = false
   defer (if !transferred { self.slots.release(destination.origin) })
@@ -174,7 +182,11 @@ impl @client.Backend for FetchDriver with fn send(self, request, options) {
     timer: if options.body_deadline {
       timer
     } else {
-      PhaseTimer::stream(self.settings.clock, limits)
+      PhaseTimer::stream(
+        self.settings.clock,
+        limits,
+        timer=@runtime.ClockTimer::new(clock=self.settings.clock),
+      )
     },
     limit: if options.body_deadline {
       Some(

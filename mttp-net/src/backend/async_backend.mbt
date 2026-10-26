@@ -1,4 +1,7 @@
 ///|
+using @engine {type Timeouts}
+
+///|
 /// A platform backend: bounded HTTP/1 sockets on native/wasm, fetch on JS.
 /// It performs one exchange; compose FollowRedirects and Cookies explicitly.
 pub struct AsyncBackend {

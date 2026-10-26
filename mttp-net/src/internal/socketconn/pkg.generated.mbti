@@ -1,0 +1,18 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-net/internal/socketconn"
+
+import {
+  "gaato/mttp/conn",
+  "moonbitlang/async/socket",
+}
+
+// Values
+pub fn from_tcp(@socket.Tcp) -> &@conn.Conn
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

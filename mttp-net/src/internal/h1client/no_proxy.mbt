@@ -1,6 +1,6 @@
 ///|
 /// One entry of a `NO_PROXY` list, as curl reads it.
-priv enum NoProxyRule {
+pub(all) enum NoProxyRule {
   /// `*`: every host.
   Everything
   /// A host name, lower-case without a leading or trailing dot: the host
@@ -21,7 +21,7 @@ priv enum NoProxyRule {
 /// 7.86, Go, reqwest). `host:port` and `[v6]:port` restrict an entry to that
 /// port, as httpx, Go and Python do. Entries that are none of these are
 /// skipped, so a typo bypasses nothing.
-fn parse_no_proxy(text : String) -> Array[NoProxyRule] {
+pub fn parse_no_proxy(text : String) -> Array[NoProxyRule] {
   let rules = []
   for entry in text.split(",") {
     let entry = entry.trim().to_owned()
@@ -36,7 +36,7 @@ fn parse_no_proxy(text : String) -> Array[NoProxyRule] {
 }
 
 ///|
-fn no_proxy_rule(entry : String) -> NoProxyRule? {
+pub fn no_proxy_rule(entry : String) -> NoProxyRule? {
   if entry == "*" {
     return Some(Everything)
   }
@@ -93,7 +93,7 @@ fn no_proxy_rule(entry : String) -> NoProxyRule? {
 
 ///|
 /// An address or `address/prefix` rule, IPv4 or IPv6.
-fn network_rule(text : String, port~ : Int32?) -> NoProxyRule? {
+pub fn network_rule(text : String, port~ : Int32?) -> NoProxyRule? {
   let (address_text, prefix_text) = match text.find("/") {
     Some(slash) => (text[:slash].to_owned(), Some(text[slash + 1:].to_owned()))
     None => (text, None)
@@ -129,7 +129,7 @@ fn network_rule(text : String, port~ : Int32?) -> NoProxyRule? {
 /// canonical origin spells it: lower-case, an IPv6 literal without brackets.
 /// Host names are compared as text and never resolved, so an address rule
 /// matches only a URL written with that address.
-fn bypasses_proxy(
+pub fn bypasses_proxy(
   rules : Array[NoProxyRule],
   host : String,
   port : Int32,
@@ -159,7 +159,7 @@ fn bypasses_proxy(
 }
 
 ///|
-fn port_matches(rule : Int32?, port : Int32) -> Bool {
+pub fn port_matches(rule : Int32?, port : Int32) -> Bool {
   match rule {
     None => true
     Some(wanted) => wanted == port
@@ -169,7 +169,7 @@ fn port_matches(rule : Int32?, port : Int32) -> Bool {
 ///|
 /// Whether `address` shares its first `prefix` bits with `network`, both of
 /// one family.
-fn in_network(
+pub fn in_network(
   address : Array[Int32],
   network : Array[Int32],
   prefix : Int32,
@@ -190,7 +190,7 @@ fn in_network(
 
 ///|
 /// A port number from 1 to 65535 in decimal digits.
-fn port_number(text : String) -> Int32? {
+pub fn port_number(text : String) -> Int32? {
   guard !text.is_empty() &&
     text.length() <= 5 &&
     text.iter().all(c => c.is_ascii_digit()) else {
@@ -208,7 +208,7 @@ fn port_number(text : String) -> Int32? {
 
 ///|
 /// The four bytes of a dotted-decimal IPv4 address.
-fn ipv4_bytes(text : String) -> Array[Int32]? {
+pub fn ipv4_bytes(text : String) -> Array[Int32]? {
   let parts = text.split(".").to_array()
   guard parts.length() == 4 else { return None }
   let bytes = []
@@ -231,7 +231,7 @@ fn ipv4_bytes(text : String) -> Array[Int32]? {
 /// The sixteen bytes of an RFC 4291 IPv6 address: hex groups with at most
 /// one `::`, the last 32 bits optionally a dotted quad. Zone identifiers
 /// are refused.
-fn ipv6_bytes(text : String) -> Array[Int32]? {
+pub fn ipv6_bytes(text : String) -> Array[Int32]? {
   let halves = text.split("::").to_array()
   guard halves.length() <= 2 else { return None }
   let parsed : Array[Array[Int32]] = []
@@ -276,7 +276,7 @@ fn ipv6_bytes(text : String) -> Array[Int32]? {
 }
 
 ///|
-fn hex_digit_value(c : Char) -> Int32 {
+pub fn hex_digit_value(c : Char) -> Int32 {
   match c {
     '0'..<='9' => c.to_int() - '0'.to_int()
     'a'..<='f' => c.to_int() - 'a'.to_int() + 10

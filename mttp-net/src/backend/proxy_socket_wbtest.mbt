@@ -43,7 +43,7 @@ async test "NO_PROXY routes direct and forwarded requests on distinct reusable c
         }
       }
       assert_eq(backend.idle_connections(), 2)
-      assert_eq(backend.slots.in_use, 0)
+      assert_eq(backend.slots.control.in_use, 0)
     })
   })
 }

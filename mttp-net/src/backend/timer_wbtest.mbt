@@ -35,7 +35,13 @@ impl @clock.Clock for ManualClock with fn sleep(self, ms) {
 
 ///|
 async test "phase timeout cancels work and reports the limiting budget" {
-  let limits = { total: 1000, pool: 100, connect: 200, write: 300, read: 400, }
+  let limits : Timeouts = {
+    total: 1000,
+    pool: 100,
+    connect: 200,
+    write: 300,
+    read: 400,
+  }
   let rows : Array[(@model.Phase, Int32)] = [
     (Pool, 100),
     (Dial, 200),
@@ -45,7 +51,7 @@ async test "phase timeout cancels work and reports the limiting budget" {
   ]
   for (phase, expected) in rows {
     let clock = ManualClock::new()
-    let timer = PhaseTimer::exchange(clock, limits)
+    let timer = phase_exchange(clock, limits)
     let unwound = Ref(false)
     let stopped = Ref(false)
     @async.with_task_group(group => {
@@ -71,7 +77,7 @@ async test "phase timeout cancels work and reports the limiting budget" {
     assert_eq(clock.pending, 0)
   }
   let clock = ManualClock::new()
-  let timer = PhaseTimer::exchange(clock, limits)
+  let timer = phase_exchange(clock, limits)
   clock.now = 950L
   @async.with_task_group(group => {
     group.spawn_bg(() => {
@@ -90,7 +96,7 @@ async test "phase timeout cancels work and reports the limiting budget" {
     @model.TransportError(kind=Timeout(ms=1000), phase=Dial, ..) => ()
     error => raise error
   }
-  assert_eq(PhaseTimer::stream(clock, limits).run(Body, () => 7), 7)
+  assert_eq(phase_stream(clock, limits).run(Body, () => 7), 7)
   assert_eq(clock.pending, 0)
 }
 
@@ -112,7 +118,7 @@ async test "phase mapping preserves typed failures and bounds extreme clocks" {
   let phases : Array[@model.Phase] = [Pool, Dial, Write, Head, Body]
   assert_eq(phases.map(p => backend.limits.of(p)), [1, 2, 3, 4, 4])
   let clock = ManualClock::new(now=9223372036854775805L)
-  let timer = PhaseTimer::exchange(clock, backend.limits)
+  let timer = phase_exchange(clock, backend.limits)
   assert_eq(timer.deadline, Some(9223372036854775807L))
   clock.now = -10L
   for phase in [@model.Phase::Dial, Write, Body] {
@@ -124,7 +130,7 @@ async test "phase mapping preserves typed failures and bounds extreme clocks" {
     }
   }
   for ms in [0, -1] {
-    let timer = PhaseTimer::exchange(
+    let timer = phase_exchange(
       clock,
       H1Backend::new(trust_env=false, timeout_ms=ms).limits,
     )
@@ -140,11 +146,8 @@ async test "phase mapping preserves typed failures and bounds extreme clocks" {
 async test "queued slot waits release on grant timeout refusal and parent cancellation" {
   for mode in 0..<4 {
     let clock = ManualClock::new()
-    let timer = PhaseTimer::exchange(
-      clock,
-      H1Backend::new(trust_env=false).limits,
-    )
-    let slots = Slots::new(max_total=1)
+    let timer = phase_exchange(clock, H1Backend::new(trust_env=false).limits)
+    let slots = slots_new(max_total=1)
     slots.acquire("a", timer)
     let acquired = Ref(false)
     @async.with_task_group(group => {
@@ -160,7 +163,7 @@ async test "queued slot waits release on grant timeout refusal and parent cancel
         }
       })
       ignore(clock.started.get())
-      assert_eq(slots.waiting.length(), 1)
+      assert_eq(slots.waiting().length(), 1)
       match mode {
         0 => slots.release("a")
         1 => clock.wake.signal()
@@ -172,8 +175,8 @@ async test "queued slot waits release on grant timeout refusal and parent cancel
       slots.release("a")
     }
     assert_eq(acquired.val, mode == 0)
-    assert_eq(slots.waiting.length(), 0)
-    assert_eq(slots.in_use, 0)
+    assert_eq(slots.waiting().length(), 0)
+    assert_eq(slots.control.in_use, 0)
     assert_eq(clock.pending, 0)
   }
 }

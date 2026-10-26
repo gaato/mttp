@@ -3,6 +3,8 @@ package "gaato/mttp-net/runtime"
 
 import {
   "gaato/mttp/clock",
+  "gaato/mttp/conn",
+  "gaato/mttp/model",
 }
 
 // Values
@@ -27,6 +29,13 @@ pub struct ClockTimer {
 pub fn ClockTimer::new(clock? : &@clock.Clock) -> Self
 pub async fn ClockTimer::within(Self, Int32, async () -> Unit noraise) -> Bool noraise
 pub impl @clock.Timer for ClockTimer
+
+pub struct RuntimeCoordination {
+}
+pub fn RuntimeCoordination::new() -> Self
+pub fn RuntimeCoordination::signal(Self) -> &@conn.Signal
+pub async fn RuntimeCoordination::supervise(Self, primary~ : async () -> Unit raise @model.TransportError, monitor~ : async () -> Unit raise @model.TransportError) -> Unit raise @model.TransportError
+pub impl @conn.Coordination for RuntimeCoordination
 
 pub struct SemaphoreGate {
   // private fields

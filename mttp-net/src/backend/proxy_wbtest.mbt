@@ -250,11 +250,11 @@ test "connections through different proxies, or none, are kept apart" {
   let a : ProxyServer = { origin: "http://a:1", authorization: None, }
   let b : ProxyServer = { origin: "http://b:1", authorization: None, }
   let keys = [
-    Direct.key("https://api.test"),
-    Tunnel(a).key("https://api.test"),
-    Tunnel(b).key("https://api.test"),
-    Forward(a).key("http://api.test"),
-    Direct.key("http://api.test"),
+    @engine.Direct.key("https://api.test"),
+    @engine.Tunnel(a).key("https://api.test"),
+    @engine.Tunnel(b).key("https://api.test"),
+    @engine.Forward(a).key("http://api.test"),
+    @engine.Direct.key("http://api.test"),
   ]
   for i, key in keys {
     for j, other in keys {

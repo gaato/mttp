@@ -1,6 +1,6 @@
 ///|
-priv struct ResponseBody {
-  backend : H1Backend
+pub(all) struct ResponseBody {
+  backend : Client
   key : String
   agent : String?
   wire : Wire
@@ -20,8 +20,8 @@ priv struct ResponseBody {
 }
 
 ///|
-fn ResponseBody::new(
-  backend : H1Backend,
+pub fn ResponseBody::new(
+  backend : Client,
   key : String,
   agent : String?,
   wire : Wire,
@@ -56,7 +56,7 @@ fn ResponseBody::new(
 }
 
 ///|
-fn ResponseBody::finish(self : ResponseBody, reusable : Bool) -> Unit {
+pub fn ResponseBody::finish(self : ResponseBody, reusable : Bool) -> Unit {
   if !self.closed {
     self.closed = true
     self.chunks.clear()
@@ -65,12 +65,15 @@ fn ResponseBody::finish(self : ResponseBody, reusable : Bool) -> Unit {
 }
 
 ///|
-impl @model.BodyStream for ResponseBody with fn close(self) {
+pub extend ResponseBody with @model.BodyStream::{read_some, close}
+
+///|
+pub impl @model.BodyStream for ResponseBody with fn close(self) {
   self.finish(false)
 }
 
 ///|
-impl @model.BodyStream for ResponseBody with fn read_some(self) {
+pub impl @model.BodyStream for ResponseBody with fn read_some(self) {
   if self.closed {
     return None
   }
@@ -112,7 +115,7 @@ impl @model.BodyStream for ResponseBody with fn read_some(self) {
 }
 
 ///|
-async fn ResponseBody::read_raw(self : ResponseBody) -> Bytes? {
+pub async fn ResponseBody::read_raw(self : ResponseBody) -> Bytes? {
   match self.framing {
     Length(_) => {
       if self.remaining == 0L {

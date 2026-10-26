@@ -17,7 +17,7 @@ async test "body close and framing error release the active slot exactly once" {
           @model.Request::get("http://127.0.0.1:\{server.addr.port()}/"),
           @client.RequestOptions::default(),
         )
-        assert_eq(backend.slots.in_use, 1)
+        assert_eq(backend.slots.control.in_use, 1)
         if malformed {
           guard response.body is Stream(stream) else { fail("expected stream") }
           try @model.read_bounded(stream.take(), 100) catch {
@@ -29,8 +29,8 @@ async test "body close and framing error release the active slot exactly once" {
         }
         response.close()
         response.close()
-        assert_eq(backend.slots.in_use, 0)
-        assert_eq(backend.slots.per_origin.length(), 0)
+        assert_eq(backend.slots.control.in_use, 0)
+        assert_eq(backend.slots.control.per_origin.length(), 0)
         assert_eq(backend.pool.count(), 0)
       })
     })
@@ -39,8 +39,8 @@ async test "body close and framing error release the active slot exactly once" {
 
 ///|
 test "idle pool total bound also bounds the origin index" {
-  assert_eq(H1Backend::new(trust_env=false).pool.max_total, 256)
-  assert_eq(H1Backend::new(trust_env=false).pool.max_per_origin, 4)
+  assert_eq(H1Backend::new(trust_env=false).pool.control.max_total, 256)
+  assert_eq(H1Backend::new(trust_env=false).pool.control.max_per_origin, 4)
   let pool : IdlePool[Int32] = IdlePool::new(
     max_total=2,
     max_per_origin=4,
@@ -49,8 +49,11 @@ test "idle pool total bound also bounds the origin index" {
   assert_eq(pool.put("a", None, 1, now=0L), [])
   assert_eq(pool.put("b", None, 2, now=0L), [])
   assert_eq(pool.put("c", None, 3, now=0L), [3])
-  assert_eq(pool.parked.length(), 2)
-  assert_eq(pool.put("c", None, 4, now=100L), [1, 2])
+  assert_eq(pool.control.parked.length(), 2)
+  let evicted = pool.put("c", None, 4, now=100L)
+  // Both origins expire; their map traversal order is not a pool contract.
+  evicted.sort()
+  assert_eq(evicted, [1, 2])
   assert_eq(pool.count(), 1)
-  assert_eq(pool.parked.length(), 1)
+  assert_eq(pool.control.parked.length(), 1)
 }

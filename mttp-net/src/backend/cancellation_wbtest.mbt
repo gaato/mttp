@@ -9,19 +9,19 @@ async test "body timeout parent cancellation and concurrent reads release their 
     )
     let (peer, _) = listener.accept()
     defer peer.close()
-    let wire = { tcp, tls: None, outer_tls: [], pending: b"", closed: false, }
+    let wire = Wire::new(@accepted.from_tcp(tcp))
     let clock = ManualClock::new()
     let backend = H1Backend::new(trust_env=false, clock~)
     defer backend.close()
     backend.slots.take("origin")
     let reader : &@model.BodyStream = ResponseBody::new(
-      backend,
+      backend.engine(),
       "origin",
       None,
       wire,
       Length(1L),
       None,
-      PhaseTimer::stream(clock, backend.limits),
+      phase_stream(clock, backend.limits),
       None,
       true,
     )
@@ -46,13 +46,13 @@ async test "body timeout parent cancellation and concurrent reads release their 
           } noraise {
             _ => fail("concurrent read accepted")
           }
-          assert_eq(backend.slots.in_use, 1)
+          assert_eq(backend.slots.control.in_use, 1)
         }
         group.return_immediately(())
       }
     })
     assert_true(wire.closed)
-    assert_eq(backend.slots.in_use, 0)
+    assert_eq(backend.slots.control.in_use, 0)
     assert_eq(clock.pending, 0)
     assert_eq(reader.read_some(), None)
     reader.close()
@@ -82,7 +82,7 @@ async test "closing a backend while acquiring a granted slot prevents a new dial
     backend.slots.release("occupied")
     backend.close()
   })
-  assert_eq(backend.slots.in_use, 0)
+  assert_eq(backend.slots.control.in_use, 0)
   assert_eq(clock.pending, 0)
 }
 
@@ -98,7 +98,7 @@ async test "a stale pooled connection retries once on a fresh connection" {
   // Both idle sockets have been closed remotely. The retry must skip the
   // remaining cached socket and dial, rather than try both stale entries.
   for _ in 0..<2 {
-    let wire = Wire::dial("127.0.0.1", server.addr.port(), false)
+    let wire = dial_wire("127.0.0.1", server.addr.port(), false)
     let (peer, _) = server.accept()
     peer.close()
     assert_eq(backend.pool.put(origin, None, wire, now=0L).length(), 0)
@@ -121,7 +121,7 @@ async test "a stale pooled connection retries once on a fresh connection" {
       )
       response.close()
       assert_eq(backend.idle_connections(), 1)
-      assert_eq(backend.slots.in_use, 0)
+      assert_eq(backend.slots.control.in_use, 0)
       let response = backend.send(
         @model.Request::get(url),
         @client.RequestOptions::default(),
@@ -148,7 +148,7 @@ async test "expired and disabled idle pools close rejected sockets" {
     defer backend.close()
     let url = "http://127.0.0.1:\{server.addr.port()}"
     if max_idle == 1 {
-      let wire = Wire::dial("127.0.0.1", server.addr.port(), false)
+      let wire = dial_wire("127.0.0.1", server.addr.port(), false)
       let (peer, _) = server.accept()
       peer.close()
       ignore(
@@ -180,7 +180,7 @@ async test "expired and disabled idle pools close rejected sockets" {
         assert_eq(@model.read_bounded(stream.take(), 1), b"x")
         response.close()
         assert_eq(backend.idle_connections(), 0)
-        assert_eq(backend.slots.in_use, 0)
+        assert_eq(backend.slots.control.in_use, 0)
       })
     })
   }

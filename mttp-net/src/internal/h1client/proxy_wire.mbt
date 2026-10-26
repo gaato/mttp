@@ -1,8 +1,8 @@
 ///|
-async fn Wire::start_tls(
+pub async fn Wire::start_tls(
   self : Wire,
+  dialer : &@connection.Dialer,
   host : String,
-  trust~ : @tls.TrustedRoot = SystemRoot,
 ) -> Unit {
   if !self.pending.is_empty() {
     raise @model.TransportError(
@@ -11,19 +11,11 @@ async fn Wire::start_tls(
       detail="unexpected bytes after proxy CONNECT",
     )
   }
-  let tls = match self.tls {
-    Some(outer) => {
-      let inner = @tls.Tls::client(outer, host~, trust~)
-      self.outer_tls.push(outer)
-      inner
-    }
-    None => @tls.Tls::client(self.tcp, host~, trust~)
-  }
-  self.tls = Some(tls)
+  self.conn = dialer.start_tls(self.conn, host~)
 }
 
 ///|
-async fn open_tunnel(
+pub async fn open_tunnel(
   wire : Wire,
   origin : Target,
   proxy : ProxyServer,
@@ -64,21 +56,22 @@ async fn open_tunnel(
 }
 
 ///|
-async fn dial_route(
+pub async fn dial_route(
+  dialer : &@connection.Dialer,
   origin : Target,
   route : Route,
   agent : String?,
   limits : @h1.Limits,
 ) -> Wire {
   match route {
-    Direct => Wire::dial(origin.host, origin.port, origin.secure)
+    Direct => Wire::dial(dialer, origin.host, origin.port, origin.secure)
     Forward(proxy) | Tunnel(proxy) => {
       let target = target(@model.Request::get(proxy.origin))
-      let wire = Wire::dial(target.host, target.port, target.secure)
+      let wire = Wire::dial(dialer, target.host, target.port, target.secure)
       errdefer wire.close()
       if route is Tunnel(_) {
         open_tunnel(wire, origin, proxy, agent, limits)
-        wire.start_tls(origin.host)
+        wire.start_tls(dialer, origin.host)
       }
       wire
     }

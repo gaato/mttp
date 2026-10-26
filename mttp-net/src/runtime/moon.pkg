@@ -1,5 +1,7 @@
 import {
   "gaato/mttp/clock",
+  "gaato/mttp/conn",
+  "gaato/mttp/model",
   "moonbitlang/async",
   "moonbitlang/async/semaphore",
   "moonbitlang/async/cond_var",
@@ -7,6 +9,7 @@ import {
 
 import {
   "moonbitlang/async/aqueue",
+  "gaato/mttp/testing",
   "moonbitlang/async/cond_var",
 } for "test"
 

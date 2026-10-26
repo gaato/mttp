@@ -1,10 +1,16 @@
 ///|
+using @engine {type IdlePool, type Slots, type Wire, type Proxies}
+
+///|
 /// A socket backend using mttp's bounded HTTP/1 codec and verified system
 /// TLS roots. A response owns its connection until consumed or closed.
 /// This backend sends one exchange; compose FollowRedirects for redirects.
 /// Native and moonrun wasm are supported. HTTP(S) proxies forward HTTP
 /// requests and tunnel HTTPS requests with end-to-end TLS.
 pub struct H1Backend {
+  priv dialer : &@connection.Dialer
+  priv timer : &@clock.Timer
+  priv coordination : &@connection.Coordination
   priv clock : &@clock.Clock
   priv limits : Timeouts
   priv head_limits : @h1.Limits
@@ -38,8 +44,12 @@ pub fn H1Backend::new(
   head_limits~ : @h1.Limits = @h1.Limits::default(),
   clock~ : &@clock.Clock = @runtime.AsyncClock::new(),
 ) -> H1Backend {
+  let coordination = @runtime.RuntimeCoordination::new()
   {
-    proxies: configure_proxies(proxy, trust_env~, @env.get_env_var),
+    dialer: @socket_conn.TcpDialer::new(),
+    timer: @runtime.ClockTimer::new(clock~),
+    coordination,
+    proxies: @engine.configure_proxies(proxy, trust_env~, @env.get_env_var),
     clock,
     limits: {
       total: timeout_ms,
@@ -56,6 +66,7 @@ pub fn H1Backend::new(
       idle_max_ms~,
     ),
     slots: Slots::new(
+      coordination~,
       max_total?=max_connections,
       max_per_origin?=max_connections_per_origin,
     ),
@@ -91,38 +102,27 @@ pub impl @client.Backend for H1Backend with fn send(self, request, options) {
 }
 
 ///|
-fn H1Backend::release(
-  self : H1Backend,
-  key : String,
-  agent : String?,
-  wire : Wire,
-  reusable : Bool,
-) -> Unit {
-  if reusable && wire.pending.is_empty() {
-    for
-      rejected in self.pool.put(key, agent, wire, now=self.clock.now_unix_ms()) {
-      rejected.close()
-    }
-  } else {
-    wire.close()
+fn H1Backend::engine(self : H1Backend) -> @engine.Client {
+  {
+    dialer: self.dialer,
+    timer: self.timer,
+    coordination: self.coordination,
+    clock: self.clock,
+    limits: self.limits,
+    head_limits: self.head_limits,
+    body_ceiling: self.body_ceiling,
+    pool: self.pool,
+    slots: self.slots,
+    proxies: self.proxies,
   }
-  self.slots.release(key)
 }
 
 ///|
-fn connection_token(headers : @model.Headers, token : String) -> Bool {
-  headers
-  .get_all("connection")
-  .iter()
-  .any(value => {
-    value
-    .split(",")
-    .any(part => part.trim(chars=" \t").to_owned().to_lower() == token)
-  })
-}
-
-///|
-fn replayable(request : @model.Request) -> Bool {
-  request.body.is_replayable() &&
-  (@model.is_idempotent(request) || request.headers.contains("idempotency-key"))
+/// Runs one exchange through the shared engine; the response owns its body.
+pub async fn H1Backend::send(
+  self : H1Backend,
+  request : @model.Request,
+  options : @client.RequestOptions,
+) -> @model.Response raise @model.TransportError {
+  self.engine().send(request, options)
 }

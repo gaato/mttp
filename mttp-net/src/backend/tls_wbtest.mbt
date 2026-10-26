@@ -38,18 +38,11 @@ async test "TLS wire verifies a local root and system roots reject its self-sign
             "127.0.0.1",
             port=listener.addr.port(),
           )
-          let tls = @tls.Tls::client(
-            tcp,
+          let conn = @socket_conn.TcpDialer::new(ca_file=certificate).start_tls(
+            @accepted.from_tcp(tcp),
             host="localhost",
-            trust=CustomPemFile(certificate),
           )
-          let wire = Wire::{
-            tcp,
-            tls: Some(tls),
-            outer_tls: [],
-            pending: b"",
-            closed: false,
-          }
+          let wire = Wire::new(conn)
           defer wire.close()
           wire.write(b"ping")
           let (_, head) = wire.head(@h1.Limits::default())
@@ -78,7 +71,7 @@ async test "TLS wire verifies a local root and system roots reject its self-sign
           } noraise {
             _ => fail("untrusted TLS accepted")
           }
-          assert_eq(backend.slots.in_use, 0)
+          assert_eq(backend.slots.control.in_use, 0)
         }
       })
     })
@@ -149,10 +142,13 @@ async test "CONNECT carries verified end-to-end TLS over plain and TLS proxies" 
           assert_true(request.contains("authorization: Bearer origin"))
           inner.write(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\npong")
         })
-        let wire = Wire::dial("127.0.0.1", listener.addr.port(), false)
+        let wire = dial_wire("127.0.0.1", listener.addr.port(), false)
         defer wire.close()
         if secure_proxy {
-          wire.start_tls("localhost", trust=CustomPemFile(certificate))
+          wire.start_tls(
+            @socket_conn.TcpDialer::new(ca_file=certificate),
+            "localhost",
+          )
         }
         let origin = target(@model.Request::get("https://localhost"))
         open_tunnel(
@@ -162,8 +158,10 @@ async test "CONNECT carries verified end-to-end TLS over plain and TLS proxies" 
           None,
           @h1.Limits::default(),
         )
-        wire.start_tls("localhost", trust=CustomPemFile(certificate))
-        assert_eq(wire.outer_tls.length(), if secure_proxy { 1 } else { 0 })
+        wire.start_tls(
+          @socket_conn.TcpDialer::new(ca_file=certificate),
+          "localhost",
+        )
         wire.write(
           b"GET / HTTP/1.1\r\nhost: localhost\r\nauthorization: Bearer origin\r\n\r\n",
         )
@@ -177,7 +175,16 @@ async test "CONNECT carries verified end-to-end TLS over plain and TLS proxies" 
         }
         assert_eq(body.to_bytes(), b"pong")
         wire.close()
-        assert_eq(wire.outer_tls.length(), 0)
+        assert_true(wire.closed)
+        assert_eq(wire.conn.read(max_len=1), None)
+        let failed = try {
+          wire.conn.write(b"x")
+          false
+        } catch {
+          @model.TransportError(kind=Network, phase=Unknown, ..) => true
+          _ => false
+        }
+        assert_true(failed)
       })
     })
   }

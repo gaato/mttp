@@ -4,7 +4,7 @@
 /// The time limits of an exchange, in milliseconds. `total` bounds the
 /// exchange as a whole; the others bound one phase each, `read` the head and
 /// every body read separately.
-priv struct Timeouts {
+pub(all) struct Timeouts {
   total : Int32
   pool : Int32
   connect : Int32
@@ -14,7 +14,7 @@ priv struct Timeouts {
 
 ///|
 /// The limit of one phase.
-fn Timeouts::of(self : Timeouts, phase : @model.Phase) -> Int32 {
+pub fn Timeouts::of(self : Timeouts, phase : @model.Phase) -> Int32 {
   match phase {
     Pool => self.pool
     Dial => self.connect
@@ -27,7 +27,7 @@ fn Timeouts::of(self : Timeouts, phase : @model.Phase) -> Int32 {
 /// How long a phase may run, and the limit to report when it runs out: the
 /// phase's own `limit`, or the `remaining` time of an exchange limited to
 /// `total` when that ends first. A nonpositive budget has already run out.
-fn phase_budget(
+pub fn phase_budget(
   limit : Int32,
   total~ : Int32,
   remaining~ : Int64?,
@@ -42,7 +42,8 @@ fn phase_budget(
 /// Runs the phases of one exchange against its limits on `clock`. `deadline`
 /// is when the whole exchange must be done, or `None` for a stream's body
 /// reads, which only the read limit bounds.
-priv struct PhaseTimer {
+pub(all) struct PhaseTimer {
+  timer : &@clock.Timer
   clock : &@clock.Clock
   limits : Timeouts
   deadline : Int64?
@@ -50,11 +51,16 @@ priv struct PhaseTimer {
 
 ///|
 /// A timer for an exchange starting now, due within `limits.total`.
-fn PhaseTimer::exchange(clock : &@clock.Clock, limits : Timeouts) -> PhaseTimer {
+pub fn PhaseTimer::exchange(
+  clock : &@clock.Clock,
+  limits : Timeouts,
+  timer~ : &@clock.Timer,
+) -> PhaseTimer {
   let now = clock.now_unix_ms()
   let duration = limits.total.max(0).to_int64()
   {
     clock,
+    timer,
     limits,
     deadline: Some(
       if now > 9223372036854775807L - duration {
@@ -68,8 +74,12 @@ fn PhaseTimer::exchange(clock : &@clock.Clock, limits : Timeouts) -> PhaseTimer 
 
 ///|
 /// A timer for the body reads of a stream, each bounded by `limits.read`.
-fn PhaseTimer::stream(clock : &@clock.Clock, limits : Timeouts) -> PhaseTimer {
-  { clock, limits, deadline: None, }
+pub fn PhaseTimer::stream(
+  clock : &@clock.Clock,
+  limits : Timeouts,
+  timer~ : &@clock.Timer,
+) -> PhaseTimer {
+  { clock, timer, limits, deadline: None, }
 }
 
 ///|
@@ -78,7 +88,7 @@ fn PhaseTimer::stream(clock : &@clock.Clock, limits : Timeouts) -> PhaseTimer {
 /// one already spent raises without starting `f`. Failures of `f` become an
 /// `HttpError` through `failure`. Cancellation from outside is not an
 /// `Error`, so it propagates untouched.
-async fn[X] PhaseTimer::run(
+pub async fn[X] PhaseTimer::run(
   self : PhaseTimer,
   phase : @model.Phase,
   f : async () -> X,
@@ -108,11 +118,16 @@ async fn[X] PhaseTimer::run(
   if budget <= 0 {
     raise expired
   }
-  let outcome = @runtime.with_timeout_opt(self.clock, budget, f) catch {
-    error => raise failure(phase, error)
+  let outcome : Ref[Result[X, @model.TransportError]?] = Ref(None)
+  let completed = self.timer.within(budget, () => {
+    outcome.val = Some(Ok(f()) catch { error => Err(failure(phase, error)) })
+  })
+  if !completed {
+    raise expired
   }
-  match outcome {
-    Some(value) => value
+  match outcome.val {
+    Some(Ok(value)) => value
+    Some(Err(error)) => raise error
     None => raise expired
   }
 }

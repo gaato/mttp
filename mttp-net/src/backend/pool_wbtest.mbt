@@ -11,9 +11,17 @@ fn pool_of(
   let pool = IdlePool::new(max_per_origin~, idle_max_ms~)
   for entry in parked {
     let (origin, conn, user_agent, parked_at_ms) = entry
-    pool.parked
-    .get_or_init(origin, () => [])
-    .push({ conn, user_agent, parked_at_ms, })
+    pool.next_id += 1L
+    let id = pool.next_id
+    pool.resources[id] = conn
+    let entries = pool.control.parked
+      .get(origin)
+      .unwrap_or(@vector.Vector::new())
+    let entry : @control.Idle = { id, user_agent, parked_at_ms, }
+    pool.control = {
+      ..pool.control,
+      parked: pool.control.parked.add(origin, entries.push(entry)),
+    }
   }
   pool
 }
@@ -22,11 +30,19 @@ fn pool_of(
 /// The parked ids per origin, oldest first, e.g. `a[1 2] b[3]`.
 fn parked_ids(pool : IdlePool[Int32]) -> String {
   let origins = []
-  for origin, parked in pool.parked {
-    let ids = parked.map(idle => idle.conn.to_string())
-    origins.push(origin + "[" + ids.join(" ") + "]")
+  for origin, _ in pool.control.parked {
+    origins.push(origin)
   }
-  origins.join(" ")
+  origins.sort()
+  origins
+  .map(origin => {
+    let ids = pool.control.parked[origin]
+      .iter()
+      .map(idle => pool.resources[idle.id].to_string())
+      .collect()
+    origin + "[" + ids.join(" ") + "]"
+  })
+  .join(" ")
 }
 
 ///|
@@ -167,7 +183,7 @@ test "put parks below the cap and hands back what it cannot keep" {
       false,
       [("b", 1, None, 950)],
       [],
-      "b[1] a[99]",
+      "a[99] b[1]",
     ),
     ("max_idle = 0 disables reuse", 0, 100, false, [], [99], ""),
     ("idle_max = 0 disables reuse", 4, 0, false, [], [99], ""),
@@ -202,7 +218,7 @@ test "put parks below the cap and hands back what it cannot keep" {
       remaining,
     ) = row
     let pool = pool_of(parked, max_per_origin~, idle_max_ms~)
-    pool.closed = closed
+    pool.control = { ..pool.control, closed, }
     let rejected = pool.put("a", None, 99, now=1000)
     assert_eq(sorted(rejected), handed_back, msg=label)
     assert_eq(parked_ids(pool), remaining, msg=label)

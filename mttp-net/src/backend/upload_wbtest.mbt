@@ -23,13 +23,7 @@ async test "a head deadline after an upload network failure retains the original
     let tcp = @socket.Tcp::connect(listener.addr)
     let (peer, _) = listener.accept()
     defer peer.close()
-    let wire = Wire::{
-      tcp,
-      tls: None,
-      outer_tls: [],
-      pending: b"",
-      closed: false,
-    }
+    let wire = Wire::new(@accepted.from_tcp(tcp))
     defer wire.close()
     let clock = ManualClock::new()
     let backend = H1Backend::new(trust_env=false, clock~)
@@ -55,7 +49,7 @@ async test "a head deadline after an upload network failure retains the original
           Some(source),
           Some(b"x"),
           Chunked,
-          PhaseTimer::exchange(backend.clock, { ..backend.limits, read: 20, }),
+          phase_exchange(backend.clock, { ..backend.limits, read: 20, }),
           backend.head_limits,
         )
       catch {
@@ -82,9 +76,7 @@ async test "a closed socket preserves a buffered final response and otherwise re
     defer peer.close()
     tcp.close()
     let wire = Wire::{
-      tcp,
-      tls: None,
-      outer_tls: [],
+      conn: @accepted.from_tcp(tcp),
       pending: response,
       closed: false,
     }
@@ -98,7 +90,7 @@ async test "a closed socket preserves a buffered final response and otherwise re
         None,
         None,
         Length(1L),
-        PhaseTimer::exchange(backend.clock, backend.limits),
+        phase_exchange(backend.clock, backend.limits),
         backend.head_limits,
       ),
     ) catch {

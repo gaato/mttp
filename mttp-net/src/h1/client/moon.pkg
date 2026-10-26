@@ -1,0 +1,17 @@
+import {
+  "gaato/mttp/client" @httpclient,
+  "gaato/mttp/model",
+  "gaato/mttp/clock",
+  "gaato/mttp/conn" @connection,
+  "gaato/mttp/h1",
+  "gaato/mttp-net/internal/h1client" @engine,
+}
+
+import {
+  "gaato/mttp/testing/driver",
+  "gaato/mttp/testing",
+  "gaato/mttp/testing/conn" @sim,
+  "gaato/mttp/clock/fake",
+} for "test"
+
+supported_targets = "native + wasm + js + wasm-gc"
