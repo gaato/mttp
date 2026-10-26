@@ -35,6 +35,7 @@ pub struct Driver {
 pub fn Driver::add_timer(Self, Int64, () -> Unit) -> TimerHandle
 pub fn Driver::advance(Self, Int32) -> Unit
 pub fn Driver::advance_to_next_timer(Self) -> Bool
+pub async fn Driver::cancel_and_join(Self, Array[Task]) -> Unit noraise + nocancel
 pub fn Driver::current_task(Self) -> Task raise DriverError
 pub fn Driver::live_tasks(Self) -> Int32
 pub fn Driver::new(auto_advance? : Bool, max_steps? : Int32, start_ms? : Int64) -> Self

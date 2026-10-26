@@ -1,6 +1,7 @@
 import {
   "gaato/mttp/model",
   "gaato/mttp/client",
+  "gaato/mttp/conn",
   "gaato/mttp/testing/driver",
   "moonbitlang/core/debug",
 }

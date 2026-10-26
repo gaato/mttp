@@ -1,0 +1,63 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/testing/conn"
+
+import {
+  "gaato/mttp/model",
+  "gaato/mttp/testing/driver",
+}
+
+// Values
+pub fn pair(&@gaato/mttp/conn.Coordination, chunk_bytes? : Int32) -> (SimConn, SimConn)
+
+// Errors
+
+// Types and methods
+pub(all) enum ReadStep {
+  Chunk(Bytes)
+  Eof
+  Failure(@model.TransportError)
+  Wait(&@gaato/mttp/conn.Signal)
+}
+
+pub struct ScriptedConn {
+  // private fields
+}
+pub fn ScriptedConn::close(Self) -> Unit
+pub fn ScriptedConn::closes(Self) -> Int32
+pub fn ScriptedConn::new(Array[ReadStep], write_error? : @model.TransportError) -> Self
+pub async fn ScriptedConn::read(Self, max_len~ : Int32) -> Bytes? raise @model.TransportError
+pub async fn ScriptedConn::write(Self, Bytes) -> Unit raise @model.TransportError
+pub fn ScriptedConn::written(Self) -> Array[Bytes]
+pub impl @gaato/mttp/conn.Conn for ScriptedConn
+
+pub struct ScriptedDialer {
+  // private fields
+}
+pub async fn ScriptedDialer::connect(Self, host~ : String, port~ : Int32) -> &@gaato/mttp/conn.Conn raise @model.TransportError
+pub fn ScriptedDialer::dialed(Self) -> Array[(String, Int32)]
+pub fn ScriptedDialer::new(Array[&@gaato/mttp/conn.Conn]) -> Self
+pub async fn ScriptedDialer::start_tls(Self, &@gaato/mttp/conn.Conn, host~ : String) -> &@gaato/mttp/conn.Conn raise @model.TransportError
+pub fn ScriptedDialer::tls_hosts(Self) -> Array[String]
+pub impl @gaato/mttp/conn.Dialer for ScriptedDialer
+
+pub struct SimConn {
+  // private fields
+}
+pub fn SimConn::close(Self) -> Unit
+pub fn SimConn::closes(Self) -> Int32
+pub async fn SimConn::read(Self, max_len~ : Int32) -> Bytes? raise @model.TransportError
+pub fn SimConn::shutdown_write(Self) -> Unit
+pub async fn SimConn::write(Self, Bytes) -> Unit raise @model.TransportError
+pub impl @gaato/mttp/conn.Conn for SimConn
+
+pub struct SimCoordination {
+  // private fields
+}
+pub fn SimCoordination::new(@driver.Driver) -> Self
+pub fn SimCoordination::signal(Self) -> &@gaato/mttp/conn.Signal
+pub async fn SimCoordination::supervise(Self, primary~ : async () -> Unit raise @model.TransportError, monitor~ : async () -> Unit raise @model.TransportError) -> Unit raise @model.TransportError
+pub impl @gaato/mttp/conn.Coordination for SimCoordination
+
+// Type aliases
+
+// Traits

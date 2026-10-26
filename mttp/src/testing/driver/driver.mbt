@@ -91,6 +91,7 @@ pub struct Task {
   priv mut state : State
   priv mut cont : ((Resume) -> Unit)?
   priv mut cancel_requested : Bool
+  priv mut cancel_mask : Int32
   priv mut gen : Int32
   priv joiners : Array[Waker]
   priv allow_failure : Bool
@@ -384,6 +385,7 @@ pub fn Driver::spawn(
     state: Ready,
     cont: None,
     cancel_requested: false,
+    cancel_mask: 0,
     gen: 0,
     joiners: [],
     allow_failure,
@@ -523,7 +525,11 @@ pub fn Driver::step(self : Driver) -> Bool raise DriverError {
   let saved_active = active.val
   self.current = Some(task)
   active.val = Some(self)
-  let r = if task.cancel_requested { Resume::Cancelled } else { Resume::Woken }
+  let r = if task.cancel_requested && task.cancel_mask == 0 {
+    Resume::Cancelled
+  } else {
+    Resume::Woken
+  }
   self.steps += 1
   k(r)
   self.current = saved_current
@@ -711,7 +717,7 @@ pub async fn Driver::park_check_cancel(
     }
     return Resume::Cancelled
   }
-  if task.cancel_requested {
+  if task.cancel_requested && task.cancel_mask == 0 {
     return Resume::Cancelled
   }
   task.gen += 1
@@ -792,12 +798,34 @@ pub fn Task::cancel(self : Task) -> Unit {
     Done | Failed(_) | Cancelled => ()
     Parked => {
       self.cancel_requested = true
-      if self.cont is Some(_) {
+      if self.cont is Some(_) && self.cancel_mask == 0 {
         self.state = Ready
         self.driver.ready.push(self)
       }
     }
     Ready | Running => self.cancel_requested = true
+  }
+}
+
+///|
+/// Finishes structured cleanup before delivering pending cancellation at a
+/// later suspension. The mask is task-local and supports nested cleanup.
+pub async fn Driver::cancel_and_join(
+  self : Driver,
+  tasks : Array[Task],
+) -> Unit noraise + nocancel {
+  for task in tasks {
+    task.cancel()
+  }
+  guard self.current is Some(current) else { return }
+  current.cancel_mask += 1
+  defer {
+    current.cancel_mask -= 1
+  }
+  for task in tasks {
+    while !task.is_finished() {
+      ignore(self.park_check_cancel(waker => task.joiners.push(waker)))
+    }
   }
 }
 
