@@ -1,12 +1,13 @@
 ///|
 /// A cookie's `SameSite` attribute (RFC 6265bis-22). `NoRestriction` is
 /// `SameSite=None`.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum SameSite {
   Strict
   Lax
   NoRestriction
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares attribute values.
@@ -23,6 +24,7 @@ pub extend SameSite with @debug.Debug::{to_repr}
 /// attribute otherwise. `expires_ms` is `None` for a session cookie. Times are
 /// Unix milliseconds from the jar's clock; `last_access_ms` is when the cookie
 /// was last stored or sent.
+#derive(Eq, Debug)
 pub struct Cookie {
   name : String
   value : String
@@ -35,7 +37,7 @@ pub struct Cookie {
   same_site : SameSite?
   creation_ms : Int64
   last_access_ms : Int64
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares every field.

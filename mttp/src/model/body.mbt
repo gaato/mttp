@@ -15,6 +15,7 @@
 ///   assert_true(request.body.is_replayable())
 /// }
 /// ```
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Body {
   /// An empty, replayable body.
@@ -23,7 +24,7 @@ pub(all) enum Body {
   Bytes(Bytes)
   /// A stream, read once by the transport that sends it.
   Stream(StreamBody)
-} derive(Eq, Debug)
+}
 
 ///|
 /// Equality: equal bytes, or the same `StreamBody`.

@@ -14,37 +14,41 @@ pub fn rate_limit_headers(remaining~ : String, reset_after_seconds? : String, re
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub(all) struct GlobalWindow {
   limit : Int32
   window_ms : Int32
-} derive(Eq, @debug.Debug)
+}
 pub fn GlobalWindow::equal(Self, Self) -> Bool
 pub fn GlobalWindow::not_equal(Self, Self) -> Bool
 pub fn GlobalWindow::to_repr(Self) -> @debug.Repr
 
 #non_exhaustive
+#derive(Eq, @debug.Debug)
 pub(all) enum LimitScope {
   Bucket
   Global
   Shared
   Ignore
-} derive(Eq, @debug.Debug)
+}
 pub fn LimitScope::equal(Self, Self) -> Bool
 pub fn LimitScope::not_equal(Self, Self) -> Bool
 pub fn LimitScope::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct Pace {
   group : String
   min_interval_ms : Int32
-} derive(Eq, @debug.Debug)
+}
 pub fn Pace::equal(Self, Self) -> Bool
 pub fn Pace::not_equal(Self, Self) -> Bool
 pub fn Pace::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) struct RateLimitState {
   remaining : Int32
   reset_at_unix_ms : Int64
-} derive(Eq, @debug.Debug)
+}
 pub fn RateLimitState::equal(Self, Self) -> Bool
 pub fn RateLimitState::not_equal(Self, Self) -> Bool
 pub fn RateLimitState::to_repr(Self) -> @debug.Repr

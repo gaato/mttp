@@ -1,10 +1,11 @@
 ///|
+#derive(Eq)
 priv enum UriPosition {
   Path
   QueryKey
   QueryValue
   Fragment
-} derive(Eq)
+}
 
 ///|
 /// An interpolation builder for URI strings. Literal syntax is preserved;

@@ -7,6 +7,7 @@
 ///|
 /// What went wrong in a `Driver`. New kinds may be added, so a `match` on it
 /// needs a wildcard arm.
+#derive(Debug)
 #non_exhaustive
 pub(all) enum DriverErrorKind {
   /// Every live task is parked and no timer is armed (auto-advance on), so
@@ -32,7 +33,7 @@ pub(all) enum DriverErrorKind {
   /// A driver operation that needs a running task of that driver was called
   /// elsewhere: outside any task, or from a task of another driver.
   NotInTask
-} derive(Debug)
+}
 
 ///|
 /// Formats a kind for debugging.
@@ -41,9 +42,10 @@ pub extend DriverErrorKind with @debug.Debug::{to_repr}
 ///|
 /// The error a `Driver` raises. `detail` is a human-readable explanation;
 /// match on `kind`, not on `detail`.
+#derive(Debug)
 pub(all) suberror DriverError {
   DriverError(kind~ : DriverErrorKind, detail~ : String)
-} derive(Debug)
+}
 
 ///|
 /// Formats a driver error for debugging.
@@ -57,12 +59,13 @@ pub let max_unwind_rounds : Int32 = 8
 
 ///|
 /// What a parked task is resumed with.
+#derive(Eq, Debug)
 pub(all) enum Resume {
   /// A waker made the task ready.
   Woken
   /// The task was cancelled while parked (or before it parked).
   Cancelled
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares resume values.

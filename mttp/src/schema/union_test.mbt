@@ -1,8 +1,9 @@
 ///|
+#derive(Eq, Debug)
 enum Example {
   Number(Int32)
   Text(String)
-} derive(Eq, Debug)
+}
 
 ///|
 fn number_case(object~ : Bool = true) -> @schema.Case[Example] {

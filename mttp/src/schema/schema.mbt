@@ -1,12 +1,13 @@
 ///|
 /// A JSON Schema 2020-12 document (what OpenAPI 3.1 embeds), plus the name
 /// it is hoisted under in `components/schemas` when it has one.
+#derive(Eq, Debug)
 pub(all) struct Schema {
   name : String?
   json : Json // for a named schema: its definition body
   defs : Map[String, Json] // every named schema reachable from here (SC-01)
   problems : Array[String] // retained construction conflicts for definition checking
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates an unnamed schema with no reachable definitions.
@@ -93,11 +94,12 @@ pub fn Schema::patch(self : Schema, keywords : Map[String, Json]) -> Schema {
 
 ///|
 /// One problem with an input, located by JSON pointer.
+#derive(Eq, Debug, ToJson)
 pub(all) struct Issue {
   path : String
   code : String
   message : String
-} derive(Eq, Debug, ToJson)
+}
 
 ///|
 /// Creates an issue at a JSON-pointer path, empty for the whole input.

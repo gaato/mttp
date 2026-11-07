@@ -1,5 +1,6 @@
 ///|
 /// A decoding failure category, extensible without changing the error wrapper.
+#derive(Debug)
 #non_exhaustive
 pub(all) enum DecodeKind {
   Missing
@@ -9,13 +10,14 @@ pub(all) enum DecodeKind {
   Mismatch(expected~ : String, actual~ : String)
   TooLarge(limit~ : Int32)
   UnsupportedMediaType(String)
-} derive(Debug)
+}
 
 ///|
 /// An input error with a stable message and structured category.
+#derive(Debug)
 pub(all) suberror DecodeFailure {
   DecodeFailure(kind~ : DecodeKind, message~ : String)
-} derive(Debug)
+}
 
 ///|
 /// The explanatory message, without formatting the error wrapper.

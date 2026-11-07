@@ -1,5 +1,6 @@
 ///|
 /// The exchange phase in which a failure occurred.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Phase {
   Pool
@@ -8,10 +9,11 @@ pub(all) enum Phase {
   Head
   Body
   Unknown
-} derive(Eq, Debug)
+}
 
 ///|
 /// Transport failure category, distinct from an HTTP status response.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Kind {
   Invalid
@@ -25,13 +27,14 @@ pub(all) enum Kind {
   RedirectRefused
   Unreplayable
   Closed
-} derive(Eq, Debug)
+}
 
 ///|
 /// A failure with its category, phase and diagnostic description.
+#derive(Debug)
 pub(all) suberror TransportError {
   TransportError(kind~ : Kind, phase~ : Phase, detail~ : String)
-} derive(Debug)
+}
 
 ///|
 /// Whether the failure proves no request bytes reached the origin.

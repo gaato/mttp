@@ -1,10 +1,11 @@
 ///|
+#derive(Debug)
 priv suberror RedirectError {
   TooManyRedirects(max~ : Int32, location~ : String)
   Downgrade(location~ : String)
   BadLocation(location~ : String, reason~ : String)
   UnreplayableBody(location~ : String)
-} derive(Debug)
+}
 
 ///|
 fn redirect_failure(error : RedirectError) -> @model.TransportError {
@@ -39,11 +40,12 @@ fn redirect_failure(error : RedirectError) -> @model.TransportError {
 ///|
 /// A followed redirect's metadata, without retaining either request or
 /// response bodies. Its response stream is closed before this is reported.
+#derive(Eq, Debug)
 pub struct RedirectHop {
   request : @model.RequestHead
   head : @model.ResponseHead
   next : @model.RequestHead
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares redirect metadata.

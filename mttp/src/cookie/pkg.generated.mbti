@@ -12,6 +12,7 @@ import {
 // Errors
 
 // Types and methods
+#derive(Eq, @debug.Debug)
 pub struct Cookie {
   name : String
   value : String
@@ -24,7 +25,7 @@ pub struct Cookie {
   same_site : SameSite?
   creation_ms : Int64
   last_access_ms : Int64
-} derive(Eq, @debug.Debug)
+}
 pub fn Cookie::equal(Self, Self) -> Bool
 pub fn Cookie::is_expired(Self, Int64) -> Bool
 pub fn Cookie::not_equal(Self, Self) -> Bool
@@ -45,11 +46,12 @@ pub fn CookieJar::remove_expired(Self) -> Unit
 pub fn CookieJar::store(Self, @model.Headers, String) -> Unit
 
 #non_exhaustive
+#derive(Eq, @debug.Debug)
 pub(all) enum SameSite {
   Strict
   Lax
   NoRestriction
-} derive(Eq, @debug.Debug)
+}
 pub fn SameSite::equal(Self, Self) -> Bool
 pub fn SameSite::not_equal(Self, Self) -> Bool
 pub fn SameSite::to_repr(Self) -> @debug.Repr

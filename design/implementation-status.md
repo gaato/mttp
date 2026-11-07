@@ -236,5 +236,5 @@ The original consumer working copies remain untouched.
   feature-by-feature migration map. No requesto runtime or dependency is changed
   and no replacement release has been published.
 
-The latest pinned toolchain is `0.10.17+d971670cd`. Tests must be rerun after
+The latest pinned toolchain is `0.10.20+65efd5b93`. Tests must be rerun after
 changes; earlier checkpoint counts are not a completion claim.

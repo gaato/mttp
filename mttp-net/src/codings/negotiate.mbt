@@ -1,11 +1,12 @@
 ///|
 /// Result of choosing among the encodings this package can produce.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum EncodingChoice {
   Identity
   Encoded(Coding)
   Unacceptable
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares negotiated encoding choices.

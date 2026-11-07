@@ -81,9 +81,10 @@ pub fn text_out(status? : Int32) -> Out[String, @client.Buffered]
 pub fn unit() -> Input[Unit]
 
 // Errors
+#derive(@debug.Debug)
 pub(all) suberror DefinitionError {
   DefinitionError(Array[DefinitionProblem])
-} derive(@debug.Debug)
+}
 pub fn DefinitionError::to_repr(Self) -> @debug.Repr
 
 pub(all) suberror InputErrors {
@@ -102,6 +103,7 @@ pub struct Atom {
 pub fn Atom::new(Location, String, @schema.Schema, required? : Bool, description? : String, rest? : Bool) -> Self
 
 #non_exhaustive
+#derive(Eq, @debug.Debug)
 pub(all) enum AuthScheme {
   Bearer(format~ : String?)
   Basic
@@ -109,7 +111,7 @@ pub(all) enum AuthScheme {
   ApiKeyQuery(String)
   ApiKeyCookie(String)
   Signature(String)
-} derive(Eq, @debug.Debug)
+}
 pub fn AuthScheme::equal(Self, Self) -> Bool
 pub fn AuthScheme::not_equal(Self, Self) -> Bool
 pub fn AuthScheme::to_repr(Self) -> @debug.Repr
@@ -121,11 +123,12 @@ pub(all) enum BodyValue {
   Streamed(&@model.BodyStream)
 }
 
+#derive(Eq, @debug.Debug)
 pub(all) struct DefinitionProblem {
   template : String
   message : String
   fatal : Bool
-} derive(Eq, @debug.Debug)
+}
 pub fn DefinitionProblem::equal(Self, Self) -> Bool
 pub fn DefinitionProblem::new(String, String, fatal? : Bool) -> Self
 pub fn DefinitionProblem::not_equal(Self, Self) -> Bool
@@ -201,11 +204,12 @@ pub(all) struct FailureContext {
 pub fn FailureContext::new(@model.Request, EndpointDoc, Array[InputFailure], FailureStage) -> Self
 
 #non_exhaustive
+#derive(Eq, @debug.Debug)
 pub(all) enum FailureStage {
   Security
   Head
   Body
-} derive(Eq, @debug.Debug)
+}
 pub fn FailureStage::equal(Self, Self) -> Bool
 pub fn FailureStage::not_equal(Self, Self) -> Bool
 pub fn FailureStage::to_repr(Self) -> @debug.Repr
@@ -248,6 +252,7 @@ pub(all) struct InputFailure {
 pub fn InputFailure::new(Atom, @schema.DecodeFailure) -> Self
 
 #non_exhaustive
+#derive(Eq, @debug.Debug)
 pub(all) enum Location {
   Path
   Query
@@ -257,13 +262,14 @@ pub(all) enum Location {
   Body(media_type~ : String, streamed~ : Bool)
   RawBody
   Derived
-} derive(Eq, @debug.Debug)
+}
 pub fn Location::equal(Self, Self) -> Bool
 pub fn Location::not_equal(Self, Self) -> Bool
 pub fn Location::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum NoError {
-} derive(Eq, @debug.Debug)
+}
 pub fn NoError::equal(Self, Self) -> Bool
 pub fn NoError::not_equal(Self, Self) -> Bool
 pub fn NoError::to_repr(Self) -> @debug.Repr
@@ -285,11 +291,12 @@ pub fn RequestSink::set_capture(Self, String, String) -> Unit
 pub fn RequestSink::set_header(Self, String, String) -> Unit
 
 #non_exhaustive
+#derive(Eq, @debug.Debug)
 pub(all) enum Seg {
   Lit(String)
   Cap(String)
   Rest(String)
-} derive(Eq, @debug.Debug)
+}
 pub fn Seg::equal(Self, Self) -> Bool
 pub fn Seg::not_equal(Self, Self) -> Bool
 pub fn Seg::to_repr(Self) -> @debug.Repr

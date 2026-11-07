@@ -215,9 +215,10 @@ test "body codecs reject invalid UTF8 JSON duplicates and excessive nesting" {
 }
 
 ///|
+#derive(FromJson, ToJson)
 struct Derived {
   n : Int32
-} derive(FromJson, ToJson)
+}
 
 ///|
 impl @schema.JsonSchema for Derived with fn json_schema(_) {

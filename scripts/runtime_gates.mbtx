@@ -52,9 +52,23 @@ async fn check_runtime_interfaces() -> Unit {
       ),
       ("mttp/src/h1/pkg.generated.mbti", ["Framing", "ParseKind", "Version"]),
     ] {
-    let api = @fs.read_file(path).text()
+    let lines = @fs.read_file(path).text().split("\n").collect()
     for name in names {
-      if !api.contains("#non_exhaustive\npub(all) enum " + name + " {") {
+      // Attributes (such as `#derive`) sit between the annotation and the enum.
+      let header = "pub(all) enum " + name + " {"
+      let mut annotated = false
+      for i, line in lines {
+        if line == header {
+          let mut j = i - 1
+          while j >= 0 && lines[j].has_prefix("#") {
+            if lines[j] == "#non_exhaustive" {
+              annotated = true
+            }
+            j = j - 1
+          }
+        }
+      }
+      if !annotated {
         raise GateError(
           "missing extensible enum annotation: " + path + " " + name,
         )

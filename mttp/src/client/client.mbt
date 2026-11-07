@@ -164,7 +164,11 @@ pub async fn[T, M : ResponseMode] Client::send(
 }
 
 ///|
-#warnings("-fragile_catch_all")
+/// The errdefer releases the limiter slot and observes the attempt after a
+/// cancellation. This sans-IO module cannot import an async runtime, so it
+/// cannot call `@async.protect_from_cancel`; the host's Gate and Limiter
+/// implementations are responsible for making release cancellation-safe.
+#warnings("-fragile_catch_all-cancellable_defer")
 async fn[T, M : ResponseMode] Client::send_loop(
   self : Client,
   request : RequestPlan[T, M],

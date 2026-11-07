@@ -24,9 +24,10 @@ pub fn write_request_head(@model.Method, String, @model.Headers, Framing, Versio
 pub fn write_response_head(Int32, @model.Headers, Framing, Version) -> Bytes raise ParseError
 
 // Errors
+#derive(@debug.Debug)
 pub(all) suberror ParseError {
   ParseError(kind~ : ParseKind, detail~ : String)
-} derive(@debug.Debug)
+}
 pub fn ParseError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
@@ -45,12 +46,13 @@ pub struct Decoded {
 }
 
 #non_exhaustive
+#derive(Eq, @debug.Debug)
 pub(all) enum Framing {
   NoBody
   Length(Int64)
   Chunked
   UntilClose
-} derive(Eq, @debug.Debug)
+}
 pub fn Framing::equal(Self, Self) -> Bool
 pub fn Framing::not_equal(Self, Self) -> Bool
 pub fn Framing::to_repr(Self) -> @debug.Repr
@@ -67,33 +69,36 @@ pub struct HeadResult {
   consumed : Int32
 }
 
+#derive(Eq, @debug.Debug)
 pub(all) struct Limits {
   max_head_bytes : Int32
   max_chunk_line_bytes : Int32
   max_trailer_bytes : Int32
   max_headers : Int32
-} derive(Eq, @debug.Debug)
+}
 pub fn Limits::default() -> Self
 pub fn Limits::equal(Self, Self) -> Bool
 pub fn Limits::not_equal(Self, Self) -> Bool
 pub fn Limits::to_repr(Self) -> @debug.Repr
 
 #non_exhaustive
+#derive(Eq, @debug.Debug)
 pub(all) enum ParseKind {
   HeadTooLarge
   Malformed
   Smuggling
   Unsupported
-} derive(Eq, @debug.Debug)
+}
 pub fn ParseKind::equal(Self, Self) -> Bool
 pub fn ParseKind::not_equal(Self, Self) -> Bool
 pub fn ParseKind::to_repr(Self) -> @debug.Repr
 
 #non_exhaustive
+#derive(Eq, @debug.Debug)
 pub(all) enum Version {
   Http10
   Http11
-} derive(Eq, @debug.Debug)
+}
 pub fn Version::equal(Self, Self) -> Bool
 pub fn Version::not_equal(Self, Self) -> Bool
 pub fn Version::to_repr(Self) -> @debug.Repr

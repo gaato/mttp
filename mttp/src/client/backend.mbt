@@ -1,5 +1,6 @@
 ///|
 /// Per-attempt transport settings. Build from default() and record updates.
+#derive(Eq, Debug)
 pub(all) struct RequestOptions {
   timeout_ms : Int32?
   body_deadline : Bool
@@ -8,7 +9,7 @@ pub(all) struct RequestOptions {
   follow_redirects : Bool
   max_redirects : Int32
   decompress : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares transport options.
@@ -97,10 +98,11 @@ pub fn from_handler(handler : @model.Handler) -> &Backend {
 ///|
 /// A received response could not be interpreted as the requested value.
 /// Transport failures remain raised TransportErrors.
+#derive(Eq, Debug)
 pub(all) enum ResponseFailure {
   UnexpectedStatus(@model.ResponseHead, body~ : Bytes)
   Deserialization(@model.ResponseHead, message~ : String, body~ : Bytes)
-} derive(Eq, Debug)
+}
 
 ///|
 /// Formats response failures for diagnostics.
@@ -120,9 +122,10 @@ pub fn ResponseFailure::head(self : ResponseFailure) -> @model.ResponseHead {
 
 ///|
 /// A request encoder rejected input before anything was sent.
+#derive(Debug)
 pub(all) suberror InvalidRequest {
   InvalidRequest(message~ : String)
-} derive(Debug)
+}
 
 ///|
 /// Formats request encoding failures for diagnostics.

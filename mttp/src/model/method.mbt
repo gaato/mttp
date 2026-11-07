@@ -1,5 +1,6 @@
 ///|
 /// Standard HTTP methods and extension tokens.
+#derive(Eq, Hash, Debug)
 #non_exhaustive
 pub(all) enum Method {
   Get
@@ -12,7 +13,7 @@ pub(all) enum Method {
   Trace
   Patch
   Other(String)
-} derive(Eq, Hash, Debug)
+}
 
 ///|
 /// Parses a case-sensitive method token, retaining unknown tokens verbatim.

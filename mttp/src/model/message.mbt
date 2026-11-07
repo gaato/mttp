@@ -161,11 +161,12 @@ pub fn[T] Request::attribute(
 
 ///|
 /// Request metadata without its body or local attributes.
+#derive(Eq, Debug)
 pub(all) struct RequestHead {
   meth : Method
   url : String
   headers : Headers
-} derive(Eq, Debug)
+}
 
 ///|
 /// Extracts request metadata.
@@ -175,10 +176,11 @@ pub fn Request::head(self : Request) -> RequestHead {
 
 ///|
 /// Response status and headers without the body.
+#derive(Eq, Debug)
 pub(all) struct ResponseHead {
   status : Int32
   headers : Headers
-} derive(Eq, Debug)
+}
 
 ///|
 /// One response type for both directions. A server closes the connection
@@ -291,7 +293,7 @@ pub fn Url::path_segments(self : Url) -> Array[String] raise UrlError {
   }
   let start = if p.has_prefix("/") { 1 } else { 0 }
   let out = []
-  for seg in p.view(start_offset=start).split("/") {
+  for seg in p.clamped_view(start~).split("/") {
     out.push(percent_decode(seg.to_owned()))
   }
   out
@@ -308,7 +310,7 @@ pub fn join_url(base : String, target : String) -> String {
     return target
   }
   let b = if base.has_suffix("/") {
-    base.view(end_offset=base.length() - 1).to_owned()
+    base.clamped_view(end=base.length() - 1).to_owned()
   } else {
     base
   }

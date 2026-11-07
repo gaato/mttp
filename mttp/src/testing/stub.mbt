@@ -35,11 +35,12 @@ async fn Canned::respond(
 ///|
 /// An immutable record of one attempted send. Streaming request bodies are
 /// recorded as None without consuming them; byte bodies are captured by value.
+#derive(Eq, Debug)
 pub(all) struct Recorded {
   request : @model.RequestHead
   options : @client.RequestOptions
   body : Bytes?
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares recorded request metadata, options and buffered bytes.

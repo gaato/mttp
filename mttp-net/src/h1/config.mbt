@@ -30,6 +30,7 @@ pub fn ServerLimits::default() -> ServerLimits {
 
 ///|
 /// Configuration and listening failures, independent of runtime error types.
+#derive(Debug)
 pub(all) suberror ServerConfigError {
   InvalidMaxBodyBytes(value~ : Int32)
   InvalidBodyTimeoutMs(value~ : Int32)
@@ -41,7 +42,7 @@ pub(all) suberror ServerConfigError {
   InvalidDrainMs(value~ : Int32)
   Bind(detail~ : String)
   Accept(detail~ : String)
-} derive(Debug)
+}
 
 ///|
 /// Formats configuration failures.

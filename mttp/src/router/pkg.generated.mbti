@@ -5,6 +5,7 @@ import {
   "gaato/mttp/client",
   "gaato/mttp/endpoint",
   "gaato/mttp/model",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -12,7 +13,7 @@ pub fn cors(Array[String], allow_credentials? : Bool) -> async (@model.Request, 
 
 pub fn default_decode_failure(@endpoint.FailureContext) -> @model.Response
 
-pub fn problem(Int32, String, errors? : Json) -> @model.Response
+pub fn problem(Int32, String, errors? : @json.Json) -> @model.Response
 
 // Errors
 

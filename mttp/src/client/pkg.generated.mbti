@@ -19,7 +19,7 @@ pub fn as_form(max_pairs? : Int32) -> ResponsePlan[Result[Array[(String, String)
 
 pub fn[T : @json.FromJson] as_json() -> ResponsePlan[Result[T, ResponseFailure], Buffered]
 
-pub fn as_json_value() -> ResponsePlan[Result[Json, ResponseFailure], Buffered]
+pub fn as_json_value() -> ResponsePlan[Result[@json.Json, ResponseFailure], Buffered]
 
 pub fn as_lines(async (String) -> Unit, max_line_bytes? : Int32) -> ResponsePlan[Result[Unit, ResponseFailure], Streaming]
 
@@ -62,9 +62,10 @@ pub fn request(@model.Request) -> RequestPlan[Result[String, ResponseFailure], B
 pub fn status_of(ResponseFailure) -> Int32?
 
 // Errors
+#derive(@debug.Debug)
 pub(all) suberror InvalidRequest {
   InvalidRequest(message~ : String)
-} derive(@debug.Debug)
+}
 pub fn InvalidRequest::to_repr(Self) -> @debug.Repr
 
 // Types and methods
@@ -131,11 +132,12 @@ pub fn[T, E] Paginator::new(async () -> Result[Array[T]?, E]) -> Self[T, E]
 pub async fn[T, E] Paginator::next_page(Self[T, E]) -> Result[Array[T]?, E]
 pub fn[T, E] Paginator::with_cursor(async (String?) -> Result[Page[T], E]) -> Self[T, E]
 
+#derive(Eq, @debug.Debug)
 pub struct RedirectHop {
   request : @model.RequestHead
   head : @model.ResponseHead
   next : @model.RequestHead
-} derive(Eq, @debug.Debug)
+}
 pub fn RedirectHop::equal(Self, Self) -> Bool
 pub fn RedirectHop::not_equal(Self, Self) -> Bool
 pub fn RedirectHop::to_repr(Self) -> @debug.Repr
@@ -148,6 +150,7 @@ pub(all) struct Reply[T] {
   attributes : @model.Attributes
 }
 
+#derive(Eq, @debug.Debug)
 pub(all) struct RequestOptions {
   timeout_ms : Int32?
   body_deadline : Bool
@@ -156,7 +159,7 @@ pub(all) struct RequestOptions {
   follow_redirects : Bool
   max_redirects : Int32
   decompress : Bool
-} derive(Eq, @debug.Debug)
+}
 pub fn RequestOptions::default() -> Self
 pub fn RequestOptions::equal(Self, Self) -> Bool
 pub fn RequestOptions::not_equal(Self, Self) -> Bool
@@ -169,7 +172,7 @@ pub fn[T, A, M] RequestPlan::attribute(Self[T, M], @model.AttributeKey[A], A) ->
 pub fn[T, M] RequestPlan::bearer(Self[T, M], String) -> Self[T, M]
 pub fn[T, M] RequestPlan::body_bytes(Self[T, M], Bytes) -> Self[T, M]
 pub fn[T, M] RequestPlan::body_fn(Self[T, M], () -> Bytes) -> Self[T, M]
-pub fn[T, M] RequestPlan::body_json(Self[T, M], Json) -> Self[T, M]
+pub fn[T, M] RequestPlan::body_json(Self[T, M], @json.Json) -> Self[T, M]
 pub fn[T, M] RequestPlan::follow_redirects(Self[T, M], Bool) -> Self[T, M]
 pub fn[T, M] RequestPlan::header(Self[T, M], String, String) -> Self[T, M]
 pub fn[T, M] RequestPlan::max_body_bytes(Self[T, M], Int32) -> Self[T, M]
@@ -182,10 +185,11 @@ pub async fn[T, M : ResponseMode] RequestPlan::send(Self[T, M], Client, decide_r
 pub fn[T, M] RequestPlan::timeout_ms(Self[T, M], Int32) -> Self[T, M]
 pub fn[T] RequestPlan::to_curl(Self[T, Buffered], sensitive_headers? : Array[String], include_body? : Bool) -> String
 
+#derive(Eq, @debug.Debug)
 pub(all) enum ResponseFailure {
   UnexpectedStatus(@model.ResponseHead, body~ : Bytes)
   Deserialization(@model.ResponseHead, message~ : String, body~ : Bytes)
-} derive(Eq, @debug.Debug)
+}
 pub fn ResponseFailure::equal(Self, Self) -> Bool
 pub fn ResponseFailure::head(Self) -> @model.ResponseHead
 pub fn ResponseFailure::not_equal(Self, Self) -> Bool
@@ -217,9 +221,10 @@ pub(all) struct RetryContext {
 pub fn RetryContext::capture(@model.Request, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, replayable? : Bool) -> Self
 pub fn RetryContext::new(@model.RequestHead, idempotent~ : Bool, replayable~ : Bool, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, default_decision? : @retry.Decision) -> Self
 
+#derive(Eq, @debug.Debug)
 pub(all) struct RetryPolicy {
   rule : @retry.RetryRule
-} derive(Eq, @debug.Debug)
+}
 pub fn RetryPolicy::allow_non_idempotent(Self) -> Self
 pub fn RetryPolicy::conservative() -> Self
 pub fn RetryPolicy::decide(Self, @retry.AttemptOutcome, RetryContext) -> @retry.Decision

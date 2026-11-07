@@ -2,12 +2,13 @@
 
 ///|
 /// OpenAPI 3.1 Info data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct Info {
   title : String
   version : String
   description : String?
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates Info data with defaults for optional fields.
@@ -62,11 +63,12 @@ pub extend Info with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 Server data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct Server {
   url : String
   description : String?
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates Server data with defaults for optional fields.
@@ -118,11 +120,12 @@ pub extend Server with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 Tag data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct Tag {
   name : String
   description : String?
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates Tag data with defaults for optional fields.
@@ -174,6 +177,7 @@ pub extend Tag with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 Parameter data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct Parameter {
   name : String
   in_ : String
@@ -183,7 +187,7 @@ pub(all) struct Parameter {
   style : String?
   explode : Bool?
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates Parameter data with defaults for optional fields.
@@ -263,12 +267,13 @@ pub extend Parameter with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 HeaderObject data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct HeaderObject {
   required : Bool
   schema : Json
   description : String?
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates HeaderObject data with defaults for optional fields.
@@ -323,10 +328,11 @@ pub extend HeaderObject with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 MediaTypeObject data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct MediaTypeObject {
   schema : Json
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates MediaTypeObject data with defaults for optional fields.
@@ -373,12 +379,13 @@ pub extend MediaTypeObject with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 ResponseObject data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct ResponseObject {
   description : String
   headers : Map[String, HeaderObject]
   content : Map[String, MediaTypeObject]
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates ResponseObject data with defaults for optional fields.
@@ -431,12 +438,13 @@ pub extend ResponseObject with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 RequestBody data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct RequestBody {
   content : Map[String, MediaTypeObject]
   required : Bool
   description : String?
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates RequestBody data with defaults for optional fields.
@@ -491,6 +499,7 @@ pub extend RequestBody with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 Operation data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct Operation {
   responses : Map[String, ResponseObject]
   operation_id : String?
@@ -502,7 +511,7 @@ pub(all) struct Operation {
   request_body : RequestBody?
   security : Array[Map[String, Array[String]]]
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates Operation data with defaults for optional fields.
@@ -592,6 +601,7 @@ pub extend Operation with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 SecurityScheme data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct SecurityScheme {
   type_ : String
   scheme : String?
@@ -600,7 +610,7 @@ pub(all) struct SecurityScheme {
   bearer_format : String?
   description : String?
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates SecurityScheme data with defaults for optional fields.
@@ -680,11 +690,12 @@ pub extend SecurityScheme with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 Components data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct Components {
   schemas : Map[String, Json]
   security_schemes : Map[String, SecurityScheme]
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates Components data with defaults for optional fields.
@@ -734,6 +745,7 @@ pub extend Components with @json.FromJson::{from_json}
 
 ///|
 /// OpenAPI 3.1 OpenApi data with flattened x-* extensions.
+#derive(Eq, Debug)
 pub(all) struct OpenApi {
   info : Info
   paths : Map[String, PathItem]
@@ -742,7 +754,7 @@ pub(all) struct OpenApi {
   components : Components
   tags : Array[Tag]
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates OpenApi data with defaults for optional fields.

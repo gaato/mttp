@@ -1,11 +1,12 @@
 ///|
 /// The stage at which an endpoint input was rejected.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum FailureStage {
   Security
   Head
   Body
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares rejection stages.

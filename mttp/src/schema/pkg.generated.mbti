@@ -16,7 +16,7 @@ pub let bool : TextCodec[Bool]
 
 pub fn[T, A] case_(String, JsonCodec[A], (T) -> A?, (A) -> T) -> Case[T]
 
-pub fn[T] custom((T) -> String?, keywords? : Map[String, Json]) -> Validator[T]
+pub fn[T] custom((T) -> String?, keywords? : Map[String, @json.Json]) -> Validator[T]
 
 pub let double : TextCodec[Double]
 
@@ -38,11 +38,11 @@ pub let jint : JsonCodec[Int32]
 
 pub let jint64 : JsonCodec[Int64]
 
-pub fn[T : @json.FromJson + ToJson + JsonSchema] json() -> JsonCodec[T]
+pub fn[T : @json.FromJson + @json.ToJson + JsonSchema] json() -> JsonCodec[T]
 
 pub let jstring : JsonCodec[String]
 
-pub let jvalue : JsonCodec[Json]
+pub let jvalue : JsonCodec[@json.Json]
 
 pub fn[T] map_of(JsonCodec[T]) -> JsonCodec[Map[String, T]]
 
@@ -70,7 +70,7 @@ pub fn[T, A0, A1, A2, A3, A4, A5, A6] object7(String, Field[T, A0], Field[T, A1]
 
 pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7] object8(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], (A0, A1, A2, A3, A4, A5, A6, A7) -> T) -> JsonCodec[T]
 
-pub fn[T : Eq + ToJson] one_of_values(Array[T]) -> Validator[T]
+pub fn[T : Eq + @json.ToJson] one_of_values(Array[T]) -> Validator[T]
 
 pub fn open_string(Array[String]) -> JsonCodec[String]
 
@@ -93,15 +93,17 @@ pub fn[T] tagged(String, String, Array[Case[T]]) -> JsonCodec[T] raise DecodeFai
 pub let text_body : BodyCodec[String]
 
 // Errors
+#derive(@debug.Debug)
 pub(all) suberror DecodeFailure {
   DecodeFailure(kind~ : DecodeKind, message~ : String)
-} derive(@debug.Debug)
+}
 pub fn DecodeFailure::message(Self) -> String
 pub fn DecodeFailure::to_repr(Self) -> @debug.Repr
 
+#derive(@debug.Debug)
 pub(all) suberror UnsupportedPattern {
   UnsupportedPattern(String)
-} derive(@debug.Debug)
+}
 pub fn UnsupportedPattern::to_repr(Self) -> @debug.Repr
 
 // Types and methods
@@ -119,6 +121,7 @@ pub struct Case[T] {
 }
 
 #non_exhaustive
+#derive(@debug.Debug)
 pub(all) enum DecodeKind {
   Missing
   Multiple(Int32)
@@ -127,48 +130,50 @@ pub(all) enum DecodeKind {
   Mismatch(expected~ : String, actual~ : String)
   TooLarge(limit~ : Int32)
   UnsupportedMediaType(String)
-} derive(@debug.Debug)
+}
 pub fn DecodeKind::to_repr(Self) -> @debug.Repr
 
 pub struct Field[T, A] {
   // private fields
 }
 
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub(all) struct Issue {
   path : String
   code : String
   message : String
-} derive(Eq, ToJson, @debug.Debug)
+}
 pub fn Issue::equal(Self, Self) -> Bool
 pub fn Issue::new(String, String, path? : String) -> Self
 pub fn Issue::not_equal(Self, Self) -> Bool
-pub fn Issue::to_json(Self) -> Json
+pub fn Issue::to_json(Self) -> @json.Json
 pub fn Issue::to_repr(Self) -> @debug.Repr
 
 pub struct JsonCodec[T] {
   // private fields
 }
 pub fn[T] JsonCodec::body(Self[T]) -> BodyCodec[T]
-pub fn[T : @json.FromJson + ToJson] JsonCodec::derived(Schema) -> Self[T]
-pub fn[T] JsonCodec::from_json(Self[T], Json) -> T raise DecodeFailure
+pub fn[T : @json.FromJson + @json.ToJson] JsonCodec::derived(Schema) -> Self[T]
+pub fn[T] JsonCodec::from_json(Self[T], @json.Json) -> T raise DecodeFailure
 pub fn[T, U] JsonCodec::map(Self[T], (T) -> U raise DecodeFailure, (U) -> T) -> Self[U]
-pub fn[T] JsonCodec::new((Json) -> T raise DecodeFailure, (T) -> Json, Schema) -> Self[T]
+pub fn[T] JsonCodec::new((@json.Json) -> T raise DecodeFailure, (T) -> @json.Json, Schema) -> Self[T]
 pub fn[T] JsonCodec::schema(Self[T]) -> Schema
-pub fn[T] JsonCodec::to_json(Self[T], T) -> Json
+pub fn[T] JsonCodec::to_json(Self[T], T) -> @json.Json
 pub fn[T] JsonCodec::validate(Self[T], Validator[T]) -> Self[T]
 
+#derive(Eq, @debug.Debug)
 pub(all) struct Schema {
   name : String?
-  json : Json
-  defs : Map[String, Json]
+  json : @json.Json
+  defs : Map[String, @json.Json]
   problems : Array[String]
-} derive(Eq, @debug.Debug)
+}
 pub fn Schema::equal(Self, Self) -> Bool
 pub fn Schema::named(Self, String) -> Self
 pub fn Schema::not_equal(Self, Self) -> Bool
-pub fn Schema::of(Json) -> Self
-pub fn Schema::patch(Self, Map[String, Json]) -> Self
-pub fn Schema::reference(Self, Map[String, Json], problems? : Array[String]) -> Json
+pub fn Schema::of(@json.Json) -> Self
+pub fn Schema::patch(Self, Map[String, @json.Json]) -> Self
+pub fn Schema::reference(Self, Map[String, @json.Json], problems? : Array[String]) -> @json.Json
 pub fn Schema::to_repr(Self) -> @debug.Repr
 
 pub struct TextCodec[T] {

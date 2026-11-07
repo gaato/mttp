@@ -55,12 +55,13 @@ fn[T : @json.FromJson] optional_field(
 ///|
 /// The operations and metadata for one path; operation keys are lowercase
 /// HTTP methods. Extensions are serialized alongside those operations.
+#derive(Eq, Debug)
 pub(all) struct PathItem {
   operations : Map[String, Operation]
   summary : String?
   description : String?
   extensions : Map[String, Json]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Creates a path item with optional descriptive metadata.

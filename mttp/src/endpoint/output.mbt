@@ -567,7 +567,8 @@ pub fn[T] sse_out(
 
 ///|
 /// The uninhabited error value of an endpoint without declared errors.
-pub(all) enum NoError {} derive(Debug, Eq)
+#derive(Debug, Eq)
+pub(all) enum NoError {}
 
 ///|
 /// Compares the uninhabited error value.
@@ -579,6 +580,7 @@ fn no_errors() -> Out[NoError, @client.Buffered] {
 }
 
 ///|
+#derive(Debug)
 priv suberror DecodeError {
   DecodeError(@model.ResponseHead, message~ : String, body~ : Bytes)
-} derive(Debug)
+}

@@ -10,12 +10,13 @@ pub(all) struct Info {
 
 ///|
 /// A literal, single capture, or final rest capture in a path template.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Seg {
   Lit(String)
   Cap(String)
   Rest(String)
-} derive(Eq, Debug)
+}
 
 ///|
 fn parse_template(template : String) -> Array[Seg] {
@@ -78,7 +79,7 @@ pub let endpoint : Endpoint[Unit, Unit, NoError, Unit, @client.Buffered] = {
 ///|
 fn join_template(a : String, b : String) -> String {
   if a.has_suffix("/") && b.has_prefix("/") {
-    a + b.view(start_offset=1).to_owned()
+    a + b.clamped_view(start=1).to_owned()
   } else {
     a + b
   }
@@ -422,11 +423,12 @@ pub fn EndpointDoc::problems(self : EndpointDoc) -> Array[String] {
 
 ///|
 /// A fatal definition error or nonfatal verification advisory.
+#derive(Eq, Debug)
 pub(all) struct DefinitionProblem {
   template : String
   message : String
   fatal : Bool // fatal: Router::new and to_openapi refuse; otherwise advice for verify
-} derive(Eq, Debug)
+}
 
 ///|
 /// The single definition checker, called by Router::new, to_openapi and
@@ -502,6 +504,7 @@ pub fn check_definitions(docs : Array[EndpointDoc]) -> Array[DefinitionProblem] 
 
 ///|
 /// Definition problems which prevent an interpreter from being constructed.
+#derive(Debug)
 pub(all) suberror DefinitionError {
   DefinitionError(Array[DefinitionProblem])
-} derive(Debug)
+}

@@ -1,7 +1,8 @@
 ///|
+#derive(Debug, Eq)
 enum Missing {
   Missing(Int32)
-} derive(Debug, Eq)
+}
 
 ///|
 test "typed stub decodes requests and returns declared error values on the client" {

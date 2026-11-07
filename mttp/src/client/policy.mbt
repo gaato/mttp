@@ -61,10 +61,11 @@ pub using @retry {type StopReason}
 /// Start from a preset — `conservative()` (the default), `none()` — or from any rule with `from_rule`, and adjust it with
 /// `with_max_retries`, `allow_non_idempotent` or a struct update of `rule`.
 ///
+#derive(Eq, Debug)
 pub(all) struct RetryPolicy {
   /// What is retried, how long to wait, and when to stop.
   rule : RetryRule
-} derive(Eq, Debug)
+}
 
 ///|
 /// Equality for retry policy values.

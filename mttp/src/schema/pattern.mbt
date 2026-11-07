@@ -1,8 +1,9 @@
 ///|
 /// A pattern outside the supported ECMA subset, or beyond compilation limits.
+#derive(Debug)
 pub(all) suberror UnsupportedPattern {
   UnsupportedPattern(String)
-} derive(Debug)
+}
 
 ///|
 /// Formats a pattern-construction error.

@@ -1,12 +1,13 @@
 ///|
 /// A content coding (RFC 9110 section 8.4.1) the transport can undo.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Coding {
   Gzip
   Deflate
   Brotli
   Zstd
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares supported content codings.

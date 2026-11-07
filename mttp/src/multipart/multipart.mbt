@@ -2,12 +2,13 @@
 /// A single multipart/form-data field with an optional filename and media
 /// type. Its body is bytes, or a stream read as the request is sent
 /// (`Part::file_stream`).
+#derive(Eq, Debug)
 pub(all) struct Part {
   name : String
   filename : String?
   content_type : String?
   body : @model.Body
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares every part field, including the body bytes.
@@ -102,6 +103,7 @@ pub fn Part::json(name : String, value : Json) -> Part {
 
 ///|
 /// Multipart validation and encoding failures.
+#derive(Debug)
 pub(all) suberror MultipartError {
   InvalidBoundary(String)
   BoundaryCollision
@@ -110,7 +112,7 @@ pub(all) suberror MultipartError {
   /// hold: use `encode_body` or `apply`. Also rejects future body variants
   /// which this version of the multipart writer cannot represent.
   StreamPart(String)
-} derive(Debug)
+}
 
 ///|
 /// Formats a multipart failure for debugging.

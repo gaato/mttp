@@ -1,5 +1,6 @@
 ///|
 /// Authentication metadata shared by server challenges and API descriptions.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum AuthScheme {
   Bearer(format~ : String?)
@@ -8,10 +9,11 @@ pub(all) enum AuthScheme {
   ApiKeyQuery(String)
   ApiKeyCookie(String)
   Signature(String)
-} derive(Eq, Debug)
+}
 
 ///|
 /// The request location consumed by an input atom.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Location {
   Path
@@ -24,7 +26,7 @@ pub(all) enum Location {
   /// Not read from the request (an attribute, or `unit()`); a failure while
   /// mapping such an input is attributed here.
   Derived
-} derive(Eq, Debug)
+}
 
 ///|
 /// One documented input, including its schema, requiredness and rest-path marker.

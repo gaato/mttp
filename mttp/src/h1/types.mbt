@@ -1,12 +1,13 @@
 ///|
 /// Byte limits include terminating CRLFs. Header count excludes the start
 /// line and applies independently to heads and trailers.
+#derive(Eq, Debug)
 pub(all) struct Limits {
   max_head_bytes : Int32
   max_chunk_line_bytes : Int32
   max_trailer_bytes : Int32
   max_headers : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 /// Defaults: 16 KiB heads, 4 KiB size lines, 16 KiB trailers, 100 fields.
@@ -29,13 +30,14 @@ pub extend Limits with @debug.Debug::{to_repr}
 
 ///|
 /// Classification used to choose a response and close a malformed exchange.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum ParseKind {
   HeadTooLarge
   Malformed
   Smuggling
   Unsupported
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares parser error kinds.
@@ -47,9 +49,10 @@ pub extend ParseKind with @debug.Debug::{to_repr}
 
 ///|
 /// A codec refusal. Detail is diagnostic text, not a stable machine contract.
+#derive(Debug)
 pub(all) suberror ParseError {
   ParseError(kind~ : ParseKind, detail~ : String)
-} derive(Debug)
+}
 
 ///|
 /// Formats codec refusals.
@@ -57,11 +60,12 @@ pub extend ParseError with @debug.Debug::{to_repr}
 
 ///|
 /// Supported wire versions.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Version {
   Http10
   Http11
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares wire versions.
@@ -73,13 +77,14 @@ pub extend Version with @debug.Debug::{to_repr}
 
 ///|
 /// How bytes following a head belong to its message body.
+#derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Framing {
   NoBody
   Length(Int64)
   Chunked
   UntilClose
-} derive(Eq, Debug)
+}
 
 ///|
 /// Compares body framing.

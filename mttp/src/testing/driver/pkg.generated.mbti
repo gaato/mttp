@@ -23,9 +23,10 @@ pub async fn sleep(Int32) -> Unit raise DriverError
 pub fn spawn(async () -> Unit, label? : String, allow_failure? : Bool) -> Task raise DriverError
 
 // Errors
+#derive(@debug.Debug)
 pub(all) suberror DriverError {
   DriverError(kind~ : DriverErrorKind, detail~ : String)
-} derive(@debug.Debug)
+}
 pub fn DriverError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
@@ -52,6 +53,7 @@ pub fn Driver::step(Self) -> Bool raise DriverError
 pub fn Driver::steps(Self) -> Int32
 
 #non_exhaustive
+#derive(@debug.Debug)
 pub(all) enum DriverErrorKind {
   Deadlock(parked~ : Int32)
   Suspended(parked~ : Int32)
@@ -61,13 +63,14 @@ pub(all) enum DriverErrorKind {
   MainCancelled
   Reentrant
   NotInTask
-} derive(@debug.Debug)
+}
 pub fn DriverErrorKind::to_repr(Self) -> @debug.Repr
 
+#derive(Eq, @debug.Debug)
 pub(all) enum Resume {
   Woken
   Cancelled
-} derive(Eq, @debug.Debug)
+}
 pub fn Resume::equal(Self, Self) -> Bool
 pub fn Resume::not_equal(Self, Self) -> Bool
 pub fn Resume::to_repr(Self) -> @debug.Repr

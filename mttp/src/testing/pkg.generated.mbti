@@ -49,11 +49,12 @@ pub(all) enum Canned {
 }
 pub fn Canned::bytes(Int32, body? : Bytes, headers? : @model.Headers) -> Self
 
+#derive(Eq, @debug.Debug)
 pub(all) struct Recorded {
   request : @model.RequestHead
   options : @client.RequestOptions
   body : Bytes?
-} derive(Eq, @debug.Debug)
+}
 pub fn Recorded::equal(Self, Self) -> Bool
 pub fn Recorded::not_equal(Self, Self) -> Bool
 pub fn Recorded::to_repr(Self) -> @debug.Repr
