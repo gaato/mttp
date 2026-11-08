@@ -741,7 +741,8 @@ impl @http.Backend for BrokenBackend with fn send(self, request, options) {
         phase=Write,
         detail="wrong phase",
       )
-    3 => request.validate()
+    // Validates everything except the body, so a negative stream length passes.
+    3 => { ..request, body: Empty, }.validate()
     4 => {
       request.validate()
       if request.body is Stream(body) {
