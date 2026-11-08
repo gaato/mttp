@@ -207,7 +207,9 @@ pub fn[T] Variant::fixed_header(
 ) -> Variant[T] {
   let enc = self.encode
   let header_schemas = self.header_schemas.copy()
-  header_schemas[name.to_lower()] = @schema.string.schema()
+  header_schemas[name.to_lower()] = @schema.string
+    .schema()
+    .patch({ "const": Json(value) })
   {
     ..self,
     headers: [..self.headers, name],
@@ -462,13 +464,22 @@ pub fn[T] sse_out(
   codec : @schema.JsonCodec[T],
   to_event? : (T) -> @sse.SseEvent,
 ) -> Out[EventStream[T], @client.Streaming] {
+  let defs = Map([])
+  let problems = []
+  let data_schema = codec.schema().reference(defs, problems~)
+  let wire_schema : @schema.Schema = {
+    name: None,
+    defs,
+    problems,
+    json: { "type": "string", "x-mttp-sse-data-schema": data_schema },
+  }
   let variant : Variant[EventStream[T]] = {
     status: 200,
     status_of: None,
     dynamic_media: false,
     matches: _ => true,
     media_type: Some("text/event-stream"),
-    schema: Some(codec.schema()),
+    schema: Some(wire_schema),
     headers: [],
     header_schemas: {},
     description: "event stream",

@@ -12,8 +12,8 @@ native.
 > [mttp repository](https://github.com/gaato/mttp). The packages arrive one
 > at a time: `jsonkit`, `sse`, `multipart`, `cookie`, `schema`, the OpenAPI
 > document model `apispec`, the client with its retry rules, rate limits, the
-> cookie wrapper, the test doubles and typed endpoints are here; the router and
-> the OpenAPI projection follow.
+> cookie wrapper, the test doubles, typed endpoints, endpoint test helpers, the
+> router and OpenAPI projection are here.
 
 ## Install
 
@@ -40,6 +40,9 @@ your `moon.mod`.
 | `gaato/mttp/schema` | Text, JSON and body codecs that carry their JSON Schema, validators, and decoding that collects every issue with its JSON pointer |
 | `gaato/mttp/apispec` (experimental) | OpenAPI 3.1 document records with their JSON codecs |
 | `gaato/mttp/endpoint` (experimental) | Typed endpoint inputs, output unions, Result-based client calls and bounded server dispatch over `gaato/http` |
+| `gaato/mttp/endpoint/testkit` (experimental) | Typed endpoint stubs and the shared definition checker |
+| `gaato/mttp/router` (experimental) | Path and method dispatch, bounded server policy, middleware, CORS and an in-process Backend |
+| `gaato/mttp/openapi` (experimental) | Checked OpenAPI 3.1 projection, schema reference checking and a documentation endpoint |
 
 ## Usage
 

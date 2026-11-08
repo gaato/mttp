@@ -99,7 +99,7 @@ fn parse_modules(text : String) -> Array[Module] raise {
     out.push({
       dir,
       name,
-      example: kind == "example",
+      example: kind == "example" || kind == "benchmark",
       four_target: kind == "four-target",
     })
   }

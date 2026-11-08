@@ -246,20 +246,26 @@ pub fn signature_header(name : String) -> Input[String] {
 }
 
 ///|
-/// In a security input: buffered (bounded by the endpoint limit) before
-/// authenticate runs.
+/// An opaque buffered body with no media restriction. Absence is Missing;
+/// present empty bytes are a body. In a security input, buffering (bounded
+/// by the endpoint limit) happens before authenticate runs.
 pub fn raw_body() -> Input[Bytes] {
   let a = atom(RawBody, "body", @schema.Schema::of({ "type": "string" }))
   {
     atoms: [a],
-    decode: _ => {
-      needs_body: true,
-      finish: b => {
-        match b {
-          Buffered(bytes) => bytes
-          _ => raise fail(a, missing())
-        }
-      },
+    decode: head => {
+      if head.request.body is Empty {
+        raise fail(a, missing())
+      }
+      {
+        needs_body: true,
+        finish: b => {
+          match b {
+            Buffered(bytes) => bytes
+            _ => raise fail(a, missing())
+          }
+        },
+      }
     },
     encode: (bytes, sink) => sink.body = Bytes(bytes),
   }
@@ -330,7 +336,18 @@ fn single_header(
 }
 
 ///|
-fn media_type_token(value : String) -> String {
+/// Returns the case-insensitive media type without parameters, as used by
+/// endpoint body matching and OpenAPI content keys.
+///
+/// ```mbt check
+/// test {
+///   assert_eq(
+///     @endpoint.media_type_token("Text/Plain; charset=utf-8"),
+///     "text/plain",
+///   )
+/// }
+/// ```
+pub fn media_type_token(value : String) -> String {
   let token = match value.split_once(";") {
     Some((token, _)) => token
     None => value[:]
