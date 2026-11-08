@@ -67,6 +67,13 @@ Budgets are exact uncovered counts at the last measurement.
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| http-async/src/conn/conn_io.mbt | 1 | BinaryWriterImpl::get_controller is not called by core's current writer defaults; the controller is a stateless marker reserved for future buffering/locking. Each bridge still constructs and owns its controller as required by the core trait. |
+| http-async/src/codings/body_source.mbt | 1 | Forward-compatible Body arm: a future body representation is refused instead of silently treated as empty. |
+| http-async/src/codings/decompress.mbt | 1 | Defensive fallback for a non-TransportError from read_decoded: this wrapper supplies a TransportError-only reader and ContentDecoder translates codec errors to TransportError. Cancellation is a scheduler signal. |
+| http-async/src/codings/encoded_body.mbt | 1 | Defensive fallback for a non-TransportError from read_encoded: this wrapper supplies a TransportError-only reader and ContentEncoder translates codec errors to TransportError. |
+| http-async/src/internal/socketconn/socket.mbt | 2 | Not yet tested: reentrant close between spawning a directional child and registering its cancellation handle. The defensive checks remain because TaskGroup::spawn allows a child to start immediately. Ordinary pending read/write close and caller cancellation are tested. |
+| http-async/src/runtime/coordination.mbt | 3 | Defensive Task::wait rethrow and non-TransportError mapping: primary/monitor raise only TransportError, primary errors are recorded before wait returns, and explicit child cancellation has its own arm. |
+| http-async/src/runtime/timer.mbt | 1 | Defensive ordinary-error fallback of the generic timeout helper. Clock::sleep and Timer's callback are noraise, so current children cannot raise an Error; cancellation propagates independently. |
 | http/src/driver/driver.mbt | 1 | Defensive arm: a task suspended by something other than its Driver. No async runtime is linked, so nothing else can suspend it. |
 | http/src/h1client/client.mbt | 1 | Forward-compatibility arm of the `#non_exhaustive` `BodyTiming` match: every timing the module defines has its own arm. |
 | http/src/h1client/failure.mbt | 3 | Defensive arm: an error that is neither a `TransportError` nor a codec `ParseError`. The ports raise only `TransportError`, and every codec call inside a phase raises `ParseError`; cancellation is not an `Error`. |

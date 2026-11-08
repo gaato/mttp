@@ -1,0 +1,24 @@
+import {
+  "gaato/http/rt",
+  "gaato/http",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/semaphore",
+  "moonbitlang/core/async/cond_var",
+}
+
+import {
+  "moonbitlang/core/async/aqueue",
+  "gaato/http/sim",
+  "moonbitlang/core/async/cond_var",
+} for "test"
+
+supported_targets = "native + wasm + js"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/semaphore",
+    "moonbitlang/core/async/cond_var",
+    "moonbitlang/core/async/aqueue",
+  ],
+)
