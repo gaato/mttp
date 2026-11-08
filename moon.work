@@ -7,4 +7,5 @@ members = [
   "examples/get",
   "examples/serve",
   "examples/fetch",
+  "benchmarks/transport",
 ]

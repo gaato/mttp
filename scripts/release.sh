@@ -25,8 +25,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Release library modules in dependency order; examples are unpublished apps.
-mapfile -t MODULES < <(grep -v -e '^#' -e $'^dir\t' -e '^$' -e $'\texample\t' scripts/modules.tsv | cut -f1)
+# Release membership is independent of target/test kind, so private harnesses
+# stay tested and resolver-checked without requiring a release or changelog.
+mapfile -t MODULES < <(awk -F '\t' '$8 == "yes" { print $1 }' scripts/modules.tsv)
+
+require_release_module() {
+  local module
+  for module in "${MODULES[@]}"; do
+    [ "$module" = "$1" ] && return 0
+  done
+  echo "$1 is not a release module (scripts/modules.tsv)" >&2
+  exit 2
+}
 
 module_name() { sed -nE 's/^name = "(.*)"$/\1/p' "$1/moon.mod"; }
 module_version() { sed -nE 's/^version = "(.*)"$/\1/p' "$1/moon.mod"; }
@@ -97,6 +107,7 @@ cmd=${1:-}; shift || true
 case "$cmd" in
   bump)
     module=${1:?module}; version=${2:?version}
+    require_release_module "$module"
     name=$(module_name "$module")
     sed -i -E "s/^version = \".*\"$/version = \"$version\"/" "$module/moon.mod"
     for mod in */moon.mod; do

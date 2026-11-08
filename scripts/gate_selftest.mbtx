@@ -20,9 +20,10 @@ suberror SelfTestFailed {
 ///|
 let modules_tsv : String =
   #|# The self-test's modules.
-  #|dir	name	kind	targets	module_deps	package_imports	experimental
-  #|portable	selftest/portable	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core	-
-  #|runtime	selftest/runtime	runtime	native	-	moonbitlang/core	moonbitlang/core/async
+  #|dir	name	kind	targets	module_deps	package_imports	experimental	release
+  #|portable	selftest/portable	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core	-	yes
+  #|runtime	selftest/runtime	runtime	native	-	moonbitlang/core	moonbitlang/core/async	yes
+  #|benchmark	selftest/benchmark	benchmark	native	-	moonbitlang/core	-	no
   #|
 
 ///|
@@ -91,8 +92,77 @@ async fn probe_interfaces(root : String, name : String, refused : Bool) -> Unit 
 }
 
 ///|
+/// Release selection must not depend on test kind: a private four-target
+/// harness is still tested, but is not a changelog requirement or bump target.
+async fn probe_release(parent : String) -> Unit {
+  let root = parent + "/release-selection"
+  @fs.mkdir(root + "/scripts", recursive=true)
+  @fs.write_text(
+    root + "/scripts/release.sh",
+    @fs.read_text("scripts/release.sh"),
+  )
+  @fs.write_text(
+    root + "/scripts/modules.tsv",
+    "dir\tname\tkind\ttargets\tmodule_deps\tpackage_imports\texperimental\trelease\n" +
+    "library\tprobe/library\tfour-target\tnative\t-\t*\t-\tyes\n" +
+    "private\tprobe/private\tfour-target\tnative\tprobe/library\t*\t-\tno\n" +
+    "app\tprobe/app\texample\tnative\t-\t*\t-\tno\n",
+  )
+  for dir in ["library", "private", "app"] {
+    @fs.mkdir(root + "/" + dir)
+    @fs.write_text(
+      root + "/" + dir + "/moon.mod",
+      "name = \"probe/" +
+      dir +
+      "\"\nversion = \"0.0.1\"\nimport {\n  \"probe/library@0.0.1\",\n}\n",
+    )
+  }
+  // No changelogs for either excluded row: check must consider only library.
+  @fs.write_text(
+    root + "/library/CHANGELOG.md",
+    "# Changelog\n\n## [Unreleased]\n\n- Example.\n",
+  )
+  let checked = @shell.Cmd("bash", ["scripts/release.sh", "check"], cwd=root).output()
+  guard checked.exit_code() == 0 &&
+    checked.stdout().contains("OK (1 changelogs)") else {
+    raise SelfTestFailed("release check included a private module or app")
+  }
+  for dir in ["private", "app", "unlisted"] {
+    let refused = @shell.Cmd(
+      "bash",
+      ["scripts/release.sh", "bump", dir, "9.9.9"],
+      cwd=root,
+    ).output()
+    guard refused.exit_code() == 2 &&
+      refused.stderr().contains("is not a release module") else {
+      raise SelfTestFailed("release bump accepted " + dir)
+    }
+    if dir != "unlisted" &&
+      @fs.read_text(root + "/" + dir + "/moon.mod").contains("9.9.9") {
+      raise SelfTestFailed("refused release bump mutated " + dir)
+    }
+  }
+  let bumped = @shell.Cmd(
+    "bash",
+    ["scripts/release.sh", "bump", "library", "0.0.2"],
+    cwd=root,
+  ).output()
+  guard bumped.exit_code() == 0 &&
+    @fs.read_text(root + "/library/moon.mod").contains("version = \"0.0.2\"") &&
+    @fs.read_text(root + "/library/CHANGELOG.md").contains("## [0.0.2] - ") &&
+    @fs.read_text(root + "/private/moon.mod").contains("version = \"0.0.1\"") &&
+    @fs.read_text(root + "/private/moon.mod").contains("probe/library@0.0.2") else {
+    raise SelfTestFailed(
+      "release bump failed or changed a private module's version",
+    )
+  }
+  println("gate self-test: release selection and bump guards OK")
+}
+
+///|
 async fn main {
   let root = @fs.tmpdir(prefix="mttp-gate-selftest-")
+  probe_release(root)
   @fs.mkdir(root + "/scripts")
   for
     file in [
@@ -101,7 +171,29 @@ async fn main {
     @fs.write_text(root + "/" + file, @fs.read_text(file))
   }
   @fs.write_text(root + "/scripts/modules.tsv", modules_tsv)
-  @fs.write_text(root + "/moon.work", "members = [\"portable\", \"runtime\"]\n")
+  @fs.write_text(
+    root + "/moon.work",
+    "members = [\"portable\", \"runtime\", \"benchmark\"]\n",
+  )
+  @fs.mkdir(root + "/benchmark")
+  @fs.write_text(
+    root + "/benchmark/moon.mod",
+    "name = \"selftest/benchmark\"\nversion = \"0.0.0\"\nsource = \".\"\nsupported_targets = \"native\"\n",
+  )
+  @fs.write_text(
+    root + "/benchmark/moon.pkg",
+    "pkgtype(kind: \"executable\")\n",
+  )
+  // Both main and tests abort if executed: the benchmark kind must build
+  // the executable while leaving it out of test runs and their manifest.
+  @fs.write_text(
+    root + "/benchmark/main.mbt",
+    "///|\nfn main { abort(\"benchmark ran\") }\n",
+  )
+  @fs.write_text(
+    root + "/benchmark/main_test.mbt",
+    "///|\ntest { fail(\"benchmark test ran\") }\n",
+  )
   let rows = ["module\tpackage\ttarget\tcount"]
   for
     (dir, name, targets) in [
@@ -126,6 +218,24 @@ async fn main {
   @fs.write_text(source, visible)
   @fs.write_text(root + "/scripts/test_manifest.tsv", manifest)
   probe(root, "passing baseline", None)
+  guard @fs.exists(
+    root + "/_build/native/debug/build/selftest/benchmark/benchmark.exe",
+  ) else {
+    raise SelfTestFailed("benchmark executable was not built")
+  }
+  @fs.write_text(
+    root + "/benchmark/main.mbt",
+    "///|\nfn main { missing_function() }\n",
+  )
+  probe(
+    root,
+    "broken benchmark refused",
+    Some("moon build selftest/benchmark on native"),
+  )
+  @fs.write_text(
+    root + "/benchmark/main.mbt",
+    "///|\nfn main { abort(\"benchmark ran\") }\n",
+  )
   @fs.write_text(source, "")
   probe(root, "unexpected zero", Some("0 tests, and"))
   @fs.write_text(source, "///|\ntest \"failed\" {\n  assert_true(false)\n}\n")

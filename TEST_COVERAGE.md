@@ -27,7 +27,9 @@ rerun the tests.
 
 ### What is measured
 
-- Sources: every non-test `.mbt` under `<module>/src/` of every module.
+- Sources: every non-test `.mbt` under `<module>/src/` of every library or
+  conformance module. Example and benchmark executables are excluded: their
+  output and timings are not library behavior covered by this ledger.
 - Test drivers: every package of those modules.
 - Counts are Coveralls lines: lines with at least one instrumented point,
   covered when any point on them ran.
