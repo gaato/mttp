@@ -122,14 +122,21 @@ test "IPv6 literals are validated, lower-cased and bracketed again" {
   assert_eq(long.to_string(), "http://[2001:db8::1]/p")
   assert_true(long.same_origin(@http.Url::parse("http://[2001:db8::1]/")))
   assert_false(long.same_origin(@http.Url::parse("http://[2001:db8::2]/")))
-  assert_eq(
-    @http.Url::parse("http://[0:0:0:0:0:ffff:192.0.2.1]/").host,
-    Some("::ffff:192.0.2.1"),
+  // A dotted-quad tail is serialized in hex, as WHATWG URL does, so the
+  // spellings of one address are one origin.
+  let mapped = @http.Url::parse("http://[0:0:0:0:0:ffff:192.0.2.1]/")
+  assert_eq(mapped.host, Some("::ffff:c000:201"))
+  assert_eq(mapped.to_string(), "http://[::ffff:c000:201]/")
+  assert_true(
+    @http.Url::parse("http://[::ffff:192.0.2.1]/").same_origin(
+      @http.Url::parse("http://[::ffff:c000:201]/"),
+    ),
   )
-  for
-    literal in [
-      "::", "::1", "1:2:3:4:5:6:7:8", "1::8", "::ffff:192.0.2.1", "1:2:3:4:5:6:1.2.3.4",
-    ] {
+  assert_eq(
+    @http.Url::parse("http://[1:2:3:4:5:6:1.2.3.4]/").host,
+    Some("1:2:3:4:5:6:102:304"),
+  )
+  for literal in ["::", "::1", "1:2:3:4:5:6:7:8", "1::8", "::ffff:c000:201"] {
     assert_eq(@http.Url::parse("http://[" + literal + "]/").host, Some(literal))
   }
   for
