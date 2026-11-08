@@ -1,0 +1,18 @@
+import {
+  "gaato/http",
+  "gaato/http/rt",
+  "gaato/mttp/client/retry",
+  "gaato/mttp/sse",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "gaato/http/driver",
+  "gaato/http/sim",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/http/driver" ],
+)

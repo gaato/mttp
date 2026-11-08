@@ -16,4 +16,13 @@ gaato/http/h1	ParseKind
 gaato/http/h1	Version
 gaato/http/sim	FeedStep
 gaato/http/sim	ReadStep
+gaato/mttp/client/retry	Decision
+gaato/mttp/client/retry	Jitter
+gaato/mttp/client/retry	Methods
+gaato/mttp/client/retry	RetryAfterCap
+gaato/mttp/client/retry	RetryAfterSource
+gaato/mttp/client/retry	StopReason
+gaato/mttp/cookie	SameSite
+gaato/mttp/client	ResponseFailure
+gaato/mttp/testing	Canned
 gaato/mttp/schema	DecodeKind
