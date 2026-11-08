@@ -10,8 +10,8 @@ native.
 
 > **Status**: this version is being rebuilt in the
 > [mttp repository](https://github.com/gaato/mttp). The packages arrive one
-> at a time: `jsonkit`, `sse` and `multipart` are here; cookies, the client,
-> schemas, endpoints, the router and OpenAPI follow.
+> at a time: `jsonkit`, `sse`, `multipart` and `schema` are here; cookies,
+> the client, endpoints, the router and OpenAPI follow.
 
 ## Install
 
@@ -29,6 +29,7 @@ your `moon.mod`.
 | `gaato/mttp/jsonkit` | `Presence` (omitted, `null` or a value), an object builder, field decoders and open enums for JSON models |
 | `gaato/mttp/sse` | An incremental, bounded `text/event-stream` parser and an event encoder |
 | `gaato/mttp/multipart` | A `multipart/form-data` writer with streamed file parts and injected boundary randomness |
+| `gaato/mttp/schema` | Text, JSON and body codecs that carry their JSON Schema, validators, and decoding that collects every issue with its JSON pointer |
 
 ## Usage
 

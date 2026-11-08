@@ -16,3 +16,4 @@ gaato/http/h1	ParseKind
 gaato/http/h1	Version
 gaato/http/sim	FeedStep
 gaato/http/sim	ReadStep
+gaato/mttp/schema	DecodeKind
