@@ -12,6 +12,9 @@
 #                    async tests are not allowed (wasm-gc skips them).
 #                    runtime: the module runs on `targets` only; a package may
 #                    narrow them with supported_targets in its moon.pkg.
+#                    example: an unpublished executable at the module root,
+#                    so `moon run <dir>` works. Built and tested on `targets`,
+#                    but excluded from library coverage and release packaging.
 #   targets          the targets the module's packages build on
 #   module_deps      the modules its moon.mod may import (`-` for none)
 #   package_imports  the packages its packages may import, besides its own:
@@ -52,3 +55,4 @@ http-async	gaato/http-async	runtime	native,wasm,js	gaato/http,gaato/codec_bytes,
 mttp	gaato/mttp	four-target	wasm-gc,wasm,js,native	gaato/http	moonbitlang/core,!moonbitlang/core/async,gaato/http	test:gaato/http/driver,test:gaato/http/h1client,test:gaato/http/h1server
 mttp-digest	gaato/mttp-digest	four-target	wasm-gc,wasm,js,native	gaato/http,gaato/mttp,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/http,gaato/mttp,moonbitlang/x	test:gaato/http/driver
 conformance	gaato/mttp-conformance	four-target	wasm-gc,wasm,js,native	gaato/http,gaato/mttp	moonbitlang/core,!moonbitlang/core/async,gaato/http,gaato/mttp	-
+examples/get	gaato/mttp-example-get	example	native,wasm	gaato/http,gaato/http-async	*	*

@@ -126,7 +126,10 @@ impl @rt.Conn for Tunnel with fn close(self) {
 ///|
 async test "TLS upgrades arbitrary Conn tunnels with custom and insecure trust and owns success" {
   for
-    trust in [@conn.Trust::PemFile("src/conn/testdata/localhost.pem"), Insecure] {
+    trust in [
+      @http_async.Trust::PemFile("src/conn/testdata/localhost.pem"),
+      Insecure,
+    ] {
     @async.with_timeout(5000, () => {
       let server = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
       defer server.close()
@@ -170,7 +173,7 @@ async test "TLS upgrades arbitrary Conn tunnels with custom and insecure trust a
 async test "TLS verification failure leaves tunnel owned by caller" {
   for
     (trust, host) in [
-      (@conn.Trust::System, "localhost"),
+      (@http_async.Trust::System, "localhost"),
       (PemFile("src/conn/testdata/localhost.pem"), "wrong.invalid"),
     ] {
     @async.with_timeout(5000, () => {

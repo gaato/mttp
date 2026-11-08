@@ -88,6 +88,7 @@ uncovered-line budget is needed for these additions.
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| http-async/src/conn/dialer.mbt | 1 | Forward-compatible Trust arm: Trust now belongs to the cross-target root package, so the dialer must refuse future constructors that cannot be constructed in this release. |
 | http-async/src/conn/conn_io.mbt | 1 | BinaryWriterImpl::get_controller is not called by core's current writer defaults; the controller is a stateless marker reserved for future buffering/locking. Each bridge still constructs and owns its controller as required by the core trait. |
 | http-async/src/codings/body_source.mbt | 1 | Forward-compatible Body arm: a future body representation is refused instead of silently treated as empty. |
 | http-async/src/codings/decompress.mbt | 1 | Defensive fallback for a non-TransportError from read_decoded: this wrapper supplies a TransportError-only reader and ContentDecoder translates codec errors to TransportError. Cancellation is a scheduler signal. |

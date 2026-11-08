@@ -25,8 +25,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# The modules of scripts/modules.tsv, in its order, which is bottom-up.
-mapfile -t MODULES < <(grep -v -e '^#' -e $'^dir\t' -e '^$' scripts/modules.tsv | cut -f1)
+# Release library modules in dependency order; examples are unpublished apps.
+mapfile -t MODULES < <(grep -v -e '^#' -e $'^dir\t' -e '^$' -e $'\texample\t' scripts/modules.tsv | cut -f1)
 
 module_name() { sed -nE 's/^name = "(.*)"$/\1/p' "$1/moon.mod"; }
 module_version() { sed -nE 's/^version = "(.*)"$/\1/p' "$1/moon.mod"; }
