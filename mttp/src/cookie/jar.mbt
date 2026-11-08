@@ -33,6 +33,12 @@ priv struct Entry {
 /// cookies. Hosts must arrive in ASCII form, so a `Domain` with other
 /// characters is ignored.
 ///
+/// A host written with the root dot (`example.com.`) is a different host from
+/// `example.com`, as in browsers: neither sets nor receives the other's
+/// cookies. The public-suffix checks read a `Domain` without its root dot, so
+/// `Domain=com.` is refused as a single label, and a `Domain` with an empty
+/// label (`a..b`, `com..`) is ignored.
+///
 /// ```mbt check
 /// test {
 ///   let jar = @cookie.CookieJar::new(@sim.FakeClock::new())
@@ -64,6 +70,7 @@ pub struct CookieJar {
 /// domain is over its cap (RFC 6265bis-22 §5.7). Negative limits count as 0.
 /// `is_public_suffix` names further domains a cookie may not be set for, such
 /// as a Public Suffix List lookup; single-label domains are always refused.
+/// It receives the lowercase `Domain` without a trailing root dot.
 pub fn CookieJar::new(
   clock : &@rt.Clock,
   max_per_domain~ : Int32 = default_max_per_domain,
@@ -247,8 +254,11 @@ fn CookieJar::cookie_domain(
     guard c.to_int() < 0x80 else { return None }
   }
   let domain = canonical_ip_literal(domain)
+  if has_empty_label(domain) {
+    return None
+  }
   if is_single_label(domain) ||
-    (self.is_public_suffix)(domain) ||
+    (self.is_public_suffix)(without_root(domain)) ||
     is_ip_host(host) {
     // A public suffix, or any Domain on an IP host, is only accepted as the
     // host itself, and then as host-only.

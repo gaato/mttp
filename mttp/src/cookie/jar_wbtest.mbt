@@ -976,3 +976,31 @@ test "header_for sends exactly the live matching cookies, longest path first" {
     }
   }
 }
+
+///|
+test "the root dot neither hides a public suffix nor merges two hosts" {
+  let jar = test_jar(is_public_suffix=domain => domain == "co.uk")
+  // A single label written with the root dot is still a public suffix.
+  set_at(jar, "https://attacker.com./", "sid=chosen; Domain=com.; Path=/", T0)
+  set_at(
+    jar,
+    "https://attacker.co.uk./",
+    "sid=chosen; Domain=co.uk.; Path=/",
+    T0,
+  )
+  // Empty labels are ignored rather than matched.
+  set_at(jar, "https://a..b.com./", "e=1; Domain=b.com..", T0)
+  assert_eq(pairs(jar), [])
+  assert_eq(get_at(jar, "https://victim.com./", T0), None)
+  assert_eq(get_at(jar, "https://victim.co.uk./", T0), None)
+  // A host with the root dot keeps its own host-only and domain cookies.
+  set_at(jar, "https://example.com./", "h=1; Path=/", T0)
+  set_at(jar, "https://example.com./", "d=2; Domain=example.com.; Path=/", T0)
+  assert_eq(get_at(jar, "https://example.com./", T0), Some("h=1; d=2"))
+  assert_eq(get_at(jar, "https://www.example.com./", T0), Some("d=2"))
+  // Without the dot it is another host, as in browsers.
+  assert_eq(get_at(jar, "https://example.com/", T0), None)
+  set_at(jar, "https://example.com./", "x=3; Domain=example.com", T0)
+  set_at(jar, "https://example.com/", "y=4; Domain=example.com.", T0)
+  assert_eq(pairs(jar), ["h=1", "d=2"])
+}
