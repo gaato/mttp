@@ -311,7 +311,7 @@ async fn stage(candidate : Module, registry : String) -> Unit {
 }
 
 ///|
-/// Published library modules, in dependency order. Example executables are
+/// Published library modules, in dependency order. Example and benchmark executables are
 /// checked by the runtime gate rather than packaged as consumer libraries.
 async fn workspace_modules(root : String) -> Array[Module] {
   let modules = []
@@ -324,7 +324,7 @@ async fn workspace_modules(root : String) -> Array[Module] {
       is [dir, _, kind, targets, ..] else {
       raise GateError("scripts/modules.tsv: malformed row: " + line)
     }
-    if kind == "example" {
+    if kind == "example" || kind == "benchmark" {
       continue
     }
     if @fs.exists(root + "/" + dir + "/moon.mod") {
