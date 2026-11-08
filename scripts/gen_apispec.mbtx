@@ -69,11 +69,32 @@ fn optional(name : String, type_ : String, wire? : String) -> Field {
 }
 
 ///|
-/// The records, in output order. `PathItem` is written by hand in
-/// `codec.mbt`: its operations are keyed by method, not by field.
+/// The records, in output order, with the OpenAPI 3.1 fixed fields each one
+/// types. A member a record does not type (an `example`, a `callbacks` map,
+/// OAuth `flows`, a path item `$ref`) is kept verbatim in `unmodeled`, so a
+/// document survives decoding and encoding unchanged. `PathItem` is written
+/// by hand in `codec.mbt`: its operations are keyed by method, not by field.
 fn records() -> Array[(String, Array[Field])] {
   let security = "Array[Map[String, Array[String]]]"
   [
+    (
+      "OpenApi",
+      [
+        required("info", "Info"),
+        // Optional in 3.1, but always written: a document needs one of
+        // paths, components or webhooks.
+        default("paths", "Map[String, PathItem]", "{}", omit=false),
+        default("openapi", "String", "\"3.1.0\"", omit=false),
+        optional("json_schema_dialect", "String", wire="jsonSchemaDialect"),
+        default("servers", "Array[Server]", "[]"),
+        default("webhooks", "Map[String, PathItem]", "{}"),
+        default("components", "Components", "Components::new()"),
+        // Applies to every operation that has no `security` of its own.
+        optional("security", security),
+        default("tags", "Array[Tag]", "[]"),
+        optional("external_docs", "ExternalDocs", wire="externalDocs"),
+      ],
+    ),
     (
       "Info",
       [
@@ -102,29 +123,64 @@ fn records() -> Array[(String, Array[Field])] {
         optional("url", "String"),
       ],
     ),
-    ("Server", [required("url", "String"), optional("description", "String")]),
-    ("Tag", [required("name", "String"), optional("description", "String")]),
+    (
+      "Server",
+      [
+        required("url", "String"),
+        optional("description", "String"),
+        default("variables", "Map[String, ServerVariable]", "{}"),
+      ],
+    ),
+    (
+      "ServerVariable",
+      [
+        required("default_", "String", wire="default"),
+        default("enum_", "Array[String]", "[]", wire="enum"),
+        optional("description", "String"),
+      ],
+    ),
+    (
+      "ExternalDocs",
+      [required("url", "String"), optional("description", "String")],
+    ),
+    (
+      "Tag",
+      [
+        required("name", "String"),
+        optional("description", "String"),
+        optional("external_docs", "ExternalDocs", wire="externalDocs"),
+      ],
+    ),
     (
       "Parameter",
       [
         required("name", "String"),
         required("in_", "String", wire="in"),
         default("required", "Bool", "false"),
-        default("schema", "Json", "{}", omit=false),
+        default("deprecated", "Bool", "false"),
+        optional("allow_empty_value", "Bool", wire="allowEmptyValue"),
+        // A parameter has a schema or content, never both.
+        optional("schema", "Json"),
         optional("description", "String"),
         optional("style", "String"),
         optional("explode", "Bool"),
+        optional("allow_reserved", "Bool", wire="allowReserved"),
+        optional("content", "Map[String, MediaTypeObject]"),
       ],
     ),
     (
       "HeaderObject",
       [
         default("required", "Bool", "false"),
-        default("schema", "Json", "{}", omit=false),
+        default("deprecated", "Bool", "false"),
+        optional("schema", "Json"),
         optional("description", "String"),
+        optional("style", "String"),
+        optional("explode", "Bool"),
+        optional("content", "Map[String, MediaTypeObject]"),
       ],
     ),
-    ("MediaTypeObject", [default("schema", "Json", "{}", omit=false)]),
+    ("MediaTypeObject", [optional("schema", "Json")]),
     (
       "ResponseObject",
       [
@@ -154,6 +210,8 @@ fn records() -> Array[(String, Array[Field])] {
         optional("request_body", "RequestBody", wire="requestBody"),
         // Absent inherits the document's requirements; `[]` removes them.
         optional("security", security),
+        default("servers", "Array[Server]", "[]"),
+        optional("external_docs", "ExternalDocs", wire="externalDocs"),
       ],
     ),
     (
@@ -164,6 +222,7 @@ fn records() -> Array[(String, Array[Field])] {
         optional("name", "String"),
         optional("in_", "String", wire="in"),
         optional("bearer_format", "String", wire="bearerFormat"),
+        optional("open_id_connect_url", "String", wire="openIdConnectUrl"),
         optional("description", "String"),
       ],
     ),
@@ -171,26 +230,42 @@ fn records() -> Array[(String, Array[Field])] {
       "Components",
       [
         default("schemas", "Map[String, Json]", "{}"),
+        default("responses", "Map[String, ResponseObject]", "{}"),
+        default("parameters", "Map[String, Parameter]", "{}"),
+        default(
+          "request_bodies",
+          "Map[String, RequestBody]",
+          "{}",
+          wire="requestBodies",
+        ),
+        default("headers", "Map[String, HeaderObject]", "{}"),
         default(
           "security_schemes",
           "Map[String, SecurityScheme]",
           "{}",
           wire="securitySchemes",
         ),
-      ],
-    ),
-    (
-      "OpenApi",
-      [
-        required("info", "Info"),
-        required("paths", "Map[String, PathItem]"),
-        default("openapi", "String", "\"3.1.0\"", omit=false),
-        default("servers", "Array[Server]", "[]"),
-        default("components", "Components", "Components::new()"),
-        default("tags", "Array[Tag]", "[]"),
+        default("path_items", "Map[String, PathItem]", "{}", wire="pathItems"),
       ],
     ),
   ]
+}
+
+///|
+/// `OpenApi` as `open_api`, for the name of a record's field predicate.
+fn snake(name : String) -> String {
+  let out = StringBuilder()
+  for i, c in name.to_array() {
+    if c is ('A'..<='Z') {
+      if i > 0 {
+        out.write_char('_')
+      }
+      out.write_char((c.to_int() + 32).unsafe_to_char())
+    } else {
+      out.write_char(c)
+    }
+  }
+  out.to_string()
 }
 
 ///|
@@ -227,10 +302,28 @@ fn layout(
 ///|
 /// The source of one record: the struct, its constructor and its codecs.
 fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
+  // One arm per field, which moon fmt leaves as it is.
   out.write_string(
     (
       $|///|
-      $|/// OpenAPI 3.1 \{name} data with flattened x-* extensions.
+      $|/// Whether `key` names a field \{name} types.
+      $|fn is_\{snake(name)}_field(key : String) -> Bool {
+      $|  match key {
+      $|
+    ),
+  )
+  for field in fields {
+    out.write_string("    \{Json(field.wire).stringify()} => true\n")
+  }
+  out.write_string(
+    (
+      $|    _ => false
+      $|  }
+      $|}
+      $|
+      $|///|
+      $|/// OpenAPI 3.1 \{name} data. Members it does not type are kept in
+      $|/// `unmodeled`, and `x-*` members in `extensions`.
       $|#derive(Eq, Debug)
       $|pub(all) struct \{name} {
       $|
@@ -246,6 +339,7 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
   }
   out.write_string(
     (
+      $|  unmodeled : Map[String, Json]
       $|  extensions : Map[String, Json]
       $|}
       $|
@@ -263,8 +357,16 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
     }
     out.write_string("  \{param},\n")
   }
-  out.write_string("  extensions~ : Map[String, Json] = {},\n) -> \{name} {\n")
+  out.write_string(
+    (
+      $|  unmodeled~ : Map[String, Json] = {},
+      $|  extensions~ : Map[String, Json] = {},
+      $|) -> \{name} {
+      $|
+    ),
+  )
   let members = fields.map(f => f.name)
+  members.push("unmodeled: unmodeled.copy()")
   members.push("extensions: extensions.copy()")
   layout(out, "  ", "{ ", members, " }", one_line_comma=true)
   out.write_string(
@@ -273,7 +375,7 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
       $|
       $|///|
       $|/// Encodes \{name}, omitting absent optional fields and fields at their
-      $|/// empty default.
+      $|/// empty default, then its unmodeled members and its extensions.
       $|pub impl ToJson for \{name} with fn to_json(self) {
       $|  let obj : Map[String, Json] = Map([])
       $|
@@ -312,12 +414,13 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
   }
   out.write_string(
     (
+      $|  add_unmodeled(obj, self.unmodeled, is_\{snake(name)}_field)
       $|  add_extensions(obj, self.extensions)
       $|  Json::object(obj)
       $|}
       $|
       $|///|
-      $|/// Decodes \{name} while retaining extension fields.
+      $|/// Decodes \{name}, keeping unmodeled members and extensions.
       $|pub impl @json.FromJson for \{name} with fn from_json(value, path) {
       $|  let obj = expect_object(value, path)
       $|  {
@@ -335,6 +438,7 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
   }
   out.write_string(
     (
+      $|    unmodeled: unmodeled_fields(obj, is_\{snake(name)}_field),
       $|    extensions: extension_fields(obj),
       $|  }
       $|}

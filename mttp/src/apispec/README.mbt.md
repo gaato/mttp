@@ -21,9 +21,23 @@ test "document metadata JSON" {
 
 Encoding leaves out an optional field that is absent and a field at its empty
 default (`false`, `[]`, `{}`), and decoding restores the default, so a
-document decodes to the value that encoded it. `Operation.security` is
-optional rather than defaulted: an absent list inherits the document's
-requirements and an empty one removes them.
+document decodes to the value that encoded it. `security` is optional rather
+than defaulted, on the document and on each operation: the document's list
+applies to every operation without its own, and an operation's empty list
+removes it.
+
+The records type the OpenAPI 3.1 fixed fields except these, which they keep
+verbatim in `unmodeled` instead, so decoding and encoding a document loses
+nothing:
+
+- `example`, `examples` and `encoding` (parameters, headers, media types);
+- `links` (responses, components) and `callbacks` (operations, components);
+- `components.examples`;
+- OAuth `flows` of a security scheme;
+- a path item's `$ref`.
+
+An unmodeled member never replaces a typed field or an extension when
+encoding.
 
 The package is experimental, as is the endpoint layer it documents: a package
 that imports it lists `gaato/mttp/apispec` in its

@@ -83,7 +83,7 @@ test "OpenAPI data codecs preserve optional fields and extensions at every level
   )
   let spec = @apispec.OpenApi::new(
     info,
-    { "/example": item },
+    paths={ "/example": item },
     servers=[server],
     components~,
     tags=[tag],
@@ -169,19 +169,18 @@ test "fields at their empty default are omitted and decode back to it" {
   })
   let decoded : @apispec.Operation = @json.from_json(Json(public))
   assert_eq(decoded.security, Some([]))
-  let spec = @apispec.OpenApi::new(@apispec.Info::new("T", "1"), {})
+  let spec = @apispec.OpenApi::new(@apispec.Info::new("T", "1"))
   assert_eq(Json(spec), {
     "info": { "title": "T", "version": "1" },
     "paths": {},
     "openapi": "3.1.0",
   })
-  // Defaults that carry meaning are always written.
-  assert_eq(Json(@apispec.MediaTypeObject::new()), { "schema": {} })
+  // A schema is optional: a parameter may describe itself by content.
+  assert_eq(Json(@apispec.MediaTypeObject::new()), {})
   assert_eq(Json(@apispec.Parameter::new("id", "path", required=true)), {
     "name": "id",
     "in": "path",
     "required": true,
-    "schema": {},
   })
 }
 
@@ -279,4 +278,258 @@ test "decoding errors name the JSON pointer of the bad member" {
       error => raise error
     }
   }
+}
+
+///|
+/// Decodes `json` as a document and encodes it again.
+fn round_trip(json : Json) -> Json raise {
+  let spec : @apispec.OpenApi = @json.from_json(json)
+  Json(spec)
+}
+
+///|
+test "document security applies to operations that do not override it" {
+  let json : Json = {
+    "openapi": "3.1.0",
+    "info": { "title": "T", "version": "1" },
+    "security": [{ "bearer": [] }],
+    "paths": {
+      "/private": { "get": { "responses": { "200": { "description": "ok" } } } },
+      "/public": {
+        "get": {
+          "security": [],
+          "responses": { "200": { "description": "ok" } },
+        },
+      },
+    },
+    "components": {
+      "securitySchemes": { "bearer": { "type": "http", "scheme": "bearer" } },
+    },
+  }
+  assert_eq(round_trip(json), json)
+  let spec : @apispec.OpenApi = @json.from_json(json)
+  assert_eq(spec.security, Some([{ "bearer": [] }]))
+  assert_eq(spec.paths["/private"].operations["get"].security, None)
+  assert_eq(spec.paths["/public"].operations["get"].security, Some([]))
+  // An empty document requirement list is kept too.
+  let open : Json = {
+    "openapi": "3.1.0",
+    "info": { "title": "T", "version": "1" },
+    "paths": {},
+    "security": [],
+  }
+  assert_eq(round_trip(open), open)
+}
+
+///|
+test "every OpenAPI 3.1 fixed field survives decoding and encoding" {
+  // Modeled fields and members the records do not type (examples, links,
+  // callbacks, OAuth flows, a path item $ref, encodings) alike.
+  let json : Json = {
+    "openapi": "3.1.0",
+    "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+    "info": {
+      "title": "T",
+      "version": "1",
+      "summary": "s",
+      "license": { "name": "MIT", "url": "https://opensource.org/license/mit" },
+    },
+    "servers": [
+      {
+        "url": "https://{env}.example.test",
+        "variables": {
+          "env": {
+            "default": "api",
+            "enum": ["api", "staging"],
+            "description": "d",
+          },
+        },
+      },
+    ],
+    "paths": {
+      "/a": {
+        "summary": "a",
+        "servers": [{ "url": "https://a.example.test" }],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "deprecated": true,
+            "allowEmptyValue": true,
+            "allowReserved": true,
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" },
+                "example": { "k": 1 },
+                "encoding": { "k": { "contentType": "text/plain" } },
+              },
+            },
+            "examples": { "one": { "value": "1" } },
+          },
+        ],
+        "get": {
+          "responses": {
+            "200": {
+              "description": "ok",
+              "links": { "self": { "operationId": "get" } },
+              "headers": {
+                "X-Rate": {
+                  "deprecated": true,
+                  "style": "simple",
+                  "explode": false,
+                  "schema": { "type": "integer" },
+                  "example": 1,
+                },
+              },
+            },
+          },
+          "callbacks": { "hook": { "{$request.body#/url}": { "post": {} } } },
+          "servers": [{ "url": "https://get.example.test" }],
+          "externalDocs": { "url": "https://docs.example.test/get" },
+        },
+      },
+      "/b": { "$ref": "#/components/pathItems/B" },
+    },
+    "webhooks": {
+      "created": { "post": { "responses": { "200": { "description": "ok" } } } },
+    },
+    "components": {
+      "schemas": { "S": { "type": "string" } },
+      "responses": { "NotFound": { "description": "missing" } },
+      "parameters": { "Id": { "name": "id", "in": "path", "required": true } },
+      "requestBodies": {
+        "Body": {
+          "content": { "text/plain": { "schema": { "type": "string" } } },
+        },
+      },
+      "headers": { "H": { "schema": { "type": "string" } } },
+      "pathItems": { "B": { "summary": "b" } },
+      "examples": { "E": { "value": 1 } },
+      "links": { "L": { "operationId": "get" } },
+      "callbacks": { "C": {} },
+      "securitySchemes": {
+        "oauth": {
+          "type": "oauth2",
+          "flows": {
+            "clientCredentials": {
+              "tokenUrl": "https://t.example.test",
+              "scopes": {},
+            },
+          },
+        },
+        "oidc": {
+          "type": "openIdConnect",
+          "openIdConnectUrl": "https://id.example.test/.well-known/openid-configuration",
+        },
+      },
+    },
+    "security": [{ "oauth": [] }],
+    "tags": [
+      { "name": "t", "externalDocs": { "url": "https://docs.example.test/t" } },
+    ],
+    "externalDocs": { "url": "https://docs.example.test", "description": "d" },
+    "x-top": true,
+  }
+  assert_eq(round_trip(json), json)
+  let spec : @apispec.OpenApi = @json.from_json(json)
+  assert_eq(spec.paths["/b"].unmodeled, { "$ref": "#/components/pathItems/B" })
+  assert_eq(spec.components.unmodeled.length(), 3)
+  assert_eq(spec.servers[0].variables["env"].enum_, ["api", "staging"])
+  assert_eq(spec.extensions, { "x-top": true })
+}
+
+///|
+test "unmodeled members cannot replace fields or extensions" {
+  let tag = @apispec.Tag::new("t", unmodeled={
+    "name": "other",
+    "description": "absent but typed",
+    "x-a": 1,
+    "kept": "yes",
+  })
+  assert_eq(Json(tag), { "name": "t", "kept": "yes" })
+  let item = @apispec.PathItem::new(unmodeled={ "get": {}, "$ref": "#/r" })
+  assert_eq(Json(item), { "$ref": "#/r" })
+}
+
+///|
+/// Encodes `value`, decodes it again and compares.
+fn[T : ToJson + @json.FromJson + Eq] same_after_json(value : T) -> Unit raise {
+  let decoded : T = @json.from_json(Json(value))
+  if decoded != value {
+    fail("changed by a round trip: " + Json(value).stringify())
+  }
+}
+
+///|
+test "every record keeps an unmodeled member through encoding and decoding" {
+  let other : Map[String, Json] = { "zz": [1, "two"] }
+  let media = @apispec.MediaTypeObject::new(unmodeled=other)
+  let header = @apispec.HeaderObject::new(
+    content={ "text/plain": media },
+    unmodeled=other,
+  )
+  let docs = @apispec.ExternalDocs::new(
+    "https://docs.example.test",
+    description="d",
+    unmodeled=other,
+  )
+  let server = @apispec.Server::new(
+    "https://example.test",
+    variables={
+      "v": @apispec.ServerVariable::new("a", enum_=["a"], unmodeled=other),
+    },
+    unmodeled=other,
+  )
+  let parameter = @apispec.Parameter::new("q", "query", unmodeled=other)
+  let response = @apispec.ResponseObject::new(
+    "ok",
+    headers={ "h": header },
+    unmodeled=other,
+  )
+  let body = @apispec.RequestBody::new({ "text/plain": media }, unmodeled=other)
+  let operation = @apispec.Operation::new(
+    { "200": response },
+    request_body=body,
+    external_docs=docs,
+    unmodeled=other,
+  )
+  let item = @apispec.PathItem::new(
+    operations={ "get": operation },
+    parameters=[parameter],
+    unmodeled=other,
+  )
+  let scheme = @apispec.SecurityScheme::new("http", unmodeled=other)
+  let components = @apispec.Components::new(
+    security_schemes={ "s": scheme },
+    unmodeled=other,
+  )
+  let info = @apispec.Info::new(
+    "T",
+    "1",
+    contact=@apispec.Contact::new(unmodeled=other),
+    license=@apispec.License::new("MIT", unmodeled=other),
+    unmodeled=other,
+  )
+  let spec = @apispec.OpenApi::new(
+    info,
+    paths={ "/": item },
+    servers=[server],
+    components~,
+    tags=[@apispec.Tag::new("t", external_docs=docs, unmodeled=other)],
+    unmodeled=other,
+  )
+  same_after_json(media)
+  same_after_json(header)
+  same_after_json(docs)
+  same_after_json(server)
+  same_after_json(parameter)
+  same_after_json(response)
+  same_after_json(body)
+  same_after_json(operation)
+  same_after_json(item)
+  same_after_json(scheme)
+  same_after_json(components)
+  same_after_json(info)
+  same_after_json(spec)
+  assert_eq(Json(media), { "zz": [1, "two"] })
 }

@@ -55,6 +55,38 @@ fn add_extensions(
 }
 
 ///|
+/// The members of `obj` that are neither `known` fields nor `x-*`
+/// extensions: what decoding keeps verbatim as `unmodeled`.
+fn unmodeled_fields(
+  obj : Map[String, Json],
+  known : (String) -> Bool,
+) -> Map[String, Json] {
+  let out : Map[String, Json] = Map([])
+  for key, value in obj {
+    if !key.has_prefix("x-") && !known(key) {
+      out[key] = value
+    }
+  }
+  out
+}
+
+///|
+/// Adds the unmodeled members to an encoded object, after its fixed fields.
+/// A key that names a `known` field or an extension is dropped, so an
+/// unmodeled member cannot replace either.
+fn add_unmodeled(
+  obj : Map[String, Json],
+  unmodeled : Map[String, Json],
+  known : (String) -> Bool,
+) -> Unit {
+  for key, value in unmodeled {
+    if !key.has_prefix("x-") && !known(key) {
+      obj[key] = value
+    }
+  }
+}
+
+///|
 /// Decodes an optional member; absent and `null` are `None`.
 fn[T : @json.FromJson] optional_field(
   obj : Map[String, Json],
@@ -68,13 +100,25 @@ fn[T : @json.FromJson] optional_field(
 }
 
 ///|
+/// Whether `key` names a field PathItem types, operations included.
+fn is_path_item_field(key : String) -> Bool {
+  key is ("summary" | "description" | "servers" | "parameters") ||
+  is_method(key)
+}
+
+///|
 /// The operations and metadata for one path; operation keys are lowercase
-/// HTTP methods. Extensions are serialized alongside those operations.
+/// HTTP methods, and an operation under any other key is not encoded.
+/// Members it does not type (a `$ref`) are kept in `unmodeled`, and `x-*`
+/// members in `extensions`.
 #derive(Eq, Debug)
 pub(all) struct PathItem {
   operations : Map[String, Operation]
   summary : String?
   description : String?
+  servers : Array[Server]
+  parameters : Array[Parameter]
+  unmodeled : Map[String, Json]
   extensions : Map[String, Json]
 }
 
@@ -84,18 +128,25 @@ pub fn PathItem::new(
   operations~ : Map[String, Operation] = {},
   summary? : String,
   description? : String,
+  servers~ : Array[Server] = [],
+  parameters~ : Array[Parameter] = [],
+  unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> PathItem {
   {
     operations: operations.copy(),
     summary,
     description,
+    servers,
+    parameters,
+    unmodeled: unmodeled.copy(),
     extensions: extensions.copy(),
   }
 }
 
 ///|
-/// Encodes operation fields and x-* extensions at the path-item level.
+/// Encodes the metadata, the operations, the unmodeled members and the
+/// extensions of a path item.
 pub impl ToJson for PathItem with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
   if self.summary is Some(value) {
@@ -104,17 +155,25 @@ pub impl ToJson for PathItem with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
+  if !self.servers.is_empty() {
+    obj["servers"] = Json(self.servers)
+  }
+  if !self.parameters.is_empty() {
+    obj["parameters"] = Json(self.parameters)
+  }
   for key, value in self.operations {
     if is_method(key) {
       obj[key] = Json(value)
     }
   }
+  add_unmodeled(obj, self.unmodeled, is_path_item_field)
   add_extensions(obj, self.extensions)
   Json::object(obj)
 }
 
 ///|
-/// Decodes standard operation fields without mistaking extensions for methods.
+/// Decodes the operations by method, keeping unmodeled members and
+/// extensions apart from them.
 pub impl @json.FromJson for PathItem with fn from_json(value, path) {
   let obj = expect_object(value, path)
   let operations : Map[String, Operation] = Map([])
@@ -127,6 +186,9 @@ pub impl @json.FromJson for PathItem with fn from_json(value, path) {
     operations,
     summary: optional_field(obj, "summary", path),
     description: optional_field(obj, "description", path),
+    servers: field(obj, "servers", path, default=[]),
+    parameters: field(obj, "parameters", path, default=[]),
+    unmodeled: unmodeled_fields(obj, is_path_item_field),
     extensions: extension_fields(obj),
   }
 }
