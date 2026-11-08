@@ -60,4 +60,16 @@ test "single labels are the public suffixes known without a list" {
   assert_true(is_single_label("[::1]"))
   assert_false(is_single_label("example.com"))
   assert_false(is_single_label("co.uk"))
+  // The root dot does not add a label.
+  assert_true(is_single_label("com."))
+  assert_true(is_single_label("localhost."))
+  assert_false(is_single_label("example.com."))
+  assert_eq(without_root("com."), "com")
+  assert_eq(without_root("com"), "com")
+  for domain in [".com", "a..b", "com..", ".", ""] {
+    assert_true(has_empty_label(domain), msg=domain)
+  }
+  for domain in ["com.", "example.com", "example.com.", "[::1]"] {
+    assert_false(has_empty_label(domain), msg=domain)
+  }
 }

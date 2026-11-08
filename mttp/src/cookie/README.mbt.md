@@ -19,7 +19,9 @@ deterministic in tests. It is bounded:
 - no cookie lives longer than 400 days.
 
 Without a public-suffix list, only single-label domains count as public
-suffixes; pass `is_public_suffix` to refuse more `Domain` values.
+suffixes; pass `is_public_suffix` to refuse more `Domain` values. A host
+written with the root dot (`example.com.`) is a different host from
+`example.com`, as in browsers, and `Domain=com.` is still a single label.
 
 ```mbt check
 ///|

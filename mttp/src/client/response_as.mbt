@@ -348,6 +348,9 @@ pub fn[T] ResponsePlan::stream(
 
 ///|
 /// Reads bounded SSE events until EOF or a protocol stop predicate matches.
+/// An event over `max_event_bytes` raises `TooLarge(limit)` in phase Body as
+/// soon as the chunk holding it is read, after the events before it in that
+/// chunk were delivered.
 pub fn as_sse(
   receive : async (@sse.SseEvent) -> Unit,
   max_event_bytes~ : Int32 = 16 * 1024 * 1024,
@@ -362,6 +365,9 @@ pub fn as_sse(
         }
         receive(event)
       }
+      // An overflow behind the events this chunk completed is raised now,
+      // not after a read that may never come.
+      ignore(parser.feed(b""))
     }
     let _ = parser.finish()
   })

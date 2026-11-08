@@ -37,12 +37,32 @@ fn domain_match(host : String, domain : String) -> Bool {
 }
 
 ///|
+/// A domain without its root label: `com.` is `com`. A host or `Domain` that
+/// ends in the root dot names the same zone as one that does not, so the
+/// public-suffix rules read this form; matching still compares the names as
+/// written (see `CookieJar`).
+fn without_root(domain : String) -> String {
+  domain.strip_suffix(".").map(rest => rest.to_owned()).unwrap_or(domain)
+}
+
+///|
+/// Whether a `Domain` value has an empty label other than the root: `.com`,
+/// `a..b`, `com..` and `.` do; `com.` and `example.com` do not.
+fn has_empty_label(domain : String) -> Bool {
+  let name = without_root(domain)
+  name.is_empty() ||
+  name.has_prefix(".") ||
+  name.has_suffix(".") ||
+  name.contains("..")
+}
+
+///|
 /// The one public-suffix rule this package applies without a list: a
-/// single-label domain (`com`, `localhost`, a bracketed IPv6 literal) is a
-/// public suffix. Under the Public Suffix List every single label is one too
-/// (its default rule is `*`), so a list only adds to this rule.
+/// single-label domain (`com`, `com.`, `localhost`, a bracketed IPv6 literal)
+/// is a public suffix. Under the Public Suffix List every single label is one
+/// too (its default rule is `*`), so a list only adds to this rule.
 fn is_single_label(domain : String) -> Bool {
-  !domain.contains(".")
+  !without_root(domain).contains(".")
 }
 
 ///|
