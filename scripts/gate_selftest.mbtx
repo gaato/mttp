@@ -66,6 +66,31 @@ async fn probe(root : String, name : String, expected : String?) -> Unit {
 }
 
 ///|
+/// Exercise the actual mbti scan so skipping internal adapters cannot also
+/// exempt a public package that exposes an experimental runtime handle.
+async fn probe_interfaces(root : String, name : String, refused : Bool) -> Unit {
+  let output = @shell.Cmd(
+    "moon",
+    ["run", "scripts/runtime_gates.mbtx", "--", "interfaces"],
+    cwd=root,
+  ).output(timeout_ms=300000)
+  let log = output.stdout() + output.stderr()
+  @fs.write_text(root + "/" + name.replace_all(old=" ", new="-") + ".log", log)
+  let correct = if refused {
+    output.exit_code() != 0 &&
+    log.contains("selftest/runtime on native: the public interface mentions")
+  } else {
+    output.exit_code() == 0 && log.contains("runtime interfaces: OK")
+  }
+  if !correct {
+    println(log)
+    println("gate self-test evidence: " + root)
+    raise SelfTestFailed("gate interface self-test failed: " + name)
+  }
+  println("gate self-test: " + name + " OK")
+}
+
+///|
 async fn main {
   let root = @fs.tmpdir(prefix="mttp-gate-selftest-")
   @fs.mkdir(root + "/scripts")
@@ -128,6 +153,21 @@ async fn main {
   )
   @fs.write_text(root + "/runtime/src/moon.pkg", runtime_pkg)
   probe(root, "restored baseline", None)
+  @fs.write_text(root + "/scripts/non_exhaustive.tsv", "package\tenum\n")
+  let bridge_pkg = runtime_pkg.replace_all(old="} for \"test\"", new="}")
+  let bridge_source = "///|\npub fn handle(timer : @async.Timer) -> Unit { ignore(timer) }\n"
+  @fs.write_text(root + "/runtime/src/moon.pkg", bridge_pkg)
+  @fs.write_text(root + "/runtime/src/exposed.mbt", bridge_source)
+  probe_interfaces(root, "public runtime handle refused", true)
+  @fs.remove(root + "/runtime/src/exposed.mbt")
+  @fs.write_text(root + "/runtime/src/moon.pkg", runtime_pkg)
+  @fs.mkdir(root + "/runtime/src/internal/bridge", recursive=true)
+  @fs.write_text(root + "/runtime/src/internal/bridge/moon.pkg", bridge_pkg)
+  @fs.write_text(
+    root + "/runtime/src/internal/bridge/bridge.mbt",
+    bridge_source,
+  )
+  probe_interfaces(root, "internal runtime handle accepted", false)
   // The copy holds native build output; keep it only when a probe fails.
   @fs.rmdir(root, recursive=true)
 }

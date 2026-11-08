@@ -82,8 +82,10 @@ react to a half-closed stream.
 
 A successful Dialer TLS upgrade owns its input connection. A failed upgrade
 leaves that connection owned by the caller, which closes it. The runtime
-`TcpDialer` verifies certificates according to its `Trust` value (`System`
-by default; `Insecure` disables verification; `PemFile` adds roots), and it
+`TcpDialer` verifies certificates according to its root-package
+`gaato/http-async.Trust` value (`System`
+by default; `Insecure` disables verification; `PemFile` trusts only the
+certificates in the supplied PEM file, replacing system roots), and it
 can upgrade any `&Conn`, including a CONNECT tunnel. `ScriptedDialer` records
 upgrades without performing cryptography.
 
@@ -152,6 +154,10 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
 4. Decoded-byte limits are not a Backend concern. `Decompress` passes
    SendOptions through unchanged, so the engine bounds wire bytes, and the
    mttp Client's readers bound decoded bytes.
+
+JS fetch is the per-target exception: only host-decoded body bytes are
+visible, so both byte limits count those bytes. It cannot enforce a bound
+on compressed wire bytes.
 
 ## Driver and cancellation
 

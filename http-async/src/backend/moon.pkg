@@ -1,0 +1,56 @@
+import {
+  "gaato/http",
+  "gaato/http/h1client",
+  "gaato/http-async" @http_async,
+  "gaato/http-async/runtime",
+}
+
+#cfg(not(target="js"))
+import {
+  "gaato/http-async/conn",
+  "gaato/http-async/codings",
+  "moonbitlang/core/env",
+}
+
+#cfg(target="js")
+import {
+  "gaato/http/h1",
+  "moonbitlang/core/async/js_async",
+}
+
+import {
+  "gaato/http/sim",
+  "moonbitlang/core/async",
+} for "test"
+
+#cfg(not(target="js"))
+import {
+  "gaato/http/rt",
+  "moonbitlang/core/encoding/utf8",
+  "gaato/http/h1server",
+  "gaato/http-async/internal/socketconn",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/async/tls",
+} for "test"
+
+supported_targets = "native+wasm+js"
+
+options(
+  "allow-experimental-packages": [
+    "gaato/http/h1client",
+    "gaato/http/h1server",
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/js_async",
+    "moonbitlang/core/async/socket",
+    "moonbitlang/core/async/tls",
+  ],
+  targets: {
+    "platform.native.mbt": [ "native", "wasm" ],
+    "platform.js.mbt": [ "js" ],
+    "fetch_ffi.js.mbt": [ "js" ],
+    "fetch_body.js.mbt": [ "js" ],
+    "socket_test.mbt": [ "native", "wasm" ],
+    "tls_test.mbt": [ "native", "wasm" ],
+    "fetch.js_test.mbt": [ "js" ],
+  },
+)
