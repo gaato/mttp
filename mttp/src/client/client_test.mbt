@@ -281,3 +281,42 @@ test "fallback timer bounds slow backends and nonpositive attempts never send" {
   assert_eq(sent, 1)
   assert_eq(d.now(), 5)
 }
+
+///|
+test "an SSE overflow behind a delivered event is raised without another read" {
+  let d = @driver.Driver::new()
+  // One chunk: a complete event, then an event past the limit; the server
+  // then sends nothing for a long time.
+  let source = @sim.Feed::new(d, [
+    Chunk(b"data: ok\n\ndata: " + Bytes::make(32, b'x')),
+    Wait(1_000_000),
+    End,
+  ])
+  let client = @client.Client::new(
+    @client.from_handler(_ => {
+      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+    }),
+    @sim.SimClock::new(d),
+  )
+  let events = []
+  let failure = try {
+    ignore(
+      d.run(() => {
+        client.send(
+          @client.request(@http.Request::get("/")).response(
+            @client.as_sse(event => events.push(event.data), max_event_bytes=16),
+          ),
+        )
+      }),
+    )
+    None
+  } catch {
+    @http.TransportError(kind~, phase~, ..) => Some((kind, phase))
+    error => raise error
+  }
+  assert_eq(failure, Some((TooLarge(limit=16), Body)))
+  assert_eq(events, ["ok"])
+  assert_eq(d.now(), 0L)
+  assert_eq(source.reads(), 1)
+  assert_eq(source.closes(), 1)
+}
