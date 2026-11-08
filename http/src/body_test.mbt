@@ -157,3 +157,27 @@ test "read bounded closes on invalid limits and empty chunks" {
     assert_eq(source.closes, 1)
   }
 }
+
+///|
+test "request validation refuses a stream declaring a negative length" {
+  let source = feed([b"x"])
+  let request = @http.Request::post("https://example.test/").body_stream(
+    source,
+    length=-1,
+  )
+  let refused = try {
+    request.validate()
+    false
+  } catch {
+    @http.TransportError(kind=Invalid, phase=Pool, ..) => true
+    _ => false
+  }
+  assert_true(refused)
+  assert_eq(source.reads, 0)
+  assert_eq(source.closes, 1)
+  let fine = feed([b"x"])
+  @http.Request::post("https://example.test/")
+  .body_stream(fine, length=1)
+  .validate()
+  assert_eq(fine.closes, 0)
+}

@@ -2,10 +2,10 @@
 # Regenerate with 'scripts/gates.sh manifest --update' after adding or
 # removing tests.
 module	package	target	count
-gaato/http	gaato/http	js	72
-gaato/http	gaato/http	native	72
-gaato/http	gaato/http	wasm	72
-gaato/http	gaato/http	wasm-gc	72
+gaato/http	gaato/http	js	73
+gaato/http	gaato/http	native	73
+gaato/http	gaato/http	wasm	73
+gaato/http	gaato/http	wasm-gc	73
 gaato/http	gaato/http/driver	js	59
 gaato/http	gaato/http/driver	native	59
 gaato/http	gaato/http/driver	wasm	59
