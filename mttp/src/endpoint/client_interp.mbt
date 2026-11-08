@@ -81,22 +81,40 @@ fn decode_failure(error : DecodeError) -> @client.ResponseFailure {
 }
 
 ///|
+/// Tries buffered outputs first, then declared errors, preserving declaration
+/// order within each group. Both groups reuse the Client's bounded bytes.
+/// If neither decodes, retain the output failure when there was one.
 fn[S, I, E, O, M] Endpoint::decode_reply(
   self : Endpoint[S, I, E, O, M],
   head : @http.ResponseHead,
   bytes : Bytes,
 ) -> Result[Result[O, E], @client.ResponseFailure] raise {
-  try {
-    if self.output.decode_bytes(head, bytes) is Some(output) {
-      return Ok(Ok(output))
+  let mut failure : DecodeError? = None
+  let output = self.output.decode_bytes(head, bytes) catch {
+    DecodeError(_, ..) as error => {
+      failure = Some(error)
+      None
     }
-    if self.errors.decode_bytes(head, bytes) is Some(error) {
-      return Ok(Err(error))
-    }
-    Err(@client.UnexpectedStatus(head, body=excerpt(bytes)))
-  } catch {
-    DecodeError(_, ..) as error => Err(decode_failure(error))
     error => raise error
+  }
+  if output is Some(value) {
+    return Ok(Ok(value))
+  }
+  let declared = self.errors.decode_bytes(head, bytes) catch {
+    DecodeError(_, ..) as error => {
+      if failure is None {
+        failure = Some(error)
+      }
+      None
+    }
+    error => raise error
+  }
+  if declared is Some(value) {
+    return Ok(Err(value))
+  }
+  match failure {
+    Some(error) => Err(decode_failure(error))
+    None => Err(@client.UnexpectedStatus(head, body=excerpt(bytes)))
   }
 }
 

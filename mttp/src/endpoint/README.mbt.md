@@ -62,9 +62,20 @@ tail as an array, retaining empty segments and encoded slashes. A custom
 `Staged::ready`, `Staged::after_body` and `RequestSink` setters are public.
 Custom atoms must describe every request field their decoder consumes.
 
-Output unions try buffered decoders in declaration order. Projection functions
-used by `Variant::contramap` must be deterministic: selection and encoding may
-call a projection separately. `and_status` returns the received status alongside
+Matching buffered output variants are tried first, then matching declared-error
+variants, in declaration order within each group. The Client buffers the body
+once within its response limit and reuses those bytes for every candidate.
+The first successful decode wins; if all fail, `Deserialization` retains the
+last output failure (or the last declared-error failure if no output matched).
+An unmatched status or media type yields `UnexpectedStatus`.
+
+`query_list` embeds its item schema through `Schema.reference`, preserving
+named children, reachable definitions and definition problems for the shared
+definition checker.
+
+Projection functions used by `Variant::contramap` must be deterministic:
+selection and encoding may call a projection separately. `and_status` returns
+the received status alongside
 the typed value; `body_out` carries a per-response content type and bytes.
 `set_cookie` keeps separate Set-Cookie fields and returns each named cookie's
 value and attributes without interpreting its application-specific contents.
