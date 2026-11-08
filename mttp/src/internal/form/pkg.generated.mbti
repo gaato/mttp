@@ -1,0 +1,21 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/internal/form"
+
+// Values
+pub fn decode(String, Int32) -> Array[(String, String)] raise FormError
+
+pub fn decode_pair(StringView) -> (String, String)
+
+pub fn encode(ArrayView[(String, String)]) -> String
+
+// Errors
+pub(all) suberror FormError {
+  InvalidLimit
+  TooMany(Int32)
+}
+
+// Types and methods
+
+// Type aliases
+
+// Traits

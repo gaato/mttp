@@ -10,6 +10,9 @@ native.
 
 > **Status**: this version is being rebuilt in the
 > [mttp repository](https://github.com/gaato/mttp). The packages arrive one
+> at a time: `jsonkit`, `sse`, `multipart`, `cookie`, `schema`, the client
+> with its retry rules, and the test doubles are here; rate limits, the
+> cookie wrapper, endpoints, the router and OpenAPI follow.
 > at a time: `jsonkit`, `sse`, `multipart`, `cookie`, the client with its
 > retry rules, rate limits, the cookie wrapper, and the test doubles are
 > here; schemas, endpoints, the router and OpenAPI follow.
@@ -36,6 +39,7 @@ your `moon.mod`.
 | `gaato/mttp/client/ratelimit` | Bounded window state, grouped pacing, global quotas and header-driven admission on an injected clock |
 | `gaato/mttp/client/cookies` | A CookieJar backend wrapper; put it inside FollowRedirects to process every hop |
 | `gaato/mttp/testing` | `BackendStub`, canned answers and fault injection for client tests |
+| `gaato/mttp/schema` | Text, JSON and body codecs that carry their JSON Schema, validators, and decoding that collects every issue with its JSON pointer |
 
 ## Usage
 

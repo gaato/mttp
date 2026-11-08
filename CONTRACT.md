@@ -83,7 +83,8 @@ react to a half-closed stream.
 A successful Dialer TLS upgrade owns its input connection. A failed upgrade
 leaves that connection owned by the caller, which closes it. The runtime
 `TcpDialer` verifies certificates according to its `Trust` value (`System`
-by default; `Insecure` disables verification; `PemFile` adds roots), and it
+by default; `Insecure` disables verification; `PemFile` trusts only the
+certificates in the supplied PEM file, replacing system roots), and it
 can upgrade any `&Conn`, including a CONNECT tunnel. `ScriptedDialer` records
 upgrades without performing cryptography.
 
