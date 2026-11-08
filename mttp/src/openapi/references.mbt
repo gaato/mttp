@@ -100,7 +100,11 @@ fn ReferenceWalker::visit(
         | "if"
         | "then"
         | "else"
-        | "contentSchema" => if !self.visit(value, depth + 1) { return false }
+        | "contentSchema"
+        | "x-mttp-sse-data-schema" =>
+          if !self.visit(value, depth + 1) {
+            return false
+          }
         _ => ()
       }
     }

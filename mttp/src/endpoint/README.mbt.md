@@ -64,6 +64,15 @@ tail as an array, retaining empty segments and encoded slashes. A custom
 `Input::new` supplies its own atoms, staged decoder and inverse encoder;
 `Staged::ready`, `Staged::after_body` and `RequestSink` setters are public.
 Custom atoms must describe every request field their decoder consumes.
+`encoded_path_template` exposes the same literal encoding used by client
+requests, retaining capture placeholders for documentation. Dot-only literal
+segments are refused along with dot-only capture values, because transports
+normalize them. `media_type_token` exposes the media comparison used by body
+inputs and response matching: case-insensitive, without parameters.
+
+`raw_body()` requires a present body without restricting its media type;
+`raw_body().optional()` accepts absence. Present zero-length bytes remain
+present. Raw security may share buffered bytes with a typed regular body.
 
 `check_definitions` requires equivalent path templates to use the same capture
 names at each position, even for different methods. For example, GET

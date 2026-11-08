@@ -11,12 +11,28 @@ projected operation has explicit security, including `[]` for public routes,
 so adding document-level security later cannot accidentally protect a public
 endpoint. The projection itself leaves root security absent.
 
+Path literals use the endpoint client's shared encoding, so the source
+template `/files/a%2Fb/{id}` is documented as `/files/a%252Fb/{id}`. Capture
+placeholders stay intact. `check_documented` takes the source template and
+uses the same renderer. Dot-only literal segments are refused because HTTP
+transports normalize them away.
+
+Raw-only bodies use wildcard `*/*` content and the atom's requiredness. Raw
+security plus a typed body keeps the typed media/schema; either required
+consumer makes the shared body required. As for typed bodies, absent raw
+bodies differ from present empty bytes. Content keys use the server's shared
+case-insensitive media token without parameters.
+
 Differing schemas sharing a status and media type merge with `anyOf`, as do
 differing header schemas. Their accepted values may overlap; an exclusive
 `oneOf` would reject those values. A response header is required only if every
 merged representation of that status supplies it, including framework problem
 responses. Once any representation omits a header, it stays optional even if
 later representations supply it again.
+Fixed headers carry their `const` value. An SSE response describes the framed
+wire body as a string and its JSON event data under `x-mttp-sse-data-schema`;
+named payload schemas are hoisted and their references checked normally.
+Form schemas admit scalar strings and repeated string arrays for each name.
 
 ```mbt check
 ///|
@@ -51,6 +67,20 @@ The shared definition checker also refuses equivalent hierarchies with
 different capture names across methods, because separate `/pets/{id}` and
 `/pets/{name}` Path Items would make the document invalid. Consistent names
 let the methods share one Path Item. This applies to rest captures too.
+
+Projection refuses duplicate `(name, in)` parameters (header names are compared
+case-insensitively). It also refuses ordinary or signature header parameters
+named Accept, Content-Type or Authorization: OpenAPI ignores those entries,
+which would lose server-enforced constraints. Use typed body metadata or an
+explicit authentication input where applicable. Response Content-Type must
+come from a body representation rather than a Header Object for the same
+reason. These failures are structured `DefinitionError` findings.
+
+`headers()` and `query_params()` impose no fixed named-field requirements, so
+they add no invented parameters. Derived inputs add no wire requirements.
+Multipart is supported as an opaque body codec or stream; the endpoint layer
+does not parse multipart fields. Custom input atoms and codecs must describe
+their own decoding/encoding contracts, including any custom event mapping.
 
 `docs_endpoint` serves the generated JSON as a normal buffered endpoint.
 `check_documented` compares observed statuses against an operation, including

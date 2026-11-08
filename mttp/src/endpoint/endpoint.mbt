@@ -316,6 +316,9 @@ pub fn EndpointDoc::problems(self : EndpointDoc) -> Array[String] {
   if self.segments.length() > 64 {
     out.push("path exceeds 64 segments")
   }
+  if self.segments.iter().any(segment => segment is Lit("." | "..")) {
+    out.push("dot-only literal path segment")
+  }
   // "/a/" and "/a//b" would be routed and encoded as "/a" and "/a/b".
   if self.template != "/" &&
     self.template.split("/").drop(1).any(p => p.length() == 0) {

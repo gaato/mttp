@@ -36,6 +36,8 @@ pub fn[T] cookie(String, @schema.TextCodec[T]) -> Input[T]
 
 pub fn empty_variant(Int32, description? : String) -> Variant[Unit]
 
+pub fn encoded_path_template(String) -> String
+
 pub let endpoint : Endpoint[Unit, Unit, NoError, Unit, @client.Buffered]
 
 pub fn[T] header(String, @schema.TextCodec[T]) -> Input[T]
@@ -47,6 +49,8 @@ pub fn[T] json_out(@schema.BodyCodec[T], status? : Int32) -> Out[T, @client.Buff
 pub fn[T] json_variant(Int32, @schema.BodyCodec[T], description? : String) -> Variant[T]
 
 pub fn last_event_id() -> Input[String?]
+
+pub fn media_type_token(String) -> String
 
 pub fn no_content() -> Out[Unit, @client.Buffered]
 

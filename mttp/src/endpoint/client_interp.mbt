@@ -13,8 +13,8 @@ fn[S, I, E, O, M] Endpoint::encode_request(
   for segment in parse_template(self.template) {
     match segment {
       Lit(text) => {
-        path_builder.write_char('/')
-        path_builder.write_string(@http.percent_encode(text))
+        reject_dot_segment(text)
+        path_builder.write_string(encoded_literal_segment(text))
       }
       Cap(name) => {
         let value = sink.captures.get(name).unwrap_or("")
@@ -61,7 +61,7 @@ fn reject_dot_segment(value : String) -> Unit raise @client.InvalidRequest {
   // Fetch normalizes even percent-encoded dots, so escaping cannot preserve
   // these identifiers consistently across the supported transports.
   if value == "." || value == ".." {
-    raise @client.InvalidRequest(message="dot-only path capture")
+    raise @client.InvalidRequest(message="dot-only path segment")
   }
 }
 

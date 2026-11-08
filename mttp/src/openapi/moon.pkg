@@ -8,7 +8,12 @@ import {
 
 import {
   "moonbitlang/core/json",
+  "moonbitlang/core/debug",
   "gaato/http/driver",
+  "gaato/http/sim",
+  "gaato/mttp/client",
+  "gaato/mttp/router",
+  "gaato/mttp/multipart",
 } for "test"
 
 options(
@@ -17,5 +22,6 @@ options(
     "gaato/mttp/endpoint",
     "gaato/mttp/apispec",
     "gaato/http/driver",
+    "gaato/mttp/router",
   ],
 )

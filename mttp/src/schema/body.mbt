@@ -126,7 +126,12 @@ pub fn form_body(
     encode_: pairs => @text.encode_utf8(@form.encode(pairs)),
     schema_: Schema::of({
       "type": "object",
-      "additionalProperties": { "type": "string" },
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string" },
+          { "type": "array", "items": { "type": "string" } },
+        ],
+      },
     }),
   }
 }

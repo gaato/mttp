@@ -14,8 +14,11 @@ pub fn to_openapi(
   let schemes : Map[String, @apispec.SecurityScheme] = Map([])
   let paths : Map[String, @apispec.PathItem] = Map([])
   for doc in docs {
-    let parameters = []
+    let parameters : Array[@apispec.Parameter] = []
+    let seen_parameters : Map[String, Bool] = Map([])
     let mut request_body : @apispec.RequestBody? = None
+    let mut raw_body : @schema.Schema? = None
+    let mut raw_required = false
     let requirement : Map[String, Array[String]] = Map([])
     let all_schemes : Map[String, Array[String]] = Map([])
     for atom in [..doc.security, ..doc.inputs] {
@@ -27,31 +30,25 @@ pub fn to_openapi(
             Header => "header"
             _ => "cookie"
           }
-          let extensions : Map[String, Json] = if atom.rest {
-            { "x-mttp-rest": true }
-          } else {
-            {}
-          }
-          parameters.push(
-            @apispec.Parameter::new(
-              atom.name,
-              location,
-              required=atom.required,
-              schema=atom.schema.reference(schemas),
-              description?=atom.description,
-              extensions~,
-            ),
+          add_parameter(
+            parameters,
+            seen_parameters,
+            atom,
+            location,
+            schemas,
+            problems,
+            doc.template,
           )
         }
         Auth(scheme=Signature(_), ..) =>
-          parameters.push(
-            @apispec.Parameter::new(
-              atom.name,
-              "header",
-              required=atom.required,
-              schema=atom.schema.reference(schemas),
-              description?=atom.description,
-            ),
+          add_parameter(
+            parameters,
+            seen_parameters,
+            atom,
+            "header",
+            schemas,
+            problems,
+            doc.template,
           )
         Auth(scheme~, scheme_name~) => {
           let scheme = match scheme {
@@ -98,7 +95,7 @@ pub fn to_openapi(
             @apispec.RequestBody::new(
               Map([
                 (
-                  media_type,
+                  @endpoint.media_type_token(media_type),
                   @apispec.MediaTypeObject::new(
                     schema=atom.schema.reference(schemas),
                   ),
@@ -107,8 +104,28 @@ pub fn to_openapi(
               required=atom.required,
             ),
           )
-        RawBody | Derived | @endpoint.Location::.. => ()
+        RawBody => {
+          raw_body = Some(atom.schema)
+          raw_required = raw_required || atom.required
+        }
+        Derived | @endpoint.Location::.. => ()
       }
+    }
+    if raw_body is Some(schema) {
+      request_body = Some(
+        match request_body {
+          Some(typed) => { ..typed, required: typed.required || raw_required, }
+          None =>
+            @apispec.RequestBody::new(
+              {
+                "*/*": @apispec.MediaTypeObject::new(
+                  schema=schema.reference(schemas),
+                ),
+              },
+              required=raw_required,
+            )
+        },
+      )
     }
     let security : Array[Map[String, Array[String]]] = []
     if !requirement.is_empty() {
@@ -123,6 +140,15 @@ pub fn to_openapi(
     for variant in [..doc.outputs, ..doc.errors] {
       let headers : Map[String, @apispec.HeaderObject] = Map([])
       for name in variant.headers {
+        if name.to_lower() == "content-type" {
+          problems.push(
+            @endpoint.DefinitionProblem::new(
+              doc.template,
+              "OpenAPI ignores response Content-Type headers; use a body representation",
+            ),
+          )
+          continue
+        }
         let schema = variant.header_schemas
           .get(name.to_lower())
           .unwrap_or(@schema.string.schema())
@@ -139,7 +165,7 @@ pub fn to_openapi(
       let media = if variant.dynamic_media {
         Some("*/*")
       } else {
-        variant.media_type
+        variant.media_type.map(@endpoint.media_type_token)
       }
       let description = if variant.description.is_empty() {
         @http.reason_phrase(variant.status)
@@ -189,7 +215,7 @@ pub fn to_openapi(
         ),
       )
     }
-    let template = api_template(doc)
+    let template = @endpoint.encoded_path_template(doc.template)
     let item = paths.get(template).unwrap_or(@apispec.PathItem::new())
     if item.operations.contains(meth) {
       problems.push(
@@ -254,25 +280,6 @@ pub fn to_openapi(
 }
 
 ///|
-fn api_template(doc : @endpoint.EndpointDoc) -> String {
-  let builder = StringBuilder()
-  for segment in doc.segments {
-    builder.write_char('/')
-    match segment {
-      Lit(value) => builder.write_string(value)
-      Cap(name) | Rest(name) => builder.write_string("{" + name + "}")
-      @endpoint.Seg::.. => ()
-    }
-  }
-  let result = builder.to_string()
-  if result.is_empty() {
-    "/"
-  } else {
-    result
-  }
-}
-
-///|
 /// Creates a buffered endpoint serving this document as application/json.
 pub fn docs_endpoint(
   spec : @apispec.OpenApi,
@@ -294,7 +301,7 @@ pub fn check_documented(
   meth : @http.Method,
   status : Int32,
 ) -> String? {
-  let path = template.split("...}").join("}")
+  let path = @endpoint.encoded_path_template(template)
   guard spec.paths.get(path) is Some(item) else {
     return Some("no path " + template)
   }

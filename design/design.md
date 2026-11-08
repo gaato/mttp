@@ -806,10 +806,14 @@ Projection rules (verified in `wf3/rev` unless marked):
 
 | Concern | Rule |
 |---|---|
+| Paths | Client requests, projection and observed-status checks share literal-segment encoding, while capture placeholders remain intact. Dot-only literal segments are refused because transports normalize them away. |
+| Request bodies | Raw-only inputs use wildcard media and their requiredness. Raw security plus a typed body preserves the typed representation and is required if either consumer is required. Absence differs from present empty bytes for raw, typed and streamed inputs. Content keys use the interpreter's case-insensitive media token without parameters. |
+| Parameters | Named input parameters must be unique by name/location (header names case-insensitive). Projection refuses ordinary/signature Accept, Content-Type and Authorization header parameters because OpenAPI ignores them and would lose enforced constraints. Collection/derived inputs introduce no invented named requirements. |
 | Statuses | One response object per status. Content is keyed by media type. Variants with the same status and media type use inclusive `anyOf` when their schemas differ: they may overlap, so `oneOf` would reject values admitted by both. |
 | Framework statuses | 400, 401, 404, 405, 413, 415 and 500 (and 406/422 if chosen) are added per endpoint as `application/problem+json` with `$ref: #/components/schemas/Problem`, merged into any declared status. A declared 404 and the router's 404 share one response with two media types. |
 | Schemas | Component schemas are the union of every `defs`. (new) Two different definitions under one name are refused, and every `$ref` must resolve (conformance check). |
 | Response headers | `Variant::and_header`/`fixed_header` names appear under `responses.<status>.headers`. Differing header schemas use `anyOf`; a header is required only when every merged representation of that status, including framework problems, supplies it. Otherwise an omitted header would incorrectly invalidate a real response. |
+| Wire schemas | Fixed headers include their constant values. SSE is a framed string with the JSON payload schema under `x-mttp-sse-data-schema` (including checked references), rather than pretending the entire wire body is a JSON value. Form fields admit scalar or repeated string values. Response Content-Type comes from the representation, since OpenAPI ignores it as a Header Object. |
 | Security | All Auth atoms of one security input form **one** requirement object (AND). An all-optional security input adds `{}`. (new) `any_of` groups give OR; OAuth2 (flows, scopes, required scopes) and OpenIdConnect are added later. |
 | Signatures | A `signature_header` atom is a required header parameter, never an invented scheme type. |
 | Version | OpenAPI 3.1 only **[needs-user-input]**. |
