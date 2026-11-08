@@ -23,9 +23,10 @@ pub(all) enum DriverErrorKind {
   /// them for `max_unwind_rounds` rounds: they kept spawning new tasks while
   /// unwinding. `live` counts them.
   UnwindIncomplete(live~ : Int32)
-  /// A task spawned without `allow_failure` failed and no task saw it: none
-  /// was waiting on it, or every waiter was cancelled before it resumed.
-  /// `cause` is its error.
+  /// A task spawned without `allow_failure` failed (other than by
+  /// cancellation) and no `Task::wait` caller saw it: none was waiting, or
+  /// every waiter was cancelled before it resumed. `cancel_and_join` does
+  /// not count, since it hands back no outcome. `cause` is its error.
   TaskFailed(label~ : String, cause~ : Error)
   /// The main task of `run` finished by cancellation.
   MainCancelled
@@ -97,12 +98,22 @@ pub struct Task {
   priv mut cancel_requested : Bool
   priv mut cancel_mask : Int32
   priv mut gen : Int32
-  priv joiners : Array[Waker]
+  priv joiners : Array[Joiner]
   priv allow_failure : Bool
-  /// Waiters still to resume after this task failed while they waited.
+  /// `Task::wait` callers still to resume after this task failed while they
+  /// waited.
   priv mut failure_waiters : Int32
   /// Whether one of those waiters resumed and saw the failure.
   priv mut failure_observed : Bool
+}
+
+///|
+/// A task parked until another finishes. Only a `Task::wait` caller is
+/// handed the outcome (`observes`); `cancel_and_join` only waits for the
+/// end, so its registration never counts as seeing a failure.
+priv struct Joiner {
+  waker : Waker
+  observes : Bool
 }
 
 ///|
@@ -438,24 +449,24 @@ fn Driver::finish(self : Driver, task : Task, outcome : State) -> Unit {
   self.live.remove(task.id)
   match outcome {
     Failed(e) if !task.allow_failure =>
-      if task.joiners.is_empty() {
-        self.report(
-          DriverError(
-            kind=TaskFailed(label=task.label, cause=e),
-            detail="task \{task.id} failed and no task waited on it",
-          ),
-        )
-      } else {
+      match task.joiners.filter(j => j.observes).length() {
+        0 =>
+          self.report(
+            DriverError(
+              kind=TaskFailed(label=task.label, cause=e),
+              detail="task \{task.id} failed and no task waited on it",
+            ),
+          )
         // Whether a waiter sees the failure is known once each resumes: one
         // cancelled after this wake-up does not (`Task::waiter_resumed`).
-        task.failure_waiters = task.joiners.length()
+        waiters => task.failure_waiters = waiters
       }
     _ => ()
   }
   let joiners = task.joiners.copy()
   task.joiners.clear()
-  for w in joiners {
-    w.wake()
+  for j in joiners {
+    j.waker.wake()
   }
 }
 
@@ -645,7 +656,7 @@ fn Driver::drive(self : Driver, main_task : Task) -> Unit raise DriverError {
 ///
 /// Raises `DriverError`: `Deadlock` (or `Suspended` with auto-advance off)
 /// when every task is parked and no timer can wake one, `NoQuiescence` when
-/// the step budget runs out, `TaskFailed` when a task nobody waits on fails,
+/// the step budget runs out, `TaskFailed` when no waiter sees a task fail,
 /// `MainCancelled` when `main` is cancelled, `UnwindIncomplete` when tasks
 /// survive `max_unwind_rounds` rounds of cancellation, and `Reentrant` when
 /// called from a task of this driver. Live tasks are cancelled and unwound
@@ -824,9 +835,11 @@ pub fn Task::cancel(self : Task) -> Unit {
 ///|
 /// Cancels `tasks` and waits until each has finished, before delivering a
 /// pending cancellation of the caller at a later suspension. The mask is
-/// task-local and supports nested cleanup. Called from anything but a task
-/// of this driver, it only requests the cancellations, and the driver
-/// running the caller fails with `NotInTask`.
+/// task-local and supports nested cleanup. It hands back no outcome: a
+/// joined task that fails instead of ending by cancellation still fails the
+/// run with `TaskFailed` unless a `Task::wait` caller sees it. Called from
+/// anything but a task of this driver, it only requests the cancellations,
+/// and the driver running the caller fails with `NotInTask`.
 pub async fn Driver::cancel_and_join(
   self : Driver,
   tasks : Array[Task],
@@ -854,7 +867,11 @@ pub async fn Driver::cancel_and_join(
   }
   for task in tasks {
     while !task.is_finished() {
-      ignore(self.park_check_cancel(waker => task.joiners.push(waker)))
+      ignore(
+        self.park_check_cancel(waker => {
+          task.joiners.push({ waker, observes: false, })
+        }),
+      )
     }
   }
 }
@@ -900,8 +917,8 @@ pub fn Task::label(self : Task) -> String {
 
 ///|
 /// Waits for the task to finish: true if it completed, false if it was
-/// cancelled; raises its error if it failed. A task waited on does not fail
-/// the enclosing `run` with `TaskFailed`.
+/// cancelled; raises its error if it failed. A failure that a waiter sees
+/// this way does not also fail the enclosing `run` with `TaskFailed`.
 pub async fn Task::wait(self : Task) -> Bool {
   while true {
     match self.state {
@@ -912,7 +929,7 @@ pub async fn Task::wait(self : Task) -> Bool {
         let mut mine : Waker? = None
         let resumed = self.driver.park_check_cancel(w => {
           mine = Some(w)
-          self.joiners.push(w)
+          self.joiners.push({ waker: w, observes: true, })
         })
         guard resumed is Cancelled else {
           self.waiter_resumed(observed=true)
@@ -923,7 +940,7 @@ pub async fn Task::wait(self : Task) -> Bool {
           // leaves without having counted as an observer.
           match
             self.joiners.search_by(j => {
-              physical_equal(j.task, w.task) && j.gen == w.gen
+              physical_equal(j.waker.task, w.task) && j.waker.gen == w.gen
             }) {
             Some(i) => ignore(self.joiners.remove(i))
             None => self.waiter_resumed(observed=false)
