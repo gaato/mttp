@@ -2,3 +2,4 @@
 # Each entry is `<file> <rule> # reason`, one line per use, so every new use
 # needs its own decision. Rules: async-test, async-intrinsic, testing-import,
 # wbtest-testing-import, clock.
+http/src/rt/random.mbt clock # default_random is the host boundary for jitter and boundaries; callers take a random source with it as the default, so deterministic tests never read host entropy.

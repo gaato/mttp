@@ -1,0 +1,145 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/http/sim"
+
+import {
+  "gaato/http",
+  "gaato/http/driver",
+  "gaato/http/rt",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/quickcheck",
+}
+
+// Values
+pub fn byte_chunks(Bytes) -> Array[Bytes]
+
+pub async fn check_backend_contract(() -> &@http.Backend, url? : String) -> Unit
+
+pub async fn check_body_stream_contract(() -> &@http.BodyStream, Bytes, max_reads? : Int32) -> Unit
+
+pub async fn check_conn(&@rt.Conn, &@rt.Conn, coordination~ : &@rt.Coordination, suspend~ : async () -> Unit noraise, shutdown_left? : () -> Unit) -> Unit
+
+pub async fn check_coordination_contract(&@rt.Coordination, suspend~ : async () -> Unit noraise) -> Unit
+
+pub fn[T : Eq + @debug.Debug] check_splits(Bytes, (Array[Bytes]) -> T raise) -> Unit raise
+
+pub fn each_split(Bytes, (Bytes, Bytes) -> Unit raise?) -> Unit raise?
+
+pub fn gen_chunks(Bytes) -> @quickcheck.Generator[Array[Bytes]]
+
+pub fn gen_headers() -> @quickcheck.Generator[@http.Headers]
+
+pub fn gen_invalid_url() -> @quickcheck.Generator[String]
+
+pub fn gen_text() -> @quickcheck.Generator[String]
+
+pub fn pair(&@rt.Coordination, chunk_bytes? : Int32) -> (SimConn, SimConn)
+
+// Errors
+
+// Types and methods
+pub struct FakeClock {
+  // private fields
+}
+pub fn FakeClock::advance(Self, Int32) -> Unit
+pub fn FakeClock::new(start_unix_ms? : Int64) -> Self
+pub fn FakeClock::now_unix_ms(Self) -> Int64
+pub async fn FakeClock::sleep(Self, Int32) -> Unit noraise
+pub fn FakeClock::slept(Self) -> Array[Int32]
+pub impl @rt.Clock for FakeClock
+
+pub struct Feed {
+  // private fields
+}
+pub fn Feed::bytes(@driver.Driver, Array[Bytes]) -> Self
+pub fn Feed::cancellations(Self) -> Int32
+pub fn Feed::close(Self) -> Unit
+pub fn Feed::closes(Self) -> Int32
+pub fn Feed::is_closed(Self) -> Bool
+pub fn Feed::new(@driver.Driver, Array[FeedStep]) -> Self
+pub async fn Feed::read_some(Self) -> Bytes? raise @http.TransportError
+pub fn Feed::reads(Self) -> Int32
+pub impl @http.BodyStream for Feed
+
+#non_exhaustive
+pub(all) enum FeedStep {
+  Chunk(Bytes)
+  Wait(Int32)
+  Fail(@http.TransportError)
+  End
+}
+
+#non_exhaustive
+pub(all) enum ReadStep {
+  Chunk(Bytes)
+  Eof
+  Failure(@http.TransportError)
+  Wait(&@rt.Signal)
+}
+
+pub struct ScriptedConn {
+  // private fields
+}
+pub fn ScriptedConn::close(Self) -> Unit
+pub fn ScriptedConn::closes(Self) -> Int32
+pub fn ScriptedConn::new(Array[ReadStep], write_error? : @http.TransportError) -> Self
+pub async fn ScriptedConn::read(Self, max_len~ : Int32) -> Bytes? raise @http.TransportError
+pub async fn ScriptedConn::write(Self, Bytes) -> Unit raise @http.TransportError
+pub fn ScriptedConn::written(Self) -> Array[Bytes]
+pub impl @rt.Conn for ScriptedConn
+
+pub struct ScriptedDialer {
+  // private fields
+}
+pub async fn ScriptedDialer::connect(Self, host~ : String, port~ : Int32) -> &@rt.Conn raise @http.TransportError
+pub fn ScriptedDialer::dialed(Self) -> Array[(String, Int32)]
+pub fn ScriptedDialer::new(Array[&@rt.Conn]) -> Self
+pub async fn ScriptedDialer::start_tls(Self, &@rt.Conn, host~ : String) -> &@rt.Conn raise @http.TransportError
+pub fn ScriptedDialer::tls_hosts(Self) -> Array[String]
+pub impl @rt.Dialer for ScriptedDialer
+
+pub struct SimClock {
+  // private fields
+}
+pub fn SimClock::new(@driver.Driver) -> Self
+pub fn SimClock::now_unix_ms(Self) -> Int64
+pub async fn SimClock::sleep(Self, Int32) -> Unit noraise
+pub impl @rt.Clock for SimClock
+
+pub struct SimConn {
+  // private fields
+}
+pub fn SimConn::close(Self) -> Unit
+pub fn SimConn::closes(Self) -> Int32
+pub async fn SimConn::read(Self, max_len~ : Int32) -> Bytes? raise @http.TransportError
+pub fn SimConn::shutdown_write(Self) -> Unit
+pub async fn SimConn::write(Self, Bytes) -> Unit raise @http.TransportError
+pub impl @rt.Conn for SimConn
+
+pub struct SimCoordination {
+  // private fields
+}
+pub fn SimCoordination::new(@driver.Driver) -> Self
+pub fn SimCoordination::signal(Self) -> &@rt.Signal
+pub async fn SimCoordination::supervise(Self, primary~ : async () -> Unit raise @http.TransportError, monitor~ : async () -> Unit raise @http.TransportError) -> Unit raise @http.TransportError
+pub impl @rt.Coordination for SimCoordination
+
+pub struct SimGate {
+  // private fields
+}
+pub async fn SimGate::acquire(Self) -> Unit noraise
+pub fn SimGate::available(Self) -> Int32
+pub fn SimGate::new(@driver.Driver, permits? : Int32) -> Self
+pub fn SimGate::release(Self) -> Unit
+pub fn SimGate::waiting(Self) -> Int32
+pub impl @rt.Gate for SimGate
+
+pub struct SimTimer {
+  // private fields
+}
+pub fn SimTimer::new(@driver.Driver) -> Self
+pub async fn SimTimer::within(Self, Int32, async () -> Unit noraise) -> Bool noraise
+pub impl @rt.Timer for SimTimer
+
+// Type aliases
+
+// Traits

@@ -14,3 +14,5 @@ gaato/http/driver	DriverErrorKind
 gaato/http/h1	Framing
 gaato/http/h1	ParseKind
 gaato/http/h1	Version
+gaato/http/sim	FeedStep
+gaato/http/sim	ReadStep

@@ -1,0 +1,12 @@
+import {
+  "gaato/http",
+  "moonbitlang/core/env",
+}
+
+import {
+  "gaato/http/driver",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/http/driver" ],
+)
