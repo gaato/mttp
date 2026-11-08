@@ -457,39 +457,6 @@ impl @http.BodyStream for EventBody with fn close(self) {
 }
 
 ///|
-/// Reads `data` payloads through the moved, conformance-tested SseParser,
-/// so line endings, fields, comments and split chunks follow the SSE spec.
-priv struct SseReader {
-  stream : &@http.BodyStream
-  parser : @sse.SseParser
-  ready : Array[String]
-  mut offset : Int32
-}
-
-///|
-async fn SseReader::next_data(
-  self : SseReader,
-) -> String? raise @http.TransportError {
-  while self.offset == self.ready.length() {
-    self.ready.clear()
-    self.offset = 0
-    match self.stream.read_some() {
-      Some(chunk) =>
-        for e in self.parser.feed(chunk) {
-          self.ready.push(e.data)
-        }
-      None => {
-        ignore(self.parser.finish())
-        return None
-      }
-    }
-  }
-  let value = self.ready[self.offset]
-  self.offset += 1
-  Some(value)
-}
-
-///|
 /// Streams JSON event data with optional event metadata mapping.
 pub fn[T] sse_out(
   codec : @schema.JsonCodec[T],
@@ -535,26 +502,21 @@ pub fn[T] sse_out(
     },
     decode_bytes: None,
     decode_stream: Some((h, stream) => {
-      let reader = SseReader::{
-        stream,
-        parser: @sse.SseParser::new(),
-        ready: [],
-        offset: 0,
-      }
+      let reader = @sse.SseReader::new(stream)
       EventStream::from_pull(
         () => {
-          match reader.next_data() {
+          match reader.next_event() {
             None => None
-            Some(data) =>
+            Some(event) =>
               Some(
-                codec.body().decode(@http.encode_utf8(data)) catch {
+                codec.body().decode(@http.encode_utf8(event.data)) catch {
                   failure =>
                     raise DecodeError(h, message=failure.message(), body=b"")
                 },
               )
           }
         },
-        () => stream.close(),
+        () => reader.close(),
       )
     }),
   }
