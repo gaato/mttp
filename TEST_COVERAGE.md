@@ -32,6 +32,12 @@ rerun the tests.
 - Counts are Coveralls lines: lines with at least one instrumented point,
   covered when any point on them ran.
 
+The h1server read-ahead and timeout regressions run over sim + Driver on all
+four targets (69 tests per target). Its native coverage is 308/311 lines;
+the three remaining lines are the existing request-body defensive guards and
+future response-Body arm listed below. The ownership handoff, bounded buffer,
+peer failure/EOF distinction and input/producer timeout split add no exemptions.
+
 ### Pitfalls the script pins
 
 - In a `moon.work` workspace `moon -C <member> test` tests every member. The
@@ -90,3 +96,7 @@ Budgets are exact uncovered counts at the last measurement.
 | mttp/src/client/client.mbt | 1 | Defensive arm: `guard_retry` refuses a future `Decision` constructor, which cannot be built in this release, as `Stop(NotRetryable)`. |
 | mttp/src/client/response_as.mbt | 2 | Forward-compatible Body arms in buffering and in the diagnostic excerpt: a future body representation cannot be built in this release and is refused as `Invalid` rather than read as empty. |
 | mttp/src/client/curl.mbt | 1 | Forward-compatible Body arm: a future body representation is omitted from the diagnostic without being read; every current variant has a test. |
+| mttp/src/schema/collection.mbt | 1 | Encoding precondition: encoding through a recursive codec inside its own construction body aborts, as the codec it delegates to does not exist yet; decoding there is a tested `Malformed`. |
+| mttp/src/schema/decoder.mbt | 1 | Saturation of the default step budget for an input of more than 8 388 607 JSON values, which keeps 256 steps per value from overflowing `Int`; reaching it needs a tree of that size in memory. |
+| mttp/src/schema/primitives.mbt | 1 | Defensive arm: `double` checks decimal syntax first, which has no `inf` or `NaN`, and `@string.parse_double` raises on overflow, so the finite check cannot fail. |
+| mttp/src/schema/union.mbt | 3 | Encoding preconditions: exhaustive case projections and object payload encoders for tagged unions. Violating them is an application definition error that aborts; all untrusted-input decoding paths return tested structured errors. |

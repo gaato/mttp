@@ -25,6 +25,14 @@ priv struct RequestBody {
   /// `100 Continue` is still owed before the first read from the wire.
   mut expect : Bool
   mut failure : @http.TransportError?
+  /// The first body pull requests ownership from the read-ahead monitor.
+  mut claimed : Bool
+  claim : &@rt.Signal
+  /// Notified only after the monitor's pending read has unwound.
+  ready : &@rt.Signal
+  /// True during a body pull. Cancellation deliberately leaves it true so
+  /// an enclosing response-producer timeout can identify an input wait.
+  mut reading : Bool
   /// Notified once the whole body was read, so the peer monitor may read
   /// ahead.
   changed : &@rt.Signal
@@ -62,6 +70,10 @@ fn RequestBody::new(
     closed: false,
     expect: expect && !done,
     failure: None,
+    claimed: false,
+    claim: coordination.signal(),
+    ready: coordination.signal(),
+    reading: false,
     changed,
     started_at: None,
   }
@@ -92,7 +104,23 @@ async fn RequestBody::next(
   if self.failure is Some(error) {
     raise error
   }
-  let chunk = self.next_raw(max_len) catch { error => raise self.fail(error) }
+  self.reading = true
+  let chunk = try {
+    if !self.done && !self.claimed {
+      // Handoff cleanup counts against the first pull's body budget too.
+      let _ = self.budget()
+      self.claimed = true
+      self.claim.notify()
+      self.ready.wait()
+    }
+    self.next_raw(max_len)
+  } catch {
+    error => {
+      self.reading = false
+      raise self.fail(error)
+    }
+  }
+  self.reading = false
   if chunk is Some(bytes) {
     self.count += bytes.length().to_int64()
     if self.count > self.limits.max_body_bytes.to_int64() {

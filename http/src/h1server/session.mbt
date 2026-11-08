@@ -213,11 +213,12 @@ async fn Session::respond(
     error => {
       self.report(error)
       if !sent.val {
-        // A response that streams the request body may time out on it
-        // through its own deadline before the body's records a failure.
+        // The producer's timer can cancel a request pull before its own
+        // timer records a failure. An unread body alone proves nothing:
+        // an independent producer's timeout is a server failure.
         let status = match (source.failure, error) {
           (Some(failure), _) => body_status(failure)
-          (None, @http.TransportError(kind=Timeout(..), phase=Body, ..)) if !source.done =>
+          (None, @http.TransportError(kind=Timeout(..), phase=Body, ..)) if source.reading =>
             408
           _ => 500
         }
@@ -242,33 +243,72 @@ async fn Session::respond(
 }
 
 ///|
-/// Watches the peer while the exchange runs. Once the body was read, one
-/// bounded read ahead tells a reset from a pipelined request: a failure
-/// cancels the exchange, EOF lets it finish its response (the peer may have
-/// closed only its sending half), and bytes stay pending for the next head.
+/// Until the first body pull, reads raw bytes into the existing 64 KiB
+/// pending buffer. A claim cancels and joins that read before waking the
+/// body reader: the connection always has exactly one reader. Full buffers
+/// stop monitoring; progress then relies on body pulls or a configured
+/// handler deadline. Read-ahead does not parse a body, start its timer or
+/// send 100 Continue.
+/// Once the body is complete, one bounded read watches for peer failure.
+/// Clean EOF always preserves the current response (a sending half-close).
 async fn Session::watch_peer(
   self : Session,
   source : RequestBody,
 ) -> Unit raise @http.TransportError {
+  if !source.done {
+    self.coordination.supervise(primary=() => source.claim.wait(), monitor=() => {
+      // Append tiny fragments without repeatedly copying the whole buffer.
+      // Restore pending input on every exit, including handoff cancellation.
+      let pending = Buffer()
+      pending.write_bytes(self.wire.pending)
+      self.wire.pending = b""
+      defer {
+        self.wire.pending = pending.to_bytes()
+      }
+      while !source.claimed && pending.length() < io_bytes {
+        match self.read_peer(io_bytes - pending.length()) {
+          None => return
+          Some(bytes) => pending.write_bytes(bytes)
+        }
+      }
+    })
+    source.ready.notify()
+  }
   while !source.done {
     source.changed.wait()
   }
   if !self.wire.pending.is_empty() {
     return
   }
-  let next = self.wire.read(io_bytes, Unknown) catch {
+  if self.read_peer(io_bytes) is Some(bytes) {
+    self.wire.unread(bytes)
+  }
+}
+
+///|
+/// Reads directly from the connection. Only the peer monitor calls this,
+/// while it owns the read direction.
+async fn Session::read_peer(
+  self : Session,
+  max_len : Int32,
+) -> Bytes? raise @http.TransportError {
+  let next = self.wire.conn.read(max_len~) catch {
     error => {
       let change = self.control.step(PeerFailure)
       self.control = change.state
       if change.cancel_exchange {
-        raise error
+        let @http.TransportError(kind~, detail~, ..) = error
+        raise @http.TransportError(kind~, phase=Unknown, detail~)
       }
-      return
+      return None
     }
   }
   match next {
-    None => self.control = self.control.step(PeerEof).state
-    Some(bytes) => self.wire.unread(bytes)
+    None => {
+      self.control = self.control.step(PeerEof).state
+      None
+    }
+    Some(_) => next
   }
 }
 

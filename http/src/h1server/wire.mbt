@@ -1,7 +1,7 @@
 // One accepted connection with the bytes read past the message being
 // served. Every read is at most 64 KiB, and the engine never reads more
-// than one read ahead of the request it serves, so `pending` holds at most
-// one read.
+// than 64 KiB ahead while a request body is unclaimed, or one read after
+// the body completes. `pending` holds at most 64 KiB.
 
 ///|
 /// The largest single read or write on a connection.
