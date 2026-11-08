@@ -10,9 +10,9 @@ native.
 
 > **Status**: this version is being rebuilt in the
 > [mttp repository](https://github.com/gaato/mttp). The packages arrive one
-> at a time: `jsonkit`, `sse`, `multipart`, `cookie`, the client with its
-> retry rules, and the test doubles are here; rate limits, the cookie
-> wrapper, schemas, endpoints, the router and OpenAPI follow.
+> at a time: `jsonkit`, `sse`, `multipart`, `cookie`, `schema`, the client
+> with its retry rules, and the test doubles are here; rate limits, the
+> cookie wrapper, endpoints, the router and OpenAPI follow.
 
 ## Install
 
@@ -34,6 +34,7 @@ your `moon.mod`.
 | `gaato/mttp/client` | Request and response plans with Result-valued readers, the `Client` send loop (defaults, admission, deadlines, decoded-body limits, retries), `FollowRedirects`, `Paginator`, Retry-After and `Link` helpers |
 | `gaato/mttp/client/retry` | Retry rules and decisions as data, and the Retry-After parsers |
 | `gaato/mttp/testing` | `BackendStub`, canned answers and fault injection for client tests |
+| `gaato/mttp/schema` | Text, JSON and body codecs that carry their JSON Schema, validators, and decoding that collects every issue with its JSON pointer |
 
 ## Usage
 

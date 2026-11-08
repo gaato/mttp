@@ -10,7 +10,9 @@
 #                                           four) the package builds on,
 #                                           compared with the test manifest
 #   scripts/gates.sh static                 moon fmt --check, moon info and
-#                                           the mbti diff, the docs,
+#                                           the mbti diff, the generated
+#                                           sources against their
+#                                           generators, the docs,
 #                                           architecture, test layout,
 #                                           bounds, interface and coverage
 #                                           audits, the manifest's own
@@ -77,6 +79,8 @@ static_gates() {
     diff <(echo "$before") <(echo "$after") | grep -E '^[<>]' >&2 || true
     fail "pkg.generated.mbti was stale: 'moon info' changed it; commit the regenerated files"
   fi
+  # Generated sources must match their generators byte for byte.
+  step script scripts/gen_schema_objects.mbtx -- --check
   step script scripts/docs_audit.mbtx --self-test
   step script scripts/architecture_gate.mbtx --self-test
   step script scripts/test_layout.mbtx --self-test

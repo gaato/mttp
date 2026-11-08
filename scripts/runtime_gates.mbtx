@@ -491,7 +491,10 @@ async fn interfaces() -> Unit {
     for target in pkg.targets {
       let text = interface(pkg, target)
       for marker in runtime_markers {
-        if text.contains(marker) {
+        // Internal adapters intentionally exchange runtime handles. They are
+        // inaccessible to consumers; target and all other interface checks
+        // still apply, while the public boundary must expose only ports.
+        if !pkg.name.split("/").contains("internal") && text.contains(marker) {
           failures.push(
             "\{pkg.name} on \{target}: the public interface mentions \{marker}; expose a gaato/http/rt port instead",
           )

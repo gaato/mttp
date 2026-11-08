@@ -1,0 +1,30 @@
+import {
+  "gaato/http",
+  "gaato/codec_bytes",
+  "gaato/deflate",
+  "gaato/deflate/gzip",
+  "gaato/deflate/zlib",
+  "gaato/brotli",
+  "gaato/zstd",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/random",
+} for "wbtest"
+
+import {
+  "gaato/http/driver",
+  "gaato/http/sim",
+} for "test"
+
+supported_targets = "native+wasm+js"
+
+options(
+  "allow-experimental-packages": [
+    "gaato/http/driver",
+    "moonbitlang/core/async",
+  ],
+)
