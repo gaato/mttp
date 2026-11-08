@@ -107,3 +107,48 @@ test "a failure on a reused connection reports the same phase on every path" {
     }
   }
 }
+
+///|
+test "a failure on the way to a proxy reports the same phase on every path" {
+  let modes = [exchange(), streaming()]
+  for kind in [@http.Kind::Network, Protocol] {
+    // (the scheme, where the failure is injected, the phase to report)
+    let points : Array[(String, String, @http.Phase)] = [
+      ("https", "CONNECT answer", Dial),
+      ("https", "CONNECT write", Dial),
+      ("http", "forwarded head", Head),
+      ("http", "forwarded write", Write),
+    ]
+    for point in points {
+      let (scheme, at, phase) = point
+      for shape in shapes {
+        for options in modes {
+          let h = Harness::new(config={
+            ..@h1client.ClientConfig::default(),
+            proxy: @h1client.ProxyConfig::fixed("http://proxy.test:3128"),
+          })
+          let error = unphased(kind)
+          if at.has_suffix("write") {
+            ignore(h.scripted([Eof], write_error=error))
+          } else {
+            ignore(h.scripted([Failure(error)]))
+          }
+          h.run(() => {
+            let request = shaped(h, shape)
+            let request = {
+              ..request,
+              url: request.url.replace(old="http:", new="\{scheme}:"),
+            }
+            assert_eq(
+              attempt(h, request, options),
+              Err((kind, phase)),
+              msg="\{at} \{shape} \{Repr(options)}",
+            )
+            h.finish()
+          })
+          assert_eq(h.dialer.dialed, [("proxy.test", 3128)])
+        }
+      }
+    }
+  }
+}
