@@ -447,6 +447,7 @@ pub fn check_definitions(
     out.push(DefinitionProblem::new("", "negative adapter ceiling"))
   }
   let seen : Map[String, String] = Map([])
+  let template_names : Map[String, (String, Array[String])] = Map([])
   let operation_ids : Map[String, Bool] = Map([])
   let schemas : Map[String, Json] = Map([])
   for d in docs {
@@ -486,6 +487,35 @@ pub fn check_definitions(
     }
     for p in d.problems() {
       out.push({ template: d.template, message: p, fatal: true, })
+    }
+    // OpenAPI erases capture names (and the rest suffix) when deciding
+    // whether paths have the same hierarchy, independently of the method.
+    // Keep names consistent there so projection cannot create alias paths.
+    let hierarchy = d.segments
+      .map(s => {
+        match s {
+          Lit(l) => l
+          Cap(_) | Rest(_) => "{}"
+        }
+      })
+      .join("/")
+    let names = d.segments.filter_map(s => {
+      match s {
+        Lit(_) => None
+        Cap(name) | Rest(name) => Some(name)
+      }
+    })
+    match template_names.get(hierarchy) {
+      Some((other, previous)) =>
+        if previous != names {
+          out.push(
+            DefinitionProblem::new(
+              d.template,
+              "path capture names differ from equivalent template " + other,
+            ),
+          )
+        }
+      None => template_names[hierarchy] = (d.template, names)
     }
     let shape = d.segments
       .map(s => {

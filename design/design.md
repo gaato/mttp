@@ -775,6 +775,7 @@ The pipeline. Credentials are checked first, a deliberate deviation from tapir (
    - Unknown path: 404. Known path with the wrong method: 405 with `Allow`.
    - HEAD is served by GET; OPTIONS is answered automatically.
    - Once a route matches there is no fall-through.
+   - Equivalent template hierarchies must use identical capture names across methods. The shared definition checker refuses aliases such as GET `/pets/{id}` and DELETE `/pets/{name}`, so routing names stay consistent and OpenAPI cannot emit forbidden duplicate hierarchies. Rest captures follow the same naming rule after projecting their suffix away.
    - A `{name...}` rest capture with the lowest specificity is decided before P-03/P-06 freeze **[needs-prototype]**.
 2. **Decode the heads** of the security and regular inputs, collecting every failure up to `max_issues`.
 3. **Security head failed:** answer now. Auth atoms give 401 with `WWW-Authenticate`, others 400. The body is closed unread.

@@ -47,6 +47,10 @@ Dynamic output statuses use the default response and dynamic content types use
 `*/*`. Rest-path captures use a normal path parameter plus `x-mttp-rest`; generic
 OpenAPI clients do not know its slash-separated array encoding. Routes which
 would collapse to the same documented operation are refused.
+The shared definition checker also refuses equivalent hierarchies with
+different capture names across methods, because separate `/pets/{id}` and
+`/pets/{name}` Path Items would make the document invalid. Consistent names
+let the methods share one Path Item. This applies to rest captures too.
 
 `docs_endpoint` serves the generated JSON as a normal buffered endpoint.
 `check_documented` compares observed statuses against an operation, including

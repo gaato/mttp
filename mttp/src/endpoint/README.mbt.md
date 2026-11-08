@@ -65,6 +65,14 @@ tail as an array, retaining empty segments and encoded slashes. A custom
 `Staged::ready`, `Staged::after_body` and `RequestSink` setters are public.
 Custom atoms must describe every request field their decoder consumes.
 
+`check_definitions` requires equivalent path templates to use the same capture
+names at each position, even for different methods. For example, GET
+`/pets/{id}` and DELETE `/pets/{name}` are refused: OpenAPI would otherwise
+contain two forbidden aliases for the same hierarchy. Use `/pets/{id}` for
+both methods. Single and rest captures use the same naming rule when their
+paths project to the same OpenAPI hierarchy; distinct literal paths remain
+independent.
+
 Matching buffered output variants are tried first, then matching declared-error
 variants, in declaration order within each group. The Client buffers the body
 once within its response limit and reuses those bytes for every candidate.

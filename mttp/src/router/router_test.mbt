@@ -1,4 +1,33 @@
 ///|
+test "router refuses equivalent cross-method templates with inconsistent capture names" {
+  let get = @endpoint.endpoint
+    .get("/pets/{id}")
+    .input(@endpoint.path("id", @schema.string))
+    .serve_public(_ => Ok(()))
+  let delete = @endpoint.endpoint
+    .delete("/pets/{name}")
+    .input(@endpoint.path("name", @schema.string))
+    .serve_public(_ => Ok(()))
+  for endpoints in [[get, delete], [delete, get]] {
+    try ignore(@router.Router::new(endpoints)) catch {
+      @endpoint.DefinitionError(problems) =>
+        assert_true(
+          problems
+          .iter()
+          .any(p => {
+            p.fatal &&
+            p.message.has_prefix(
+              "path capture names differ from equivalent template ",
+            )
+          }),
+        )
+    } noraise {
+      _ => fail("inconsistent route capture names accepted")
+    }
+  }
+}
+
+///|
 test "literal routes win without falling through and HEAD OPTIONS are automatic" {
   let dynamic = @endpoint.endpoint
     .get("/items/{id}")
