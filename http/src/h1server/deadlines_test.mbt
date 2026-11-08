@@ -212,6 +212,103 @@ test "a peer that stops reading is cut off by the write deadline" {
 }
 
 ///|
+test "an independent first response producer timeout is 500 with an unread request body" {
+  for sent_body in ["", "abc"] {
+    let h = Harness::new()
+    let closes = Ref(0)
+    h.run(() => {
+      let (client, task) = h.serve(
+        _ => {
+          @http.Response::new(
+            200,
+            body=Stream(
+              @http.StreamBody::new(Stall::{
+                driver: h.driver,
+                closes,
+                step: 1,
+                closed: false,
+              }),
+            ),
+          )
+        },
+        limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 30, },
+      )
+      client.send(
+        "POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\n" + sent_body,
+      )
+      let out = client.rest()
+      assert_true(out.has_prefix("HTTP/1.1 500 "), msg=out)
+      ignore(task.wait())
+      assert_eq(h.driver.now(), 30L)
+      client.conn.close()
+    })
+    assert_eq(closes.val, 1)
+    assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
+  }
+}
+
+///|
+test "a response timeout after a successful partial input pull is a producer failure" {
+  let h = Harness::new()
+  let closes = Ref(0)
+  h.run(() => {
+    let (client, task) = h.serve(
+      request => {
+        guard request.body is Stream(stream) else {
+          return @http.Response::new(500)
+        }
+        let reader = stream.take() catch {
+          _ => return @http.Response::new(500)
+        }
+        @http.Response::new(
+          200,
+          body=Stream(
+            @http.StreamBody::new(InputThenStall::{
+              driver: h.driver,
+              reader,
+              closes,
+              closed: false,
+            }),
+          ),
+        )
+      },
+      limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 30, },
+    )
+    client.send("POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 2\r\n\r\na")
+    assert_eq(client.expect().status, 500)
+    assert_eq(client.rest(), "")
+    ignore(task.wait())
+    client.conn.close()
+  })
+  assert_eq(closes.val, 1)
+  assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
+}
+
+///|
+priv struct InputThenStall {
+  driver : @driver.Driver
+  reader : &@http.BodyStream
+  closes : Ref[Int32]
+  mut closed : Bool
+}
+
+///|
+impl @http.BodyStream for InputThenStall with fn read_some(self) {
+  ignore(self.reader.read_some())
+  self.driver.sleep(100000)
+  None
+}
+
+///|
+impl @http.BodyStream for InputThenStall with fn close(self) {
+  if !self.closed {
+    self.closed = true
+    self.reader.close()
+    self.closes.val += 1
+  }
+}
+
+///|
 test "a response producer that stalls is cut off after body_timeout_ms" {
   let h = Harness::new()
   let closes = Ref(0)

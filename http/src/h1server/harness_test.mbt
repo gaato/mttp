@@ -331,15 +331,29 @@ priv struct Recording {
   read_sizes : Array[Int32]
   write_sizes : Array[Int32]
   mut bytes_read : Int32
+  mut active_reads : Int32
+  mut max_readers : Int32
 }
 
 ///|
 fn Recording::new(inner : &@rt.Conn) -> Recording {
-  { inner, read_sizes: [], write_sizes: [], bytes_read: 0, }
+  {
+    inner,
+    read_sizes: [],
+    write_sizes: [],
+    bytes_read: 0,
+    active_reads: 0,
+    max_readers: 0,
+  }
 }
 
 ///|
 impl @rt.Conn for Recording with fn read(self, max_len~) {
+  self.active_reads += 1
+  self.max_readers = self.max_readers.max(self.active_reads)
+  defer {
+    self.active_reads -= 1
+  }
   self.read_sizes.push(max_len)
   let bytes = self.inner.read(max_len~)
   if bytes is Some(bytes) {

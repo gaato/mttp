@@ -42,6 +42,27 @@ test "100 Continue is sent only when the handler reads the body" {
 }
 
 ///|
+test "a full read ahead buffer is consumed before further body reads and preserves reuse" {
+  for chunk_bytes in [17, 65536] {
+    let h = Harness::new()
+    let upload = String::make(70000, 'x')
+    let calls = Ref(0)
+    let out = h.exchange(
+      @http.encode_utf8(post("/", upload) + get("/next")),
+      request => {
+        calls.val += 1
+        h.driver.sleep(10)
+        echo()(request)
+      },
+      chunk_bytes~,
+    )
+    assert_true(out.contains("\r\n\r\n" + upload + "HTTP/1.1 200 "))
+    assert_eq(calls.val, 2)
+    assert_eq(h.errors.length(), 0)
+  }
+}
+
+///|
 test "an HTTP/1.0 expectation of 100-continue is ignored" {
   let h = Harness::new()
   let out = h.exchange(

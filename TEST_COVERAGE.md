@@ -32,6 +32,12 @@ rerun the tests.
 - Counts are Coveralls lines: lines with at least one instrumented point,
   covered when any point on them ran.
 
+The h1server read-ahead and timeout regressions run over sim + Driver on all
+four targets (69 tests per target). Its native coverage is 308/311 lines;
+the three remaining lines are the existing request-body defensive guards and
+future response-Body arm listed below. The ownership handoff, bounded buffer,
+peer failure/EOF distinction and input/producer timeout split add no exemptions.
+
 ### Pitfalls the script pins
 
 - In a `moon.work` workspace `moon -C <member> test` tests every member. The

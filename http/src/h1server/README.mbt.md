@@ -71,14 +71,20 @@ test "serve a request" {
   other than 1.x) or 417 (an expectation other than `100-continue`).
 - **Bounded input.** Heads within `max_header_bytes` and 100 fields, chunk
   lines within 4 KiB, trailers within 16 KiB and 100 fields, bodies within
-  `max_body_bytes` (413), reads of at most 64 KiB, and at most one read ahead
-  of the request being served. A body the handler leaves unread is drained
+  `max_body_bytes` (413), reads of at most 64 KiB, and at most 64 KiB of raw
+  read-ahead while a body is unclaimed. Its first pull cancels and joins the
+  monitor's read before taking over, consuming buffered bytes first; there
+  is always one connection reader. After the body completes the monitor
+  makes at most one read ahead for the next head. A body left unread is drained
   up to `drain_max_bytes`, otherwise the connection closes.
 - **Deadlines.** `header_timeout_ms` from the end of one exchange to the end
   of the next head (408 once a byte arrived, a silent close before),
   `body_timeout_ms` for a whole request body (408) and for each write and
   each read of a streamed response, `handler_timeout_ms` for the handler
-  (504). A response stream that pauses longer than `body_timeout_ms` ends
+  (504). A timeout before the response head is 408 only when a request-body
+  pull was in progress or already failed; an independent response producer
+  timing out becomes 500 and reaches `on_error`, even with an unread body.
+  A response stream that pauses longer than `body_timeout_ms` ends
   its connection, so long-polling handlers raise that limit.
 - **Failures.** Before a response head is written, a body failure replaces
   the handler's response with its own status, even when the handler caught
@@ -87,8 +93,14 @@ test "serve a request" {
   `@http.TransportError`. `@http.Handler` is `noraise`; applications handle
   their own exceptions before returning a response.
 - **Peers.** `100 Continue` is sent when the handler first reads the body. A
-  read failure while the handler runs cancels it; EOF does not, because the
-  peer may have closed only its sending half. HTTP/1.0 keeps a connection
+  read failure while the handler runs cancels it, including while its body
+  is unclaimed and the read-ahead buffer has room. Once that buffer fills,
+  monitoring stops until the handler reads; body pulls and a configured
+  handler deadline must provide progress. The handler deadline defaults to
+  `None`, so a handler that never pulls or returns can still wait indefinitely
+  at this bound. Read-ahead neither sends `100 Continue` nor starts the lazy
+  body deadline. EOF does not cancel the handler, because the peer may have
+  closed only its sending half. HTTP/1.0 keeps a connection
   only when it asks for `keep-alive` and the response has a length; it is
   never sent a chunked body.
 - **Raw bytes.** The engine adds the framing fields and `Connection` and
