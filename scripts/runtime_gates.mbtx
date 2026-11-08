@@ -85,6 +85,7 @@ struct Package {
   dir : String
   targets : Array[String]
   four_target : Bool
+  example : Bool
   benchmark : Bool
 }
 
@@ -174,6 +175,7 @@ async fn packages() -> Array[Package] {
         dir: pkg_dir,
         targets,
         four_target: kind == "four-target",
+        example: kind == "example",
         benchmark: kind == "benchmark",
       })
     }
@@ -262,6 +264,20 @@ async fn run_tests(
     if checked.exit_code() != 0 || log.contains(experimental_warning) {
       println(log)
       failures.push("moon check on \{target}")
+    }
+    // Export smoke tests import the linked example, not the test bundle.
+    // Build examples before package tests so a clean checkout has artifacts.
+    let examples = selected.filter(pkg => pkg.example).map(pkg => pkg.dir)
+    if !examples.is_empty() {
+      let built = @shell.Cmd(
+        "moon",
+        ["build", "--deny-warn", "--target", target, ..examples],
+        env=moon_env(target),
+      ).output(timeout_ms=timeout_ms())
+      if built.exit_code() != 0 {
+        println(built.stdout() + built.stderr())
+        failures.push("moon build examples on \{target}")
+      }
     }
     for pkg in selected {
       if pkg.benchmark {

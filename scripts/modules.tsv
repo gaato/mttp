@@ -63,4 +63,6 @@ mttp	gaato/mttp	four-target	wasm-gc,wasm,js,native	gaato/http	moonbitlang/core,!
 mttp-digest	gaato/mttp-digest	four-target	wasm-gc,wasm,js,native	gaato/http,gaato/mttp,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/http,gaato/mttp,moonbitlang/x	test:gaato/http/driver	yes
 conformance	gaato/mttp-conformance	four-target	wasm-gc,wasm,js,native	gaato/http,gaato/mttp	moonbitlang/core,!moonbitlang/core/async,gaato/http,gaato/mttp	-	no
 examples/get	gaato/mttp-example-get	example	native,wasm	gaato/http,gaato/http-async	*	*	no
+examples/serve	gaato/mttp-example-serve	example	native	gaato/http,gaato/http-async	*	*	no
+examples/fetch	gaato/mttp-fetch-example	example	js	gaato/http,gaato/http-async	*	*	no
 benchmarks/transport	gaato/mttp-transport-bench	benchmark	native	gaato/http,gaato/http-async	*	*	no

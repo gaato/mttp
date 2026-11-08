@@ -1,0 +1,20 @@
+import {
+  "gaato/http",
+  "gaato/http/h1",
+  "moonbitlang/core/async/js_async",
+}
+
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/cond_var",
+} for "wbtest"
+
+supported_targets = "js"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/cond_var",
+    "moonbitlang/core/async/js_async",
+  ],
+)
