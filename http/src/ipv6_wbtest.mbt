@@ -1,5 +1,6 @@
 ///|
-/// RFC 5952 §4 and §5, plus §2's eight spellings of one address.
+/// RFC 5952 §4 and §2's eight spellings of one address; a dotted quad is
+/// written in hex, as the WHATWG URL serializer writes it.
 test "ipv6_canonical writes RFC 5952's form" {
   let cases = [
     // §4.1: leading zeros go.
@@ -35,13 +36,15 @@ test "ipv6_canonical writes RFC 5952's form" {
     ("1:0:0:2:0:0:0:0", "1:0:0:2::"),
     ("0:0:1:0:0:0:0:2", "0:0:1::2"),
     ("0:0:1:0:0:2:0:0", "::1:0:0:2:0:0"),
-    // §5: a dotted quad stays where it was written; hex stays hex.
-    ("::ffff:192.0.2.1", "::ffff:192.0.2.1"),
-    ("0:0:0:0:0:FFFF:192.0.2.1", "::ffff:192.0.2.1"),
-    ("::192.0.2.1", "::192.0.2.1"),
-    ("1:2:3:4:5:6:192.0.2.1", "1:2:3:4:5:6:192.0.2.1"),
-    ("1:0:0:4:5:6:0.0.0.0", "1::4:5:6:0.0.0.0"),
-    ("1:2:3:4:0:0:1.2.3.4", "1:2:3:4::1.2.3.4"),
+    // A dotted quad is two hex groups, so its run of zeros can be the
+    // compressed one.
+    ("::ffff:192.0.2.1", "::ffff:c000:201"),
+    ("0:0:0:0:0:FFFF:192.0.2.1", "::ffff:c000:201"),
+    ("::192.0.2.1", "::c000:201"),
+    ("1:2:3:4:5:6:192.0.2.1", "1:2:3:4:5:6:c000:201"),
+    ("1:0:0:4:5:6:0.0.0.0", "1::4:5:6:0:0"),
+    ("1:2:3:4:0:0:1.2.3.4", "1:2:3:4::102:304"),
+    ("1:2:3:4:5:6:0.0.0.0", "1:2:3:4:5:6::"),
     ("::ffff:c000:201", "::ffff:c000:201"),
   ]
   for case in cases {

@@ -23,7 +23,8 @@ way on wasm-gc, wasm, js and native without an async runtime.
   `defer` and `errdefer` blocks run, and no `catch` can intercept it.
 - Time is virtual. `Driver::sleep` arms a timer; when no task is ready, `run`
   jumps to the earliest timer (auto-advance). `Driver::add_timer` runs a
-  callback at a virtual instant.
+  callback at a virtual instant; one step fires only the timers armed before
+  it, so a callback that re-arms itself cannot starve the tasks.
 - `Driver::run(main)` returns `main`'s value or raises its error, then
   cancels the tasks still alive and lets them unwind.
 - `run_sync(f)` is `run` with auto-advance off: it refuses to wait, raising
@@ -41,10 +42,10 @@ a wildcard arm:
 | `Suspended(parked~)` | every task is parked under `run_sync` (auto-advance off) |
 | `NoQuiescence(steps~)` | one `run` took more than `max_steps` steps (default 100 000 000) |
 | `UnwindIncomplete(live~)` | tasks kept spawning tasks through `max_unwind_rounds` (8) rounds of cancellation |
-| `TaskFailed(label~, cause~)` | a task failed and no task waited on it |
+| `TaskFailed(label~, cause~)` | a task failed (other than by cancellation) and no `Task::wait` caller saw it: none waited, or every waiter was cancelled before it resumed. `cancel_and_join` returns no outcome, so joining a task does not count |
 | `MainCancelled` | the main task was cancelled |
 | `Reentrant` | `run` or `step` was called from a task of the same driver |
-| `NotInTask` | a task parked on a driver that is not running it, or `current()`, `current_task()` or an ambient helper was called outside a task |
+| `NotInTask` | a task parked on, or called `cancel_and_join` of, a driver that is not running it, or `current()`, `current_task()` or an ambient helper was called outside a task |
 
 ## Example
 
