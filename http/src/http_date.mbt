@@ -47,8 +47,10 @@ fn imf_fixdate(s : String) -> Int64? {
 }
 
 ///|
-/// `Sunday, 06-Nov-94 08:49:37 GMT`. A two-digit year that would put the date
-/// more than 50 years after `now_unix_ms` is taken from the century before.
+/// `Sunday, 06-Nov-94 08:49:37 GMT`. The two-digit year names the latest year
+/// with those digits that does not put the whole date more than 50 years
+/// after `now_unix_ms` (RFC 9110 §5.6.7), so it can fall in the next century
+/// as well as the previous one.
 fn rfc850_date(s : String, now_unix_ms : Int64) -> Int64? {
   guard s.find(", ") is Some(comma) else { return None }
   guard long_day_name(s[:comma]) is Some(weekday) else { return None }
@@ -64,10 +66,17 @@ fn rfc850_date(s : String, now_unix_ms : Int64) -> Int64? {
   guard month_name(s, at + 3) is Some(month) else { return None }
   guard date_digits(s, at + 7, 2) is Some(two_digits) else { return None }
   guard time_of_day(s, at + 10) is Some(time) else { return None }
-  let now_year = year_of(now_unix_ms)
-  let year = now_year - now_year % 100 + two_digits
-  let year = if year > now_year + 50 { year - 100 } else { year }
-  date_ms(weekday, year, month, day, time)
+  // The cutoff is the clock's own calendar instant 50 years on, so that a
+  // 29 February clock needs no day arithmetic.
+  let (now_year, now_month, now_day, now_ms_of_day) = civil_of(now_unix_ms)
+  let cutoff = (now_year + 50, now_month, now_day, now_ms_of_day)
+  let (hour, minute, second) = time
+  let ms_of_day = ((hour * 60 + minute) * 60 + second).to_int64() * 1000L
+  for year = now_year - now_year % 100 + two_digits + 100; ; year = year - 100 {
+    if (year, month, day, ms_of_day) <= cutoff {
+      break date_ms(weekday, year, month, day, time)
+    }
+  }
 }
 
 ///|
@@ -196,14 +205,17 @@ fn date_ms(
 }
 
 ///|
-/// The Gregorian year of a Unix time, clamped to 0–99999 so that an extreme
-/// clock cannot overflow the year arithmetic.
-fn year_of(unix_ms : Int64) -> Int32 {
+/// The Gregorian year, month, day and millisecond of the day of a Unix time.
+/// The year is clamped to 0–99999 so that an extreme clock cannot overflow
+/// the year arithmetic; the other fields are then those of the unclamped
+/// date.
+fn civil_of(unix_ms : Int64) -> (Int32, Int32, Int32, Int64) {
   let day = if unix_ms >= 0L {
     unix_ms / 86400000L
   } else {
     (unix_ms + 1L) / 86400000L - 1L
   }
+  let ms_of_day = unix_ms - day * 86400000L
   // The inverse of `days_from_civil`, on March-based eras.
   let z = day + 719468L
   let era = (if z >= 0L { z } else { z - 146096L }) / 146097L
@@ -211,8 +223,19 @@ fn year_of(unix_ms : Int64) -> Int32 {
   let yoe = (doe - doe / 1460L + doe / 36524L - doe / 146096L) / 365L
   let doy = doe - (365L * yoe + yoe / 4L - yoe / 100L)
   let march_month = (5L * doy + 2L) / 153L
-  let year = yoe + era * 400L + (if march_month >= 10L { 1L } else { 0L })
-  year.max(0L).min(99999L).to_int()
+  let day_of_month = doy - (153L * march_month + 2L) / 5L + 1L
+  let month = if march_month < 10L {
+    march_month + 3L
+  } else {
+    march_month - 9L
+  }
+  let year = yoe + era * 400L + (if month <= 2L { 1L } else { 0L })
+  (
+    year.max(0L).min(99999L).to_int(),
+    month.to_int(),
+    day_of_month.to_int(),
+    ms_of_day,
+  )
 }
 
 ///|
