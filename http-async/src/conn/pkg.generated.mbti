@@ -1,0 +1,36 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/http-async/conn"
+
+import {
+  "gaato/http",
+  "gaato/http/rt",
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct TcpDialer {
+  // private fields
+}
+pub async fn TcpDialer::connect(Self, host~ : String, port~ : Int32) -> &@rt.Conn raise @http.TransportError
+pub fn TcpDialer::new(trust? : Trust) -> Self
+pub async fn TcpDialer::start_tls(Self, &@rt.Conn, host~ : String) -> &@rt.Conn raise @http.TransportError
+pub impl @rt.Dialer for TcpDialer
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum Trust {
+  System
+  Insecure
+  PemFile(String)
+}
+pub fn Trust::equal(Self, Self) -> Bool
+pub fn Trust::not_equal(Self, Self) -> Bool
+pub fn Trust::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

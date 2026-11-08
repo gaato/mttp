@@ -93,7 +93,7 @@ Made by the user on 2026-10-24; they superseded the corresponding [needs-user-in
 | Module | Kind | Depends on | Why it is a module (principle 8) |
 |---|---|---|---|
 | `gaato/http` 0.6 | stable lower layer; wasm-gc, wasm, js, native | moonbitlang/core only; never `core/async*` or `core/compress*` | (b) Stable cadence. mttp, http-async and third-party libraries build on it; it changes rarely. |
-| `gaato/http-async` 0.6 | the only I/O module; native, wasm, js (codings on all 4) | gaato/http, moonbitlang/core (incl. `core/async`, opted in), gaato/codec_bytes, gaato/deflate, gaato/brotli, gaato/zstd | (a) External dependencies (codecs) and the one runtime. |
+| `gaato/http-async` 0.6 | the only I/O module; native, wasm, js | gaato/http, moonbitlang/core (incl. `core/async`, opted in), gaato/codec_bytes, gaato/deflate, gaato/brotli, gaato/zstd | (a) External dependencies (codecs) and the one runtime. |
 | `gaato/mttp` 0.1 | policy and description layer; all 4 targets | gaato/http, moonbitlang/core | (b) Experimental cadence over a stable base. |
 | `gaato/mttp-digest` 0.1 | Digest authentication wrapper | gaato/mttp, moonbitlang/x | (a) Crypto dependency; it must not reach every mttp consumer. |
 | `gaato/mttp-gen` | tool, **later** | moonbitlang/parser | A tool, installed with `moon install`, never listed in any moon.mod (F51). Dropped until a consumer needs it. |
@@ -140,7 +140,7 @@ Every package that imports core/async lists the exact core/async packages it use
 | `conn` | native, wasm | `TcpDialer`: `Tcp::connect_to_host`, then `Tls::client(ConnIo(&Conn), host~, trust~)`, so TLS also runs inside a CONNECT tunnel. Public type `Trust { System; Insecure; PemFile(String) }`; no core type is exposed. `internal/socketconn` adapts a Tcp/Tls to `&@rt.Conn` | `mttp-net/conn`, `mttp-net/internal/socketconn` (rewritten) |
 | `server` | native, wasm | Listener: TcpServer accepts and hands each connection to `@h1server.serve_conn`. Bind and accept failures are `ListenError` | `mttp-net/server` (rewritten; tests kept) |
 | `backend` | native, wasm, js | One type, `AsyncBackend`: on native/wasm the h1client engine + TcpDialer + Decompress; on js `fetch` over core's js_async. `impl @http.Backend` | `mttp-net/backend` |
-| `codings` | all 4 | Bounded ContentDecoder/ContentEncoder, coding plans, negotiation; **new** `Decompress` (Backend wrapper) and `compress` (Handler wrapper) | `mttp-net/codings` |
+| `codings` | native, wasm, js | Bounded ContentDecoder/ContentEncoder, coding plans, negotiation; **new** `Decompress` (Backend wrapper) and `compress` (Handler wrapper) | `mttp-net/codings` |
 | `fetch` | js | Host-neutral `fetch_handler(handler)(req, background)` | `mttp-net/fetch` |
 | `hosts` | js | JS entry shims for Workers, Fastly, Vercel, Deno, Bun and AWS Lambda URLs | `mttp-net/fetch` host shims |
 
@@ -882,7 +882,7 @@ pub impl @http.Backend for AsyncBackend                      // idle_connections
 // (a request that sets its own Accept-Encoding opts out, per the table below)
 // js: fetch over core's js_async; one type, so callers never branch on the target
 
-// codings (all 4)
+// codings (native, wasm, js)
 pub fn coding_plan(content_encoding : String) -> Array[Coding] raise @http.TransportError     // <= 5 codings
 pub fn ContentDecoder::new(plan : Array[Coding]) -> ContentDecoder raise @http.TransportError  // feed, pull (<= 64 KiB), end
 pub fn ContentEncoder::new(c : Coding) -> ContentEncoder raise @http.TransportError           // gzip, deflate, br; zstd decode-only
@@ -1017,7 +1017,7 @@ Every policy takes `&@rt.Clock`, and where needed `&@rt.Timer`, `&@rt.Gate` and 
 |---|---|---|---|---|
 | all of gaato/http (incl. engines; async tests via `run_sync`) | ✓ | ✓ | ✓ | ✓ |
 | all of gaato/mttp, gaato/mttp-digest | ✓ | ✓ | ✓ | ✓ |
-| http-async/codings | ✓ | ✓ | ✓ | ✓ |
+| http-async/codings | – | ✓ | ✓ | ✓ |
 | http-async/runtime, backend | – | ✓ (moonrun) | ✓ (request bodies buffered, ≤ 16 MiB) | ✓ |
 | http-async/conn, server | – | ✓ | – | ✓ |
 | http-async/fetch, hosts | – | – | ✓ | – |
