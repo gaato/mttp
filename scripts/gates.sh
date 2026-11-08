@@ -81,6 +81,7 @@ static_gates() {
   fi
   # Generated sources must match their generators byte for byte.
   step script scripts/gen_schema_objects.mbtx -- --check
+  step script scripts/gen_apispec.mbtx -- --check
   step script scripts/docs_audit.mbtx --self-test
   step script scripts/architecture_gate.mbtx --self-test
   step script scripts/test_layout.mbtx --self-test

@@ -1,0 +1,392 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/env",
+}
+----
+
+// Generates mttp/src/apispec/models.mbt: the OpenAPI 3.1 records with
+// explicit JSON codecs, from the table in `records` below. Explicit codecs
+// keep wire names (`in`, `operationId`) apart from MoonBit names, omit absent
+// optional fields and fields at their empty default, and flatten `x-*`
+// extensions into the object instead of nesting them.
+//
+// Usage, from the repository root:
+//   moon run scripts/gen_apispec.mbtx            (rewrites the file)
+//   moon run scripts/gen_apispec.mbtx -- --check (fails if it is stale)
+//
+// The output is already in `moon fmt` style, so the check compares bytes.
+//
+// Exit status: 0 = written or up to date, 1 = stale, 2 = bad usage.
+
+///|
+/// Where the generated source goes, relative to the repository root.
+let output : String = "mttp/src/apispec/models.mbt"
+
+///|
+/// How a field is constructed, encoded and decoded.
+enum Kind {
+  /// A positional constructor argument; always encoded; decoding requires it.
+  Required
+  /// A labelled argument with a default; decoding substitutes the default.
+  /// `omit` leaves the field out of the JSON while it equals the default.
+  Default(String, omit~ : Bool)
+  /// `T?`: an optional argument; encoded only when present; `null` decodes
+  /// as absent.
+  Optional
+}
+
+///|
+/// One field: its MoonBit name, its name on the wire, its type (without `?`
+/// for an optional one) and its kind.
+struct Field {
+  name : String
+  wire : String
+  type_ : String
+  kind : Kind
+}
+
+///|
+fn required(name : String, type_ : String, wire? : String) -> Field {
+  { name, wire: wire.unwrap_or(name), type_, kind: Required, }
+}
+
+///|
+fn default(
+  name : String,
+  type_ : String,
+  value : String,
+  wire? : String,
+  omit~ : Bool = true,
+) -> Field {
+  { name, wire: wire.unwrap_or(name), type_, kind: Default(value, omit~), }
+}
+
+///|
+fn optional(name : String, type_ : String, wire? : String) -> Field {
+  { name, wire: wire.unwrap_or(name), type_, kind: Optional, }
+}
+
+///|
+/// The records, in output order. `PathItem` is written by hand in
+/// `codec.mbt`: its operations are keyed by method, not by field.
+fn records() -> Array[(String, Array[Field])] {
+  let security = "Array[Map[String, Array[String]]]"
+  [
+    (
+      "Info",
+      [
+        required("title", "String"),
+        required("version", "String"),
+        optional("summary", "String"),
+        optional("description", "String"),
+        optional("terms_of_service", "String", wire="termsOfService"),
+        optional("contact", "Contact"),
+        optional("license", "License"),
+      ],
+    ),
+    (
+      "Contact",
+      [
+        optional("name", "String"),
+        optional("url", "String"),
+        optional("email", "String"),
+      ],
+    ),
+    (
+      "License",
+      [
+        required("name", "String"),
+        optional("identifier", "String"),
+        optional("url", "String"),
+      ],
+    ),
+    ("Server", [required("url", "String"), optional("description", "String")]),
+    ("Tag", [required("name", "String"), optional("description", "String")]),
+    (
+      "Parameter",
+      [
+        required("name", "String"),
+        required("in_", "String", wire="in"),
+        default("required", "Bool", "false"),
+        default("schema", "Json", "{}", omit=false),
+        optional("description", "String"),
+        optional("style", "String"),
+        optional("explode", "Bool"),
+      ],
+    ),
+    (
+      "HeaderObject",
+      [
+        default("required", "Bool", "false"),
+        default("schema", "Json", "{}", omit=false),
+        optional("description", "String"),
+      ],
+    ),
+    ("MediaTypeObject", [default("schema", "Json", "{}", omit=false)]),
+    (
+      "ResponseObject",
+      [
+        required("description", "String"),
+        default("headers", "Map[String, HeaderObject]", "{}"),
+        default("content", "Map[String, MediaTypeObject]", "{}"),
+      ],
+    ),
+    (
+      "RequestBody",
+      [
+        required("content", "Map[String, MediaTypeObject]"),
+        default("required", "Bool", "false"),
+        optional("description", "String"),
+      ],
+    ),
+    (
+      "Operation",
+      [
+        required("responses", "Map[String, ResponseObject]"),
+        optional("operation_id", "String", wire="operationId"),
+        optional("summary", "String"),
+        optional("description", "String"),
+        default("tags", "Array[String]", "[]"),
+        default("deprecated", "Bool", "false"),
+        default("parameters", "Array[Parameter]", "[]"),
+        optional("request_body", "RequestBody", wire="requestBody"),
+        // Absent inherits the document's requirements; `[]` removes them.
+        optional("security", security),
+      ],
+    ),
+    (
+      "SecurityScheme",
+      [
+        required("type_", "String", wire="type"),
+        optional("scheme", "String"),
+        optional("name", "String"),
+        optional("in_", "String", wire="in"),
+        optional("bearer_format", "String", wire="bearerFormat"),
+        optional("description", "String"),
+      ],
+    ),
+    (
+      "Components",
+      [
+        default("schemas", "Map[String, Json]", "{}"),
+        default(
+          "security_schemes",
+          "Map[String, SecurityScheme]",
+          "{}",
+          wire="securitySchemes",
+        ),
+      ],
+    ),
+    (
+      "OpenApi",
+      [
+        required("info", "Info"),
+        required("paths", "Map[String, PathItem]"),
+        default("openapi", "String", "\"3.1.0\"", omit=false),
+        default("servers", "Array[Server]", "[]"),
+        default("components", "Components", "Components::new()"),
+        default("tags", "Array[Tag]", "[]"),
+      ],
+    ),
+  ]
+}
+
+///|
+/// The widest line moon fmt leaves alone.
+let width : Int32 = 80
+
+///|
+/// `head` + `items` joined by ", " + `tail` on one line if it fits within
+/// `width`, else one item per line indented by `indent` + 2, as moon fmt
+/// lays out an argument list or a record literal. A record literal on one
+/// line keeps a trailing comma (`one_line_comma`).
+fn layout(
+  out : StringBuilder,
+  indent : String,
+  head : String,
+  items : Array[String],
+  tail : String,
+  one_line_comma~ : Bool,
+) -> Unit {
+  let joined = items.join(", ")
+  let comma = if one_line_comma { "," } else { "" }
+  let line = "\{indent}\{head}\{joined}\{comma}\{tail}"
+  if line.length() <= width {
+    out.write_string(line + "\n")
+  } else {
+    out.write_string("\{indent}\{head.trim_end(chars=" ")}\n")
+    for item in items {
+      out.write_string("\{indent}  \{item},\n")
+    }
+    out.write_string("\{indent}\{tail.trim_start(chars=" ")}\n")
+  }
+}
+
+///|
+/// The source of one record: the struct, its constructor and its codecs.
+fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
+  out.write_string(
+    (
+      $|///|
+      $|/// OpenAPI 3.1 \{name} data with flattened x-* extensions.
+      $|#derive(Eq, Debug)
+      $|pub(all) struct \{name} {
+      $|
+    ),
+  )
+  for field in fields {
+    let type_ = if field.kind is Optional {
+      field.type_ + "?"
+    } else {
+      field.type_
+    }
+    out.write_string("  \{field.name} : \{type_}\n")
+  }
+  out.write_string(
+    (
+      $|  extensions : Map[String, Json]
+      $|}
+      $|
+      $|///|
+      $|/// Creates \{name} data with defaults for optional fields.
+      $|pub fn \{name}::new(
+      $|
+    ),
+  )
+  for field in fields {
+    let param = match field.kind {
+      Required => "\{field.name} : \{field.type_}"
+      Default(value, ..) => "\{field.name}~ : \{field.type_} = \{value}"
+      Optional => "\{field.name}? : \{field.type_}"
+    }
+    out.write_string("  \{param},\n")
+  }
+  out.write_string("  extensions~ : Map[String, Json] = {},\n) -> \{name} {\n")
+  let members = fields.map(f => f.name)
+  members.push("extensions: extensions.copy()")
+  layout(out, "  ", "{ ", members, " }", one_line_comma=true)
+  out.write_string(
+    (
+      $|}
+      $|
+      $|///|
+      $|/// Encodes \{name}, omitting absent optional fields and fields at their
+      $|/// empty default.
+      $|pub impl ToJson for \{name} with fn to_json(self) {
+      $|  let obj : Map[String, Json] = Map([])
+      $|
+    ),
+  )
+  for field in fields {
+    let wire = Json(field.wire).stringify()
+    match field.kind {
+      Required | Default(_, omit=false) =>
+        out.write_string("  obj[\{wire}] = Json(self.\{field.name})\n")
+      Default(value, omit=true) => {
+        let changed = match value {
+          "[]" | "{}" => "!self.\{field.name}.is_empty()"
+          "false" => "self.\{field.name}"
+          _ => "self.\{field.name} != \{value}"
+        }
+        out.write_string(
+          (
+            $|  if \{changed} {
+            $|    obj[\{wire}] = Json(self.\{field.name})
+            $|  }
+            $|
+          ),
+        )
+      }
+      Optional =>
+        out.write_string(
+          (
+            $|  if self.\{field.name} is Some(value) {
+            $|    obj[\{wire}] = Json(value)
+            $|  }
+            $|
+          ),
+        )
+    }
+  }
+  out.write_string(
+    (
+      $|  add_extensions(obj, self.extensions)
+      $|  Json::object(obj)
+      $|}
+      $|
+      $|///|
+      $|/// Decodes \{name} while retaining extension fields.
+      $|pub impl @json.FromJson for \{name} with fn from_json(value, path) {
+      $|  let obj = expect_object(value, path)
+      $|  {
+      $|
+    ),
+  )
+  for field in fields {
+    let wire = Json(field.wire).stringify()
+    let call = match field.kind {
+      Required => "field(obj, \{wire}, path)"
+      Default(value, ..) => "field(obj, \{wire}, path, default=\{value})"
+      Optional => "optional_field(obj, \{wire}, path)"
+    }
+    out.write_string("    \{field.name}: \{call},\n")
+  }
+  out.write_string(
+    (
+      $|    extensions: extension_fields(obj),
+      $|  }
+      $|}
+      $|
+      $|///|
+      $|/// Compares \{name} values.
+      $|pub extend \{name} with Eq::{equal, not_equal}
+      $|
+      $|///|
+      $|/// Formats \{name} values.
+      $|pub extend \{name} with @debug.Debug::{to_repr}
+      $|
+      $|///|
+      $|/// Serializes \{name} to a JSON value.
+      $|pub extend \{name} with ToJson::{to_json}
+      $|
+      $|///|
+      $|/// Deserializes \{name} at a JSON path.
+      $|pub extend \{name} with @json.FromJson::{from_json}
+      $|
+    ),
+  )
+}
+
+///|
+/// The whole generated file.
+fn generate() -> String {
+  let out = StringBuilder()
+  out.write_string("// Generated by scripts/gen_apispec.mbtx. DO NOT EDIT.\n")
+  for item in records() {
+    let (name, fields) = item
+    out.write_string("\n")
+    record(out, name, fields)
+  }
+  out.to_string()
+}
+
+///|
+async fn main {
+  let text = generate()
+  match @env.args() {
+    [_] => @fs.write_text(output, text)
+    [_, "--check"] => {
+      let current = @fs.read_text(output) catch { _ => "" }
+      if current != text {
+        eprintln("\{output} is stale: run 'moon run scripts/gen_apispec.mbtx'")
+        @env.exit(1)
+      }
+    }
+    _ => {
+      eprintln("usage: moon run scripts/gen_apispec.mbtx [-- --check]")
+      @env.exit(2)
+    }
+  }
+}

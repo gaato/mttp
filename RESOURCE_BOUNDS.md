@@ -80,6 +80,7 @@ Growth that follows what the caller asks for, not what the network sends.
 | `mttp/sse` events returned by one `feed` | The chunk the caller feeds | Each event is bounded above, and each takes at least six bytes of input (`data`, a line end and a blank line). |
 | `mttp/multipart` framing and part descriptors | Caller-supplied parts | Framing and in-memory bodies are what the caller passed; a stream body holds the part streams and the part being read, and the boundary scan above. |
 | `mttp/schema` schemas, definition maps and issue arrays | Codecs and schemas the caller composes; a JSON tree already parsed | Definition maps grow with the named types the caller defines. A decode collects every issue; the built-in codecs add at most eight per step (an object's missing fields), so the step budget bounds them too. |
+| `mttp/apispec` documents | The records the caller builds or a JSON tree already parsed | Plain data: decoding follows the document's structure, and the bytes of a parsed document were bounded by whoever read them. |
 
 ## Known gaps
 
