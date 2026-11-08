@@ -16,7 +16,11 @@ test "wire writers retain duplicate fields and replace framing consistently" {
     assert_eq(parsed.get_all("set-cookie"), ["a=1", "b=2"])
     assert_eq(parsed.get("x"), Some("ÿ"))
     match framing {
-      NoBody | UntilClose => {
+      NoBody => {
+        assert_eq(parsed.get_all("content-length"), ["0"])
+        assert_eq(parsed.get("transfer-encoding"), None)
+      }
+      UntilClose => {
         assert_eq(parsed.get("content-length"), None)
         assert_eq(parsed.get("transfer-encoding"), None)
       }
@@ -102,5 +106,113 @@ test "writers reject invalid framing fields and request targets" {
     } noraise {
       _ => fail("accepted request")
     }
+  }
+}
+
+///|
+/// What `response_framing` must read back from a head written with
+/// `framing`: the same body, `Length(0)` for an empty one, and `NoBody`
+/// whenever the response cannot have a body.
+fn read_back(
+  status : Int32,
+  meth : @http.Method,
+  framing : @h1.Framing,
+) -> @h1.Framing {
+  let no_body = meth == Head ||
+    status / 100 == 1 ||
+    status == 204 ||
+    status == 304 ||
+    (meth == Connect && status / 100 == 2)
+  match framing {
+    _ if no_body => NoBody
+    NoBody => Length(0)
+    other => other
+  }
+}
+
+///|
+test "every written response head reads back with the framing it was written with" {
+  let framings : Array[@h1.Framing] = [
+    NoBody,
+    Length(0),
+    Length(7),
+    Chunked,
+    UntilClose,
+  ]
+  let methods : Array[@http.Method] = [Get, Head, Post, Connect]
+  for status in 100..<=599 {
+    for framing in framings {
+      for v in [@h1.Version::Http10, Http11] {
+        for meth in methods {
+          let refused = (
+              (
+                status / 100 == 1 ||
+                status == 204 ||
+                (meth == Connect && status / 100 == 2)
+              ) &&
+              framing != NoBody
+            ) ||
+            (framing == Chunked && v == Http10)
+          let case = "\{status} \{@debug.to_string(framing)} \{@debug.to_string(v)} \{meth}"
+          let head = @h1.write_response_head(
+            status,
+            @http.Headers::empty(),
+            framing,
+            v,
+            meth~,
+          ) catch {
+            @h1.ParseError(..) => {
+              assert_true(refused, msg="refused: \{case}")
+              continue
+            }
+          }
+          assert_false(refused, msg="accepted: \{case}")
+          let response = @h1.parse_response_head(head)
+          assert_eq(response.status, status, msg=case)
+          assert_eq(response.version, v, msg=case)
+          assert_eq(
+            @h1.response_framing(response.headers, status~, meth~),
+            read_back(status, meth, framing),
+            msg=case,
+          )
+          // A response that cannot have a body carries no framing field
+          // unless the caller described a GET's body (HEAD, 304).
+          if framing == NoBody && read_back(status, meth, NoBody) == NoBody {
+            assert_eq(response.headers.length(), 0, msg=case)
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
+test "a written request without a body declares an empty one only when the method expects content" {
+  let host = @http.Headers::of([("host", "h")])
+  for meth in [@http.Method::Post, Put, Patch] {
+    let head = @h1.write_request_head(meth, "/", host, NoBody, Http11)
+    let parsed = @h1.parse_request_head(head)
+    assert_eq(parsed.headers.get_all("content-length"), ["0"])
+    assert_eq(@h1.request_framing(parsed.headers), Length(0))
+  }
+  for meth in [@http.Method::Get, Head, Delete, Options, Trace, Other("PURGE")] {
+    let head = @h1.write_request_head(meth, "/", host, NoBody, Http11)
+    let parsed = @h1.parse_request_head(head)
+    assert_eq(parsed.headers.get("content-length"), None)
+    assert_eq(@h1.request_framing(parsed.headers), NoBody)
+    let head = @h1.write_request_head(meth, "/", host, Length(0), Http11)
+    assert_eq(
+      @h1.request_framing(@h1.parse_request_head(head).headers),
+      Length(0),
+    )
+  }
+  let connect = @h1.write_request_head(Connect, "h:443", host, NoBody, Http11)
+  assert_eq(@h1.parse_request_head(connect).headers.get("content-length"), None)
+  for v in [@h1.Version::Http10, Http11] {
+    let head = @h1.write_request_head(Post, "/", host, NoBody, v)
+    assert_eq(
+      @h1.request_framing(@h1.parse_request_head(head).headers),
+      Length(0),
+    )
   }
 }

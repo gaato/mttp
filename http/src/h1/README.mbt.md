@@ -62,8 +62,14 @@ test "resolve response framing" {
 
 `write_request_head` and `write_response_head` replace Content-Length and
 Transfer-Encoding with the ones the given `Framing` implies and raise instead
-of emitting bytes the parser would refuse. `encode_chunk` frames one chunk;
-an empty one ends the body.
+of emitting bytes the parser would refuse. What they write reads back with
+the same framing: `NoBody` becomes `Content-Length: 0` on a response that
+would otherwise be read until close, and on a POST, PUT or PATCH request,
+while a response that never has a body (to HEAD or a successful CONNECT, a
+1xx, 204 or 304) and a request whose method expects no content get no
+framing field. `write_response_head` takes the request method for this, as
+`response_framing` does. `encode_chunk` frames one chunk; an empty one ends
+the body.
 
 ```mbt check
 ///|

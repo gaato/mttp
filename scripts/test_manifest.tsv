@@ -10,10 +10,10 @@ gaato/http	gaato/http/driver	js	43
 gaato/http	gaato/http/driver	native	43
 gaato/http	gaato/http/driver	wasm	43
 gaato/http	gaato/http/driver	wasm-gc	43
-gaato/http	gaato/http/h1	js	37
-gaato/http	gaato/http/h1	native	37
-gaato/http	gaato/http/h1	wasm	37
-gaato/http	gaato/http/h1	wasm-gc	37
+gaato/http	gaato/http/h1	js	39
+gaato/http	gaato/http/h1	native	39
+gaato/http	gaato/http/h1	wasm	39
+gaato/http	gaato/http/h1	wasm-gc	39
 gaato/http	gaato/http/internal/form	js	0
 gaato/http	gaato/http/internal/form	native	0
 gaato/http	gaato/http/internal/form	wasm	0
