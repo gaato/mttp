@@ -60,14 +60,15 @@ fn frame(bytes : Bytes, framing : @h1.Framing) -> Bytes {
 ///|
 /// Sends the head and the body. The head goes out with the first piece; a
 /// stream is read under the Write limit and written piece by piece, never
-/// holding more than one piece.
+/// holding more than one piece. A failure of the stream itself is raised
+/// as `ProducerFailed`, every other failure as it is.
 async fn upload(
   wire : Wire,
   head : Bytes,
   upload : Upload,
   framing : @h1.Framing,
   timer : PhaseTimer,
-) -> Unit raise @http.TransportError {
+) -> Unit {
   match upload {
     Bytes(bytes) => {
       let first = (io_bytes - head.length()).max(0).min(bytes.length())
@@ -86,7 +87,9 @@ async fn upload(
           wire.send(data, timer)
         }
         prefix = b""
-        next = timer.run(Write, () => stream.read_some())
+        next = timer.run(Write, () => stream.read_some()) catch {
+          error => raise ProducerFailed(error)
+        }
       }
       let last = if framing is Chunked { @h1.encode_chunk(b"") } else { b"" }
       wire.send(prefix + last, timer)
@@ -115,10 +118,24 @@ async fn final_head(
 }
 
 ///|
+/// A request body stream that failed while it was uploaded, with its own
+/// error.
+priv suberror ProducerFailed {
+  ProducerFailed(@http.TransportError)
+}
+
+///|
+/// Why an upload ended early: its body stream failed, or the connection.
+priv enum UploadFailure {
+  Producer(@http.TransportError)
+  Connection(@http.TransportError)
+}
+
+///|
 /// The two halves of a concurrent exchange, as each finished.
 priv struct Duplex {
   mut head : Result[@h1.ParsedResponse, @http.TransportError]?
-  mut sent : Result[Unit, @http.TransportError]?
+  mut sent : Result[Unit, UploadFailure]?
   changed : &@rt.Signal
   head_ready : &@rt.Signal
 }
@@ -126,10 +143,12 @@ priv struct Duplex {
 ///|
 /// Uploads while reading the response head. The upload is the monitor of
 /// the exchange, so a final head that arrives first ends it by cancellation.
-/// A network failure of the upload may be the server closing after an
-/// early answer, so the head is still awaited; a producer failure is not
-/// made valid by any answer and fails the exchange. The head limit starts
-/// once the upload is done: a long upload is bounded by its writes.
+/// A network failure of a connection write may be the server closing after
+/// an early answer, so the head is still awaited. A failure of the body
+/// stream fails the exchange at once with the stream's own error, whatever
+/// it is: the request on the wire is incomplete, so no answer can be
+/// expected, and none would make it valid. The head limit starts once the
+/// upload is done: a long upload is bounded by its writes.
 async fn duplex(
   wire : Wire,
   head : Bytes,
@@ -153,7 +172,8 @@ async fn duplex(
       // reports them, so a failure does not depend on the body's size.
       state.sent = Some(
         Ok(upload(wire, head, body, framing, timer)) catch {
-          error => Err(failure(Write, error))
+          ProducerFailed(error) => Err(Producer(error))
+          error => Err(Connection(failure(Write, error)))
         },
       )
       state.changed.notify()
@@ -173,8 +193,11 @@ async fn duplex(
           while state.head is None && state.sent is None {
             state.changed.wait()
           }
-          if state.sent is Some(Err(error)) && !(kind_of(error) is Network) {
-            raise error
+          match state.sent {
+            Some(Err(Producer(error))) => raise error
+            Some(Err(Connection(error))) if !(kind_of(error) is Network) =>
+              raise error
+            _ => ()
           }
           if state.head is None {
             timer.run(Head, () => {
@@ -205,14 +228,14 @@ async fn duplex(
 }
 
 ///|
-/// The failure to report for `error`: the upload's own network failure
+/// The failure to report for `error`: the upload's own connection failure
 /// when it had one, since the read failed only because the peer went.
 fn Duplex::reported(
   self : Duplex,
   error : @http.TransportError,
 ) -> @http.TransportError {
   match self.sent {
-    Some(Err(write_error)) => write_error
+    Some(Err(Connection(write_error))) => write_error
     _ => error
   }
 }
