@@ -1,0 +1,21 @@
+import {
+  "gaato/http",
+  "gaato/mttp/schema",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/apispec",
+  "moonbitlang/core/string",
+}
+
+import {
+  "moonbitlang/core/json",
+  "gaato/http/driver",
+} for "test"
+
+options(
+  experimental: true,
+  "allow-experimental-packages": [
+    "gaato/mttp/endpoint",
+    "gaato/mttp/apispec",
+    "gaato/http/driver",
+  ],
+)

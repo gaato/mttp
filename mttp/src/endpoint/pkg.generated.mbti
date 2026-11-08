@@ -28,7 +28,7 @@ pub fn body_out(status? : Int32) -> Out[(String, Bytes), @client.Buffered]
 
 pub fn bytes_out(status? : Int32) -> Out[Bytes, @client.Buffered]
 
-pub fn check_definitions(Array[EndpointDoc]) -> Array[DefinitionProblem]
+pub fn check_definitions(Array[EndpointDoc], adapter_max_body_bytes? : Int32) -> Array[DefinitionProblem]
 
 pub fn client_ip(trust_forwarded? : Bool) -> Input[String?]
 

@@ -65,6 +65,10 @@ gaato/mttp	gaato/mttp/endpoint	js	57
 gaato/mttp	gaato/mttp/endpoint	native	57
 gaato/mttp	gaato/mttp/endpoint	wasm	57
 gaato/mttp	gaato/mttp/endpoint	wasm-gc	57
+gaato/mttp	gaato/mttp/endpoint/testkit	js	4
+gaato/mttp	gaato/mttp/endpoint/testkit	native	4
+gaato/mttp	gaato/mttp/endpoint/testkit	wasm	4
+gaato/mttp	gaato/mttp/endpoint/testkit	wasm-gc	4
 gaato/mttp	gaato/mttp/internal/form	js	0
 gaato/mttp	gaato/mttp/internal/form	native	0
 gaato/mttp	gaato/mttp/internal/form	wasm	0
@@ -81,6 +85,14 @@ gaato/mttp	gaato/mttp/multipart	js	38
 gaato/mttp	gaato/mttp/multipart	native	38
 gaato/mttp	gaato/mttp/multipart	wasm	38
 gaato/mttp	gaato/mttp/multipart	wasm-gc	38
+gaato/mttp	gaato/mttp/openapi	js	18
+gaato/mttp	gaato/mttp/openapi	native	18
+gaato/mttp	gaato/mttp/openapi	wasm	18
+gaato/mttp	gaato/mttp/openapi	wasm-gc	18
+gaato/mttp	gaato/mttp/router	js	37
+gaato/mttp	gaato/mttp/router	native	37
+gaato/mttp	gaato/mttp/router	wasm	37
+gaato/mttp	gaato/mttp/router	wasm-gc	37
 gaato/mttp	gaato/mttp/schema	js	32
 gaato/mttp	gaato/mttp/schema	native	32
 gaato/mttp	gaato/mttp/schema	wasm	32
