@@ -120,8 +120,6 @@ async fn Router::route(
   self : Router,
   request : @http.Request,
 ) -> @http.Response noraise {
-  let mut transferred = false
-  defer (if !transferred { discard(request.body) })
   let path = try {
     request.validate()
     let url = @http.Url::parse(request.url)
@@ -170,7 +168,6 @@ async fn Router::route(
   }
   for (endpoint, params) in candidates {
     if endpoint.doc().meth == Some(wanted) {
-      transferred = true
       return endpoint.dispatch(request, params, self.context)
     }
   }
@@ -216,55 +213,35 @@ pub async fn Router::dispatch(
       return head_response(request, problem(400, "Bad Request"))
     }
   }
-  let mut transferred = false
-  defer (if !transferred { discard(request.body) })
-  let mut next : @http.Handler = req => self.route(req)
+  let mut next : @http.Handler = req => {
+    with_owned_request(req, req => self.route(req))
+  }
   for i = self.options.middleware.length() - 1; i >= 0; i = i - 1 {
     let middleware = self.options.middleware[i]
     let inner = next
     next = req => {
-      let produced : Ref[@http.Response?] = Ref(None)
-      errdefer (if produced.val is Some(response) { response.close() })
-      let response = middleware(req, forwarded => {
-        // A taken stream belongs to the middleware's reader or lazy wrapper.
-        // Only an unclaimed response can be discarded by the router here.
-        if produced.val is Some(previous) {
+      with_owned_request(req, req => {
+        let produced : Ref[@http.Response?] = Ref(None)
+        errdefer (if produced.val is Some(response) { response.close() })
+        let response = middleware(req, forwarded => {
+          // A taken stream belongs to the middleware's reader or lazy wrapper.
+          // Only an unclaimed response can be discarded by the router here.
+          if produced.val is Some(previous) {
+            previous.close_if_unclaimed()
+          }
+          let response = inner(forwarded)
+          produced.val = Some(response)
+          response
+        })
+        if produced.val is Some(previous) && previous.body != response.body {
           previous.close_if_unclaimed()
         }
-        let response = inner(forwarded)
-        produced.val = Some(response)
         response
       })
-      if produced.val is Some(previous) && previous.body != response.body {
-        previous.close_if_unclaimed()
-      }
-      response
     }
   }
   let response = next(request)
-  if request.meth is Head {
-    response.close()
-    return { ..response, body: Empty, }
-  }
-  if response.body is Stream(stream) {
-    let reader = stream.take() catch {
-      _ => {
-        response.close()
-        return problem(500, "Internal Server Error")
-      }
-    }
-    let owned : &@http.BodyStream = ResponseOwner::{
-      reader,
-      request: request.body,
-      closed: false,
-    }
-    transferred = true
-    return {
-      ..response,
-      body: Stream(@http.StreamBody::new(owned, length?=stream.length())),
-    }
-  }
-  response
+  head_response(request, response)
 }
 
 ///|

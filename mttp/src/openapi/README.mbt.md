@@ -11,6 +11,13 @@ projected operation has explicit security, including `[]` for public routes,
 so adding document-level security later cannot accidentally protect a public
 endpoint. The projection itself leaves root security absent.
 
+Differing schemas sharing a status and media type merge with `anyOf`, as do
+differing header schemas. Their accepted values may overlap; an exclusive
+`oneOf` would reject those values. A response header is required only if every
+merged representation of that status supplies it, including framework problem
+responses. Once any representation omits a header, it stays optional even if
+later representations supply it again.
+
 ```mbt check
 ///|
 test "OpenAPI endpoint projection" {

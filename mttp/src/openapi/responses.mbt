@@ -18,9 +18,8 @@ fn add_response(
   schema : Json?,
   headers : Map[String, @apispec.HeaderObject],
 ) -> Unit {
-  let previous = responses
-    .get(key)
-    .unwrap_or(@apispec.ResponseObject::new(description))
+  let existing = responses.get(key)
+  let previous = existing.unwrap_or(@apispec.ResponseObject::new(description))
   let content = previous.content.copy()
   if media is Some(media) {
     let schema = schema.unwrap_or({})
@@ -29,21 +28,33 @@ fn add_response(
       Some(old) if old.schema == Some(schema) => old
       Some(old) =>
         @apispec.MediaTypeObject::new(schema={
-          "oneOf": [old.schema.unwrap_or({}), schema],
+          "anyOf": [old.schema.unwrap_or({}), schema],
         })
     }
   }
   let merged = previous.headers.copy()
+  // A Response Object describes every representation of this status, so a
+  // header omitted by even one representation cannot remain required.
+  for name, header in previous.headers {
+    if !headers.contains(name) {
+      merged[name] = { ..header, required: false, }
+    }
+  }
   for name, header in headers {
     merged[name] = match merged.get(name) {
-      Some(old) if old.schema != header.schema =>
+      Some(old) =>
         {
           ..old,
-          schema: Some({
-            "oneOf": [old.schema.unwrap_or({}), header.schema.unwrap_or({})],
-          }),
+          required: old.required && header.required,
+          schema: if old.schema == header.schema {
+            old.schema
+          } else {
+            Some({
+              "anyOf": [old.schema.unwrap_or({}), header.schema.unwrap_or({})],
+            })
+          },
         }
-      _ => header
+      None => { ..header, required: existing is None && header.required, }
     }
   }
   responses[key] = { ..previous, content, headers: merged, }

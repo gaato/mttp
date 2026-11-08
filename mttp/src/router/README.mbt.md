@@ -56,9 +56,16 @@ responses without credentials always carry `Access-Control-Allow-Origin: *`.
 OPTIONS responses also vary on the preflight method and headers before any
 early return, so missing headers cannot prime a different preflight result.
 
-Middleware owns any resources it creates. Calling `next` transfers its forwarded
-request to the inner handler. Router closes an inner response that middleware
-replaces without taking its reader, and retains the original request until a
-returned stream finishes. Taking an inner stream transfers its ownership to
+Middleware owns resources it creates until it calls `next` with them. Each
+handler boundary then owns its incoming request body, including a replacement
+body supplied upstream. Buffered responses, short-circuits and cancellation
+close that body. A streamed response retains it until EOF, close, failure or
+cancellation, because lazy middleware and custom rejection handlers may still
+read it after returning the head.
+
+Router also closes an inner response that middleware replaces without taking
+its reader. Taking an inner response stream transfers its ownership to
 middleware: a lazy wrapper must close that reader on completion, failure or
-cancellation, and middleware must close any taken reader it discards.
+cancellation, and middleware must close any taken reader it discards. Every
+call to `next` owns the body passed to that call, even if an inner middleware
+returns without routing it.

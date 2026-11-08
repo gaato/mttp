@@ -1,6 +1,36 @@
 ///|
-// Middleware may return a lazy response which consumes the original body.
-// Keep that body alive even when middleware never invokes its next handler.
+// Every handler boundary owns its incoming body, including bodies replaced
+// upstream. A lazy response may still consume it, so transfer cleanup to that
+// response instead of closing the input as soon as the head is returned.
+async fn with_owned_request(
+  request : @http.Request,
+  handler : @http.Handler,
+) -> @http.Response noraise {
+  let mut transferred = false
+  defer (if !transferred { discard(request.body) })
+  let response = handler(request)
+  if response.body is Stream(stream) {
+    let reader = stream.take() catch {
+      _ => {
+        response.close()
+        return problem(500, "Internal Server Error")
+      }
+    }
+    let owned : &@http.BodyStream = ResponseOwner::{
+      reader,
+      request: request.body,
+      closed: false,
+    }
+    transferred = true
+    return {
+      ..response,
+      body: Stream(@http.StreamBody::new(owned, length?=stream.length())),
+    }
+  }
+  response
+}
+
+///|
 priv struct ResponseOwner {
   reader : &@http.BodyStream
   request : @http.Body

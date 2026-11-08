@@ -326,7 +326,7 @@ test "rest routes retain observed status checks and refuse projected collisions"
 }
 
 ///|
-test "multiple representations merge with oneOf and framework Problem cannot be overwritten" {
+test "multiple representations merge with anyOf and framework Problem cannot be overwritten" {
   let output = @endpoint.one_of([
     @endpoint.json_variant(200, @schema.jint.body()).and_header(
       "x", @schema.int,
@@ -343,11 +343,11 @@ test "multiple representations merge with oneOf and framework Problem cannot be 
   let spec = @openapi.to_openapi([ep.doc()], @apispec.Info::new("Test", "1"))
   assert_true(
     spec.paths["/"].operations["get"].responses["200"].content["application/json"].schema.unwrap()
-    is { "oneOf": Array(_), .. },
+    is { "anyOf": Array(_), .. },
   )
   assert_true(
     spec.paths["/"].operations["get"].responses["200"].headers["x"].schema.unwrap()
-    is { "oneOf": Array(_), .. },
+    is { "anyOf": Array(_), .. },
   )
   let codec = @schema.BodyCodec::new(
     "text/plain",
