@@ -36,6 +36,10 @@ a test from hanging.
 
 | Structure | Bound | On overflow | Tests |
 |---|---|---|---|
+| `http/driver` steps of one `Driver::run` (and of manual `step` calls since it started) | `max_steps`, default 100 000 000 | `step` raises `DriverError(NoQuiescence(steps~))`; `run` cancels and unwinds the live tasks first | `http/src/driver/driver_test.mbt`: "max_steps allows exactly that many steps per run", "livelock raises NoQuiescence" |
+| `http/driver` rounds of cancellation when `run` ends | `max_unwind_rounds` = 8 | `run` raises `DriverError(UnwindIncomplete(live~))`; the surviving tasks stay live | `http/src/driver/driver_test.mbt`: "unwinding gives up after max_unwind_rounds rounds" |
+| `http/driver` timer callbacks per run | `max_steps`, independent of task steps | Raises `NoQuiescence`, discards timers and cancels live tasks | `http/src/driver/driver_test.mbt`: "self-rearming due timers obey a callback budget" |
+| `http/driver` cleanup steps per cancellation round | The larger of `max_steps` and twice the number of live tasks at the round's start | Ends the round; at most `max_unwind_rounds` rounds | `http/src/driver/driver_test.mbt`: "exhausted execution budget still unwinds ten thousand tasks", "unwinding gives up after max_unwind_rounds rounds" |
 
 ## Bounded by rate and lifetime
 
@@ -48,6 +52,7 @@ Growth that follows what the caller asks for, not what the network sends.
 
 | Structure | Grows with | Why it is not bounded here |
 |---|---|---|
+| `http/driver` ready queue, live-task map, timer heap | Tasks the test spawns and timers it arms | A test helper: the test decides how many; `max_steps` stops a run that keeps spawning. Cancelled timers stay in the heap until they reach its top or `run` ends. |
 
 ## Known gaps
 

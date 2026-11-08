@@ -67,3 +67,4 @@ Budgets are exact uncovered counts at the last measurement.
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| http/src/driver/driver.mbt | 1 | Defensive arm: a task suspended by something other than its Driver. No async runtime is linked, so nothing else can suspend it. |
