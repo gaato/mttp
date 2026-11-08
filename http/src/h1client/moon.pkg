@@ -15,6 +15,7 @@ import {
 import {
   "moonbitlang/core/random",
   "moonbitlang/core/immut/vector",
+  "moonbitlang/core/debug",
 } for "wbtest"
 
 options(

@@ -88,7 +88,7 @@ may send a body twice asks `Body::is_replayable` first.
 | `gaato/http/h1` | stable | The sans-IO HTTP/1.1 codec: bounded head and chunked decoders, strict head parsers returning `ParsedRequest` and `ParsedResponse`, body framing that refuses request smuggling, and wire writers |
 | `gaato/http/rt` | stable | The ports a runtime provides: `Clock`, `Timer`, `Gate`, `Conn`, `Dialer`, `Signal`, `Coordination`, and `default_random` |
 | `gaato/http/sim` | stable | In-memory doubles of the ports on the driver (`pair`, `ScriptedConn`, `FakeClock`, ...), the shared contract checks every port implementation passes, and property-test generators. Test infrastructure |
-| `gaato/http/h1client` | experimental | The HTTP/1.1 client connection engine over the `rt` ports: a per-origin connection pool, connection caps, bounded heads and bodies and per-phase deadlines, as an `@http.Backend` |
+| `gaato/http/h1client` | experimental | The HTTP/1.1 client connection engine over the `rt` ports: a per-origin connection pool, connection caps, bounded heads and bodies, per-phase deadlines and HTTP proxies (CONNECT tunnels, NO_PROXY), as an `@http.Backend` |
 | `gaato/http/driver` | experimental | A deterministic task driver with virtual time and `run_sync`, so async code is tested with plain `test` blocks on every target. It is built on compiler intrinsics and may break with a toolchain change |
 
 An experimental package is imported by listing it, as in

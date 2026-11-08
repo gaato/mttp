@@ -14,6 +14,7 @@ pub struct Client {
   priv timer : &@rt.Timer
   priv coordination : &@rt.Coordination
   priv config : ClientConfig
+  priv proxies : Proxies
   priv pool : IdlePool[Wire]
   priv slots : Slots
 }
@@ -71,6 +72,7 @@ pub fn Client::new(
     timer,
     coordination,
     config,
+    proxies: Proxies::new(config.proxy),
     pool: IdlePool::new(
       max_total=config.max_idle_connections,
       max_per_origin=config.max_idle_per_origin,
@@ -147,16 +149,18 @@ async fn Client::send_request(
     raise invalid("negative body byte ceiling")
   }
   let target = target(request)
-  let key = target.origin
-  let headers = if request.headers.contains("host") {
-    request.headers
+  let route = self.proxies.route(target)
+  let key = route.key(target.origin)
+  let headers = route.headers(request.headers)
+  let headers = if headers.contains("host") {
+    headers
   } else {
-    request.headers.add("host", target.host_field)
+    headers.add("host", target.host_field)
   }
   let framing = request_framing(request)
   let head = @h1.write_request_head(
     request.meth,
-    target.path,
+    route.target(target, request.meth),
     headers,
     framing,
     Http11,
@@ -214,7 +218,7 @@ async fn Client::send_request(
       }
       None =>
         timer.run(Dial, () => {
-          Wire::dial(self.dialer, target.host, target.port, target.secure)
+          dial_route(self.dialer, target, route, agent, self.config.head_limits)
         })
     }
     let mut owned = true
