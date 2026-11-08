@@ -36,6 +36,10 @@ Decoding untrusted JSON is bounded:
 Text codecs for numbers accept decimal syntax only: `int` and `int64` refuse
 `0x10`, `0b1` and `1_000`, and `double` refuses `inf`, `NaN` and underscores.
 
+`form_body` retains ordered duplicate pairs. Its wire schema admits either a
+scalar string or a repeated string array for each form name, so OpenAPI form
+serialization can describe duplicate values without losing that contract.
+
 `pattern` implements a bounded subset of ECMA Unicode pattern syntax without
 flags, including group repetition. Its schema contains the original source.
 It refuses unsupported syntax when built, including lookarounds,

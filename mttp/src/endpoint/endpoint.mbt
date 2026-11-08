@@ -313,6 +313,12 @@ pub fn EndpointDoc::problems(self : EndpointDoc) -> Array[String] {
   if self.max_body_bytes is Some(limit) && limit < 0 {
     out.push("negative body limit")
   }
+  if self.segments.length() > 64 {
+    out.push("path exceeds 64 segments")
+  }
+  if self.segments.iter().any(segment => segment is Lit("." | "..")) {
+    out.push("dot-only literal path segment")
+  }
   // "/a/" and "/a//b" would be routed and encoded as "/a" and "/a/b".
   if self.template != "/" &&
     self.template.split("/").drop(1).any(p => p.length() == 0) {
@@ -433,12 +439,30 @@ pub(all) struct DefinitionProblem {
 ///|
 /// The single definition checker, called by Router::new, to_openapi and
 /// testkit.verify (S-04g): per-endpoint problems plus route conflicts.
-pub fn check_definitions(docs : Array[EndpointDoc]) -> Array[DefinitionProblem] {
+/// When supplied, adapter_max_body_bytes reports overrides above the known
+/// upstream ceiling as advice; the adapter's body stream enforces the cap.
+pub fn check_definitions(
+  docs : Array[EndpointDoc],
+  adapter_max_body_bytes? : Int32,
+) -> Array[DefinitionProblem] {
   let out = []
+  if adapter_max_body_bytes is Some(n) && n < 0 {
+    out.push(DefinitionProblem::new("", "negative adapter ceiling"))
+  }
   let seen : Map[String, String] = Map([])
+  let template_names : Map[String, (String, Array[String])] = Map([])
   let operation_ids : Map[String, Bool] = Map([])
   let schemas : Map[String, Json] = Map([])
   for d in docs {
+    if adapter_max_body_bytes is Some(ceiling) &&
+      d.max_body_bytes is Some(limit) &&
+      limit > ceiling {
+      out.push({
+        template: d.template,
+        message: "endpoint body limit \{limit} exceeds adapter ceiling \{ceiling}",
+        fatal: false,
+      })
+    }
     let schema_problems = []
     for atom in [..d.security, ..d.inputs] {
       ignore(atom.schema.reference(schemas, problems=schema_problems))
@@ -466,6 +490,35 @@ pub fn check_definitions(docs : Array[EndpointDoc]) -> Array[DefinitionProblem] 
     }
     for p in d.problems() {
       out.push({ template: d.template, message: p, fatal: true, })
+    }
+    // OpenAPI erases capture names (and the rest suffix) when deciding
+    // whether paths have the same hierarchy, independently of the method.
+    // Keep names consistent there so projection cannot create alias paths.
+    let hierarchy = d.segments
+      .map(s => {
+        match s {
+          Lit(l) => l
+          Cap(_) | Rest(_) => "{}"
+        }
+      })
+      .join("/")
+    let names = d.segments.filter_map(s => {
+      match s {
+        Lit(_) => None
+        Cap(name) | Rest(name) => Some(name)
+      }
+    })
+    match template_names.get(hierarchy) {
+      Some((other, previous)) =>
+        if previous != names {
+          out.push(
+            DefinitionProblem::new(
+              d.template,
+              "path capture names differ from equivalent template " + other,
+            ),
+          )
+        }
+      None => template_names[hierarchy] = (d.template, names)
     }
     let shape = d.segments
       .map(s => {
