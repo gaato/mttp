@@ -99,15 +99,28 @@ pub fn[T : FromJson + ToJson + JsonSchema] json() -> JsonCodec[T] {
 }
 
 ///|
-/// Integral JSON numbers in the signed 32-bit range.
+/// Integral JSON numbers in the signed 32-bit range. A number that keeps its
+/// lexeme (`body()` keeps every one) is checked on the lexeme, so
+/// `1.0000000000000001` or `2147483647.0000001`, which round to an integral
+/// Double, are refused; `1.0`, `1e0` and `-0` are integers. A number built
+/// without a lexeme is checked on its Double.
 pub let jint : JsonCodec[Int32] = {
   missing_: None,
   omit_: never_omit,
   from_: (j, path, _) => {
+    let expected = () => {
+      invalid([{ path, code: "type", message: "expected integer", }])
+    }
     match j {
-      Number(n, ..) if n == n.floor() && n >= -2147483648.0 && n <= 2147483647.0 =>
+      Number(_, repr=Some(text)) => {
+        let n = exact_int64(text) catch { _ => raise expected() }
+        guard n >= -2147483648L && n <= 2147483647L else { raise expected() }
         n.to_int()
-      _ => raise invalid([{ path, code: "type", message: "expected integer", }])
+      }
+      Number(n, repr=None) if n == n.floor() &&
+        n >= -2147483648.0 &&
+        n <= 2147483647.0 => n.to_int()
+      _ => raise expected()
     }
   },
   to_: i => Json(i),
