@@ -67,6 +67,10 @@ gaato/mttp	gaato/mttp	js	1
 gaato/mttp	gaato/mttp	native	1
 gaato/mttp	gaato/mttp	wasm	1
 gaato/mttp	gaato/mttp	wasm-gc	1
+gaato/mttp	gaato/mttp/apispec	js	11
+gaato/mttp	gaato/mttp/apispec	native	11
+gaato/mttp	gaato/mttp/apispec	wasm	11
+gaato/mttp	gaato/mttp/apispec	wasm-gc	11
 gaato/mttp	gaato/mttp/client	js	82
 gaato/mttp	gaato/mttp/client	native	82
 gaato/mttp	gaato/mttp/client	wasm	82

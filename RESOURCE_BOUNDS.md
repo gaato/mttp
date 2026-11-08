@@ -138,6 +138,7 @@ Growth that follows what the caller asks for, not what the network sends.
 | `mttp/client` request plans, `to_curl` diagnostics and `Attempt` reports | Caller-built requests, headers and byte bodies; one `Attempt` per attempt | Plans hold what the caller set; `to_curl` encodes byte bodies with constant expansion and never reads a stream or calls a body factory; attempts are bounded by the retry count. None consumes network input. |
 | `mttp/client/retry` decisions and Retry-After values | One response's headers | Decisions are pure and keep nothing; the Retry-After parsers read one header value, linear in its length, and saturate the result. |
 | `mttp/schema` schemas, definition maps and issue arrays | Codecs and schemas the caller composes; a JSON tree already parsed | Definition maps grow with the named types the caller defines. A decode collects every issue; the built-in codecs add at most eight per step (an object's missing fields), so the step budget bounds them too. |
+| `mttp/apispec` documents | The records the caller builds or a JSON tree already parsed | Plain data: decoding follows the document's structure, and the bytes of a parsed document were bounded by whoever read them. |
 
 ## Known gaps
 
