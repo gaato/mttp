@@ -3,7 +3,8 @@
 The HTTP client of gaato/mttp: a description of what to send and how to read
 the answer, and a `Client` that sends it through any `@http.Backend` with
 defaults, admission, deadlines, decoded-body limits and retries. It does no
-I/O itself; `gaato/http-async` provides the backends that do.
+I/O itself; `gaato/http-async` provides the backends that do, and
+`gaato/mttp/testing` the stubs.
 
 ## Requests and response plans
 
@@ -79,10 +80,24 @@ test "retry a 503 and read JSON" {
 }
 ```
 
-## Backends and helpers
+## Wrappers
 
-A policy that needs only the request and the response head belongs in a
-Backend wrapper. `from_fn` and `from_handler` turn a function or an
-`@http.Handler` into a backend that validates what it is given.
-`parse_retry_after` and `retry_after_ms` read server-requested delays, as the
-retry rules do.
+A policy that needs only the request and the response head is a Backend
+wrapper:
+
+- `FollowRedirects` follows 301, 302, 303, 307 and 308 under a
+  `RedirectConfig` (10 hops, no HTTPS downgrade, credentials removed on an
+  origin change), overridden per request by the `redirect_limit` attribute
+  that `RequestPlan::follow_redirects` and `max_redirects` set. It records
+  `redirect_history` and `final_url`. Keep retries above it; a transport
+  failure on a later hop never reads as unsent, since the first request was
+  answered.
+- `from_fn` and `from_handler` turn a function or an `@http.Handler` into a
+  backend that validates what it is given.
+
+## Helpers
+
+`Paginator` walks cursor-paged APIs with failures as values; `parse_link_next`
+reads an RFC 8288 `Link: <…>; rel="next"`; `parse_retry_after` and
+`retry_after_ms` read server-requested delays; `RequestPlan::to_curl` renders
+a request for diagnostics with credentials redacted.
