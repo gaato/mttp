@@ -32,6 +32,43 @@ struct Module {
   packages : Array[String]
   experimental : Array[String]
   targets : Array[String]
+  /// The targets of each package that narrows the module's targets with
+  /// `supported_targets` in its moon.pkg.
+  package_targets : Map[String, Array[String]]
+}
+
+///|
+let all_targets : Array[String] = ["wasm-gc", "wasm", "js", "native"]
+
+///|
+/// The `supported_targets` of a `moon.pkg`, if it has one (the same reading
+/// as scripts/runtime_gates.mbtx).
+fn supported_targets(text : String) -> Array[String]? raise GateError {
+  for raw in text.split("\n") {
+    let line = raw.trim()
+    guard line.has_prefix("supported_targets") else { continue }
+    let parts = line.split("\"").map(s => s.to_owned()).to_array()
+    guard parts is [_, expression, ..] else {
+      raise GateError("unreadable supported_targets: \{line}")
+    }
+    let targets = expression.split("+").map(s => s.trim().to_owned()).to_array()
+    if !targets.all(t => all_targets.contains(t)) {
+      raise GateError(
+        "supported_targets \"\{expression}\" is not a +-list of targets; the gates read that form only",
+      )
+    }
+    return Some(targets)
+  }
+  None
+}
+
+///|
+/// Whether package `pkg` of `candidate` builds on `target`.
+fn on_target(candidate : Module, pkg : String, target : String) -> Bool {
+  match candidate.package_targets.get(pkg) {
+    Some(targets) => targets.contains(target)
+    None => candidate.targets.contains(target)
+  }
 }
 
 ///|
@@ -71,6 +108,7 @@ async fn module_at(dir : String, targets : Array[String]) -> Module {
   // Public packages: every package outside an `internal` directory.
   let packages = []
   let experimental = []
+  let package_targets : Map[String, Array[String]] = Map([])
   let root = dir + "/src"
   @fs.walk(
     root,
@@ -83,6 +121,9 @@ async fn module_at(dir : String, targets : Array[String]) -> Module {
         .unwrap_or(suffix)
       packages.push(suffix)
       let options = @fs.read_text(pkg_dir + "/moon.pkg")
+      if supported_targets(options) is Some(narrowed) {
+        package_targets[suffix] = targets.filter(t => narrowed.contains(t))
+      }
       if options.contains("experimental: true") ||
         options.contains("\"experimental\": true") {
         experimental.push(suffix)
@@ -96,7 +137,16 @@ async fn module_at(dir : String, targets : Array[String]) -> Module {
     max_concurrency=1,
   )
   packages.sort()
-  { dir, name, version, deps, packages, experimental, targets, }
+  {
+    dir,
+    name,
+    version,
+    deps,
+    packages,
+    experimental,
+    targets,
+    package_targets,
+  }
 }
 
 ///|
@@ -287,9 +337,14 @@ async fn workspace_modules(root : String) -> Array[Module] {
 }
 
 ///|
-/// The consumer's moon.pkg: every public package of `candidate`, and the
-/// experimental ones acknowledged when `acknowledge` is true.
-fn consumer_pkg(candidate : Module, acknowledge~ : Bool) -> String {
+/// The consumer's moon.pkg on `target`: every public package of `candidate`
+/// that builds there, and the experimental ones among them acknowledged when
+/// `acknowledge` is true.
+fn consumer_pkg(
+  candidate : Module,
+  target~ : String,
+  acknowledge~ : Bool,
+) -> String {
   let full = (pkg : String) => {
     if pkg.is_empty() {
       candidate.name
@@ -298,11 +353,13 @@ fn consumer_pkg(candidate : Module, acknowledge~ : Bool) -> String {
     }
   }
   let imports = candidate.packages
+    .filter(pkg => on_target(candidate, pkg, target))
     .mapi((index, pkg) => "  \"" + full(pkg) + "\" @p" + index.to_string() + ",")
     .join("\n")
-  let allow = if acknowledge && !candidate.experimental.is_empty() {
+  let experimental = experimental_on(candidate, target)
+  let allow = if acknowledge && !experimental.is_empty() {
     ", \"allow-experimental-packages\": [" +
-    candidate.experimental.map(pkg => "\"" + full(pkg) + "\"").join(", ") +
+    experimental.map(pkg => "\"" + full(pkg) + "\"").join(", ") +
     "]"
   } else {
     ""
@@ -312,6 +369,12 @@ fn consumer_pkg(candidate : Module, acknowledge~ : Bool) -> String {
   "\n}\noptions(\"is-main\": true, warnings: \"-unused_package\"" +
   allow +
   ")\n"
+}
+
+///|
+/// The experimental packages of `candidate` that build on `target`.
+fn experimental_on(candidate : Module, target : String) -> Array[String] {
+  candidate.experimental.filter(pkg => on_target(candidate, pkg, target))
 }
 
 ///|
@@ -384,7 +447,7 @@ async fn check() -> Unit {
       println("+ packaged " + candidate.name + " on " + target)
       @fs.write_text(
         consumer + "/moon.pkg",
-        consumer_pkg(candidate, acknowledge=true),
+        consumer_pkg(candidate, target~, acknowledge=true),
       )
       let log = build(consumer, target, isolated)
       if log.contains("depends on experimental package") {
@@ -395,10 +458,10 @@ async fn check() -> Unit {
           " warns although it lists every experimental package",
         )
       }
-      if !candidate.experimental.is_empty() {
+      if !experimental_on(candidate, target).is_empty() {
         @fs.write_text(
           consumer + "/moon.pkg",
-          consumer_pkg(candidate, acknowledge=false),
+          consumer_pkg(candidate, target~, acknowledge=false),
         )
         if !build(consumer, target, isolated).contains(
             "depends on experimental package",
@@ -437,6 +500,7 @@ async fn main {
         packages: [],
         experimental: [],
         targets: [],
+        package_targets: {},
       }
       for
         (version, expected) in [
@@ -464,6 +528,40 @@ async fn main {
         }
       }
       println("resolver gate self-test: drift and existing-version guards OK")
+      // A package narrower than its module is imported, and acknowledged,
+      // only by the consumers of its own targets.
+      let narrowed : Module = {
+        ..candidate,
+        packages: ["", "native_only"],
+        experimental: ["native_only"],
+        targets: ["native", "wasm", "js"],
+        package_targets: { "native_only": ["native"] },
+      }
+      let native = consumer_pkg(narrowed, target="native", acknowledge=true)
+      let wasm = consumer_pkg(narrowed, target="wasm", acknowledge=true)
+      if !native.contains("\"probe/library/native_only\" @p1") ||
+        !native.contains(
+          "\"allow-experimental-packages\": [\"probe/library/native_only\"]",
+        ) ||
+        wasm.contains("native_only") ||
+        !wasm.contains("\"probe/library\" @p0") ||
+        !experimental_on(narrowed, "js").is_empty() {
+        println(native)
+        println(wasm)
+        raise GateError("consumers ignore a package's supported_targets")
+      }
+      let listed = supported_targets("supported_targets = \"native+wasm\"\n")
+      let refused = try {
+        supported_targets("supported_targets = \"not js\"\n") |> ignore
+        false
+      } catch {
+        _ => true
+      }
+      if listed is Some(["native", "wasm"]) && refused {
+        println("resolver gate self-test: per-package targets OK")
+      } else {
+        raise GateError("supported_targets is read wrongly")
+      }
     } else {
       check()
     }
