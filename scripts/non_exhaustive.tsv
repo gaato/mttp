@@ -5,4 +5,9 @@
 # a row whose package or enum does not exist fails, so add a row together
 # with the enum.
 package	enum
+gaato/http	Body
+gaato/http	BodyTiming
+gaato/http	Kind
+gaato/http	Method
+gaato/http	Phase
 gaato/http/driver	DriverErrorKind
