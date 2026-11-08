@@ -148,7 +148,7 @@ async fn packages() -> Array[Package] {
       raise GateError("scripts/modules.tsv: malformed row: \{line}")
     }
     let module_targets = cell_list(targets)
-    let root = "\{dir}/src"
+    let root = if kind == "example" { dir } else { "\{dir}/src" }
     if !@fs.exists(root) {
       continue
     }

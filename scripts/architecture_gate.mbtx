@@ -72,6 +72,7 @@ let skipped_dirs : Array[String] = [
 ///|
 /// One row of `scripts/modules.tsv`.
 struct Row {
+  example : Bool
   dir : String
   name : String
   module_deps : Array[String]
@@ -105,10 +106,11 @@ fn parse_rows(text : String) -> Array[Row] raise {
       is [dir, name, kind, _targets, module_deps, package_imports, experimental] else {
       fail("scripts/modules.tsv: expected 7 tab-separated cells: \{line}")
     }
-    guard kind is ("four-target" | "runtime") else {
+    guard kind is ("four-target" | "runtime" | "example") else {
       fail("scripts/modules.tsv: unknown kind \{kind}: \{line}")
     }
     rows.push({
+      example: kind == "example",
       dir,
       name,
       module_deps: cell_list(module_deps),
@@ -300,7 +302,7 @@ fn dir_of(path : String) -> String {
 ///|
 /// The package name of package directory `dir` of module `row`.
 fn package_name(row : Row, dir : String) -> String {
-  let root = row.dir + "/src"
+  let root = if row.example { row.dir } else { row.dir + "/src" }
   if dir == root {
     row.name
   } else {
@@ -419,9 +421,8 @@ fn audit(files : Map[String, String]) -> Array[String] raise {
     }
     // Packages.
     for path, text in files {
-      guard path.has_prefix(row.dir + "/src/") || path == row.dir + "/src" else {
-        continue
-      }
+      let root = if row.example { row.dir } else { row.dir + "/src" }
+      guard path.has_prefix(root + "/") else { continue }
       let dir = dir_of(path)
       if path.has_suffix("/moon.pkg") {
         let name = package_name(row, dir)
@@ -587,7 +588,7 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
   )
   rejects(
     "a moon.work member without a row",
-    [("moon.work", "members = [\"http\", \"examples/get\"]\n")],
+    [("moon.work", "members = [\"http\", \"__unlisted_selftest_member__\"]\n")],
     "module",
   )
   rejects(

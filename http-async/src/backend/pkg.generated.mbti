@@ -1,0 +1,26 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/http-async/backend"
+
+import {
+  "gaato/http",
+  "gaato/http-async",
+  "gaato/http/h1client",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct AsyncBackend {
+  // private fields
+}
+pub fn AsyncBackend::close(Self) -> Unit
+pub fn AsyncBackend::idle_connections(Self) -> Int32
+pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust? : @http-async.Trust) -> Self
+pub async fn AsyncBackend::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
+pub impl @http.Backend for AsyncBackend
+
+// Type aliases
+
+// Traits

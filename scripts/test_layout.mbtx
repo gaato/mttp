@@ -67,6 +67,7 @@ let skipped_dirs : Array[String] = [
 ///|
 /// A module of `scripts/modules.tsv`: its directory, name and kind.
 struct Module {
+  example : Bool
   dir : String
   name : String
   four_target : Bool
@@ -95,7 +96,12 @@ fn parse_modules(text : String) -> Array[Module] raise {
       is [dir, name, kind, ..] else {
       fail("scripts/modules.tsv: malformed row: \{line}")
     }
-    out.push({ dir, name, four_target: kind == "four-target", })
+    out.push({
+      dir,
+      name,
+      example: kind == "example",
+      four_target: kind == "four-target",
+    })
   }
   out
 }
@@ -226,7 +232,7 @@ fn module_of(repo : Repo, path : String) -> Module? {
 ///|
 /// The package name of a package directory of `m`.
 fn package_name(m : Module, dir : String) -> String {
-  let root = "\{m.dir}/src"
+  let root = if m.example { m.dir } else { "\{m.dir}/src" }
   if dir == root {
     m.name
   } else {
@@ -643,7 +649,15 @@ async fn main {
         if entry.has_suffix(".mbt") || entry.has_suffix(".mbt.md") {
           file_paths.push(path)
         } else if entry == "moon.pkg" &&
-          modules.any(m => path.has_prefix("\{m.dir}/src/")) {
+          modules.any(m => {
+            path.has_prefix(
+              if m.example {
+                "\{m.dir}/"
+              } else {
+                "\{m.dir}/src/"
+              },
+            )
+          }) {
           package_dirs.push(dir_of(path))
         }
       }
