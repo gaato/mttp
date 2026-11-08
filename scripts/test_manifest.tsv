@@ -37,10 +37,10 @@ gaato/mttp	gaato/mttp	js	1
 gaato/mttp	gaato/mttp	native	1
 gaato/mttp	gaato/mttp	wasm	1
 gaato/mttp	gaato/mttp	wasm-gc	1
-gaato/mttp	gaato/mttp/client	js	58
-gaato/mttp	gaato/mttp/client	native	58
-gaato/mttp	gaato/mttp/client	wasm	58
-gaato/mttp	gaato/mttp/client	wasm-gc	58
+gaato/mttp	gaato/mttp/client	js	82
+gaato/mttp	gaato/mttp/client	native	82
+gaato/mttp	gaato/mttp/client	wasm	82
+gaato/mttp	gaato/mttp/client	wasm-gc	82
 gaato/mttp	gaato/mttp/client/retry	js	19
 gaato/mttp	gaato/mttp/client/retry	native	19
 gaato/mttp	gaato/mttp/client/retry	wasm	19
@@ -61,6 +61,10 @@ gaato/mttp	gaato/mttp/sse	js	25
 gaato/mttp	gaato/mttp/sse	native	25
 gaato/mttp	gaato/mttp/sse	wasm	25
 gaato/mttp	gaato/mttp/sse	wasm-gc	25
+gaato/mttp	gaato/mttp/testing	js	9
+gaato/mttp	gaato/mttp/testing	native	9
+gaato/mttp	gaato/mttp/testing	wasm	9
+gaato/mttp	gaato/mttp/testing	wasm-gc	9
 gaato/mttp-digest	gaato/mttp-digest	js	1
 gaato/mttp-digest	gaato/mttp-digest	native	1
 gaato/mttp-digest	gaato/mttp-digest	wasm	1
