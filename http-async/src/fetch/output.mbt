@@ -91,6 +91,11 @@ async fn adapt_response(
   if stream is Some(stream) {
     output.pending = stream.read_some().unwrap_or(b"")
   }
+  // A lazy producer may catch an input failure during that first pull.
+  // Keep the request's sticky failure authoritative before publishing a head.
+  if input.failure is Some(error) {
+    raise error
+  }
   let headers = reply.headers.remove("transfer-encoding")
   let headers = if no_body {
     headers

@@ -53,7 +53,7 @@ gaato/http-async	gaato/http-async/codings	native	47
 gaato/http-async	gaato/http-async/codings	wasm	47
 gaato/http-async	gaato/http-async/conn	native	7
 gaato/http-async	gaato/http-async/conn	wasm	7
-gaato/http-async	gaato/http-async/fetch	js	19
+gaato/http-async	gaato/http-async/fetch	js	23
 gaato/http-async	gaato/http-async/internal/control	native	2
 gaato/http-async	gaato/http-async/internal/control	wasm	2
 gaato/http-async	gaato/http-async/internal/socketconn	native	5
@@ -61,8 +61,8 @@ gaato/http-async	gaato/http-async/internal/socketconn	wasm	5
 gaato/http-async	gaato/http-async/runtime	js	25
 gaato/http-async	gaato/http-async/runtime	native	25
 gaato/http-async	gaato/http-async/runtime	wasm	25
-gaato/http-async	gaato/http-async/server	native	17
-gaato/http-async	gaato/http-async/server	wasm	17
+gaato/http-async	gaato/http-async/server	native	18
+gaato/http-async	gaato/http-async/server	wasm	18
 gaato/mttp	gaato/mttp	js	1
 gaato/mttp	gaato/mttp	native	1
 gaato/mttp	gaato/mttp	wasm	1

@@ -58,8 +58,10 @@ The listener adapter is exercised over real loopback sockets on native and
 wasm, including shutdown, streaming responses, admission, deadlines and
 background cleanup. Its immutable internal lifecycle has the same snapshot
 tests on both targets. The JS-only fetch adapter and host shims run under
-Node, outside this native line-coverage measurement; their 19 tests include
-the 1 MiB/4 MiB boundaries, cancellation and compiled export smoke test.
+Node, outside this native line-coverage measurement; their 23 tests include
+the 1 MiB/4 MiB boundaries, cancellation, caught input failures during response
+prefetch across every host shim, and the compiled export smoke test. The
+listener's matching post-prefetch behavior also has a real socket regression.
 
 Must be covered by tests:
 

@@ -143,3 +143,66 @@ async test "bodyless Lambda POST reaches the model as Body Empty and present emp
     }),
   ).wait()
 }
+
+///|
+extern "js" fn check_prefetch_hosts(
+  adapter : (JsRequest, JsBackground) -> JsPromise,
+) -> @js_async.Promise[Unit] =
+  #| async adapter => {
+  #|   const {resolve} = await import('node:path');
+  #|   const {pathToFileURL} = await import('node:url');
+  #|   const {existsSync} = await import('node:fs');
+  #|   const root = existsSync(resolve('hosts/adapters.mjs')) ? resolve('hosts') : resolve('http-async/hosts');
+  #|   const {workers, fastly, vercel, node, deno, bun} = await import(pathToFileURL(resolve(root, 'adapters.mjs')).href);
+  #|   const {lambda} = await import(pathToFileURL(resolve(root, 'lambda.mjs')).href);
+  #|   for (const [body, headers, expected] of [['abc', {}, 413], ['x', {'content-length': '0'}, 400]]) {
+  #|     const request = () => new Request('https://example.test/', {method: 'POST', body, headers});
+  #|     const pending = [], register = p => pending.push(p);
+  #|     const check = async promise => {
+  #|       const response = await promise;
+  #|       if (response.status !== expected || await response.text() !== '') throw new Error('shim lost prefetch input failure');
+  #|     };
+  #|     await check(workers((req, bg, _env) => adapter(req, bg)).fetch(request(), {}, {waitUntil: register}));
+  #|     let result;
+  #|     fastly(adapter)({request: request(), waitUntil: register, respondWith(p) { result = p; }});
+  #|     await check(result);
+  #|     await check(vercel(adapter, register)(request()));
+  #|     for (const tracked of [node, deno, bun]) {
+  #|       const app = tracked(adapter);
+  #|       await check(app.fetch(request()));
+  #|       await app.whenIdle();
+  #|     }
+  #|     const output = await lambda(adapter)({body, headers, rawPath: '/', requestContext: {
+  #|       domainName: 'example.test', http: {method: 'POST'}
+  #|     }});
+  #|     if (output.statusCode !== expected || output.body !== '') throw new Error('Lambda lost prefetch input failure');
+  #|     await Promise.all(pending);
+  #|   }
+  #| }
+
+///|
+async test "all host shims preserve caught prefetch input failures" {
+  for fallback in [false, true] {
+    let sources : Array[CaughtInputOutput] = []
+    check_prefetch_hosts(
+      fetch_handler(max_body_bytes=2, request => {
+        let source = CaughtInputOutput::{
+          body: request.body,
+          fallback,
+          fail_output: false,
+          failure: Ref(None),
+          reads: 0,
+          closes: 0,
+        }
+        sources.push(source)
+        @http.Response::new(201, body=Stream(@http.StreamBody::new(source)))
+      }),
+    ).wait()
+    assert_eq(sources.length(), 14)
+    for source in sources {
+      assert_true(source.failure.val is Some(_))
+      assert_eq(source.reads, 1)
+      assert_eq(source.closes, 1)
+    }
+  }
+}

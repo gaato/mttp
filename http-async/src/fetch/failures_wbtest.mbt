@@ -45,6 +45,131 @@ async test "lazy echo overflow is rejected before response headers and buffered 
 }
 
 ///|
+priv struct CaughtInputOutput {
+  body : @http.Body
+  fallback : Bool
+  fail_output : Bool
+  failure : Ref[@http.TransportError?]
+  mut reads : Int32
+  mut closes : Int32
+}
+
+///|
+impl @http.BodyStream for CaughtInputOutput with fn read_some(self) {
+  self.reads += 1
+  if self.reads > 1 {
+    return None
+  }
+  if self.body is Stream(cell) {
+    ignore(@http.read_bounded(cell.take(), 10)) catch {
+      error => self.failure.val = Some(error)
+    }
+  }
+  if self.fail_output {
+    raise @http.TransportError(
+      kind=Network,
+      phase=Body,
+      detail="response producer failed",
+    )
+  }
+  if self.fallback {
+    Some(b"fallback")
+  } else {
+    None
+  }
+}
+
+///|
+impl @http.BodyStream for CaughtInputOutput with fn close(self) {
+  self.closes += 1
+}
+
+///|
+async fn caught_prefetch(
+  request : JsRequest,
+  fallback : Bool,
+  expected : Int32,
+  fail_output~ : Bool = false,
+) -> Unit {
+  let probe = Probe::new()
+  let failure : Ref[@http.TransportError?] = Ref(None)
+  let source : Ref[CaughtInputOutput?] = Ref(None)
+  let adapter = fetch_handler(max_body_bytes=2, request => {
+    let output = CaughtInputOutput::{
+      body: request.body,
+      fallback,
+      fail_output,
+      failure,
+      reads: 0,
+      closes: 0,
+    }
+    source.val = Some(output)
+    @http.Response::new(201, body=Stream(@http.StreamBody::new(output)))
+  })
+  let reply = awaited(adapter(request, probe.callback())).wait()
+  let output = source.val.unwrap()
+  assert_eq(failure.val is Some(_), expected == 400 || expected == 413)
+  assert_eq(output.reads, 1)
+  assert_eq(output.closes, if expected == 201 && fallback { 0 } else { 1 })
+  assert_eq(reply.status(), expected)
+  assert_eq(
+    reply.text().wait(),
+    if expected == 201 && fallback {
+      "fallback"
+    } else {
+      ""
+    },
+  )
+  assert_eq(output.closes, 1)
+  probe.settled().wait()
+  assert_eq(probe.calls(), 1)
+  assert_false(probe.failed())
+}
+
+///|
+async test "caught request overflow during response prefetch stays 413 for fallback and EOF" {
+  for fallback in [false, true] {
+    caught_prefetch(make_request("POST", b"abc", []), fallback, 413)
+  }
+}
+
+///|
+async test "caught malformed input during response prefetch stays 400 for fallback and EOF" {
+  for fallback in [false, true] {
+    for length in ["0", "2"] {
+      caught_prefetch(
+        make_request("POST", b"x", [["content-length", length]]),
+        fallback,
+        400,
+      )
+    }
+    let request = InputProbe::new(
+      @js_async.AbortController::new().signal(),
+      true,
+    )
+    caught_prefetch(request.request(), fallback, 400)
+  }
+}
+
+///|
+async test "response prefetch preserves valid replies and independent producer failures stay 500" {
+  for fallback in [false, true] {
+    for fail_output in [false, true] {
+      caught_prefetch(
+        make_request("POST", b"x", [["content-length", "1"]]),
+        fallback,
+        if fail_output {
+          500
+        } else {
+          201
+        },
+        fail_output~,
+      )
+    }
+  }
+}
+
+///|
 async test "late background scheduling cannot escape a settled host aggregate" {
   let schedule : Ref[((async () -> Unit) -> Unit)?] = Ref(None)
   let probe = Probe::new()

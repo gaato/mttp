@@ -119,11 +119,10 @@ pub fn fetch_handler(
         let result = adapt_response(reply, input, request) catch {
           _ =>
             return empty_response(
-              if input.failure
-                is Some(@http.TransportError(kind=TooLarge(..), ..)) {
-                413
-              } else {
-                500
+              match input.failure {
+                Some(@http.TransportError(kind=TooLarge(..), ..)) => 413
+                Some(_) => 400
+                None => 500
               },
               request,
             )

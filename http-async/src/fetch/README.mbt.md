@@ -27,6 +27,8 @@ the handler (413); observed overflow remains a failure even if the handler
 catches it. Invalid request framing/length is 400. Negative adapter limits or
 invalid response headers/status are 500. A failure after the host response has
 been returned errors its stream, because its status can no longer be changed.
+The sticky input failure is checked again after response prefetch, so a lazy
+producer that catches an input error cannot replace 413/400 with a fallback.
 
 Input/output chunks delivered to MoonBit or the host are at most 64 KiB. Input
 retains at most one host-provided chunk within the configured ceiling; an
