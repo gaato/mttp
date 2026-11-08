@@ -16,12 +16,6 @@ impl @http.Backend for FnBackend with fn send(self, request, options) {
   }
   request.validate()
   options.validate()
-  if request.body is Stream(stream) &&
-    stream.length() is Some(length) &&
-    length < 0L {
-    // take refuses the declared length in phase Pool and closes the source.
-    ignore(stream.take())
-  }
   (self.send)(request, options)
 }
 
