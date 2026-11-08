@@ -141,7 +141,7 @@ Growth that follows what the caller asks for, not what the network sends.
 | `mttp/schema` schemas, definition maps and issue arrays | Codecs and schemas the caller composes; a JSON tree already parsed | Definition maps grow with the named types the caller defines. A decode collects every issue; the built-in codecs add at most eight per step (an object's missing fields), so the step budget bounds them too. |
 | `mttp/apispec` documents | The records the caller builds or a JSON tree already parsed | Plain data: decoding follows the document's structure, and the bytes of a parsed document were bounded by whoever read them. |
 | `mttp/router` route table, middleware and definition findings | Endpoints and middleware registered by the application | Construction consumes caller-built definitions; per-request captures have the segment bound above. |
-| `mttp/openapi` projected document and `mttp/endpoint/testkit` verification findings | Endpoint definitions composed by the application | Projection and checking scale with registered metadata; reference traversal has its own bound above. |
+| `mttp/openapi` projected document and `mttp/endpoint/testkit` verification findings | Endpoint definitions composed by the application | Projection and checking scale with registered metadata. Each operation has at most 400 explicit final statuses (200–599) plus default; a dynamic variant fans out only across those entries. Reference traversal has its own bound above. |
 
 ## Known gaps
 

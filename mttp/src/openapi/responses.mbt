@@ -61,11 +61,39 @@ fn add_response(
 }
 
 ///|
+fn merge_wildcard_content(
+  responses : Map[String, @apispec.ResponseObject],
+) -> Unit {
+  for _, response in responses {
+    if response.content.get("*/*") is Some(wildcard) {
+      // Exact media entries take precedence over */*. A dynamic media
+      // encoder can also produce those media types, so retain its schema in
+      // each specific entry instead of losing it to OpenAPI's selection.
+      for media, content in response.content.copy() {
+        if media != "*/*" && content.schema != wildcard.schema {
+          response.content[media] = {
+            ..content,
+            schema: Some({
+              "anyOf": [
+                content.schema.unwrap_or({}),
+                wildcard.schema.unwrap_or({}),
+              ],
+            }),
+          }
+        }
+      }
+    }
+  }
+}
+
+///|
 fn framework_statuses(doc : @endpoint.EndpointDoc) -> Array[Int32] {
   // URL/query validation can fail even on an endpoint without explicit inputs.
   let statuses = [400, 404, 405, 500]
   let atoms = [..doc.security, ..doc.inputs]
-  if atoms.iter().any(a => a.location is Auth(..)) {
+  // Only security-stage authentication failures use 401. The same atom in
+  // ordinary inputs fails in the head stage and uses the normal 400 policy.
+  if doc.security.iter().any(a => a.location is Auth(..)) {
     statuses.push(401)
   }
   if atoms.iter().any(a => a.location is (Body(..) | RawBody)) {

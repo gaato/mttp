@@ -69,6 +69,16 @@ Accepted as uncovered (needs a row):
 
 Budgets are exact uncovered counts at the last measurement.
 
+The OpenAPI status audit dispatches all final codes (200–599) through 192
+configurations: all combinations of fixed/dynamic success and declared-error
+outputs, authentication on/off, absent/raw/typed bodies, and both declaration
+orders. It compares the selected explicit/default response's media, inclusive
+schema alternatives and header requiredness with actual handler, authentication
+rejection and default framework responses. Separate regressions cover 204/304
+body suppression and stream closure, dynamic empty/wildcard representations,
+specific-media precedence, ordinary Auth input failures and invalid statuses.
+These additions require no new uncovered-line exemptions.
+
 The Digest port (`mttp-digest/src/backend.mbt`, `digest.mbt`) and the private
 conformance harness (`conformance/src/harness/*.mbt`) are fully covered on
 native: 234/234 and 62/62 instrumented lines. Digest's black-box suites cover

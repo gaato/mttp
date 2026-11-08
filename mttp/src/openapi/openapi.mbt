@@ -137,7 +137,24 @@ pub fn to_openapi(
       security.push(all_schemes)
     }
     let responses : Map[String, @apispec.ResponseObject] = Map([])
-    for variant in [..doc.outputs, ..doc.errors] {
+    let variants = [..doc.outputs, ..doc.errors]
+    let framework = framework_statuses(doc)
+    let explicit_statuses = framework.copy()
+    for variant in variants {
+      if !variant.dynamic_status && !explicit_statuses.contains(variant.status) {
+        explicit_statuses.push(variant.status)
+      }
+    }
+    if variants.iter().any(v => v.dynamic_status) {
+      // The encoder strips bodies at these statuses. They need explicit
+      // responses so the body-bearing default cannot describe them.
+      for status in [204, 304] {
+        if !explicit_statuses.contains(status) {
+          explicit_statuses.push(status)
+        }
+      }
+    }
+    for variant in variants {
       let headers : Map[String, @apispec.HeaderObject] = Map([])
       for name in variant.headers {
         if name.to_lower() == "content-type" {
@@ -157,10 +174,13 @@ pub fn to_openapi(
           schema=schema.reference(schemas),
         )
       }
-      let key = if variant.dynamic_status {
-        "default"
+      // An explicit Response Object shadows default in OpenAPI. Project each
+      // dynamic variant at every explicit status as well, regardless of the
+      // order of fixed variants, declared errors and framework responses.
+      let keys = if variant.dynamic_status {
+        ["default", ..explicit_statuses.map(s => s.to_string())]
       } else {
-        variant.status.to_string()
+        [variant.status.to_string()]
       }
       let media = if variant.dynamic_media {
         Some("*/*")
@@ -172,16 +192,28 @@ pub fn to_openapi(
       } else {
         variant.description
       }
-      add_response(
-        responses,
-        key,
-        description,
-        media,
-        variant.schema.map(s => s.reference(schemas)),
-        headers,
-      )
+      let schema = variant.schema.map(s => s.reference(schemas))
+      for key in keys {
+        let bodyless = key == "204" || key == "304"
+        add_response(
+          responses,
+          key,
+          description,
+          if bodyless {
+            None
+          } else {
+            media
+          },
+          if bodyless {
+            None
+          } else {
+            schema
+          },
+          headers,
+        )
+      }
     }
-    for status in framework_statuses(doc) {
+    for status in framework {
       add_response(
         responses,
         status.to_string(),
@@ -191,6 +223,7 @@ pub fn to_openapi(
         {},
       )
     }
+    merge_wildcard_content(responses)
     let operation = @apispec.Operation::new(
       responses,
       operation_id?=doc.info.operation_id,

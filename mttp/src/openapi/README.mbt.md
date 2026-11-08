@@ -59,8 +59,20 @@ The walk includes schemas in component responses, parameters, request bodies,
 headers, path items and webhooks, as well as normal operations. It visits one
 child at a time, so a wide schema cannot first allocate an unbounded worklist.
 
-Dynamic output statuses use the default response and dynamic content types use
-`*/*`. Rest-path captures use a normal path parameter plus `x-mttp-rest`; generic
+Dynamic output and declared-error statuses are merged into every explicit
+response, including fixed variants and framework responses. OpenAPI uses an
+explicit response in preference to `default`, so default alone would lose those
+representations. `default` covers the remaining final status codes. Explicit
+204 and 304 responses have no content because the server discards their bodies,
+including streamed bodies. Dynamic content types use `*/*`; their schemas
+also join any specific media entry at that status, since OpenAPI selects the
+specific entry ahead of the wildcard.
+Framework problem responses follow the default router policy: 400, 404, 405
+and 500, plus 401 for authentication atoms in security inputs, 413 for body
+consumers and 415 for typed bodies. Authentication atoms in ordinary inputs
+fail as 400. Applications replacing the router's response policies must also
+describe any representations their policies introduce.
+Rest-path captures use a normal path parameter plus `x-mttp-rest`; generic
 OpenAPI clients do not know its slash-separated array encoding. Routes which
 would collapse to the same documented operation are refused.
 The shared definition checker also refuses equivalent hierarchies with
