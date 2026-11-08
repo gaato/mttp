@@ -3,3 +3,12 @@ import {
   "moonbitlang/core/debug",
   "moonbitlang/core/encoding/utf8",
 }
+
+import {
+  "gaato/http/driver",
+  "gaato/http/sim",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/http/driver" ],
+)

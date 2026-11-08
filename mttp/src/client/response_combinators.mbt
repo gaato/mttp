@@ -23,6 +23,7 @@ pub fn[A, B] as_both(
       let b = (right.select)(head, any || right.any_status)
       {
         streaming: false,
+        prepare: None,
         excerpt: a.excerpt && b.excerpt,
         read: (head, body, limit) => {
           let bytes = if a.excerpt && b.excerpt {

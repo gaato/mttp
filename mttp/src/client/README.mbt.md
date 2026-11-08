@@ -8,6 +8,13 @@ I/O itself; `gaato/http-async` provides the backends that do, and
 
 ## Requests and response plans
 
+`ResponsePlan::prepared_stream(decode, use_)` supports a buffered interpretation
+followed by an async callback. It bounds and decodes bytes inside the attempt.
+The decoder's `Err(final_value)` reaches the retry decision immediately; its
+`Ok(value)` hands the decoded value to `use_` after release, observation and
+retry decisions. The callback runs once and its exceptions remain effects.
+This is the endpoint interpreter's bridge for buffered `call_with` outputs.
+
 A `RequestPlan[T, M]` pairs an `@http.Request` with a `ResponsePlan[T, M]`,
 which says how to turn the response into a `T`. The mode `M` says when the
 body is read:

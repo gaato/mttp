@@ -33,6 +33,14 @@ pub fn SseParser::last_event_id(Self) -> String?
 pub fn SseParser::new(max_event_bytes? : Int32) -> Self
 pub fn SseParser::reconnection_ms(Self) -> Int32?
 
+pub struct SseReader {
+  // private fields
+}
+pub fn SseReader::close(Self) -> Unit
+pub async fn SseReader::each(Self, async (SseEvent) -> Unit, stop? : (SseEvent) -> Bool) -> Unit
+pub fn SseReader::new(&@http.BodyStream, max_event_bytes? : Int32) -> Self
+pub async fn SseReader::next_event(Self) -> SseEvent? raise @http.TransportError
+
 // Type aliases
 
 // Traits
