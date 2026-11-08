@@ -45,7 +45,7 @@ gaato/http	gaato/http/sim	wasm-gc	40
 gaato/http-async	gaato/http-async	js	1
 gaato/http-async	gaato/http-async	native	1
 gaato/http-async	gaato/http-async	wasm	1
-gaato/http-async	gaato/http-async/backend	js	15
+gaato/http-async	gaato/http-async/backend	js	16
 gaato/http-async	gaato/http-async/backend	native	16
 gaato/http-async	gaato/http-async/backend	wasm	16
 gaato/http-async	gaato/http-async/codings	js	47

@@ -103,6 +103,24 @@ async test "JS fetch keeps redirects manual strips proxy credentials and normali
 }
 
 ///|
+async test "JS fetch omits implicit browser credentials" {
+  let mock = MockFetch::install("head", b"")
+  defer mock.restore()
+  let backend = @backend.AsyncBackend::new()
+  defer backend.close()
+  backend
+  .send(
+    @http.Request::get("https://example.test/").header(
+      "authorization", "Bearer explicit",
+    ),
+    @http.SendOptions::default(),
+  )
+  .close()
+  assert_eq(mock.option("credentials"), "omit")
+  assert_eq(mock.header("authorization"), "Bearer explicit")
+}
+
+///|
 async test "JS delivery slices are at most 64 KiB and EOF and close are sticky" {
   let mock = MockFetch::install("normal", Bytes::make(70000, b'x'))
   defer mock.restore()

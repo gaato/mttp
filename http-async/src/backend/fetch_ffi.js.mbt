@@ -81,6 +81,6 @@ extern "js" fn fetch_once(
   signal : @js_async.AbortSignal,
 ) -> @js_async.Promise[FetchResponse] =
   #| (url, method, headers, body, signal) => fetch(url, {
-  #|   method, headers, signal, redirect: 'manual',
+  #|   method, headers, signal, redirect: 'manual', credentials: 'omit',
   #|   body: method.toUpperCase() === 'GET' || method.toUpperCase() === 'HEAD' ? undefined : body
   #| })

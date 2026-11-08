@@ -39,6 +39,8 @@ timeout and header settings, and the separate `trust` argument, are ignored;
 fetch uses the host's proxy configuration and trust store. Network failures
 carry phase Unknown because fetch cannot identify the wire phase. Forbidden
 methods, malformed requests and framing conflicts are refused before fetch.
+Fetch sets `credentials: 'omit'` to disable implicit browser credentials,
+including sending stored cookies and accepting Set-Cookie into its cookie store.
 Fetch is called with manual redirects; browsers can hide redirect responses
 as opaque responses, which are refused. Browsers may merge header fields or
 hide Set-Cookie. Hosts exposing `getSetCookie` retain separate cookie fields.
