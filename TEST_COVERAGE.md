@@ -67,3 +67,4 @@ Budgets are exact uncovered counts at the last measurement.
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| http/src/driver/driver.mbt | 2 | Defensive arms: a task suspended by something other than its Driver (no async runtime is linked, so nothing else can suspend it), and `cancel_and_join` called with no task of its own Driver running, where it only requests cancellation. Structured cleanup calls it only while that Driver is stepping a task. |
