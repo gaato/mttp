@@ -144,8 +144,11 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
    of the two.
 3. `Stream(idle_ms~)`: the caller streams. `timeout_ms` ends when the head
    arrives; each later read waits at most `idle_ms` (`None`: no idle limit)
-   and fails with `Timeout` in phase Body. The total length is not bounded at
-   this layer; the reader bounds it.
+   and fails with `Timeout` in phase Body. The per-request length is not
+   bounded at this layer; the reader bounds decoded bytes. The engine-level
+   ceiling (`ClientConfig.max_body_bytes`) still bounds wire bytes, so coded
+   bodies that decode to nothing (empty stored blocks, skippable frames,
+   metadata blocks) cannot stream without end.
 4. Decoded-byte limits are not a Backend concern. `Decompress` passes
    SendOptions through unchanged, so the engine bounds wire bytes, and the
    mttp Client's readers bound decoded bytes.
