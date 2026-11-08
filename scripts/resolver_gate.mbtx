@@ -311,8 +311,8 @@ async fn stage(candidate : Module, registry : String) -> Unit {
 }
 
 ///|
-/// The modules of scripts/modules.tsv whose directory exists, in its order,
-/// which is dependency order.
+/// Published library modules, in dependency order. Example executables are
+/// checked by the runtime gate rather than packaged as consumer libraries.
 async fn workspace_modules(root : String) -> Array[Module] {
   let modules = []
   for raw in @fs.read_text(root + "/scripts/modules.tsv").split("\n") {
@@ -321,8 +321,11 @@ async fn workspace_modules(root : String) -> Array[Module] {
       continue
     }
     guard line.split("\t").map(s => s.to_owned()).to_array()
-      is [dir, _, _, targets, ..] else {
+      is [dir, _, kind, targets, ..] else {
       raise GateError("scripts/modules.tsv: malformed row: " + line)
+    }
+    if kind == "example" {
+      continue
     }
     if @fs.exists(root + "/" + dir + "/moon.mod") {
       let targets = targets
