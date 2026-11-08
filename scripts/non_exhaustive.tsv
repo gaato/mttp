@@ -22,6 +22,7 @@ gaato/mttp/client/retry	Methods
 gaato/mttp/client/retry	RetryAfterCap
 gaato/mttp/client/retry	RetryAfterSource
 gaato/mttp/client/retry	StopReason
+gaato/mttp/client/ratelimit	LimitScope
 gaato/mttp/cookie	SameSite
 gaato/mttp/client	ResponseFailure
 gaato/mttp/testing	Canned

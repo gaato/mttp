@@ -1,0 +1,14 @@
+import {
+  "gaato/http",
+  "gaato/mttp/cookie",
+}
+
+import {
+  "gaato/http/driver",
+  "gaato/http/sim",
+  "gaato/mttp/client",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/http/driver" ],
+)

@@ -3,3 +3,5 @@
 # needs its own decision. Rules: async-test, async-intrinsic, testing-import,
 # wbtest-testing-import, clock.
 http/src/rt/random.mbt clock # default_random is the host boundary for jitter and boundaries; callers take a random source with it as the default, so deterministic tests never read host entropy.
+mttp/src/client/ratelimit/moon.pkg wbtest-testing-import # The Driver schedules cancellation and gate handoff while white-box tests count private holder/waiter references; successful later requests alone cannot prove these references were reclaimed.
+mttp/src/client/ratelimit/moon.pkg wbtest-testing-import # The sim clocks advance virtual time while white-box tests measure private map sizes and sweep thresholds; public state() cannot reveal retained orphan entries, so black-box success alone cannot prove these resource bounds.
