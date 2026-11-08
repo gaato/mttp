@@ -52,7 +52,9 @@ test "aliases expire even while their shared server window keeps refreshing" {
     clock.advance(1)
     limiter.release("new", status=200, headers=@http.Headers::empty())
     assert_eq(limiter.aliases.length(), 2)
-    assert_eq(limiter.states.length(), 1)
+    // Expired aliases detach with the live shared quota as their fallback.
+    assert_eq(limiter.states.length(), 4096)
+    assert_eq(limiter.state("b1").map(s => s.remaining), Some(1))
   })
 }
 

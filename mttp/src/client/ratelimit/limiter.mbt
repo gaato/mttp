@@ -11,6 +11,7 @@ priv struct RecordedState {
   until : Int64
   window_reset : Int64
   blocked_until : Int64
+  retry_override : Bool
 }
 
 ///|
@@ -80,6 +81,10 @@ pub struct WindowLimiter {
 /// resets cannot. Active bucket blocks are never shortened. Since release
 /// has no request token, overlapping calls conservatively charge admissions
 /// since the oldest possible outstanding request until that bucket drains.
+/// Alias changes and expiry carry live constraints before switching keys:
+/// they cannot drop a block or increase quota within the same window. If
+/// expiry cannot allocate the fallback state at capacity, the old route is
+/// retained until transfer has room or its constraints expire.
 /// `scope` classifies 429s; absent it, `global_block` selects Global/Bucket.
 /// Nonpositive global windows impose no limit; negative pacing/fallback
 /// delays mean zero. Parsed and fallback server waits are capped at one hour.
@@ -204,7 +209,7 @@ fn WindowLimiter::sweep_states(
     }
   }
   for bucket in expired_aliases {
-    self.aliases.remove(bucket)
+    self.expire_alias(bucket, now)
   }
   let passed = []
   for group, at in self.next_admit_at {
@@ -225,8 +230,16 @@ fn WindowLimiter::resolve(
   bucket : String,
   now : Int64,
 ) -> String {
+  self.expire_alias(bucket, now)
+  self.routed_key(bucket)
+}
+
+///|
+// Bookkeeping observes already-applied routes. It must not materialize an
+// expired alias after the final capacity or admission checks have committed.
+fn WindowLimiter::routed_key(self : WindowLimiter, bucket : String) -> String {
   match self.aliases.get(bucket) {
-    Some(learned) if learned.until > now => learned.key
+    Some(learned) => learned.key
     _ => bucket
   }
 }
@@ -379,7 +392,7 @@ pub impl @client.RateLimiter for WindowLimiter with fn acquire(
       self.next_admit_at[group] = saturating_add_ms(now, min_interval_ms)
     }
     for active_bucket, active in self.admissions {
-      if active_bucket == bucket || self.resolve(active_bucket, now) == key {
+      if active_bucket == bucket || self.routed_key(active_bucket) == key {
         active.later = active.later.max(0).min(2147483646) + 1
       }
     }
@@ -432,7 +445,15 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
     Some(key) => key(bucket, headers)
     None => None
   }
-  let key = named.unwrap_or(self.resolve(bucket, now))
+  let previous = self.resolve(bucket, now)
+  let key = named.unwrap_or(previous)
+  let carried = if previous == key {
+    None
+  } else {
+    self.states
+    .get(previous)
+    .filter(s => s.until > now || s.blocked_until > now)
+  }
   let wall = self.clock.now_unix_ms()
   let parsed = (self.parse)(headers, wall).map(state => {
     clamp_server_reset(state, wall)
@@ -457,11 +478,16 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
     blocked_until=self.global_blocked_until,
     now~,
   )
-  if effect.record is Some(_) {
+  // Preflight the entire transition before changing either state or alias.
+  // A header without parsed quota must still carry the previous constraints.
+  if effect.record is Some(_) || carried is Some(_) {
     room(self.states, key, phase=Unknown)
   }
   if named is Some(key) && key != bucket {
     room(self.aliases, bucket, phase=Unknown)
+  }
+  if carried is Some(state) {
+    self.record(key, state, now)
   }
   if effect.record is Some(value) {
     let reported = if status == 429 && scope is Bucket {
@@ -475,7 +501,7 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
     } else {
       parsed.unwrap_or(value)
     }
-    let debt = self.admission_debt(bucket, key, now)
+    let debt = self.admission_debt(bucket, key)
     let candidate = {
       value: {
         ..reported,
@@ -490,11 +516,9 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
       } else {
         now
       },
+      retry_override: status == 429 && scope is Bucket && delay_ms is Some(_),
     }
-    self.states[key] = match self.states.get(key) {
-      Some(current) => reconcile(current, candidate)
-      None => candidate
-    }
+    self.record(key, candidate, now)
   }
   if named is Some(key) {
     if key == bucket {

@@ -507,7 +507,7 @@ test "a bucket follows the key its latest response names" {
   assert_eq(limiter.resolve("a", limiter.now()), "k2")
   assert_eq(
     limiter.state("a"),
-    Some({ remaining: 7, reset_at_unix_ms: 61000L, }),
+    Some({ remaining: 3, reset_at_unix_ms: 61000L, }),
   )
   // Naming the bucket itself forgets the alias.
   run_now(d, () => {

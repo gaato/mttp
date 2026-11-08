@@ -16,6 +16,8 @@ Concurrent responses are reconciled by server bucket and reset instant.
 Within the same window, remaining quota can only decrease; an older reset
 cannot replace a newer one. A later reset replaces the quota, while an active
 Retry-After block survives every response and can only be extended.
+For that same window, Retry-After overrides ordinary quota deadlines recorded
+both before and after the 429; an existing longer reset cannot extend the wait.
 Responses also account for admissions made while they were in flight,
 including admissions whose responses have already completed. The release
 port identifies only a bucket, so it cannot match responses to individual
@@ -38,12 +40,24 @@ is no FIFO guarantee. Every successful acquire needs one release. A cancelled
 wait consumes neither global nor bucket quota and returns any held gate.
 The final global, bucket and pace checks commit without suspension.
 
-`server_key` can map several caller buckets to one server window. Aliases
-expire independently after one hour and survive quota resets and sweeps of
-expired quota state. Expired state, aliases and pace deadlines
+`server_key` can map several caller buckets to one server window. Every key
+transition must preserve active blocks and cannot raise remaining quota in
+the same window. Learning, changing or removing an alias first reconciles the
+previously resolved state into the destination, even without parsed quota
+headers. The source stays available to other buckets still using it.
+
+Aliases expire independently after one hour and survive quota resets and
+sweeps of expired quota state. Expiry copies any live shared constraints to
+the caller bucket before detaching. If the state map has no room for that
+fallback, the alias retains its old route until a later lookup or sweep can
+transfer it, or its constraints expire. A refused response transition leaves
+the previous route and its constraints intact. These rules prevent a key
+change or eviction from bypassing a block or replenishing quota.
+Expired state, aliases and pace deadlines
 are swept on traffic, at doubling thresholds or every 60 seconds. Each map
 (including active gate groups and outstanding admission buckets) has a fixed
-4096-entry ceiling. Admission bookkeeping uses counters per bucket, rather
+4096-entry ceiling, including deferred alias expirations and copied fallback
+states. Admission bookkeeping uses counters per bucket, rather
 than retaining individual requests, and is removed by every release,
 including transport failures, ignored responses and recording refusals. New entries
 beyond it raise `TransportError(TooLarge(4096))` after eviction of expired
