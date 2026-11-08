@@ -11,11 +11,8 @@ native.
 > **Status**: this version is being rebuilt in the
 > [mttp repository](https://github.com/gaato/mttp). The packages arrive one
 > at a time: `jsonkit`, `sse`, `multipart`, `cookie`, `schema`, the client
-> with its retry rules, and the test doubles are here; rate limits, the
-> cookie wrapper, endpoints, the router and OpenAPI follow.
-> at a time: `jsonkit`, `sse`, `multipart`, `cookie`, the client with its
-> retry rules, rate limits, the cookie wrapper, and the test doubles are
-> here; schemas, endpoints, the router and OpenAPI follow.
+> with its retry rules, rate limits, the cookie wrapper, and the test doubles
+> are here; endpoints, the router and OpenAPI follow.
 
 ## Install
 
