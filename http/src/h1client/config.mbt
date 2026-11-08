@@ -45,8 +45,11 @@ pub(all) struct ClientConfig {
   /// `Exchange(max_bytes)` the smaller of the two applies; a streamed body
   /// is bounded by this ceiling alone, so `None` lets it run without end.
   max_body_bytes : Int32?
-  /// Bounds on the response head, chunk-size lines and trailers.
+  /// Bounds on the response head, chunk-size lines and trailers, and on a
+  /// proxy's answer to CONNECT.
   head_limits : @h1.Limits
+  /// The HTTP proxies and the hosts that skip them.
+  proxy : ProxyConfig
 }
 
 ///|
@@ -60,7 +63,7 @@ pub extend ClientConfig with @debug.Debug::{to_repr}
 ///|
 /// No phase limits and no connection caps; idle reuse of at most 256
 /// connections, 4 per origin, for 10 seconds; no wire ceiling beyond the
-/// per-send one; `@h1.Limits::default()` for heads.
+/// per-send one; `@h1.Limits::default()` for heads; no proxy.
 pub fn ClientConfig::default() -> ClientConfig {
   {
     pool_timeout_ms: None,
@@ -74,5 +77,6 @@ pub fn ClientConfig::default() -> ClientConfig {
     idle_max_ms: 10000,
     max_body_bytes: None,
     head_limits: @h1.Limits::default(),
+    proxy: ProxyConfig::none(),
   }
 }

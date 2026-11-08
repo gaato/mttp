@@ -80,6 +80,15 @@ test "send a request and read the response" {
   before any response byte arrived is resent once on a fresh connection, if
   its body is replayable and it is idempotent (`@http.is_idempotent`); such
   a response carries the `stale_resend` attribute.
+- **Proxies.** `ClientConfig.proxy` names an HTTP proxy per scheme and a
+  `NO_PROXY` list, as data: `ProxyConfig::from_env(lookup)` reads the usual
+  environment variables once, through a lookup the caller passes, and the
+  client never reads the environment itself. `http://` requests are
+  forwarded with an absolute target; `https://` requests go through a
+  `CONNECT` tunnel with TLS end to end. A request's own
+  `Proxy-Authorization` is never sent; a proxy's credentials (from its
+  URL) go to that proxy only. Connections through different proxies, or
+  none, are pooled apart.
 - **Ownership.** A response body owns its connection and slot until it is
   read to its end or closed. Cancelling a send or a read closes what it
   owns and propagates unchanged.

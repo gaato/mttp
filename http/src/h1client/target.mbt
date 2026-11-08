@@ -6,9 +6,13 @@ priv struct Target {
   host : String
   port : Int32
   secure : Bool
+  /// `host:port` with the port always written and IPv6 in brackets: the
+  /// target of a CONNECT that opens a tunnel.
+  authority : String
   /// The `Host` field: the authority without the scheme's default port.
   host_field : String
-  /// `scheme://host:port` with the port always written, the key that parks and counts connections.
+  /// `scheme://host:port` with the port always written: the key that parks
+  /// and counts connections.
   origin : String
   /// The request target in origin form, or the authority for CONNECT.
   path : String
@@ -48,7 +52,9 @@ fn target(request : @http.Request) -> Target raise @http.TransportError {
     host,
     port,
     secure: scheme == "https",
-    host_field: if port == default_port {
+    authority,
+    // A CONNECT names the authority with its port, Host included.
+    host_field: if port == default_port && request.meth != Connect {
       name
     } else {
       authority
