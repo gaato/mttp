@@ -311,3 +311,92 @@ test "the default configuration follows ten hops and refuses the eleventh" {
     Some(10),
   )
 }
+
+///|
+test "a failure after a followed redirect is never unsent, so it is not resent" {
+  let sends = []
+  let backend = @client.FollowRedirects::new(
+    @client.from_fn((request, _) => {
+      sends.push(request.meth.to_string() + " " + request.url)
+      if request.url == "https://h/form" {
+        @http.Response::new(
+          302,
+          headers=@http.Headers::of([("location", "/done")]),
+        )
+      } else {
+        raise @http.TransportError(kind=Connect, phase=Dial, detail="refused")
+      }
+    }),
+  )
+  // Retries only what provably was not sent.
+  let retry = @client.RetryPolicy::from_rule({
+    ..@retry.RetryRule::never(),
+    max_retries: 2,
+    unsent_failures: true,
+  })
+  let client = @client.Client::new(backend, @sim.FakeClock::new(), retry~)
+  let failure = try {
+    ignore(
+      @driver.run_sync(() => {
+        client.send(@client.post("https://h/form").body_bytes(b"pay=1"))
+      }),
+    )
+    None
+  } catch {
+    @http.TransportError(..) as error => Some(error)
+    error => raise error
+  }
+  guard failure is Some(@http.TransportError(kind~, phase~, ..) as error) else {
+    fail("expected a transport failure")
+  }
+  assert_false(error.is_unsent())
+  assert_eq(kind, Network)
+  assert_eq(phase, Unknown)
+  // The POST was answered once; nothing was resent.
+  assert_eq(sends, ["POST https://h/form", "GET https://h/done"])
+  // A failure of the first hop is still unsent, and is retried.
+  sends.clear()
+  let failure = try {
+    ignore(
+      @driver.run_sync(() => client.send(@client.post("https://h/elsewhere"))),
+    )
+    None
+  } catch {
+    @http.TransportError(kind~, phase~, ..) => Some((kind, phase))
+    error => raise error
+  }
+  assert_eq(failure, Some((Connect, Dial)))
+  assert_eq(sends.length(), 3)
+  // Timeouts and other kinds keep their kind, with phase Unknown.
+  let timed = @client.FollowRedirects::new(
+    @client.from_fn((request, _) => {
+      if request.url == "https://h/a" {
+        @http.Response::new(
+          307,
+          headers=@http.Headers::of([("location", "/b")]),
+        )
+      } else {
+        raise @http.TransportError(
+          kind=Timeout(ms=5),
+          phase=Head,
+          detail="slow",
+        )
+      }
+    }),
+  )
+  let failure = try {
+    ignore(
+      @driver.run_sync(() => {
+        timed.send(
+          @http.Request::get("https://h/a"),
+          @http.SendOptions::default(),
+        )
+      }),
+    )
+    None
+  } catch {
+    @http.TransportError(kind~, phase~, ..) => Some((kind, phase))
+    error => raise error
+  }
+  assert_eq(failure, Some((Timeout(ms=5), Unknown)))
+}

@@ -127,6 +127,11 @@ pub fn RedirectConfig::default() -> RedirectConfig {
 /// the attempt deadline; a `Client` with a Timer bounds the whole chain.
 /// Place `Cookies` inside this wrapper so every hop is processed, and keep
 /// retries above it: a 503 on the second hop re-sends the first.
+///
+/// A transport failure on a later hop is never reported as unsent: the first
+/// request got an answer, so it reached the server. Such a failure has phase
+/// `Unknown`, and a `Connect` or `Proxy` kind becomes `Network`; the detail
+/// keeps the original.
 pub struct FollowRedirects {
   priv inner : &@http.Backend
   priv config : RedirectConfig
@@ -175,7 +180,13 @@ pub async fn FollowRedirects::send(
   let mut request = request
   let history = []
   for followed = 0; ; followed = followed + 1 {
-    let response = self.inner.send(request, options)
+    let response = if followed == 0 {
+      self.inner.send(request, options)
+    } else {
+      self.inner.send(request, options) catch {
+        error => raise after_redirect(error, followed)
+      }
+    }
     errdefer response.close()
     let planned = if max > 0 {
       plan_redirect(
@@ -252,4 +263,27 @@ pub impl @http.Backend for FollowRedirects with fn send(self, request, options) 
 /// Closes through the shared backend interface.
 pub impl @http.Backend for FollowRedirects with fn close(self) {
   self.close()
+}
+
+///|
+/// A failure of a hop after the first, which must not read as unsent: an
+/// earlier hop got a response, so the original request reached the server
+/// and may have been processed, whatever this hop's phase says. The phase
+/// becomes `Unknown`, a `Connect` or `Proxy` kind (which imply that nothing
+/// was sent) becomes `Network`, and the detail keeps the original kind,
+/// phase and detail.
+fn after_redirect(
+  error : @http.TransportError,
+  followed : Int32,
+) -> @http.TransportError {
+  let @http.TransportError(kind~, ..) = error
+  let kind : @http.Kind = match kind {
+    Connect | Proxy(_) => Network
+    kind => kind
+  }
+  @http.TransportError(
+    kind~,
+    phase=Unknown,
+    detail="redirect hop \{followed} failed after an earlier hop was answered: \{error.message()}",
+  )
 }

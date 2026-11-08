@@ -89,7 +89,9 @@ wrapper:
   `RedirectConfig` (10 hops, no HTTPS downgrade, credentials removed on an
   origin change), overridden per request by the `redirect_limit` attribute
   that `RequestPlan::follow_redirects` and `max_redirects` set. It records
-  `redirect_history` and `final_url`. Keep retries above it.
+  `redirect_history` and `final_url`. Keep retries above it; a transport
+  failure on a later hop never reads as unsent, since the first request was
+  answered.
 - `from_fn` and `from_handler` turn a function or an `@http.Handler` into a
   backend that validates what it is given.
 
