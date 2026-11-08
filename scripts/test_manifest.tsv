@@ -57,10 +57,10 @@ gaato/mttp	gaato/mttp/multipart	js	38
 gaato/mttp	gaato/mttp/multipart	native	38
 gaato/mttp	gaato/mttp/multipart	wasm	38
 gaato/mttp	gaato/mttp/multipart	wasm-gc	38
-gaato/mttp	gaato/mttp/schema	js	29
-gaato/mttp	gaato/mttp/schema	native	29
-gaato/mttp	gaato/mttp/schema	wasm	29
-gaato/mttp	gaato/mttp/schema	wasm-gc	29
+gaato/mttp	gaato/mttp/schema	js	32
+gaato/mttp	gaato/mttp/schema	native	32
+gaato/mttp	gaato/mttp/schema	wasm	32
+gaato/mttp	gaato/mttp/schema	wasm-gc	32
 gaato/mttp	gaato/mttp/sse	js	25
 gaato/mttp	gaato/mttp/sse	native	25
 gaato/mttp	gaato/mttp/sse	wasm	25
