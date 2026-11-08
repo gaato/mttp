@@ -37,9 +37,12 @@ test {
 
 Inject an unpredictable source of values in `[0, 1)` in production. Each
 cnonce uses four draws (128 bits); the nonce count starts at one and is sent
-as eight hex digits. The origin must be an absolute HTTP(S) URL without
-userinfo. Paths do not affect its scope. Explicit `Authorization` headers
-take precedence; requests to another origin pass through without credentials.
+as eight hex digits. Concurrent calls share increasing counts, including
+responses to challenges with an already-used nonce. A new nonce or a
+`stale=true` challenge resets the count to one. The origin must be an absolute
+HTTP(S) URL without userinfo. Paths do not affect its scope. Explicit
+`Authorization` headers take precedence; requests to another origin pass
+through without credentials.
 
 Place `DigestScheme` inside `FollowRedirects` so every hop is checked against
 the credential origin, and put the `Client` outside both wrappers. Retry
@@ -66,7 +69,8 @@ SHA-512-256 challenges are declined, as in the original implementation:
 All `WWW-Authenticate` values together have a 16 KiB UTF-8 budget; a larger
 challenge returns the 401 unchanged. The nonce store retains at most 16
 origins, evicts the oldest on overflow and forgets a nonce when its count
-would exceed `ffffffff`. Each wrapper is scoped to one origin.
+would exceed `ffffffff`. A same-nonce challenge at exhaustion returns the
+401 unchanged rather than reusing a count. Each wrapper is scoped to one origin.
 
 ## License
 

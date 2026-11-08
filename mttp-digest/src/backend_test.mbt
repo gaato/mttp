@@ -18,6 +18,135 @@ fn wrap(
 }
 
 ///|
+test "Digest concurrent same nonce challenges allocate counts without reuse" {
+  for warm in [false, true] {
+    let driver = @driver.Driver::new()
+    let initial : Array[String?] = []
+    let answered : Array[String] = []
+    let following : Array[String?] = []
+    let backend = wrap(
+      @client.from_fn((request, _) => {
+        let auth = request.headers.get("authorization")
+        if request.url == "https://a.test/warm" {
+          @http.Response::new(
+            if auth is None {
+              401
+            } else {
+              200
+            },
+            headers=challenge(),
+          )
+        } else if request.url == "https://a.test/after" {
+          following.push(auth)
+          @http.Response::new(200)
+        } else if initial.length() < 3 {
+          initial.push(auth)
+          // All three calls start before any challenge can update the cache.
+          driver.sleep(1)
+          @http.Response::new(401, headers=challenge())
+        } else {
+          answered.push(auth.unwrap())
+          // Keep challenge responses in flight while other calls adopt it.
+          driver.pause()
+          @http.Response::new(200)
+        }
+      }),
+    )
+    defer backend.close()
+    driver.run(() => {
+      if warm {
+        backend
+        .send(
+          @http.Request::get("https://a.test/warm"),
+          @http.SendOptions::default(),
+        )
+        .close()
+      }
+      let tasks = [0, 1, 2].map(i => {
+        driver.spawn(() => {
+          let response = backend.send(
+            @http.Request::get("https://a.test/concurrent/\{i}"),
+            @http.SendOptions::default(),
+          )
+          assert_eq(response.status, 200)
+          response.close()
+        })
+      })
+      for task in tasks {
+        assert_true(task.wait())
+      }
+      backend
+      .send(
+        @http.Request::get("https://a.test/after"),
+        @http.SendOptions::default(),
+      )
+      .close()
+    })
+    assert_eq(initial.length(), 3)
+    assert_eq(answered.length(), 3)
+    let expected = if warm {
+      ["00000005", "00000006", "00000007"]
+    } else {
+      ["00000001", "00000002", "00000003"]
+    }
+    for i in 0..<3 {
+      if warm {
+        assert_true(
+          initial[i]
+          .unwrap()
+          .contains("nc=\{["00000002", "00000003", "00000004"][i]}"),
+        )
+      } else {
+        assert_eq(initial[i], None)
+      }
+      assert_true(answered[i].contains("nc=\{expected[i]}"))
+    }
+    assert_eq(following.length(), 1)
+    let count = if warm { "00000008" } else { "00000004" }
+    assert_true(following[0].unwrap().contains("nc=\{count}"))
+  }
+}
+
+///|
+test "Digest new nonce and stale same nonce reset challenge counts" {
+  for stale in [false, true] {
+    let sent : Array[String?] = []
+    let backend = wrap(
+      @client.from_fn((request, _) => {
+        sent.push(request.headers.get("authorization"))
+        match sent.length() {
+          1 => @http.Response::new(401, headers=challenge())
+          3 =>
+            @http.Response::new(
+              401,
+              headers=challenge(nonce=if stale { "n" } else { "new" }, stale~),
+            )
+          _ => @http.Response::new(200)
+        }
+      }),
+    )
+    defer backend.close()
+    @driver.run_sync(() => {
+      for _ in 0..<3 {
+        let response = backend.send(
+          @http.Request::get("https://a.test/"),
+          @http.SendOptions::default(),
+        )
+        assert_eq(response.status, 200)
+        response.close()
+      }
+    })
+    assert_eq(sent.length(), 5)
+    assert_eq(sent[0], None)
+    for i, count in ["00000001", "00000002", "00000001", "00000002"] {
+      assert_true(sent[i + 1].unwrap().contains("nc=\{count}"))
+    }
+    let nonce = if stale { "n" } else { "new" }
+    assert_true(sent[4].unwrap().contains("nonce=\"\{nonce}\""))
+  }
+}
+
+///|
 test "Digest reuses counted nonces and closes each replaced body" {
   let driver = @driver.Driver::new()
   let first_body = @sim.Feed::bytes(driver, [b"unread"])

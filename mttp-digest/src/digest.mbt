@@ -67,19 +67,31 @@ fn DigestState::new() -> DigestState {
 }
 
 ///|
-/// Takes `challenge` as the nonce for `origin`, counting its first use,
-/// and forgets the oldest origin when there are too many.
+/// Allocates a count for a challenge response without suspending. A repeated
+/// nonce keeps its count; a new or explicitly stale nonce starts at one.
+/// Refuses an exhausted count and forgets the oldest origin when full.
 fn DigestState::adopt(
   self : DigestState,
   origin : String,
   challenge : DigestChallenge,
-) -> Unit {
+) -> Int64? {
+  if !challenge.stale &&
+    self.nonces.get(origin) is Some(nonce) &&
+    nonce.challenge.nonce == challenge.nonce {
+    guard next_nonce_count(nonce.count) is Some(count) else {
+      self.nonces.remove(origin)
+      return None
+    }
+    self.nonces.set(origin, { challenge, count, })
+    return Some(count)
+  }
   self.nonces.remove(origin)
   while self.nonces.length() >= max_digest_origins {
     guard self.nonces.keys().head() is Some(oldest) else { break }
     self.nonces.remove(oldest)
   }
   self.nonces.set(origin, { challenge, count: 1, })
+  Some(1)
 }
 
 ///|

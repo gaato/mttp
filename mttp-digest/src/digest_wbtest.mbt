@@ -339,31 +339,58 @@ test "nonce state: counted per origin, bounded, forgotten when nc runs out" {
   }
   let state = DigestState::new()
   assert_true(state.next("https://a.test:443", true) is None)
-  state.adopt("https://a.test:443", challenge("n1", Some("auth")))
+  assert_eq(
+    state.adopt("https://a.test:443", challenge("n1", Some("auth"))),
+    Some(1L),
+  )
   let counts = [0, 1, 2].map(_ => {
     state.next("https://a.test:443", true).map(next => next.1)
   })
   assert_eq(counts, [Some(2L), Some(3L), Some(4L)])
+  let updated = {
+    ..challenge("n1", Some("auth")),
+    opaque_data: Some("updated"),
+  }
+  assert_eq(state.adopt("https://a.test:443", updated), Some(5L))
+  let (cached, count) = state.next("https://a.test:443", true).unwrap()
+  assert_eq(cached.opaque_data, Some("updated"))
+  assert_eq(count, 6L)
   assert_true(state.next("https://b.test:443", true) is None, msg="per origin")
-  state.adopt("https://a.test:443", challenge("n2", Some("auth")))
+  assert_eq(
+    state.adopt("https://a.test:443", challenge("n2", Some("auth"))),
+    Some(1L),
+  )
   assert_eq(
     state.next("https://a.test:443", true).map(next => (next.0.nonce, next.1)),
     Some(("n2", 2L)),
     msg="a new nonce counts from 1 again",
   )
-  state.adopt("https://c.test:443", challenge("n", None))
+  assert_eq(state.adopt("https://c.test:443", challenge("n", None)), Some(1L))
   assert_true(state.next("https://c.test:443", true) is None, msg="no qop")
-  state.adopt("https://d.test:443", challenge("n", Some("auth-int")))
+  assert_eq(
+    state.adopt("https://d.test:443", challenge("n", Some("auth-int"))),
+    Some(1L),
+  )
   assert_true(state.next("https://d.test:443", false) is None, msg="no body")
   assert_true(state.next("https://d.test:443", true) is Some(_))
   // Bounded: one origin past the limit forgets the oldest.
   let state = DigestState::new()
   for i in 0..<max_digest_origins {
-    state.adopt("https://\{i}.test:443", challenge("n", Some("auth")))
+    assert_eq(
+      state.adopt("https://\{i}.test:443", challenge("n", Some("auth"))),
+      Some(1L),
+    )
   }
   assert_eq(state.nonces.length(), 16)
   assert_true(state.next("https://0.test:443", true) is Some(_))
-  state.adopt("https://new.test:443", challenge("n", Some("auth")))
+  assert_eq(
+    state.adopt("https://0.test:443", challenge("n", Some("auth"))),
+    Some(3L),
+  )
+  assert_eq(
+    state.adopt("https://new.test:443", challenge("n", Some("auth"))),
+    Some(1L),
+  )
   assert_eq(state.nonces.length(), 16)
   assert_true(state.next("https://0.test:443", true) is None, msg="oldest")
   assert_true(state.next("https://1.test:443", true) is Some(_))
@@ -375,6 +402,64 @@ test "nonce state: counted per origin, bounded, forgotten when nc runs out" {
   state.nonces.get("https://1.test:443").unwrap().count = max_nonce_count
   assert_true(state.next("https://1.test:443", true) is None)
   assert_true(state.nonces.get("https://1.test:443") is None, msg="forgotten")
+  state.nonces.get("https://new.test:443").unwrap().count = max_nonce_count - 1
+  assert_eq(
+    state.adopt("https://new.test:443", challenge("n", Some("auth"))),
+    Some(max_nonce_count),
+  )
+  assert_eq(
+    state.adopt("https://new.test:443", challenge("n", Some("auth"))),
+    None,
+  )
+  assert_true(
+    state.nonces.get("https://new.test:443") is None,
+    msg="exhausted challenge forgotten",
+  )
+}
+
+///|
+test "Digest exhausted same nonce challenge returns the caller owned 401" {
+  let driver = @driver.Driver::new()
+  let body = @sim.Feed::bytes(driver, [b"denied"])
+  let sent : Array[String?] = []
+  let backend = DigestScheme::new(
+    @client.from_fn((request, _) => {
+      sent.push(request.headers.get("authorization"))
+      @http.Response::new(
+        401,
+        headers=@http.Headers::of([
+          ("www-authenticate", "Digest realm=r, nonce=n, qop=auth"),
+        ]),
+        body=Stream(@http.StreamBody::new(body)),
+      )
+    }),
+    "u",
+    "p",
+    origin="https://a.test",
+    random=() => 0.5,
+  )
+  defer backend.close()
+  let origin = "https://a.test:443"
+  let challenge = digest_challenge(
+    [("realm", "r"), ("nonce", "n"), ("qop", "auth")],
+    true,
+  ).unwrap()
+  assert_eq(backend.state.adopt(origin, challenge), Some(1L))
+  backend.state.nonces.get(origin).unwrap().count = max_nonce_count - 1
+  driver.run(() => {
+    let response = backend.send(
+      @http.Request::get("https://a.test/"),
+      @http.SendOptions::default(),
+    )
+    assert_eq(response.status, 401)
+    assert_eq(sent.length(), 1)
+    assert_true(sent[0].unwrap().contains("nc=ffffffff"))
+    assert_true(backend.state.nonces.get(origin) is None)
+    assert_eq(body.closes(), 0)
+    assert_eq(body.reads(), 0)
+    response.close()
+    assert_eq(body.closes(), 1)
+  })
 }
 
 ///|

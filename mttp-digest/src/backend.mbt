@@ -110,9 +110,11 @@ pub async fn DigestScheme::send(
       should_answer(answers, challenge.stale) else {
       return response
     }
-    self.state.adopt(origin, challenge)
+    guard self.state.adopt(origin, challenge) is Some(count) else {
+      return response
+    }
     response.close()
-    response = self.inner.send(authorize(challenge, 1), options) catch {
+    response = self.inner.send(authorize(challenge, count), options) catch {
       error => raise after_challenge(error)
     }
     continue answers + 1

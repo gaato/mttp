@@ -111,7 +111,7 @@ gaato/mttp-conformance	gaato/mttp-conformance/url	js	2
 gaato/mttp-conformance	gaato/mttp-conformance/url	native	2
 gaato/mttp-conformance	gaato/mttp-conformance/url	wasm	2
 gaato/mttp-conformance	gaato/mttp-conformance/url	wasm-gc	2
-gaato/mttp-digest	gaato/mttp-digest	js	24
-gaato/mttp-digest	gaato/mttp-digest	native	24
-gaato/mttp-digest	gaato/mttp-digest	wasm	24
-gaato/mttp-digest	gaato/mttp-digest	wasm-gc	24
+gaato/mttp-digest	gaato/mttp-digest	js	27
+gaato/mttp-digest	gaato/mttp-digest	native	27
+gaato/mttp-digest	gaato/mttp-digest	wasm	27
+gaato/mttp-digest	gaato/mttp-digest	wasm-gc	27
