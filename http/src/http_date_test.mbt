@@ -128,3 +128,47 @@ test "invalid dates and inconsistent weekday are rejected" {
     assert_eq(@http.parse_http_date(date, now_unix_ms=0L), None, msg=date)
   }
 }
+
+///|
+test "the fifty-year cutoff compares the whole date, not the year" {
+  // RFC 9110 §5.6.7: a date more than 50 years ahead of the clock is from
+  // the century before. The clock is 2026-10-21T00:00:00Z, so the cutoff is
+  // 2076-10-21T00:00:00Z, itself still allowed.
+  let now = 1792540800000L
+  for
+    (date, expected) in [
+      // Late in 2076 is past the cutoff: 1976. The weekday holds only then.
+      ("Friday, 31-Dec-76 00:00:00 GMT", Some(220838400000L)),
+      ("Thursday, 31-Dec-76 00:00:00 GMT", None),
+      // The day after the cutoff: 1976-10-22, a Friday.
+      ("Friday, 22-Oct-76 00:00:00 GMT", Some(214790400000L)),
+      ("Thursday, 22-Oct-76 00:00:00 GMT", None),
+      // One second past the cutoff is 1976 as well.
+      ("Thursday, 21-Oct-76 00:00:01 GMT", Some(214704001000L)),
+      // The cutoff itself: 2076-10-21, a Wednesday.
+      ("Wednesday, 21-Oct-76 00:00:00 GMT", Some(3370464000000L)),
+      ("Thursday, 21-Oct-76 00:00:00 GMT", None),
+    ] {
+    assert_eq(@http.parse_http_date(date, now_unix_ms=now), expected, msg=date)
+  }
+}
+
+///|
+test "a two-digit year may name the next century" {
+  // The clock is 2090-01-01T00:00:00Z: `10` is 2110, 20 years ahead, not
+  // 2010; `89` is 2089, not 2189; `40` is 2140 exactly at the cutoff, and
+  // 2040 one second past it.
+  let now = 3786912000000L
+  for
+    (date, expected) in [
+      ("Wednesday, 01-Jan-10 00:00:00 GMT", Some(4417977600000L)),
+      ("Friday, 01-Jan-10 00:00:00 GMT", None),
+      ("Saturday, 01-Jan-89 00:00:00 GMT", Some(3755376000000L)),
+      ("Friday, 01-Jan-40 00:00:00 GMT", Some(5364662400000L)),
+      ("Sunday, 01-Jan-40 00:00:00 GMT", None),
+      ("Sunday, 01-Jan-40 00:00:01 GMT", Some(2208988801000L)),
+      ("Friday, 01-Jan-40 00:00:01 GMT", None),
+    ] {
+    assert_eq(@http.parse_http_date(date, now_unix_ms=now), expected, msg=date)
+  }
+}
