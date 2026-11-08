@@ -1,13 +1,14 @@
 ///|
-/// `text` in RFC 5952's canonical form if it is an RFC 3986 `IPv6address`:
-/// lower-case hex without leading zeros, the longest run of two or more zero
-/// groups (the first, if tied) as `::`, and a trailing dotted quad kept
-/// where the input had one (RFC 5952 §5). None if it is not an address.
+/// `text` in canonical form if it is an RFC 3986 `IPv6address`: eight
+/// lower-case hex groups without leading zeros, the longest run of two or
+/// more zero groups (the first, if tied) as `::` (RFC 5952 §4). A dotted-quad
+/// tail is written in hex too, as the WHATWG URL serializer does, so every
+/// spelling of one address serializes and compares alike. None if it is not
+/// an address.
 fn ipv6_canonical(text : String) -> String? {
   let halves = text.split("::").to_array()
   guard halves.length() <= 2 else { return None }
   let parsed = []
-  let mut dotted = false
   for h, half in halves {
     let groups = []
     if half.length() > 0 {
@@ -18,7 +19,6 @@ fn ipv6_canonical(text : String) -> String? {
           guard ipv4_octets(part) is Some(octets) else { return None }
           groups.push(octets[0] * 256 + octets[1])
           groups.push(octets[2] * 256 + octets[3])
-          dotted = true
         } else {
           guard part.length() >= 1 &&
             part.length() <= 4 &&
@@ -41,24 +41,22 @@ fn ipv6_canonical(text : String) -> String? {
     guard parsed[0].length() == 8 else { return None }
     parsed[0]
   }
-  Some(ipv6_text(groups, dotted~))
+  Some(ipv6_text(groups))
 }
 
 ///|
-/// Writes eight groups by RFC 5952 §4, the last two as a dotted quad when
-/// `dotted`; the run compressed to `::` is then sought among the first six.
-fn ipv6_text(groups : Array[Int32], dotted~ : Bool) -> String {
-  let hex_groups = if dotted { 6 } else { 8 }
+/// Writes eight groups by RFC 5952 §4.
+fn ipv6_text(groups : Array[Int32]) -> String {
   let mut best_start = -1
   let mut best_length = 1
   let mut i = 0
-  while i < hex_groups {
+  while i < 8 {
     if groups[i] != 0 {
       i += 1
       continue
     }
     let start = i
-    while i < hex_groups && groups[i] == 0 {
+    while i < 8 && groups[i] == 0 {
       i += 1
     }
     if i - start > best_length {
@@ -68,7 +66,7 @@ fn ipv6_text(groups : Array[Int32], dotted~ : Bool) -> String {
   }
   let builder = StringBuilder()
   let mut i = 0
-  while i < hex_groups {
+  while i < 8 {
     if i == best_start {
       builder.write_string("::")
       i += best_length
@@ -79,18 +77,6 @@ fn ipv6_text(groups : Array[Int32], dotted~ : Bool) -> String {
     }
     builder.write_string(groups[i].to_string(radix=16))
     i += 1
-  }
-  if dotted {
-    if best_start < 0 || best_start + best_length != hex_groups {
-      builder.write_char(':')
-    }
-    let octets = [
-      groups[6] >> 8,
-      groups[6] & 255,
-      groups[7] >> 8,
-      groups[7] & 255,
-    ]
-    builder.write_string(octets.map(octet => octet.to_string()).join("."))
   }
   builder.to_string()
 }
