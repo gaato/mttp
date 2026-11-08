@@ -290,3 +290,99 @@ test "the head limit starts once an upload has finished" {
   })
   assert_eq(conn.written().length(), 3)
 }
+
+///|
+/// A body stream that yields one piece, then fails with a network error
+/// after `delay` ms, as a stream relaying another connection might.
+fn relay(h : Harness, delay : Int32) -> @sim.Feed {
+  @sim.Feed::new(h.driver, [
+    Chunk(b"x"),
+    Wait(delay),
+    Fail(
+      @http.TransportError(
+        kind=Network,
+        phase=Write,
+        detail="upstream input failed",
+      ),
+    ),
+  ])
+}
+
+///|
+test "a stream failing mid-upload aborts the exchange at once with its own error" {
+  // The server waits for the whole request and never answers an
+  // incomplete one; without any deadline the send must still end. Also
+  // when an answer would come after the stream failed, the stream's
+  // failure is the outcome.
+  for answer_after in [None, Some(20)] {
+    let h = Harness::new()
+    let peer = h.peer()
+    h.run(() => {
+      let feed = relay(h, 5)
+      let server = h.driver.spawn(() => {
+        let decoder = @h1.HeadDecoder::new()
+        while decoder.feed(peer.conn.read(max_len=65536).unwrap()).head is None {
+
+        }
+        if answer_after is Some(ms) {
+          h.driver.sleep(ms)
+          peer.conn.write(ok("fine")) catch {
+            _ => ()
+          }
+        }
+        while (peer.conn.read(max_len=65536) catch { _ => None }) is Some(_) {
+
+        }
+      })
+      let detail = try {
+        ignore(
+          h.client.send(
+            @http.Request::post("http://example.test/").body_stream(feed),
+            exchange(),
+          ),
+        )
+        ""
+      } catch {
+        @http.TransportError(kind=Network, phase=Write, detail~) => detail
+        error => raise error
+      }
+      assert_eq(detail, "upstream input failed")
+      assert_eq(h.driver.now(), 5L)
+      assert_eq(feed.closes(), 1)
+      assert_eq(h.client.idle_connections(), 0)
+      h.finish()
+      ignore(server.wait())
+    })
+  }
+}
+
+///|
+test "an answer before the stream fails ends the upload and wins" {
+  let h = Harness::new()
+  let peer = h.peer()
+  h.run(() => {
+    let feed = relay(h, 50)
+    let server = h.driver.spawn(() => {
+      let decoder = @h1.HeadDecoder::new()
+      while decoder.feed(peer.conn.read(max_len=65536).unwrap()).head is None {
+
+      }
+      peer.respond(ok("no!", status=413))
+      while (peer.conn.read(max_len=65536) catch { _ => None }) is Some(_) {
+
+      }
+    })
+    let response = h.client.send(
+      @http.Request::post("http://example.test/").body_stream(feed),
+      exchange(),
+    )
+    assert_eq(response.status, 413)
+    // The stream was cancelled before it could fail.
+    assert_eq(feed.cancellations(), 1)
+    assert_eq(feed.closes(), 1)
+    assert_eq(body_of(response), b"no!")
+    assert_eq(h.client.idle_connections(), 0)
+    h.finish()
+    ignore(server.wait())
+  })
+}
