@@ -1,0 +1,12 @@
+mttp
+Copyright 2026 gaato
+
+This product includes software developed by gaato
+(https://github.com/gaato).
+
+Parts of it were moved from gaato/mbt-sdk (https://github.com/gaato/mbt-sdk),
+also licensed under the Apache License, Version 2.0. Its design follows the
+sttp and tapir projects by SoftwareMill (https://github.com/softwaremill).
+
+The URI reference parser and resolver include code ported through gaato/http
+from moonbitstack/moonhttp (Copyright 2026 Leo Cheng, Apache-2.0).

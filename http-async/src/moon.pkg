@@ -1,0 +1,11 @@
+// The test below runs on moonbitlang/core/async, which is experimental: the
+// importing package must name every experimental package it uses, by exact
+// path. `true` would acknowledge every experimental package at once, so
+// scripts/architecture_gate.mbtx accepts only this list form.
+import {
+  "moonbitlang/core/async",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)
