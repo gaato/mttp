@@ -1212,3 +1212,58 @@ test "cancel_and_join on an idle driver from another driver's task reports NotIn
   other.run(() => ())
   assert_eq(log, ["unwound"])
 }
+
+///|
+test "a failure of a task joined only by cancel_and_join fails run" {
+  let d = @driver.Driver::new()
+  let r = driver_error_kind(() => {
+    d.run(() => {
+      // The child starts and fails before it reaches a cancellation point.
+      let child = d.spawn(() => fail("child failed"), label="child")
+      d.cancel_and_join([child])
+      "main finished"
+    })
+  })
+  guard r is Ok(TaskFailed(label="child", ..)) else {
+    fail("got \{@debug.to_string(r)}")
+  }
+}
+
+///|
+test "a task that cancel_and_join ends by cancellation stays silent" {
+  let d = @driver.Driver::new()
+  let log = []
+  let r = d.run(() => {
+    let child = d.spawn(() => {
+      defer log.push("child unwound")
+      d.sleep(1000)
+    })
+    d.pause()
+    d.cancel_and_join([child])
+    child.is_cancelled()
+  })
+  assert_true(r)
+  assert_eq(log, ["child unwound"])
+}
+
+///|
+test "a failure seen by a waiter stays silent when cancel_and_join also joins" {
+  let d = @driver.Driver::new()
+  let seen = d.run(() => {
+    let child = d.spawn(
+      () => {
+        // Parks, and fails rather than unwinding when it is cancelled.
+        ignore(d.park_check_cancel(_ => ()))
+        fail("child failed")
+      },
+      label="child",
+    )
+    let waiter = d.spawn(() => {
+      let _ = child.wait() catch { _ => false }
+    })
+    d.pause()
+    d.cancel_and_join([child])
+    waiter.wait()
+  })
+  assert_true(seen)
+}
