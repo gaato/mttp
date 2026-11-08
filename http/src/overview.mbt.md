@@ -8,8 +8,9 @@ and builds on wasm-gc, wasm, js and native.
 
 > **Status**: this version is being rebuilt in the
 > [mttp repository](https://github.com/gaato/mttp). The packages arrive one
-> at a time: the vocabulary, the runtime ports, their in-memory doubles and
-> the test driver are here; the codec and the connection engines follow.
+> at a time: the vocabulary, the runtime ports, their in-memory doubles,
+> the HTTP/1.1 codec and the test driver are here; the connection engines
+> follow.
 
 Sockets, TLS, an event loop and content codings live in
 [`gaato/http-async`](https://mooncakes.io/docs/gaato/http-async), and the
@@ -84,6 +85,7 @@ may send a body twice asks `Body::is_replayable` first.
 | Package | Status | What it is |
 |---|---|---|
 | `gaato/http` | stable | The vocabulary above, `Backend` and `SendOptions`, URL, form and HTTP-date helpers |
+| `gaato/http/h1` | stable | The sans-IO HTTP/1.1 codec: bounded head and chunked decoders, strict head parsers returning `ParsedRequest` and `ParsedResponse`, body framing that refuses request smuggling, and wire writers |
 | `gaato/http/rt` | stable | The ports a runtime provides: `Clock`, `Timer`, `Gate`, `Conn`, `Dialer`, `Signal`, `Coordination`, and `default_random` |
 | `gaato/http/sim` | stable | In-memory doubles of the ports on the driver (`pair`, `ScriptedConn`, `FakeClock`, ...), the shared contract checks every port implementation passes, and property-test generators. Test infrastructure |
 | `gaato/http/driver` | experimental | A deterministic task driver with virtual time and `run_sync`, so async code is tested with plain `test` blocks on every target. It is built on compiler intrinsics and may break with a toolchain change |
