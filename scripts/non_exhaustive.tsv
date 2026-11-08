@@ -11,6 +11,9 @@ gaato/http	Kind
 gaato/http	Method
 gaato/http	Phase
 gaato/http/driver	DriverErrorKind
+gaato/http/h1	Framing
+gaato/http/h1	ParseKind
+gaato/http/h1	Version
 gaato/http/sim	FeedStep
 gaato/http/sim	ReadStep
 gaato/mttp/client/retry	Decision

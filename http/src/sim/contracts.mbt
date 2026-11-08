@@ -143,8 +143,12 @@ pub async fn check_coordination_contract(
       check, "a primary failure must cancel the monitor and join its cleanup",
     )
   }
-  // A primary success delivered before a late monitor error is final.
-  coordination.supervise(primary=() => (), monitor=() => {
+  // A primary success delivered before a monitor error is final. The
+  // monitor fails only once primary has returned, so the order holds
+  // whichever child the scheduler starts first.
+  let returned = coordination.signal()
+  coordination.supervise(primary=() => returned.notify(), monitor=() => {
+    returned.wait()
     raise sentinel(check, "late monitor failure")
   }) catch {
     @http.TransportError(_) =>
@@ -246,10 +250,59 @@ async fn expect_read(
 }
 
 ///|
+/// Runs a read and a write at the same time on `conn`: the read waits for
+/// a reply that `peer` writes only after it has read the whole of the
+/// write, more than one 64 KiB socket read. An end that holds its read
+/// while the write waits cannot finish.
+async fn overlap(
+  check : String,
+  conn : &@rt.Conn,
+  peer : &@rt.Conn,
+  coordination~ : &@rt.Coordination,
+  suspend~ : async () -> Unit noraise,
+) -> Unit {
+  let big = Bytes::makei(65537, i => (i % 251).to_byte())
+  let reply : Ref[(Bytes, String?)] = Ref((b"", None))
+  let received : Ref[(Bytes, String?)] = Ref((b"", None))
+  coordination.supervise(
+    primary=() => {
+      coordination.supervise(
+        primary=() => reply.val = read_exactly(conn, 5, max_len=2),
+        // Lets the read start first, whichever child runs first.
+        monitor=() => {
+          suspend()
+          conn.write(big)
+        },
+      )
+    },
+    monitor=() => {
+      received.val = read_exactly(peer, big.length(), max_len=4096)
+      peer.write(b"reply")
+    },
+  )
+  // The read's own fault first: a read that ends early also cuts the
+  // write short.
+  match reply.val {
+    (_, Some(rule)) => raise violation(check, rule)
+    (got, None) if got != b"reply" =>
+      raise violation(check, "concurrent read and write corrupted the bytes")
+    _ => ()
+  }
+  match received.val {
+    (_, Some(rule)) => raise violation(check, rule)
+    (got, None) if got != big =>
+      raise violation(check, "concurrent read and write corrupted the bytes")
+    _ => ()
+  }
+}
+
+///|
 /// Checks the Conn rules on a connected pair, where what one end writes the
 /// other reads: whole writes and nonempty reads of at most `max_len` in both
-/// directions; a read and a write running at once on more than 64 KiB; a
-/// cancelled read that loses no byte; `close` waking a pending read;
+/// directions; on each end, a read and a write outstanding at the same time
+/// (the peer answers the read only after the whole write of more than
+/// 64 KiB arrived, so an end that serializes its reads and writes cannot
+/// finish); a cancelled read that loses no byte; `close` waking a pending read;
 /// idempotent close; a write after close raising `TransportError`; and the
 /// peer reading a sticky EOF after a close. Both ends are closed on return.
 ///
@@ -257,9 +310,12 @@ async fn expect_read(
 /// writes of `left`; the check then also requires that `right` reads a
 /// sticky EOF and can still write to `left`. `coordination` runs the
 /// concurrent steps and should itself pass `check_coordination_contract`;
-/// `suspend` yields to the scheduler once. A connection whose `close` does not wake its reader makes
-/// the check wait forever, so run it under a deadline (the Driver reports
-/// `Deadlock`).
+/// `suspend` yields to the scheduler once.
+///
+/// An end that serializes its reads and writes, or whose `close` does not
+/// wake its reader, makes the check wait forever rather than fail: no port
+/// can tell a slow peer from a stuck one. Run the check under a deadline;
+/// the Driver reports such a hang as `DriverError(Deadlock)`.
 pub async fn check_conn(
   left : &@rt.Conn,
   right : &@rt.Conn,
@@ -274,20 +330,8 @@ pub async fn check_conn(
   expect_read(check, right, b"abcdef", max_len=2)
   right.write(b"reply")
   expect_read(check, left, b"reply", max_len=2)
-  // More than one 64 KiB socket read, written while the peer reads, so an
-  // adapter whose write waits for the reader still finishes.
-  let big = Bytes::makei(65537, i => (i % 251).to_byte())
-  let received : Ref[(Bytes, String?)] = Ref((b"", None))
-  coordination.supervise(
-    primary=() => received.val = read_exactly(right, big.length(), max_len=4096),
-    monitor=() => left.write(big),
-  )
-  match received.val {
-    (_, Some(rule)) => raise violation(check, rule)
-    (got, None) if got != big =>
-      raise violation(check, "concurrent read and write corrupted the bytes")
-    _ => ()
-  }
+  overlap(check, left, right, coordination~, suspend~)
+  overlap(check, right, left, coordination~, suspend~)
   // A cancelled read gives up nothing that arrives later.
   let detail = "\{check}: cancel the read"
   let returned = Ref(false)

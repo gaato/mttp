@@ -42,7 +42,8 @@ pub fn append_query(url : String, name : String, value : String) -> String {
 /// A URI reference (RFC 3986 §4.1), held normalised and percent-encoded.
 ///
 /// `Url::parse` lower-cases the scheme and host, writes an IPv6 address in
-/// RFC 5952's canonical form, drops a scheme's default
+/// RFC 5952's canonical hex form (a dotted-quad tail too, as WHATWG URL
+/// does), drops a scheme's default
 /// port (`http` 80, `https` 443, `ws` 80, `wss` 443, `ftp` 21), percent-encodes
 /// what the WHATWG URL Standard's sets encode (non-ASCII as UTF-8), and removes
 /// dot segments from the path of a reference with a scheme. Existing escapes
@@ -553,7 +554,7 @@ fn reg_name(chars : ArrayView[Char]) -> String raise UrlError {
 }
 
 ///|
-/// An IPv6 address between brackets, in RFC 5952's canonical text form.
+/// An IPv6 address between brackets, in RFC 5952's canonical hex form.
 /// Zone identifiers and IPvFuture are refused, as browsers refuse them.
 fn ip_literal(chars : ArrayView[Char]) -> String raise UrlError {
   guard ipv6_canonical(String::from_array(chars)) is Some(text) else {
