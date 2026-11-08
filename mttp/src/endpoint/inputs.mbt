@@ -46,12 +46,16 @@ pub fn[T] query_list(
   name : String,
   codec : @schema.TextCodec[T],
 ) -> Input[Array[T]] {
-  let a = Atom::new(
-    Query,
-    name,
-    @schema.Schema::of({ "type": "array", "items": codec.schema().json }),
-    required=false,
-  )
+  let defs = Map([])
+  let problems = []
+  let items = codec.schema().reference(defs, problems~)
+  let schema : @schema.Schema = {
+    name: None,
+    json: { "type": "array", "items": items },
+    defs,
+    problems,
+  }
+  let a = Atom::new(Query, name, schema, required=false)
   {
     atoms: [a],
     decode: head => {
