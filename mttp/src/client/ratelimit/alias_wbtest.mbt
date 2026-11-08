@@ -19,13 +19,13 @@ test "alias expiry transfers a refreshed shared block and quota before detaching
       for blocked in [false, true] {
         let clock = @sim.FakeClock::new()
         let limiter = alias_limiter(clock)
-        limiter.release(
+        limiter.respond(
           "a",
           status=200,
           headers=alias_quota("5", "1").set("key", "shared"),
         )
         clock.advance(3_599_000)
-        limiter.release(
+        limiter.respond(
           "shared",
           status=if blocked { 429 } else { 200 },
           headers=if blocked {
@@ -43,9 +43,9 @@ test "alias expiry transfers a refreshed shared block and quota before detaching
           Some(if blocked { 0 } else { 1 }),
         )
         assert_false(limiter.aliases.contains("a"))
-        limiter.acquire("a", global_exempt=false)
+        limiter.admit("a", global_exempt=false)
         assert_eq(clock.slept(), if blocked { [1000] } else { [] })
-        limiter.release("a", status=0, headers=@http.Headers::empty())
+        limiter.respond("a", status=0, headers=@http.Headers::empty())
       }
     }
   })
@@ -56,19 +56,19 @@ test "alias expiry at state capacity retains its route until transfer has room" 
   @driver.run_sync(() => {
     let clock = @sim.FakeClock::new()
     let limiter = alias_limiter(clock)
-    limiter.release(
+    limiter.respond(
       "a",
       status=200,
       headers=alias_quota("5", "1").set("key", "shared"),
     )
     clock.advance(3_599_000)
-    limiter.release(
+    limiter.respond(
       "shared",
       status=429,
       headers=alias_quota("0", "3601").set("retry-after", "2"),
     )
     for i in 0..<4095 {
-      limiter.release(
+      limiter.respond(
         "filler-\{i}",
         status=200,
         headers=alias_quota("1", "3601"),
@@ -84,9 +84,9 @@ test "alias expiry at state capacity retains its route until transfer has room" 
     assert_eq(limiter.resolve("a", limiter.now()), "a")
     assert_false(limiter.aliases.contains("a"))
     assert_eq(limiter.states.length(), 4096)
-    limiter.acquire("a", global_exempt=false)
+    limiter.admit("a", global_exempt=false)
     assert_eq(clock.slept(), [1000])
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
   })
 }
 
@@ -96,14 +96,14 @@ test "refused alias transitions preserve the previously resolved block" {
     for full_states in [false, true] {
       let clock = @sim.FakeClock::new()
       let limiter = alias_limiter(clock)
-      limiter.release(
+      limiter.respond(
         "a",
         status=429,
         headers=alias_quota("0", "60").set("retry-after", "1"),
       )
       if full_states {
         for i in 0..<4095 {
-          limiter.release(
+          limiter.respond(
             "filler-\{i}",
             status=200,
             headers=alias_quota("5", "60"),
@@ -111,7 +111,7 @@ test "refused alias transitions preserve the previously resolved block" {
         }
       } else {
         for i in 0..<4096 {
-          limiter.release(
+          limiter.respond(
             "filler-\{i}",
             status=200,
             headers=alias_quota("5", "60").set("key", "shared"),
@@ -119,7 +119,7 @@ test "refused alias transitions preserve the previously resolved block" {
         }
       }
       try
-        limiter.release(
+        limiter.respond(
           "a",
           status=200,
           headers=@http.Headers::of([("key", "new")]),
@@ -131,9 +131,9 @@ test "refused alias transitions preserve the previously resolved block" {
         _ => fail("accepted a transition without room")
       }
       assert_eq(limiter.resolve("a", limiter.now()), "a")
-      limiter.acquire("a", global_exempt=false)
+      limiter.admit("a", global_exempt=false)
       assert_eq(clock.slept(), [1000])
-      limiter.release("a", status=0, headers=@http.Headers::empty())
+      limiter.respond("a", status=0, headers=@http.Headers::empty())
     }
   })
 }
@@ -143,16 +143,16 @@ test "admission accounting cannot allocate fallback state after capacity checks"
   @driver.run_sync(() => {
     let clock = @sim.FakeClock::new()
     let limiter = alias_limiter(clock)
-    limiter.release(
+    limiter.respond(
       "b",
       status=200,
       headers=alias_quota("5", "1").set("key", "shared"),
     )
-    limiter.acquire("b", global_exempt=false)
+    limiter.admit("b", global_exempt=false)
     clock.advance(3_599_000)
-    limiter.release("shared", status=200, headers=alias_quota("5", "3601"))
+    limiter.respond("shared", status=200, headers=alias_quota("5", "3601"))
     for i in 0..<4094 {
-      limiter.release(
+      limiter.respond(
         "filler-\{i}",
         status=200,
         headers=alias_quota("1", "3601"),
@@ -164,11 +164,11 @@ test "admission accounting cannot allocate fallback state after capacity checks"
     // after a's insertion had already passed its capacity check.
     limiter.states_sweep_at = 20_000
     limiter.states_swept_at_ms = limiter.now()
-    limiter.release("a", status=200, headers=alias_quota("1", "3601"))
+    limiter.respond("a", status=200, headers=alias_quota("1", "3601"))
     assert_eq(limiter.states.length(), 4096)
     assert_eq(limiter.resolve("b", limiter.now()), "shared")
     assert_eq(limiter.states.length(), 4096)
-    limiter.release("b", status=0, headers=@http.Headers::empty())
+    limiter.respond("b", status=0, headers=@http.Headers::empty())
     assert_eq(limiter.admissions.length(), 0)
   })
 }

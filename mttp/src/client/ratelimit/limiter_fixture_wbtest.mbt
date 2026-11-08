@@ -3,19 +3,19 @@ test "WindowLimiter sleeps to reset and removes the expired state" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=1000L)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
-      @ratelimit.rate_limit_headers(
+      rate_limit_headers(
         remaining="remaining",
         reset_after_seconds="reset-after",
       ),
     )
-    limiter.release(
+    limiter.respond(
       "bucket",
       status=200,
       headers=@http.Headers::of([("remaining", "0"), ("reset-after", "2")]),
     )
-    limiter.acquire("bucket", global_exempt=false)
+    limiter.admit("bucket", global_exempt=false)
     assert_eq(clock.slept(), [2000])
     assert_eq(clock.now_unix_ms(), 3000L)
     assert_eq(limiter.state("bucket"), None)
@@ -27,14 +27,14 @@ test "WindowLimiter gives 429 Retry-After precedence" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=1000L)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
-      @ratelimit.rate_limit_headers(
+      rate_limit_headers(
         remaining="remaining",
         reset_after_seconds="reset-after",
       ),
     )
-    limiter.release(
+    limiter.respond(
       "bucket",
       status=429,
       headers=@http.Headers::of([
@@ -47,7 +47,7 @@ test "WindowLimiter gives 429 Retry-After precedence" {
       limiter.state("bucket"),
       Some({ remaining: 0, reset_at_unix_ms: 2500L, }),
     )
-    limiter.acquire("bucket", global_exempt=false)
+    limiter.admit("bucket", global_exempt=false)
     assert_eq(clock.slept(), [1500])
     assert_eq(limiter.state("bucket"), None)
   })
@@ -58,24 +58,24 @@ test "WindowLimiter buckets are independent and remaining is consumed" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=1000L)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
-      @ratelimit.rate_limit_headers(
+      rate_limit_headers(
         remaining="remaining",
         reset_after_seconds="reset-after",
       ),
     )
-    limiter.release(
+    limiter.respond(
       "blocked",
       status=200,
       headers=@http.Headers::of([("remaining", "0"), ("reset-after", "2")]),
     )
-    limiter.release(
+    limiter.respond(
       "open",
       status=200,
       headers=@http.Headers::of([("remaining", "2"), ("reset-after", "5")]),
     )
-    limiter.acquire("open", global_exempt=false)
+    limiter.admit("open", global_exempt=false)
     assert_eq(clock.slept(), [])
     assert_eq(
       limiter.state("open"),
@@ -85,7 +85,7 @@ test "WindowLimiter buckets are independent and remaining is consumed" {
       limiter.state("blocked"),
       Some({ remaining: 0, reset_at_unix_ms: 3000L, }),
     )
-    limiter.acquire("blocked", global_exempt=false)
+    limiter.admit("blocked", global_exempt=false)
     assert_eq(clock.slept(), [2000])
     assert_eq(
       limiter.state("open"),
@@ -99,24 +99,24 @@ test "WindowLimiter ignores a release without a response" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=1000L)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
-      @ratelimit.rate_limit_headers(
+      rate_limit_headers(
         remaining="remaining",
         reset_after_seconds="reset-after",
       ),
     )
-    limiter.release(
+    limiter.respond(
       "bucket",
       status=200,
       headers=@http.Headers::of([("remaining", "3"), ("reset-after", "5")]),
     )
-    limiter.release("bucket", status=0, headers=@http.Headers::empty())
+    limiter.respond("bucket", status=0, headers=@http.Headers::empty())
     assert_eq(
       limiter.state("bucket"),
       Some({ remaining: 3, reset_at_unix_ms: 6000L, }),
     )
-    limiter.acquire("bucket", global_exempt=true)
+    limiter.admit("bucket", global_exempt=true)
     assert_eq(clock.slept(), [])
     assert_eq(
       limiter.state("bucket"),
@@ -131,7 +131,7 @@ test "gates serialize one bucket and status zero preserves its state" {
   d.run(() => {
     let clock = @sim.FakeClock::new()
     let made = Ref(0)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
       (_, now) => Some({ remaining: 3, reset_at_unix_ms: now + 1000L, }),
       gate=() => {
@@ -139,27 +139,27 @@ test "gates serialize one bucket and status zero preserves its state" {
         @sim.SimGate::new(d)
       },
     )
-    limiter.acquire("a", global_exempt=false)
+    limiter.admit("a", global_exempt=false)
     let entered = Ref(false)
     with_group(d, group => {
       let waiter = group.spawn(() => {
-        limiter.acquire("a", global_exempt=false)
+        limiter.admit("a", global_exempt=false)
         entered.val = true
-        limiter.release("a", status=0, headers=@http.Headers::empty())
+        limiter.respond("a", status=0, headers=@http.Headers::empty())
       })
       d.sleep(10)
       assert_false(entered.val)
-      limiter.acquire("b", global_exempt=false)
-      limiter.release("b", status=200, headers=@http.Headers::empty())
+      limiter.admit("b", global_exempt=false)
+      limiter.respond("b", status=200, headers=@http.Headers::empty())
       let state = limiter.state("b")
-      limiter.acquire("b", global_exempt=false)
+      limiter.admit("b", global_exempt=false)
       let consumed = limiter.state("b")
       assert_true(state != consumed)
-      limiter.release("b", status=0, headers=@http.Headers::empty())
+      limiter.respond("b", status=0, headers=@http.Headers::empty())
       assert_eq(limiter.state("b"), consumed)
-      limiter.acquire("b", global_exempt=false)
-      limiter.release("b", status=0, headers=@http.Headers::empty())
-      limiter.release("a", status=0, headers=@http.Headers::empty())
+      limiter.admit("b", global_exempt=false)
+      limiter.respond("b", status=0, headers=@http.Headers::empty())
+      limiter.respond("a", status=0, headers=@http.Headers::empty())
       assert_true(waiter.wait())
       assert_true(entered.val)
     })
@@ -175,25 +175,25 @@ test "cancellation during a bucket reset returns the gate" {
   d.run(() => {
     let clock = @sim.SimClock::new(d)
     let gate = @sim.SimGate::new(d)
-    let limiter = @ratelimit.WindowLimiter::new(clock, (_, _) => None, gate=() => {
+    let limiter = WindowLimiter::new(clock, (_, _) => None, gate=() => {
       return gate
     })
-    limiter.acquire("a", global_exempt=false)
-    limiter.release(
+    limiter.admit("a", global_exempt=false)
+    limiter.respond(
       "a",
       status=429,
       headers=@http.Headers::of([("retry-after", "0.08")]),
     )
     with_group(d, group => {
       let waiter = group.spawn(allow_failure=true, () => {
-        limiter.acquire("a", global_exempt=false)
+        limiter.admit("a", global_exempt=false)
       })
       d.sleep(10)
       waiter.cancel()
       assert_false(waiter.wait())
       // The parser does not clear the reset: the next caller must finish it.
-      limiter.acquire("a", global_exempt=false)
-      limiter.release("a", status=0, headers=@http.Headers::empty())
+      limiter.admit("a", global_exempt=false)
+      limiter.respond("a", status=0, headers=@http.Headers::empty())
     })
   })
 }
@@ -203,44 +203,44 @@ test "global window starts at first admission and exempts bypass it" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=123L)
-    let limiter = @ratelimit.WindowLimiter::new(clock, (_, _) => None, global={
+    let limiter = WindowLimiter::new(clock, (_, _) => None, global={
       limit: 2,
       window_ms: 1000,
     })
-    limiter.acquire("a", global_exempt=true)
+    limiter.admit("a", global_exempt=true)
     clock.advance(100)
-    limiter.acquire("a", global_exempt=false)
-    limiter.acquire("b", global_exempt=false)
-    limiter.acquire("c", global_exempt=true)
+    limiter.admit("a", global_exempt=false)
+    limiter.admit("b", global_exempt=false)
+    limiter.admit("c", global_exempt=true)
     assert_eq(clock.slept(), [])
-    limiter.acquire("c", global_exempt=false)
+    limiter.admit("c", global_exempt=false)
     assert_eq(clock.slept(), [1000])
     assert_eq(clock.now_unix_ms(), 1223L)
-    limiter.acquire("d", global_exempt=false)
+    limiter.admit("d", global_exempt=false)
     assert_eq(clock.slept(), [1000])
-    let account = @ratelimit.WindowLimiter::new(
+    let account = WindowLimiter::new(
       clock,
       (_, _) => None,
       default_retry_after_ms=1000,
       global_block=_ => true,
     )
-    account.release("a", status=429, headers=@http.Headers::empty())
+    account.respond("a", status=429, headers=@http.Headers::empty())
     assert_eq(account.state("a"), None)
-    account.acquire("b", global_exempt=true)
+    account.admit("b", global_exempt=true)
     assert_eq(clock.slept(), [1000])
-    account.acquire("b", global_exempt=false)
+    account.admit("b", global_exempt=false)
     assert_eq(clock.slept(), [1000, 1000])
-    let immediate = @ratelimit.WindowLimiter::new(
+    let immediate = WindowLimiter::new(
       clock,
       (_, _) => None,
       default_retry_after_ms=-1,
     )
-    immediate.release("a", status=429, headers=@http.Headers::empty())
+    immediate.respond("a", status=429, headers=@http.Headers::empty())
     assert_eq(
       immediate.state("a"),
       Some({ remaining: 0, reset_at_unix_ms: clock.now_unix_ms(), }),
     )
-    immediate.acquire("a", global_exempt=false)
+    immediate.admit("a", global_exempt=false)
     assert_eq(clock.slept(), [1000, 1000])
   })
 }
@@ -250,17 +250,17 @@ test "global 429 preserves parsed bucket state and never shortens a block" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=1000L)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
       (_, now) => Some({ remaining: 4, reset_at_unix_ms: now + 9000L, }),
       global_block=headers => headers.get("global") == Some("true"),
     )
-    limiter.release(
+    limiter.respond(
       "a",
       status=429,
       headers=@http.Headers::of([("global", "true"), ("retry-after", "2")]),
     )
-    limiter.release(
+    limiter.respond(
       "a",
       status=429,
       headers=@http.Headers::of([("global", "true"), ("retry-after", "1")]),
@@ -269,9 +269,9 @@ test "global 429 preserves parsed bucket state and never shortens a block" {
       limiter.state("a"),
       Some({ remaining: 4, reset_at_unix_ms: 10000L, }),
     )
-    limiter.acquire("b", global_exempt=true)
+    limiter.admit("b", global_exempt=true)
     assert_eq(clock.slept(), [])
-    limiter.acquire("b", global_exempt=false)
+    limiter.admit("b", global_exempt=false)
     assert_eq(clock.slept(), [2000])
   })
 }
@@ -281,20 +281,20 @@ test "429 fallback is optional and applies only to the selected scope" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new()
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
       (_, _) => None,
       default_retry_after_ms=1000,
       global_block=_ => false,
     )
-    limiter.release("a", status=429, headers=@http.Headers::empty())
-    limiter.acquire("b", global_exempt=false)
+    limiter.respond("a", status=429, headers=@http.Headers::empty())
+    limiter.admit("b", global_exempt=false)
     assert_eq(clock.slept(), [])
-    limiter.acquire("a", global_exempt=true)
+    limiter.admit("a", global_exempt=true)
     assert_eq(clock.slept(), [1000])
-    let legacy = @ratelimit.WindowLimiter::new(clock, (_, _) => None)
-    legacy.release("a", status=429, headers=@http.Headers::empty())
-    legacy.acquire("a", global_exempt=false)
+    let legacy = WindowLimiter::new(clock, (_, _) => None)
+    legacy.respond("a", status=429, headers=@http.Headers::empty())
+    legacy.admit("a", global_exempt=false)
     assert_eq(legacy.state("a"), None)
     assert_eq(clock.slept(), [1000])
   })
@@ -303,15 +303,6 @@ test "429 fallback is optional and applies only to the selected scope" {
 ///|
 /// Paces `write:*` buckets as one group, one second apart; every other bucket
 /// is its own unpaced group.
-fn write_pace(bucket : String) -> @ratelimit.Pace {
-  if bucket.has_prefix("write:") {
-    { group: "write", min_interval_ms: 1000, }
-  } else {
-    { group: bucket, min_interval_ms: 0, }
-  }
-}
-
-///|
 fn limit_headers(pairs : Array[(String, String)]) -> @http.Headers {
   @http.Headers::of(pairs)
 }
@@ -321,26 +312,22 @@ test "pacing spaces one group's admissions and leaves other groups alone" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=1000L)
-    let limiter = @ratelimit.WindowLimiter::new(
-      clock,
-      (_, _) => None,
-      pace=write_pace,
-    )
-    limiter.acquire("write:a", global_exempt=false)
-    limiter.acquire("read", global_exempt=false)
-    limiter.acquire("read", global_exempt=false)
+    let limiter = WindowLimiter::new(clock, (_, _) => None, pace=write_pace)
+    limiter.admit("write:a", global_exempt=false)
+    limiter.admit("read", global_exempt=false)
+    limiter.admit("read", global_exempt=false)
     assert_eq(clock.slept(), [])
     // Another bucket of the group waits out the interval.
-    limiter.acquire("write:b", global_exempt=false)
+    limiter.admit("write:b", global_exempt=false)
     assert_eq(clock.slept(), [1000])
     assert_eq(clock.now_unix_ms(), 2000L)
     clock.advance(400)
-    limiter.acquire("other", global_exempt=false)
-    limiter.acquire("write:a", global_exempt=false)
+    limiter.admit("other", global_exempt=false)
+    limiter.admit("write:a", global_exempt=false)
     assert_eq(clock.slept(), [1000, 600])
     // Spacing counts from the admission, so a later caller finds it served.
     clock.advance(5000)
-    limiter.acquire("write:b", global_exempt=false)
+    limiter.admit("write:b", global_exempt=false)
     assert_eq(clock.slept(), [1000, 600])
   })
 }
@@ -350,7 +337,7 @@ test "concurrent acquires in one paced group are admitted one interval apart" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=0L)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
       (_, _) => None,
       gate=() => @sim.SimGate::new(d),
@@ -360,10 +347,10 @@ test "concurrent acquires in one paced group are admitted one interval apart" {
     with_group(d, group => {
       for name in ["write:a", "write:b", "write:a", "read", "write:c"] {
         group.spawn_bg(() => {
-          limiter.acquire(name, global_exempt=false)
+          limiter.admit(name, global_exempt=false)
           admitted.push((name, clock.now_unix_ms()))
           d.pause()
-          limiter.release(name, status=200, headers=@http.Headers::empty())
+          limiter.respond(name, status=200, headers=@http.Headers::empty())
         })
       }
     })
@@ -383,9 +370,9 @@ test "a key learned between acquire and release does not keep the gate" {
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=1000L)
     let made = Ref(0)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
-      @ratelimit.rate_limit_headers(
+      rate_limit_headers(
         remaining="remaining",
         reset_after_seconds="reset-after",
       ),
@@ -395,8 +382,8 @@ test "a key learned between acquire and release does not keep the gate" {
       },
       server_key=(_, headers) => headers.get("bucket"),
     )
-    limiter.acquire("a", global_exempt=false)
-    limiter.release(
+    limiter.admit("a", global_exempt=false)
+    limiter.respond(
       "a",
       status=200,
       headers=limit_headers([
@@ -406,8 +393,8 @@ test "a key learned between acquire and release does not keep the gate" {
       ]),
     )
     // Had the release left a gate keyed by "hash", this would block forever.
-    limiter.acquire("a", global_exempt=false)
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.admit("a", global_exempt=false)
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
     assert_eq(made.val, 2)
     assert_eq(
       limiter.state("a"),
@@ -421,15 +408,15 @@ test "two buckets keyed to one server window share remaining and reset" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=1000L)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
-      @ratelimit.rate_limit_headers(
+      rate_limit_headers(
         remaining="remaining",
         reset_after_seconds="reset-after",
       ),
       server_key=(_, headers) => headers.get("resource"),
     )
-    limiter.release(
+    limiter.respond(
       "core:read",
       status=200,
       headers=limit_headers([
@@ -438,7 +425,7 @@ test "two buckets keyed to one server window share remaining and reset" {
         ("reset-after", "5"),
       ]),
     )
-    limiter.release(
+    limiter.respond(
       "core:write",
       status=200,
       headers=limit_headers([
@@ -452,13 +439,13 @@ test "two buckets keyed to one server window share remaining and reset" {
       Some({ remaining: 1, reset_at_unix_ms: 6000L, }),
     )
     assert_eq(limiter.state("core:write"), limiter.state("core:read"))
-    limiter.acquire("core:read", global_exempt=false)
+    limiter.admit("core:read", global_exempt=false)
     assert_eq(clock.slept(), [])
     assert_eq(
       limiter.state("core:write"),
       Some({ remaining: 0, reset_at_unix_ms: 6000L, }),
     )
-    limiter.acquire("core:write", global_exempt=false)
+    limiter.admit("core:write", global_exempt=false)
     assert_eq(clock.slept(), [5000])
     // A bucket no response has keyed keeps its own window.
     assert_eq(limiter.state("search"), None)
@@ -470,9 +457,9 @@ test "a 429's scope decides whether it blocks its bucket, every bucket or nothin
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new(start_unix_ms=1000L)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
-      @ratelimit.rate_limit_headers(
+      rate_limit_headers(
         remaining="remaining",
         reset_after_seconds="reset-after",
       ),
@@ -494,38 +481,38 @@ test "a 429's scope decides whether it blocks its bucket, every bucket or nothin
       ])
     }
     // Shared: only the parsed state counts; the bucket is not emptied.
-    limiter.release("shared", status=429, headers=too_many("shared"))
+    limiter.respond("shared", status=429, headers=too_many("shared"))
     assert_eq(
       limiter.state("shared"),
       Some({ remaining: 3, reset_at_unix_ms: 11000L, }),
     )
-    limiter.acquire("shared", global_exempt=false)
+    limiter.admit("shared", global_exempt=false)
     assert_eq(clock.slept(), [])
     // Ignore: nothing changes, not even the bucket's earlier state.
-    limiter.release("shared", status=429, headers=too_many("ignore"))
+    limiter.respond("shared", status=429, headers=too_many("ignore"))
     assert_eq(
       limiter.state("shared"),
       Some({ remaining: 2, reset_at_unix_ms: 11000L, }),
     )
-    limiter.release("fresh", status=429, headers=too_many("ignore"))
+    limiter.respond("fresh", status=429, headers=too_many("ignore"))
     assert_eq(limiter.state("fresh"), None)
-    limiter.acquire("fresh", global_exempt=false)
+    limiter.admit("fresh", global_exempt=false)
     assert_eq(clock.slept(), [])
     // Bucket: the bucket waits out the Retry-After, others do not.
-    limiter.release("bucket", status=429, headers=too_many("bucket"))
-    limiter.acquire("other", global_exempt=false)
+    limiter.respond("bucket", status=429, headers=too_many("bucket"))
+    limiter.admit("other", global_exempt=false)
     assert_eq(clock.slept(), [])
-    limiter.acquire("bucket", global_exempt=false)
+    limiter.admit("bucket", global_exempt=false)
     assert_eq(clock.slept(), [2000])
     // Global: every non-exempt request waits, whatever its bucket.
-    limiter.release("global", status=429, headers=too_many("global"))
+    limiter.respond("global", status=429, headers=too_many("global"))
     assert_eq(
       limiter.state("global"),
       Some({ remaining: 3, reset_at_unix_ms: 13000L, }),
     )
-    limiter.acquire("other", global_exempt=true)
+    limiter.admit("other", global_exempt=true)
     assert_eq(clock.slept(), [2000])
-    limiter.acquire("other", global_exempt=false)
+    limiter.admit("other", global_exempt=false)
     assert_eq(clock.slept(), [2000, 2000])
   })
 }

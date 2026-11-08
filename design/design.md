@@ -439,9 +439,15 @@ pub fn RetryContext::new(head : @http.RequestHead, idempotent~ : Bool, replayabl
 pub(all) struct RetryPolicy { rule : @retry.RetryRule } derive(Eq, Debug)
 pub fn RetryPolicy::conservative() -> RetryPolicy   // none, default, from_rule, with_max_retries, allow_non_idempotent
 pub(open) trait RateLimiter {
-  async fn acquire(Self, String, global_exempt~ : Bool) -> Unit
-  async fn release(Self, String, status~ : Int, headers~ : @http.Headers) -> Unit
+  async fn acquire(Self, String, global_exempt~ : Bool) -> Admission
+  async fn release(Self, Admission, status~ : Int, headers~ : @http.Headers) -> Unit
 }
+pub struct Admission { /* opaque bucket and limiter-issued sequence */ }
+pub fn Admission::new(bucket : String, sequence~ : Int64) -> Admission
+pub fn Admission::bucket(Self) -> String
+pub fn Admission::sequence(Self) -> Int64
+// Return each Admission only to its issuer. A second release is ignored;
+// implementations track outstanding identities within their resource bound.
 pub(all) struct Attempt { request : @http.RequestHead; attributes : @http.Attributes; bucket : String; attempt : Int
   status : Int; headers : @http.Headers; duration_ms : Int64; error : Error?; decision : @retry.Decision? }
 pub let rate_limit_bucket : @http.AttributeKey[String]     // global_exempt, operation_id
@@ -470,7 +476,7 @@ pub fn Cookies::new(inner : &@http.Backend, jar : @cookie.CookieJar) -> Cookies
 3. **Total deadline.** `total_ms` covers admission, body preparation, attempts, backoff and stream consumption. It requires a Timer. Expiry requests cancellation; required cleanup may finish after the deadline. No attempt and no consumer starts after expiry.
 4. **Each attempt.** `acquire`, then the body from `body_fn`, then `send`. The head is captured as soon as it arrives.
 5. **Head rejected:** read at most 1 MiB, close the body, produce `Err(UnexpectedStatus)` inside the attempt, so the decision sees error statuses even for Streaming plans.
-6. **Exactly one `release` per completed `acquire`.** It uses the head's status and headers whenever a head arrived, even if reading failed. A cancelled admission wait has no release. Release must complete or roll back safely when cancelled: synchronous close and compensation run during unwind, and only necessary asynchronous cleanup is shielded.
+6. **Exactly one `release` per completed `acquire`, with that acquire's `Admission`.** It uses the head's status and headers whenever a head arrived, even if reading failed. A cancelled admission wait has no release. Duplicate releases are ignored. Release must complete or roll back safely when cancelled: synchronous close and compensation run during unwind, and only necessary asynchronous cleanup is shielded.
 7. **Release errors.** A release failure after the exchange produced a value (including an `Err` value) reaches the caller and closes any held body. It never replaces an already raised error or a cancellation.
 8. **Observer.** Gets one `Attempt` after release is attempted, with the actual status and head, any raised error and the decision. Logical calls, policy attempts, redirects and stale-connection repairs are distinct and never conflated.
 9. **Decision.** `RetryPolicy` is data; `decide_retry` is an optional typed function over `AttemptResult` that also receives the policy's `default_decision`. The executor enforces the retry count, the replay source and the remaining budget whatever the function says: without a body factory, a stream request is never resent; a `Wait` past the budget becomes `Stop(Budget)`. `Wait(ms)` sleeps on the injected clock.

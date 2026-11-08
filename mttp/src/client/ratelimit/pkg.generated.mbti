@@ -56,9 +56,9 @@ pub fn RateLimitState::to_repr(Self) -> @debug.Repr
 pub struct WindowLimiter {
   // private fields
 }
-pub async fn WindowLimiter::acquire(Self, String, global_exempt~ : Bool) -> Unit
+pub async fn WindowLimiter::acquire(Self, String, global_exempt~ : Bool) -> @client.Admission
 pub fn WindowLimiter::new(&@rt.Clock, (@http.Headers, Int64) -> RateLimitState?, gate? : () -> &@rt.Gate, pace? : (String) -> Pace, server_key? : (String, @http.Headers) -> String?, scope? : (Int32, @http.Headers) -> LimitScope, global? : GlobalWindow, global_block? : (@http.Headers) -> Bool, default_retry_after_ms? : Int32) -> Self
-pub async fn WindowLimiter::release(Self, String, status~ : Int32, headers~ : @http.Headers) -> Unit
+pub async fn WindowLimiter::release(Self, @client.Admission, status~ : Int32, headers~ : @http.Headers) -> Unit
 pub fn WindowLimiter::state(Self, String) -> RateLimitState?
 pub impl @client.RateLimiter for WindowLimiter
 

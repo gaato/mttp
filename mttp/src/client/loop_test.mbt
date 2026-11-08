@@ -14,17 +14,18 @@ impl @client.RateLimiter for RecordingLimiter with fn acquire(
 ) {
   self.events.push("acquire:\{bucket}:\{global_exempt}")
   self.clock.advance(self.delay)
+  @client.Admission::new(bucket, sequence=self.events.length().to_int64())
 }
 
 ///|
 impl @client.RateLimiter for RecordingLimiter with fn release(
   self,
-  bucket,
+  admission,
   status~,
   headers~,
 ) {
   let header = headers.get("x-head").unwrap_or("")
-  self.events.push("release:\{bucket}:\{status}:\{header}")
+  self.events.push("release:\{admission.bucket()}:\{status}:\{header}")
   if self.fail_release {
     raise @client.InvalidRequest(message="release failed")
   }
@@ -149,11 +150,12 @@ priv struct WaitingLimiter {
 ///|
 impl @client.RateLimiter for WaitingLimiter with fn acquire(
   self,
-  _,
+  bucket,
   global_exempt~,
 ) {
   let _ = global_exempt
   self.gate.acquire()
+  @client.Admission::new(bucket, sequence=self.releases.val.to_int64() + 1L)
 }
 
 ///|

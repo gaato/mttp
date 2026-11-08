@@ -35,8 +35,8 @@ test "one-off buckets leave no gates and only unexpired states behind" {
   for i in 0..<10000 {
     let bucket = "token-\{i}"
     run_now(d, () => {
-      limiter.acquire(bucket, global_exempt=true)
-      limiter.release(bucket, status=200, headers=headers("4", "0.05"))
+      limiter.admit(bucket, global_exempt=true)
+      limiter.respond(bucket, status=200, headers=headers("4", "0.05"))
     })
     clock.advance(1)
     largest = largest.max(limiter.states.length())
@@ -55,15 +55,15 @@ test "a released gate admits the next caller before it is forgotten" {
   let made = []
   let limiter = gated_limiter(d, clock, made)
   let order = []
-  run_now(d, () => limiter.acquire("a", global_exempt=true))
+  run_now(d, () => limiter.admit("a", global_exempt=true))
   let second = spawn_now(d, () => {
-    limiter.acquire("a", global_exempt=true)
+    limiter.admit("a", global_exempt=true)
     order.push("second admitted")
   })
   assert_false(second.is_done())
   assert_eq(counts(limiter, "a"), Some((1, 1)))
   run_now(d, () => {
-    limiter.release("a", status=200, headers=headers("4", "1"))
+    limiter.respond("a", status=200, headers=headers("4", "1"))
     order.push("first released")
   })
   // The slot passed to the waiter, so the entry stays until it resumes.
@@ -74,22 +74,22 @@ test "a released gate admits the next caller before it is forgotten" {
   assert_eq(order, ["first released", "second admitted"])
   assert_eq(counts(limiter, "a"), Some((1, 0)))
   run_now(d, () => {
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
   })
   assert_eq(counts(limiter, "a"), None)
   assert_true(made[0].free)
   // A later caller gets a fresh gate that serializes the bucket again.
-  run_now(d, () => limiter.acquire("a", global_exempt=true))
-  let third = spawn_now(d, () => limiter.acquire("a", global_exempt=true))
+  run_now(d, () => limiter.admit("a", global_exempt=true))
+  let third = spawn_now(d, () => limiter.admit("a", global_exempt=true))
   assert_eq(made.length(), 2)
   assert_false(third.is_done())
   run_now(d, () => {
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
   })
   made[1].run_woken()
   assert_true(third.is_done())
   run_now(d, () => {
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
   })
   assert_eq(limiter.gates.length(), 0)
 }
@@ -100,27 +100,27 @@ test "a cancelled waiter leaves the holder's gate intact and nothing behind" {
   let clock = @sim.FakeClock::new(start_unix_ms=1000L)
   let made = []
   let limiter = gated_limiter(d, clock, made)
-  run_now(d, () => limiter.acquire("a", global_exempt=true))
-  let cancelled = spawn_now(d, () => limiter.acquire("a", global_exempt=true))
+  run_now(d, () => limiter.admit("a", global_exempt=true))
+  let cancelled = spawn_now(d, () => limiter.admit("a", global_exempt=true))
   made[0].cancel_oldest()
   assert_true(cancelled.is_cancelled())
   assert_eq(counts(limiter, "a"), Some((1, 0)))
   // The holder still owns the gate: a newcomer queues on it, not a new one.
-  let next = spawn_now(d, () => limiter.acquire("a", global_exempt=true))
+  let next = spawn_now(d, () => limiter.admit("a", global_exempt=true))
   assert_eq(made.length(), 1)
   assert_false(next.is_done())
-  let last = spawn_now(d, () => limiter.acquire("a", global_exempt=true))
+  let last = spawn_now(d, () => limiter.admit("a", global_exempt=true))
   assert_eq(counts(limiter, "a"), Some((1, 2)))
   made[0].cancel_oldest()
   assert_true(next.is_cancelled())
   run_now(d, () => {
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
   })
   made[0].run_woken()
   assert_true(last.is_done())
   assert_eq(counts(limiter, "a"), Some((1, 0)))
   run_now(d, () => {
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
   })
   assert_eq(limiter.gates.length(), 0)
   assert_true(made[0].free)
@@ -136,16 +136,16 @@ test "a sweep keeps states whose reset is still ahead" {
     rate_limit_headers(remaining="remaining", reset_after_seconds="reset-after"),
   )
   run_now(d, () => {
-    limiter.release("live", status=200, headers=headers("0", "60"))
+    limiter.respond("live", status=200, headers=headers("0", "60"))
     for i in 1..<states_sweep_floor {
-      limiter.release("old-\{i}", status=200, headers=headers("1", "0.001"))
+      limiter.respond("old-\{i}", status=200, headers=headers("1", "0.001"))
       clock.advance(1)
     }
   })
   // Every old state has expired, but none is dropped below the floor.
   assert_eq(limiter.states.length(), states_sweep_floor)
   assert_true(limiter.state("old-1") is Some(_))
-  run_now(d, () => limiter.release("new", status=200, headers=headers("1", "1")))
+  run_now(d, () => limiter.respond("new", status=200, headers=headers("1", "1")))
   assert_eq(limiter.states.length(), 2)
   assert_eq(
     limiter.state("live"),
@@ -169,7 +169,7 @@ test "a burst's expired states go once traffic settles on one bucket" {
   )
   run_now(d, () => {
     for i in 0..<100 {
-      limiter.release("burst-\{i}", status=200, headers=headers("1", "1"))
+      limiter.respond("burst-\{i}", status=200, headers=headers("1", "1"))
     }
   })
   // The doubling sweep at 64 kept the 64 live states, so the next one waits
@@ -178,7 +178,7 @@ test "a burst's expired states go once traffic settles on one bucket" {
   run_now(d, () => {
     for _ in 0..<120 {
       clock.advance(1000)
-      limiter.release("steady", status=200, headers=headers("1", "1"))
+      limiter.respond("steady", status=200, headers=headers("1", "1"))
     }
   })
   assert_eq(limiter.states.length(), 1)
@@ -195,10 +195,10 @@ test "responses without rate-limit headers still sweep expired states" {
   )
   run_now(d, () => {
     for i in 0..<50 {
-      limiter.release("burst-\{i}", status=200, headers=headers("1", "1"))
+      limiter.respond("burst-\{i}", status=200, headers=headers("1", "1"))
     }
     clock.advance(61_000)
-    limiter.release("plain", status=200, headers=@http.Headers::empty())
+    limiter.respond("plain", status=200, headers=@http.Headers::empty())
   })
   assert_eq(limiter.states.length(), 0)
 }
@@ -265,7 +265,7 @@ test "a response cannot push a bucket's reset or the global block past an hour" 
       ),
     )
     run_now(d, () => {
-      limiter.release("a", status~, headers=@http.Headers::of(pairs))
+      limiter.respond("a", status~, headers=@http.Headers::of(pairs))
     })
     assert_eq(
       limiter.state("a").map(state => state.reset_at_unix_ms),
@@ -273,7 +273,7 @@ test "a response cannot push a bucket's reset or the global block past an hour" 
       msg=label,
     )
     // The next acquisition waits out at most the cap.
-    run_now(d, () => limiter.acquire("a", global_exempt=true))
+    run_now(d, () => limiter.admit("a", global_exempt=true))
     let waited = clock.slept().fold(init=0L, (sum, ms) => sum + ms.to_int64())
     assert_true(waited <= hour, msg="\{label}: waited \{waited}")
   }
@@ -285,7 +285,7 @@ test "an account-wide 429 cannot block past an hour" {
   let clock = @sim.FakeClock::new(start_unix_ms=1000L)
   let limiter = WindowLimiter::new(clock, (_, _) => None, global_block=_ => true)
   run_now(d, () => {
-    limiter.release(
+    limiter.respond(
       "a",
       status=429,
       headers=@http.Headers::of([("retry-after", "2000000")]),
@@ -401,7 +401,7 @@ test "two tasks woken at one pace deadline are admitted a full interval apart" {
   let admitted = []
   fn admit(bucket : String) -> @driver.Task raise {
     spawn_now(d, () => {
-      limiter.acquire(bucket, global_exempt=true)
+      limiter.admit(bucket, global_exempt=true)
       admitted.push("\{bucket}@\{clock.now}")
     })
   }
@@ -445,14 +445,14 @@ test "a gate is keyed by the pace group, so a learned key cannot leak it" {
     pace=write_pace,
     server_key=header_key,
   )
-  run_now(d, () => limiter.acquire("write:a", global_exempt=true))
+  run_now(d, () => limiter.admit("write:a", global_exempt=true))
   // A second bucket of the same group queues on the same gate.
-  let other = spawn_now(d, () => limiter.acquire("write:b", global_exempt=true))
+  let other = spawn_now(d, () => limiter.admit("write:b", global_exempt=true))
   assert_false(other.is_done())
   assert_eq(made.length(), 1)
   assert_eq(counts(limiter, "write"), Some((1, 1)))
   run_now(d, () => {
-    limiter.release(
+    limiter.respond(
       "write:a",
       status=200,
       headers=keyed_headers("core", "5", "60"),
@@ -462,7 +462,7 @@ test "a gate is keyed by the pace group, so a learned key cannot leak it" {
   made[0].run_woken()
   assert_true(other.is_done())
   run_now(d, () => {
-    limiter.release(
+    limiter.respond(
       "write:b",
       status=200,
       headers=keyed_headers("core", "4", "60"),
@@ -490,28 +490,28 @@ test "a bucket follows the key its latest response names" {
     server_key=header_key,
   )
   run_now(d, () => {
-    limiter.release("a", status=200, headers=keyed_headers("k1", "5", "60"))
+    limiter.respond("a", status=200, headers=keyed_headers("k1", "5", "60"))
   })
   assert_eq(limiter.resolve("a", limiter.now()), "k1")
   assert_eq(limiter.resolve("b", limiter.now()), "b")
   // A response without the header keeps the learned key.
-  run_now(d, () => limiter.release("a", status=200, headers=headers("3", "60")))
+  run_now(d, () => limiter.respond("a", status=200, headers=headers("3", "60")))
   assert_eq(limiter.resolve("a", limiter.now()), "k1")
   assert_eq(
     limiter.states.get("k1").map(r => r.value),
     Some({ remaining: 3, reset_at_unix_ms: 61000L, }),
   )
   run_now(d, () => {
-    limiter.release("a", status=200, headers=keyed_headers("k2", "7", "60"))
+    limiter.respond("a", status=200, headers=keyed_headers("k2", "7", "60"))
   })
   assert_eq(limiter.resolve("a", limiter.now()), "k2")
   assert_eq(
     limiter.state("a"),
-    Some({ remaining: 3, reset_at_unix_ms: 61000L, }),
+    Some({ remaining: 7, reset_at_unix_ms: 61000L, }),
   )
   // Naming the bucket itself forgets the alias.
   run_now(d, () => {
-    limiter.release("a", status=200, headers=keyed_headers("a", "2", "60"))
+    limiter.respond("a", status=200, headers=keyed_headers("a", "2", "60"))
   })
   assert_eq(limiter.aliases.get("a").map(a => a.key), None)
   assert_eq(
@@ -520,7 +520,7 @@ test "a bucket follows the key its latest response names" {
   )
   // A response with no status learns nothing.
   run_now(d, () => {
-    limiter.release("a", status=0, headers=keyed_headers("k3", "1", "60"))
+    limiter.respond("a", status=0, headers=keyed_headers("k3", "1", "60"))
   })
   assert_eq(limiter.aliases.get("a").map(a => a.key), None)
 }
@@ -536,17 +536,17 @@ test "a sweep retains live aliases and drops pace deadlines already passed" {
     server_key=header_key,
   )
   run_now(d, () => {
-    limiter.acquire("paced-old", global_exempt=true)
-    limiter.release("paced-old", status=0, headers=@http.Headers::empty())
-    limiter.release("a", status=200, headers=keyed_headers("k1", "1", "1"))
-    limiter.release("b", status=200, headers=keyed_headers("k2", "1", "120"))
+    limiter.admit("paced-old", global_exempt=true)
+    limiter.respond("paced-old", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=200, headers=keyed_headers("k1", "1", "1"))
+    limiter.respond("b", status=200, headers=keyed_headers("k2", "1", "120"))
   })
   assert_eq(limiter.next_admit_at.length(), 1)
   assert_eq(limiter.aliases.length(), 2)
   clock.advance(61_000)
   run_now(d, () => {
-    limiter.acquire("paced-new", global_exempt=true)
-    limiter.release("paced-new", status=200, headers=@http.Headers::empty())
+    limiter.admit("paced-new", global_exempt=true)
+    limiter.respond("paced-new", status=200, headers=@http.Headers::empty())
   })
   assert_eq(limiter.states.length(), 1)
   assert_true(limiter.states.get("k2") is Some(_))
@@ -571,9 +571,9 @@ test "one-off aliased and paced buckets keep the maps bounded" {
   for i in 0..<10000 {
     let bucket = "token-\{i}"
     run_now(d, () => {
-      limiter.acquire(bucket, global_exempt=true)
+      limiter.admit(bucket, global_exempt=true)
       try
-        limiter.release(
+        limiter.respond(
           bucket,
           status=200,
           headers=keyed_headers("key-\{i}", "4", "0.05"),
@@ -596,8 +596,8 @@ test "one-off aliased and paced buckets keep the maps bounded" {
   assert_eq(limiter.admissions.length(), 0)
   clock.advance(3_600_000)
   run_now(d, () => {
-    limiter.acquire("after", global_exempt=true)
-    limiter.release(
+    limiter.admit("after", global_exempt=true)
+    limiter.respond(
       "after",
       status=200,
       headers=keyed_headers("after-key", "1", "1"),

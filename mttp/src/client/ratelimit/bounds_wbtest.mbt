@@ -6,11 +6,11 @@ test "state maps accept 4096 live entries and refuse the next until eviction" {
       Some({ remaining: 0, reset_at_unix_ms: now + 1000L, })
     })
     for i in 0..<4096 {
-      limiter.release("b\{i}", status=200, headers=@http.Headers::empty())
+      limiter.respond("b\{i}", status=200, headers=@http.Headers::empty())
     }
     assert_eq(limiter.states.length(), 4096)
     try
-      limiter.release("overflow", status=200, headers=@http.Headers::empty())
+      limiter.respond("overflow", status=200, headers=@http.Headers::empty())
     catch {
       @http.TransportError(kind=TooLarge(limit=4096), phase=Unknown, ..) => ()
       _ => fail("wrong capacity error")
@@ -19,9 +19,9 @@ test "state maps accept 4096 live entries and refuse the next until eviction" {
     }
     assert_eq(limiter.states.length(), 4096)
     // Updating an existing key remains possible at capacity.
-    limiter.release("b0", status=200, headers=@http.Headers::empty())
+    limiter.respond("b0", status=200, headers=@http.Headers::empty())
     clock.advance(1000)
-    limiter.release("after", status=200, headers=@http.Headers::empty())
+    limiter.respond("after", status=200, headers=@http.Headers::empty())
     assert_eq(limiter.states.length(), 1)
   })
 }
@@ -36,11 +36,11 @@ test "aliases expire even while their shared server window keeps refreshing" {
       server_key=(_, _) => Some("shared"),
     )
     for i in 0..<4096 {
-      limiter.release("b\{i}", status=200, headers=@http.Headers::empty())
+      limiter.respond("b\{i}", status=200, headers=@http.Headers::empty())
     }
     assert_eq(limiter.aliases.length(), 4096)
     try
-      limiter.release("overflow", status=200, headers=@http.Headers::empty())
+      limiter.respond("overflow", status=200, headers=@http.Headers::empty())
     catch {
       @http.TransportError(kind=TooLarge(limit=4096), ..) => ()
       _ => fail("wrong alias capacity error")
@@ -48,9 +48,9 @@ test "aliases expire even while their shared server window keeps refreshing" {
       _ => fail("accepted alias overflow")
     }
     clock.advance(3_599_999)
-    limiter.release("b0", status=200, headers=@http.Headers::empty())
+    limiter.respond("b0", status=200, headers=@http.Headers::empty())
     clock.advance(1)
-    limiter.release("new", status=200, headers=@http.Headers::empty())
+    limiter.respond("new", status=200, headers=@http.Headers::empty())
     assert_eq(limiter.aliases.length(), 2)
     // Expired aliases detach with the live shared quota as their fallback.
     assert_eq(limiter.states.length(), 4096)
@@ -75,23 +75,23 @@ test "pace deadlines and active group gates refuse a 4097th live key" {
         })
       }
       for i in 0..<4096 {
-        limiter.acquire("b\{i}", global_exempt=false)
+        limiter.admit("b\{i}", global_exempt=false)
       }
-      try limiter.acquire("overflow", global_exempt=false) catch {
+      try limiter.admit("overflow", global_exempt=false) catch {
         @http.TransportError(kind=TooLarge(limit=4096), ..) => ()
         _ => fail("wrong admission capacity error")
       } noraise {
         _ => fail("accepted admission overflow")
       }
       for i in 0..<4096 {
-        limiter.release("b\{i}", status=0, headers=@http.Headers::empty())
+        limiter.respond("b\{i}", status=0, headers=@http.Headers::empty())
       }
       if gated {
         assert_eq(limiter.gates.length(), 0)
       }
       clock.advance(1000)
-      limiter.acquire("after", global_exempt=false)
-      limiter.release("after", status=0, headers=@http.Headers::empty())
+      limiter.admit("after", global_exempt=false)
+      limiter.respond("after", status=0, headers=@http.Headers::empty())
     }
   })
 }
@@ -107,15 +107,25 @@ test "a recording failure releases the held gate and preserves other state" {
       gate=() => gate,
     )
     for i in 0..<4096 {
-      limiter.release("b\{i}", status=200, headers=@http.Headers::empty())
+      limiter.respond("b\{i}", status=200, headers=@http.Headers::empty())
     }
-    limiter.acquire("overflow", global_exempt=false)
-    limiter.release("overflow", status=200, headers=@http.Headers::empty()) catch {
+    let refused = limiter.acquire("overflow", global_exempt=false)
+    limiter.release(refused, status=200, headers=@http.Headers::empty()) catch {
       _ => ()
     }
     assert_eq(gate.available(), 1)
     assert_eq(limiter.gates.length(), 0)
     assert_eq(limiter.state("overflow"), None)
+    let next = limiter.acquire("overflow", global_exempt=false)
+    limiter.release(
+      refused,
+      status=429,
+      headers=@http.Headers::of([("retry-after", "60")]),
+    )
+    assert_eq(gate.available(), 0)
+    assert_eq(limiter.admissions.length(), 1)
+    limiter.release(next, status=0, headers=@http.Headers::empty())
+    assert_eq(gate.available(), 1)
   })
 }
 
@@ -130,8 +140,8 @@ test "fallback server waits are capped at exactly one hour" {
         scope=(_, _) => scope,
         default_retry_after_ms=3_600_001,
       )
-      limiter.release("a", status=429, headers=@http.Headers::empty())
-      limiter.acquire("a", global_exempt=false)
+      limiter.respond("a", status=429, headers=@http.Headers::empty())
+      limiter.admit("a", global_exempt=false)
       assert_eq(clock.slept(), [3_600_000])
     }
   })
@@ -146,7 +156,7 @@ test "ignored responses cannot remap a bucket or consume alias space" {
       server_key=(_, _) => Some("other"),
       scope=(_, _) => Ignore,
     )
-    limiter.release("a", status=429, headers=@http.Headers::empty())
+    limiter.respond("a", status=429, headers=@http.Headers::empty())
     assert_eq(limiter.aliases.length(), 0)
     assert_eq(limiter.states.length(), 0)
   })
@@ -171,16 +181,16 @@ test "backward wall steps preserve relative bucket global and pace waits" {
           })
       }
       if kind == 0 {
-        limiter.release(
+        limiter.respond(
           "a",
           status=429,
           headers=@http.Headers::of([("retry-after-ms", "100")]),
         )
       } else {
-        limiter.acquire("a", global_exempt=false)
+        limiter.admit("a", global_exempt=false)
       }
       clock.advance(-10_000)
-      limiter.acquire("a", global_exempt=false)
+      limiter.admit("a", global_exempt=false)
       assert_eq(clock.slept(), [100])
     }
   })
@@ -220,12 +230,12 @@ test "overlapping sleeps across wall rollback advance elapsed time only once" {
     let limiter = WindowLimiter::new(clock, (_, _) => None)
     let tasks = []
     for bucket in ["a", "b", "c"] {
-      limiter.release(
+      limiter.respond(
         bucket,
         status=429,
         headers=@http.Headers::of([("retry-after-ms", "100")]),
       )
-      tasks.push(d.spawn(() => limiter.acquire(bucket, global_exempt=false)))
+      tasks.push(d.spawn(() => limiter.admit(bucket, global_exempt=false)))
     }
     d.sleep(50)
     offset.val = -10_000L
@@ -246,7 +256,7 @@ test "a server key without reset headers still aliases an existing shared window
       rate_limit_headers(remaining="left", reset_after_seconds="reset"),
       server_key=(_, headers) => headers.get("key"),
     )
-    limiter.release(
+    limiter.respond(
       "first",
       status=200,
       headers=@http.Headers::of([
@@ -255,43 +265,77 @@ test "a server key without reset headers still aliases an existing shared window
         ("reset", "1"),
       ]),
     )
-    limiter.release(
+    limiter.respond(
       "second",
       status=200,
       headers=@http.Headers::of([("key", "shared")]),
     )
-    limiter.acquire("second", global_exempt=false)
+    limiter.admit("second", global_exempt=false)
     assert_eq(clock.slept(), [1000])
   })
 }
 
 ///|
-test "admission cohorts are bounded and every release outcome reclaims them" {
+test "outstanding tokens are bounded and every release outcome reclaims them" {
   @driver.run_sync(() => {
     let limiter = WindowLimiter::new(@sim.FakeClock::new(), (_, _) => None, scope=(
       _,
       _,
     ) => Ignore)
     for i in 0..<4096 {
-      limiter.acquire("b\{i}", global_exempt=false)
+      limiter.admit("b\{i}", global_exempt=false)
     }
-    try limiter.acquire("overflow", global_exempt=false) catch {
+    try limiter.admit("overflow", global_exempt=false) catch {
       @http.TransportError(kind=TooLarge(limit=4096), phase=Pool, ..) => ()
       _ => fail("wrong admission capacity error")
     } noraise {
       _ => fail("accepted admission overflow")
     }
     assert_eq(limiter.admissions.length(), 4096)
-    // Existing buckets need only a counter, not another map entry.
-    limiter.acquire("b0", global_exempt=false)
-    limiter.release("b0", status=429, headers=@http.Headers::empty())
-    assert_eq(limiter.admissions.length(), 4096)
+    // Each request needs an identity, including requests for existing buckets.
+    try limiter.admit("b0", global_exempt=false) catch {
+      @http.TransportError(kind=TooLarge(limit=4096), phase=Pool, ..) => ()
+      _ => fail("wrong token capacity error")
+    } noraise {
+      _ => fail("accepted an extra token for an existing bucket")
+    }
+    limiter.respond("b0", status=429, headers=@http.Headers::empty())
+    assert_eq(limiter.admissions.length(), 4095)
+    limiter.admit("b0", global_exempt=false)
     for i in 0..<4096 {
-      limiter.release("b\{i}", status=0, headers=@http.Headers::empty())
+      limiter.respond("b\{i}", status=0, headers=@http.Headers::empty())
     }
     assert_eq(limiter.admissions.length(), 0)
-    limiter.acquire("after", global_exempt=false)
-    limiter.release("after", status=200, headers=@http.Headers::empty())
+    limiter.admit("after", global_exempt=false)
+    limiter.respond("after", status=200, headers=@http.Headers::empty())
     assert_eq(limiter.admissions.length(), 0)
+  })
+}
+
+///|
+test "sequence exhaustion refuses before quota and releases the acquired gate" {
+  let d = @driver.Driver::new()
+  d.run(() => {
+    let gate = @sim.SimGate::new(d)
+    let limiter = WindowLimiter::new(
+      @sim.FakeClock::new(),
+      (_, now) => Some({ remaining: 2, reset_at_unix_ms: now + 1000L, }),
+      gate=() => gate,
+      global={ limit: 2, window_ms: 1000, },
+    )
+    let first = limiter.acquire("a", global_exempt=false)
+    limiter.release(first, status=200, headers=@http.Headers::empty())
+    limiter.sequence = 9223372036854775807L
+    try limiter.acquire("a", global_exempt=false) catch {
+      @http.TransportError(kind=Invalid, phase=Pool, ..) => ()
+      _ => fail("wrong sequence exhaustion error")
+    } noraise {
+      _ => fail("sequence wrapped")
+    }
+    assert_eq(gate.available(), 1)
+    assert_eq(limiter.state("a").map(s => s.remaining), Some(2))
+    assert_eq(limiter.global_count, 1)
+    assert_eq(limiter.admissions.length(), 0)
+    assert_eq(limiter.gates.length(), 0)
   })
 }

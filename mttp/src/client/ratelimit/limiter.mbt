@@ -9,15 +9,17 @@ priv struct BucketGate {
 priv struct RecordedState {
   value : RateLimitState
   until : Int64
-  window_reset : Int64
+  restricted_by : Int64
+  consumed_by : Int64
   blocked_until : Int64
-  retry_override : Bool
+  block_only : Bool
 }
 
 ///|
 priv struct Admissions {
-  mut pending : Int64
-  mut later : Int32
+  admission : @client.Admission
+  group : String
+  holding : Bool
 }
 
 ///|
@@ -48,7 +50,8 @@ pub struct WindowLimiter {
   priv clock : &@rt.Clock
   priv parse : (@http.Headers, Int64) -> RateLimitState?
   priv states : Map[String, RecordedState]
-  priv admissions : Map[String, Admissions]
+  priv admissions : Map[Int64, Admissions]
+  priv mut sequence : Int64
   priv mut states_sweep_at : Int32
   priv mut states_swept_at_ms : Int64
   priv gate : (() -> &@rt.Gate)?
@@ -69,20 +72,21 @@ pub struct WindowLimiter {
 
 ///|
 /// Creates a limiter using an API-specific response-header parser.
-/// `pace` must be pure: acquire and release must select the same group.
+/// `pace` selects a group on acquisition; its Admission retains that group
+/// until release, including when server aliases change in the meantime.
 /// `gate` must create a fresh, capacity-one FIFO Gate per group; it is held
 /// until release. With a gate, queued callers in a group are FIFO; without
 /// one, the first caller resumed by the scheduler wins. Independent groups
 /// do not promise global FIFO order.
 /// `server_key` shares a response window between buckets. Learned aliases
 /// expire after one hour even if another bucket keeps refreshing the state.
-/// Quota expiry does not expire an alias. Responses for the same server
-/// window can only lower remaining quota; later resets replace quota, older
-/// resets cannot. Active bucket blocks are never shortened. Since release
-/// has no request token, overlapping calls conservatively charge admissions
-/// since the oldest possible outstanding request until that bucket drains.
+/// Quota expiry does not expire an alias. Responses may relax quota only
+/// when their Admission sequence exceeds the last restrictive response's
+/// sequence and does not precede later local consumption. Reset timestamps
+/// are deadlines, not response ordering. Retry-After blocks are independent
+/// of ordinary quota and survive responses without being shortened.
 /// Alias changes and expiry carry live constraints before switching keys:
-/// they cannot drop a block or increase quota within the same window. If
+/// they cannot drop a block, raise quota or discard its watermarks. If
 /// expiry cannot allocate the fallback state at capacity, the old route is
 /// retained until transfer has room or its constraints expire.
 /// `scope` classifies 429s; absent it, `global_block` selects Global/Bucket.
@@ -112,6 +116,7 @@ pub fn WindowLimiter::new(
     server_key,
     states: Map([]),
     admissions: Map([]),
+    sequence: 0L,
     aliases: Map([]),
     gates: Map([]),
     next_admit_at: Map([]),
@@ -231,13 +236,6 @@ fn WindowLimiter::resolve(
   now : Int64,
 ) -> String {
   self.expire_alias(bucket, now)
-  self.routed_key(bucket)
-}
-
-///|
-// Bookkeeping observes already-applied routes. It must not materialize an
-// expired alias after the final capacity or admission checks have committed.
-fn WindowLimiter::routed_key(self : WindowLimiter, bucket : String) -> String {
   match self.aliases.get(bucket) {
     Some(learned) => learned.key
     _ => bucket
@@ -301,11 +299,9 @@ pub fn WindowLimiter::state(
     if record.blocked_until > now {
       {
         remaining: 0,
-        reset_at_unix_ms: record.value.reset_at_unix_ms.max(
-          saturating_add_ms(
-            self.clock.now_unix_ms(),
-            delay_until(record.blocked_until, now),
-          ),
+        reset_at_unix_ms: saturating_add_ms(
+          self.clock.now_unix_ms(),
+          delay_until(record.blocked_until, now),
         ),
       }
     } else {
@@ -371,7 +367,7 @@ pub impl @client.RateLimiter for WindowLimiter with fn acquire(
     if min_interval_ms > 0 {
       room(self.next_admit_at, group)
     }
-    room(self.admissions, bucket)
+    self.admission_room()
     // No permit or window is changed until all waits and refusals finish.
     if global is Admit(start~, count~) {
       self.global_window_start = Some(start)
@@ -384,6 +380,7 @@ pub impl @client.RateLimiter for WindowLimiter with fn acquire(
           self.states[key] = {
             ..record,
             value: { ..record.value, remaining: value.remaining, },
+            consumed_by: record.consumed_by.max(self.sequence + 1L),
           }
         }
       _ => ()
@@ -391,17 +388,9 @@ pub impl @client.RateLimiter for WindowLimiter with fn acquire(
     if min_interval_ms > 0 {
       self.next_admit_at[group] = saturating_add_ms(now, min_interval_ms)
     }
-    for active_bucket, active in self.admissions {
-      if active_bucket == bucket || self.routed_key(active_bucket) == key {
-        active.later = active.later.max(0).min(2147483646) + 1
-      }
-    }
-    match self.admissions.get(bucket) {
-      Some(active) => active.pending = saturating_add_i64(active.pending, 1L)
-      None => self.admissions[bucket] = { pending: 1L, later: 0, }
-    }
+    let admission = self.issue(bucket, group, holding~)
     admitted = true
-    return
+    return admission
   }
 }
 
@@ -422,12 +411,18 @@ fn clamp_server_reset(state : RateLimitState, now : Int64) -> RateLimitState {
 /// waiting uses the corresponding elapsed-time deadline.
 pub impl @client.RateLimiter for WindowLimiter with fn release(
   self,
-  bucket,
+  admission,
   status~,
   headers~,
 ) {
-  defer self.leave_gate((self.pace)(bucket).group, holding=true)
-  defer self.finish_admission(bucket)
+  let bucket = admission.bucket()
+  let sequence = admission.sequence()
+  guard self.admissions.get(sequence) is Some(active) &&
+    active.admission.bucket() == bucket else {
+    return
+  }
+  self.admissions.remove(sequence)
+  defer (if active.holding { self.leave_gate(active.group, holding=true) })
   let now = self.now()
   self.sweep_states(
     now,
@@ -487,7 +482,7 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
     room(self.aliases, bucket, phase=Unknown)
   }
   if carried is Some(state) {
-    self.record(key, state, now)
+    self.transfer(key, state, now)
   }
   if effect.record is Some(value) {
     let reported = if status == 429 && scope is Bucket {
@@ -501,22 +496,17 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
     } else {
       parsed.unwrap_or(value)
     }
-    let debt = self.admission_debt(bucket, key)
     let candidate = {
-      value: {
-        ..reported,
-        remaining: (reported.remaining.max(0) - debt).max(0),
-      },
+      value: { ..reported, remaining: reported.remaining.max(0), },
       until: value.reset_at_unix_ms,
-      window_reset: parsed
-      .map(s => s.reset_at_unix_ms)
-      .unwrap_or(reported.reset_at_unix_ms),
+      restricted_by: sequence,
+      consumed_by: 0L,
       blocked_until: if status == 429 && scope is Bucket && delay_ms is Some(_) {
         value.reset_at_unix_ms
       } else {
         now
       },
-      retry_override: status == 429 && scope is Bucket && delay_ms is Some(_),
+      block_only: status == 429 && scope is Bucket && delay_ms is Some(_),
     }
     self.record(key, candidate, now)
   }

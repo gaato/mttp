@@ -1,11 +1,8 @@
 ///|
 // WindowLimiter release has no suspension points, so cleanup completes even
 // during cancellation. Unexpected failures are checked by the gate assertions.
-async fn release_slot(
-  limiter : @ratelimit.WindowLimiter,
-  bucket : String,
-) -> Unit noraise {
-  limiter.release(bucket, status=0, headers=@http.Headers::empty()) catch {
+async fn release_slot(limiter : WindowLimiter, bucket : String) -> Unit noraise {
+  limiter.respond(bucket, status=0, headers=@http.Headers::empty()) catch {
     _ => ()
   }
 }
@@ -16,30 +13,28 @@ test "cancelled gate and reset waiters consume no global admission" {
   d.run(() => {
     let clock = @sim.SimClock::new(d)
     let gate = @sim.SimGate::new(d)
-    let limiter = @ratelimit.WindowLimiter::new(
-      clock,
-      (_, _) => None,
-      gate=() => gate,
-      global={ limit: 1, window_ms: 1000, },
-    )
-    limiter.acquire("a", global_exempt=true)
-    let queued = d.spawn(() => limiter.acquire("a", global_exempt=false))
+    let limiter = WindowLimiter::new(clock, (_, _) => None, gate=() => gate, global={
+      limit: 1,
+      window_ms: 1000,
+    })
+    limiter.admit("a", global_exempt=true)
+    let queued = d.spawn(() => limiter.admit("a", global_exempt=false))
     d.pause()
     assert_eq(gate.waiting(), 1)
     queued.cancel()
     assert_false(queued.wait())
     assert_eq(gate.waiting(), 0)
-    limiter.release(
+    limiter.respond(
       "a",
       status=429,
       headers=@http.Headers::of([("retry-after", "1")]),
     )
-    let sleeping = d.spawn(() => limiter.acquire("a", global_exempt=false))
+    let sleeping = d.spawn(() => limiter.admit("a", global_exempt=false))
     d.sleep(10)
     sleeping.cancel()
     assert_false(sleeping.wait())
     assert_eq(gate.available(), 1)
-    limiter.acquire("other", global_exempt=false)
+    limiter.admit("other", global_exempt=false)
     assert_eq(d.now(), 10L)
     release_slot(limiter, "other")
   })
@@ -54,25 +49,25 @@ test "FIFO gate handoff cancellation lets cleanup release the slot" {
   d.run(() => {
     let clock = @sim.SimClock::new(d)
     let gate = @sim.SimGate::new(d)
-    let limiter = @ratelimit.WindowLimiter::new(clock, (_, _) => None, gate=() => {
+    let limiter = WindowLimiter::new(clock, (_, _) => None, gate=() => {
       return gate
     })
-    limiter.acquire("a", global_exempt=true)
+    limiter.admit("a", global_exempt=true)
     let acquired = Ref(false)
     let waiter = d.spawn(() => {
-      limiter.acquire("a", global_exempt=true)
+      limiter.admit("a", global_exempt=true)
       defer release_slot(limiter, "a")
       acquired.val = true
       d.pause()
     })
     d.pause()
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
     waiter.cancel()
     assert_false(waiter.wait())
     assert_true(acquired.val)
     assert_eq(gate.available(), 1)
-    limiter.acquire("a", global_exempt=true)
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.admit("a", global_exempt=true)
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
   })
 }
 
@@ -82,18 +77,16 @@ test "group FIFO survives a cancelled middle waiter and paces in order" {
   d.run(() => {
     let clock = @sim.SimClock::new(d)
     let gate = @sim.SimGate::new(d)
-    let limiter = @ratelimit.WindowLimiter::new(
-      clock,
-      (_, _) => None,
-      gate=() => gate,
-      pace=_ => { group: "all", min_interval_ms: 20, },
-    )
-    limiter.acquire("first", global_exempt=false)
+    let limiter = WindowLimiter::new(clock, (_, _) => None, gate=() => gate, pace=_ => {
+      group: "all",
+      min_interval_ms: 20,
+    })
+    limiter.admit("first", global_exempt=false)
     let order = []
     let tasks = [
       for name in ["second", "cancel", "third"] => {
         d.spawn(() => {
-          limiter.acquire(name, global_exempt=false)
+          limiter.admit(name, global_exempt=false)
           order.push((name, d.now()))
           release_slot(limiter, name)
         })
@@ -102,7 +95,7 @@ test "group FIFO survives a cancelled middle waiter and paces in order" {
     d.pause()
     tasks[1].cancel()
     assert_false(tasks[1].wait())
-    limiter.release("first", status=0, headers=@http.Headers::empty())
+    limiter.respond("first", status=0, headers=@http.Headers::empty())
     assert_true(tasks[0].wait())
     assert_true(tasks[2].wait())
     assert_eq(order, [("second", 20L), ("third", 40L)])
@@ -113,21 +106,21 @@ test "group FIFO survives a cancelled middle waiter and paces in order" {
 test "a global block learned during a gate wait is rechecked at admission" {
   let d = @driver.Driver::new()
   d.run(() => {
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       @sim.SimClock::new(d),
       (_, _) => None,
       gate=() => @sim.SimGate::new(d),
       scope=(_, _) => Global,
     )
-    limiter.acquire("a", global_exempt=false)
+    limiter.admit("a", global_exempt=false)
     let admitted = Ref(-1L)
     let task = d.spawn(() => {
-      limiter.acquire("a", global_exempt=false)
+      limiter.admit("a", global_exempt=false)
       admitted.val = d.now()
       release_slot(limiter, "a")
     })
     d.pause()
-    limiter.release(
+    limiter.respond(
       "a",
       status=429,
       headers=@http.Headers::of([("retry-after-ms", "50")]),
@@ -142,17 +135,17 @@ test "bucket waits cannot reserve a global slot in an earlier window" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.FakeClock::new()
-    let limiter = @ratelimit.WindowLimiter::new(clock, (_, _) => None, global={
+    let limiter = WindowLimiter::new(clock, (_, _) => None, global={
       limit: 1,
       window_ms: 100,
     })
-    limiter.release(
+    limiter.respond(
       "a",
       status=429,
       headers=@http.Headers::of([("retry-after-ms", "200")]),
     )
-    limiter.acquire("a", global_exempt=false)
-    limiter.acquire("b", global_exempt=false)
+    limiter.admit("a", global_exempt=false)
+    limiter.admit("b", global_exempt=false)
     assert_eq(clock.slept(), [200, 100])
   })
 }
@@ -162,17 +155,14 @@ test "a Timer cancelling admission leaves bucket remaining and pace untouched" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.SimClock::new(d)
-    let limiter = @ratelimit.WindowLimiter::new(
+    let limiter = WindowLimiter::new(
       clock,
-      @ratelimit.rate_limit_headers(
-        remaining="remaining",
-        reset_after_seconds="reset",
-      ),
+      rate_limit_headers(remaining="remaining", reset_after_seconds="reset"),
       gate=() => @sim.SimGate::new(d),
       pace=_ => { group: "all", min_interval_ms: 100, },
     )
-    limiter.acquire("a", global_exempt=false)
-    limiter.release(
+    limiter.admit("a", global_exempt=false)
+    limiter.respond(
       "a",
       status=200,
       headers=@http.Headers::of([("remaining", "2"), ("reset", "1")]),
@@ -180,14 +170,14 @@ test "a Timer cancelling admission leaves bucket remaining and pace untouched" {
     let timer = @sim.SimTimer::new(d)
     assert_false(
       timer.within(10, () => {
-        limiter.acquire("a", global_exempt=false) catch {
+        limiter.admit("a", global_exempt=false) catch {
           _ => ()
         }
       }),
     )
     assert_eq(limiter.state("a").map(s => s.remaining), Some(2))
-    limiter.acquire("a", global_exempt=false)
-    limiter.release("a", status=0, headers=@http.Headers::empty())
+    limiter.admit("a", global_exempt=false)
+    limiter.respond("a", status=0, headers=@http.Headers::empty())
     assert_eq(d.now(), 100L)
     assert_eq(limiter.state("a").map(s => s.remaining), Some(1))
     assert_eq(d.pending_timers(), 0)
@@ -199,11 +189,11 @@ test "Client uses rate_limit_bucket and global_exempt attributes" {
   let d = @driver.Driver::new()
   d.run(() => {
     let clock = @sim.SimClock::new(d)
-    let limiter = @ratelimit.WindowLimiter::new(clock, (_, _) => None, global={
+    let limiter = WindowLimiter::new(clock, (_, _) => None, global={
       limit: 1,
       window_ms: 100,
     })
-    limiter.release(
+    limiter.respond(
       "write",
       status=429,
       headers=@http.Headers::of([("retry-after-ms", "20")]),

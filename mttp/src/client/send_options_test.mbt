@@ -130,11 +130,12 @@ priv struct CountingLimiter {
 ///|
 impl @client.RateLimiter for CountingLimiter with fn acquire(
   self,
-  _,
+  bucket,
   global_exempt~,
 ) {
   let _ = global_exempt
   self.acquired += 1
+  @client.Admission::new(bucket, sequence=self.acquired.to_int64())
 }
 
 ///|

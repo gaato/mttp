@@ -33,12 +33,19 @@ other error stay raised, with their identity.
 `Client::send` (or `RequestPlan::send`) is the only sending path. It joins the
 `base_url`, merges default headers under the request's own, then for each
 attempt acquires the `RateLimiter`, builds the body (`body_fn` runs after
-admission, so a retry gets fresh bytes), sends, releases the limiter with the
-head it got, reports one `Attempt` to the observer and asks the
+admission, so a retry gets fresh bytes), sends, releases the limiter with that
+acquire's opaque `Admission` and the head it got, reports one `Attempt` to the observer and asks the
 `RetryPolicy`, or a typed `decide_retry` that also sees the policy's
 default. Retrying is opt-in (`RetryPolicy::none()` is the default), a stream
 body is never resent without a body factory, and idempotency comes from the
 method or the `replay_safe` attribute.
+
+Every successful acquire returns an `Admission`, including its logical bucket
+and issuer-assigned sequence. The Client retains it through success, failure
+and cancellation cleanup; each retry acquires its own token. Custom limiters
+construct tokens with `Admission::new(bucket, sequence=...)` and inspect
+`bucket()` / `sequence()` on release. Tokens belong to their issuing limiter;
+implementations must ignore duplicate releases and bound outstanding identities.
 
 Each attempt maps the plan onto the `@http.SendOptions` the backend gets:
 

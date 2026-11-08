@@ -1,91 +1,158 @@
-// An intentionally unbounded reference ledger: keep every quota observation
-// and copy the history on key transitions. Queries select the newest window,
-// its smallest quota and its Retry-After deadline, plus every active block.
-// It omits admission debt, so its quota is an upper bound, not an exact count.
-// No production reconciliation, sweep or decision helper is used by the model.
+// An unbounded reference keeps quota constraints as a list. An authorized
+// response discards older quota constraints; stale responses append bounds.
+// No production reconciliation, alias or decision helper is used by the model.
 
 ///|
-priv struct Observation {
-  window : Int64
-  remaining : Int32
-  until : Int64
-  retry : Bool
-  block : Int64
+priv struct ModelBucket {
+  caps : Array[(Int32, Int64)]
+  mut block : Int64
+  mut block_only : Bool
+  mut restricted : Int64
+  mut consumed : Int64
 }
 
 ///|
-priv struct Reference {
-  history : Map[String, Array[Observation]]
-  routes : Map[String, (String, Int64)]
-}
-
-///|
-fn Reference::view(self : Reference, key : String) -> Observation? {
-  guard self.history.get(key) is Some(events) && !events.is_empty() else {
-    return None
-  }
-  let window = events.fold(init=0L, (w, e) => w.max(e.window))
-  let latest = events.filter(e => e.window == window)
-  let retry = latest.any(e => e.retry)
-  Some({
-    window,
-    remaining: latest.fold(init=2147483647, (n, e) => n.min(e.remaining)),
-    until: latest
-    .filter(e => e.retry == retry)
-    .fold(init=0L, (t, e) => t.max(e.until)),
-    retry,
-    block: events.fold(init=0L, (t, e) => t.max(e.block)),
+fn ModelBucket::left(self : ModelBucket) -> Int32 {
+  self.caps.fold(init=if self.block_only { 0 } else { 2147483647 }, (n, c) => {
+    n.min(c.0)
   })
 }
 
 ///|
-fn Reference::copy(self : Reference, from : String, to : String) -> Unit {
-  if from != to && self.history.get(from) is Some(events) {
-    let merged = self.history.get(to).unwrap_or([]).copy()
-    merged.append(events)
-    self.history[to] = merged
+fn ModelBucket::until(self : ModelBucket) -> Int64 {
+  if self.block_only {
+    self.block
+  } else {
+    self.caps.fold(init=0L, (t, c) => t.max(c.1))
   }
 }
 
 ///|
-fn Reference::expire(self : Reference, now : Int64) -> Unit {
-  let expired = self.history
+priv struct SequenceModel {
+  buckets : Map[String, ModelBucket]
+  routes : Map[String, (String, Int64)]
+}
+
+///|
+fn SequenceModel::key(self : SequenceModel, bucket : String) -> String {
+  self.routes.get(bucket).map(r => r.0).unwrap_or(bucket)
+}
+
+///|
+fn SequenceModel::join(
+  self : SequenceModel,
+  from : String,
+  to : String,
+) -> Unit {
+  if from == to {
+    return
+  }
+  guard self.buckets.get(from) is Some(source) else { return }
+  let dest = self.buckets
+    .get(to)
+    .unwrap_or({
+      caps: [],
+      block: 0L,
+      block_only: false,
+      restricted: 0L,
+      consumed: 0L,
+    })
+  let caps = dest.caps.copy()
+  caps.append(source.caps)
+  self.buckets[to] = {
+    caps,
+    block: source.block.max(dest.block),
+    block_only: source.block_only || dest.block_only,
+    restricted: source.restricted.max(dest.restricted),
+    consumed: source.consumed.max(dest.consumed),
+  }
+}
+
+///|
+fn SequenceModel::expire(self : SequenceModel, now : Int64) -> Unit {
+  let expired = self.buckets
     .keys()
-    .filter(key => self.view(key) is Some(v) && v.until <= now && v.block <= now)
+    .filter(k => {
+      let b = self.buckets[k]
+      b.until() <= now && b.block <= now
+    })
     .to_array()
   for key in expired {
-    self.history.remove(key)
+    self.buckets.remove(key)
   }
-  let detached = self.routes
+  let aliases = self.routes
     .keys()
-    .filter(bucket => self.routes[bucket].1 <= now)
+    .filter(k => self.routes[k].1 <= now)
     .to_array()
-  for bucket in detached {
-    self.copy(self.routes[bucket].0, bucket)
+  for bucket in aliases {
+    self.join(self.routes[bucket].0, bucket)
     self.routes.remove(bucket)
   }
 }
 
 ///|
-fn Reference::key(self : Reference, bucket : String) -> String {
-  self.routes.get(bucket).map(r => r.0).unwrap_or(bucket)
+fn SequenceModel::consume(
+  self : SequenceModel,
+  admission : @client.Admission,
+) -> Unit {
+  if self.buckets.get(self.key(admission.bucket())) is Some(b) {
+    b.caps.push(((b.left() - 1).max(0), b.until()))
+    b.consumed = b.consumed.max(admission.sequence())
+  }
 }
 
 ///|
-fn Reference::release(
-  self : Reference,
-  bucket : String,
+fn SequenceModel::release(
+  self : SequenceModel,
+  admission : @client.Admission,
+  quota : (Int32, Int64)?,
+  retry : Int32?,
   named : String?,
-  event : Observation?,
   now : Int64,
 ) -> Unit {
   self.expire(now)
+  let bucket = admission.bucket()
   let key = named.unwrap_or(self.key(bucket))
-  self.copy(self.key(bucket), key)
-  if event is Some(event) {
-    let events = self.history.get(key).unwrap_or([])
-    events.push(event)
-    self.history[key] = events
+  self.join(self.key(bucket), key)
+  let seq = admission.sequence()
+  if quota is Some(_) || retry is Some(_) {
+    match self.buckets.get(key) {
+      None =>
+        self.buckets[key] = {
+          caps: quota.map(q => [q]).unwrap_or([]),
+          block: retry.map(ms => now + ms.to_int64()).unwrap_or(0L),
+          block_only: retry is Some(_),
+          restricted: seq,
+          consumed: 0L,
+        }
+      Some(b) => {
+        let left = b.left()
+        let until = b.until()
+        if retry is Some(ms) {
+          let deadline = now + ms.to_int64()
+          if deadline > b.block || left > 0 {
+            b.restricted = b.restricted.max(seq)
+          }
+          b.block = b.block.max(deadline)
+          b.block_only = true
+          b.caps.clear()
+        } else if quota is Some(q) {
+          if seq > b.restricted && seq >= b.consumed {
+            b.caps.clear()
+            b.block_only = false
+            b.caps.push(q)
+            if q.0 < left || (q.0 == 0 && q.1 > until) {
+              b.restricted = seq
+            }
+          } else if !b.block_only {
+            b.caps.push(q)
+            if q.0 < left || (q.0 == 0 && q.1 > until) {
+              b.restricted = b.restricted.max(seq)
+            }
+          }
+        }
+      }
+    }
   }
   if named is Some(key) {
     if key == bucket {
@@ -97,82 +164,170 @@ fn Reference::release(
 }
 
 ///|
-fn Reference::consume(self : Reference, bucket : String) -> Unit {
-  let key = self.key(bucket)
-  if self.view(key) is Some(view) && self.history.get(key) is Some(events) {
-    self.history[key] = events.map(e => {
-      if e.window == view.window {
-        { ..e, remaining: (e.remaining - 1).max(0), }
-      } else {
-        e
-      }
-    })
+fn SequenceModel::check(
+  self : SequenceModel,
+  limiter : WindowLimiter,
+  clock : @sim.FakeClock,
+  context : String,
+) -> Unit raise {
+  let now = clock.now_unix_ms()
+  self.expire(now)
+  for bucket in ["a", "b", "shared"] {
+    let actual = limiter.state(bucket)
+    if self.buckets.get(self.key(bucket)) is Some(b) {
+      assert_true(actual is Some(_), msg=context)
+      let state = limiter.states[limiter.resolve(bucket, limiter.now())]
+      assert_eq(state.value.remaining, b.left(), msg=context)
+      assert_eq(state.restricted_by, b.restricted, msg=context)
+      assert_eq(state.consumed_by, b.consumed, msg=context)
+      assert_eq(state.until, b.until(), msg=context)
+      assert_eq(
+        delay_until(state.blocked_until, now),
+        delay_until(b.block, now),
+        msg=context,
+      )
+    }
   }
 }
 
 ///|
-test "random alias interleavings preserve reference blocks and quota bounds" {
+test "delivery permutations follow admission sequence with relative and absolute resets" {
+  @driver.run_sync(() => {
+    for relative in [false, true] {
+      for with_quota in [false, true] {
+        for
+          order in [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+          ] {
+          let clock = @sim.FakeClock::new()
+          let limiter = WindowLimiter::new(
+            clock,
+            rate_limit_headers(
+              remaining="left",
+              reset_after_seconds=if relative { "reset" } else { "unused" },
+              reset_unix_seconds="reset",
+            ),
+          )
+          let model : SequenceModel = { buckets: Map([]), routes: Map([]), }
+          let admissions = Array::makei(3, _ => {
+            @client.Admission::new("a", sequence=0L)
+          })
+          for i in 0..<3 {
+            admissions[i] = limiter.acquire("a", global_exempt=false)
+          }
+          for i in order {
+            let now = clock.now_unix_ms()
+            let reset = if i == 0 { 1 } else { 60 }
+            let left = if i == 0 { 5 } else { 0 }
+            let parsed = i != 1 || with_quota
+            let headers = if parsed {
+              alias_quota("\{left}", "\{reset}")
+            } else {
+              @http.Headers::empty()
+            }
+            let headers = if i == 1 {
+              headers.set("retry-after", "1")
+            } else {
+              headers
+            }
+            limiter.release(
+              admissions[i],
+              status=if i == 1 { 429 } else { 200 },
+              headers~,
+            )
+            model.release(
+              admissions[i],
+              if parsed {
+                Some(
+                  (
+                    left,
+                    (if relative { now } else { 0L }) + reset.to_int64() * 1000L,
+                  ),
+                )
+              } else {
+                None
+              },
+              if i == 1 {
+                Some(1000)
+              } else {
+                None
+              },
+              None,
+              now,
+            )
+            model.check(
+              limiter,
+              clock,
+              "permutation \{Repr(order)} relative=\{relative} quota=\{with_quota}",
+            )
+            clock.advance(100)
+          }
+        }
+      }
+    }
+  })
+}
+
+///|
+test "random admission identities aliases resets and duplicate releases match the reference" {
   @driver.run_sync(() => {
     for seed in 1..<=32 {
       let clock = @sim.FakeClock::new()
+      let model : SequenceModel = { buckets: Map([]), routes: Map([]), }
       let limiter = alias_limiter(clock)
-      let model : Reference = { history: Map([]), routes: Map([]), }
-      let buckets = ["a", "b", "shared"]
-      let pending : Map[String, Int32] = Map([])
+      let pending : Array[@client.Admission] = []
+      let released : Array[@client.Admission] = []
+      let names = ["a", "b", "shared"]
       let mut random = seed.reinterpret_as_uint()
       let draw = (n : Int32) => {
         random = random * 1664525U + 1013904223U
         ((random >> 16).reinterpret_as_int() & 65535) % n
       }
       for step in 0..<300 {
-        let bucket = buckets[draw(buckets.length())]
-        let operation = draw(10)
         let before = clock.now_unix_ms()
         model.expire(before)
-        if operation < 3 ||
-          (operation < 7 && pending.get(bucket).unwrap_or(0) == 0) {
-          let required = match model.view(model.key(bucket)) {
-            Some(v) =>
-              if v.remaining == 0 {
-                v.block.max(v.until)
+        let op = draw(10)
+        if (op < 3 && pending.length() < 32) || pending.is_empty() {
+          let bucket = names[draw(3)]
+          let required = model.buckets
+            .get(model.key(bucket))
+            .map(b => {
+              if b.left() == 0 {
+                b.block.max(b.until())
               } else {
-                v.block
+                b.block
               }
-            None => before
-          }
-          limiter.acquire(bucket, global_exempt=false)
-          let now = clock.now_unix_ms()
-          assert_true(
-            now >= required,
-            msg="early acquire: seed=\{seed}, step=\{step}",
-          )
-          model.expire(now)
-          model.consume(bucket)
-          pending[bucket] = pending.get(bucket).unwrap_or(0) + 1
-        } else if operation < 7 {
+            })
+            .unwrap_or(before)
+          let token = limiter.acquire(bucket, global_exempt=false)
+          assert_true(clock.now_unix_ms() >= required)
+          model.expire(clock.now_unix_ms())
+          model.consume(token)
+          pending.push(token)
+        } else if op < 7 {
+          let token = pending.remove(draw(pending.length()))
           let status = if draw(2) == 0 { 200 } else { 429 }
           let parsed = draw(4) != 0
-          let old_key = model.key(bucket)
-          let old = limiter.states.get(limiter.resolve(bucket, limiter.now()))
-          let reset = match model.view(old_key) {
-            Some(v) if draw(2) == 0 => v.window
-            _ => (before / 1000L + (draw(4) + 1).to_int64()) * 1000L
-          }
           let left = draw(8)
-          let retry = status == 429 && draw(4) != 0
-          let delay = (draw(3) + 1) * 1000
-          let named = match draw(4) {
-            0 => None
-            1 => Some(bucket)
-            _ => Some(buckets[draw(buckets.length())])
+          let reset = (before / 1000L + (draw(4) + 1).to_int64()) * 1000L
+          let retry = if status == 429 && draw(4) != 0 {
+            Some((draw(3) + 1) * 1000)
+          } else {
+            None
           }
+          let named = if draw(3) == 0 { None } else { Some(names[draw(3)]) }
           let headers = if parsed {
             alias_quota("\{left}", "\{reset / 1000L}")
           } else {
             @http.Headers::empty()
           }
-          let headers = if retry {
-            headers.set("retry-after-ms", "\{delay}")
+          let headers = if retry is Some(ms) {
+            headers.set("retry-after-ms", "\{ms}")
           } else {
             headers
           }
@@ -181,82 +336,38 @@ test "random alias interleavings preserve reference blocks and quota bounds" {
           } else {
             headers
           }
-          limiter.release(bucket, status~, headers~)
-          pending[bucket] -= 1
-          let event = if parsed || retry {
-            Some({
-              window: if parsed {
-                reset
-              } else {
-                before + delay.to_int64()
-              },
-              remaining: if retry {
-                0
-              } else {
-                left
-              },
-              until: if retry {
-                before + delay.to_int64()
-              } else {
-                reset
-              },
-              retry,
-              block: if retry {
-                before + delay.to_int64()
-              } else {
-                before
-              },
-            })
-          } else {
-            None
-          }
-          model.release(bucket, named, event, before)
-          // Admission debt may make implementation quota smaller than the
-          // reference ceiling. Independently pin monotonicity to its actual
-          // pre-transition quota so even an increase below that ceiling fails.
-          if old is Some(old) &&
-            (old.until > before || old.blocked_until > before) {
-            let current = limiter.states[limiter.resolve(bucket, limiter.now())]
-            assert_true(current.blocked_until >= old.blocked_until)
-            if current.window_reset == old.window_reset {
-              assert_true(current.value.remaining <= old.value.remaining)
-            }
-          }
-        } else {
-          clock.advance(
-            match draw(4) {
-              0 => 1000
-              1 => 3_599_000
-              2 => 3_600_000
-              _ => 0
+          limiter.release(token, status~, headers~)
+          model.release(
+            token,
+            if parsed {
+              Some((left, reset))
+            } else {
+              None
             },
+            retry,
+            named,
+            before,
           )
-          if operation == 9 {
+          released.push(token)
+        } else if op == 7 && !released.is_empty() {
+          limiter.release(
+            released[draw(released.length())],
+            status=429,
+            headers=alias_quota("0", "999999999")
+              .set("retry-after", "3600")
+              .set("key", "wrong"),
+          )
+        } else {
+          clock.advance([0, 100, 1000, 3_600_000][draw(4)])
+          if op == 9 {
             limiter.sweep_states(limiter.now(), force=true)
           }
         }
-        let now = clock.now_unix_ms()
-        model.expire(now)
-        for bucket in buckets {
-          let actual = limiter.state(bucket)
-          if model.view(model.key(bucket)) is Some(expected) {
-            if expected.until > now || expected.block > now {
-              assert_true(
-                actual is Some(_),
-                msg="lost state: seed=\{seed}, step=\{step}, bucket=\{bucket}, now=\{now}, expected window=\{expected.window}, left=\{expected.remaining}, until=\{expected.until}, block=\{expected.block}",
-              )
-              let record = limiter.states[limiter.resolve(bucket, limiter.now())]
-              assert_eq(record.window_reset, expected.window)
-              assert_true(record.blocked_until >= expected.block)
-              assert_true(record.value.remaining <= expected.remaining)
-            }
-          }
-        }
+        model.check(limiter, clock, "seed=\{seed}, step=\{step}")
+        assert_eq(limiter.admissions.length(), pending.length())
       }
-      for bucket in buckets {
-        for _ in 0..<pending.get(bucket).unwrap_or(0) {
-          limiter.release(bucket, status=0, headers=@http.Headers::empty())
-        }
+      for token in pending {
+        limiter.release(token, status=0, headers=@http.Headers::empty())
       }
       assert_eq(limiter.admissions.length(), 0)
     }
