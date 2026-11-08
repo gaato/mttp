@@ -14,6 +14,14 @@ gaato/http	gaato/http/h1	js	39
 gaato/http	gaato/http/h1	native	39
 gaato/http	gaato/http/h1	wasm	39
 gaato/http	gaato/http/h1	wasm-gc	39
+gaato/http	gaato/http/h1client	js	66
+gaato/http	gaato/http/h1client	native	66
+gaato/http	gaato/http/h1client	wasm	66
+gaato/http	gaato/http/h1client	wasm-gc	66
+gaato/http	gaato/http/internal/control	js	9
+gaato/http	gaato/http/internal/control	native	9
+gaato/http	gaato/http/internal/control	wasm	9
+gaato/http	gaato/http/internal/control	wasm-gc	9
 gaato/http	gaato/http/internal/form	js	0
 gaato/http	gaato/http/internal/form	native	0
 gaato/http	gaato/http/internal/form	wasm	0
