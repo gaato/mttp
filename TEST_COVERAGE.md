@@ -32,6 +32,12 @@ rerun the tests.
 - Counts are Coveralls lines: lines with at least one instrumented point,
   covered when any point on them ran.
 
+The h1server read-ahead and timeout regressions run over sim + Driver on all
+four targets (69 tests per target). Its native coverage is 308/311 lines;
+the three remaining lines are the existing request-body defensive guards and
+future response-Body arm listed below. The ownership handoff, bounded buffer,
+peer failure/EOF distinction and input/producer timeout split add no exemptions.
+
 ### Pitfalls the script pins
 
 - In a `moon.work` workspace `moon -C <member> test` tests every member. The
@@ -63,10 +69,33 @@ Accepted as uncovered (needs a row):
 
 Budgets are exact uncovered counts at the last measurement.
 
+The Digest port (`mttp-digest/src/backend.mbt`, `digest.mbt`) and the private
+conformance harness (`conformance/src/harness/*.mbt`) are fully covered on
+native: 234/234 and 62/62 instrumented lines. Digest's black-box suites cover
+the Backend checker, request stream cleanup, unchanged SendOptions,
+cancellation, and POST → 401 → dial failure under an unsent-only retry rule.
+The nonce-count regression suites exercise three concurrent same-nonce
+challenges with both empty and populated caches, strictly increasing challenge
+and subsequent preemptive counts, and new/stale nonce resets. White-box
+boundary tests cover allocation of `ffffffff`, refusal to reuse an exhausted
+count, retained challenge updates, FIFO eviction, and caller ownership of an
+unanswered 401 at exhaustion.
+The conformance suites exercise the harness through URL, cookie and SSE
+corpora, including seeded SSE mutations and every short-input split. No
+uncovered-line budget is needed for these additions.
+
 ## Accepted uncovered
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| http-async/src/conn/dialer.mbt | 1 | Forward-compatible Trust arm: Trust now belongs to the cross-target root package, so the dialer must refuse future constructors that cannot be constructed in this release. |
+| http-async/src/conn/conn_io.mbt | 1 | BinaryWriterImpl::get_controller is not called by core's current writer defaults; the controller is a stateless marker reserved for future buffering/locking. Each bridge still constructs and owns its controller as required by the core trait. |
+| http-async/src/codings/body_source.mbt | 1 | Forward-compatible Body arm: a future body representation is refused instead of silently treated as empty. |
+| http-async/src/codings/decompress.mbt | 1 | Defensive fallback for a non-TransportError from read_decoded: this wrapper supplies a TransportError-only reader and ContentDecoder translates codec errors to TransportError. Cancellation is a scheduler signal. |
+| http-async/src/codings/encoded_body.mbt | 1 | Defensive fallback for a non-TransportError from read_encoded: this wrapper supplies a TransportError-only reader and ContentEncoder translates codec errors to TransportError. |
+| http-async/src/internal/socketconn/socket.mbt | 2 | Not yet tested: reentrant close between spawning a directional child and registering its cancellation handle. The defensive checks remain because TaskGroup::spawn allows a child to start immediately. Ordinary pending read/write close and caller cancellation are tested. |
+| http-async/src/runtime/coordination.mbt | 3 | Defensive Task::wait rethrow and non-TransportError mapping: primary/monitor raise only TransportError, primary errors are recorded before wait returns, and explicit child cancellation has its own arm. |
+| http-async/src/runtime/timer.mbt | 1 | Defensive ordinary-error fallback of the generic timeout helper. Clock::sleep and Timer's callback are noraise, so current children cannot raise an Error; cancellation propagates independently. |
 | http/src/driver/driver.mbt | 1 | Defensive arm: a task suspended by something other than its Driver. No async runtime is linked, so nothing else can suspend it. |
 | http/src/h1client/client.mbt | 1 | Forward-compatibility arm of the `#non_exhaustive` `BodyTiming` match: every timing the module defines has its own arm. |
 | http/src/h1client/failure.mbt | 3 | Defensive arm: an error that is neither a `TransportError` nor a codec `ParseError`. The ports raise only `TransportError`, and every codec call inside a phase raises `ParseError`; cancellation is not an `Error`. |
@@ -74,6 +103,8 @@ Budgets are exact uncovered counts at the last measurement.
 | http/src/h1client/response_body.mbt | 1 | Defensive arm: a `NoBody` framing in the body reader. A response without a body is returned with `Body::Empty` and never gets a reader. |
 | http/src/h1client/timeouts.mbt | 1 | Overflow guard of the time left: it needs the clock to move back by more than 2^63 ms after the deadline was set. |
 | http/src/h1client/upload.mbt | 1 | Defensive arm: a concurrent exchange that returns without a final head. Its primary returns normally only after one arrived; every other ending raises or is cancellation. |
+| http/src/h1server/request_body.mbt | 2 | Defensive guards: retrying an already failed private body cursor (the public acquired reader closes after failure, and the session refuses reuse before draining a failed cursor), and draining while still owing 100 Continue (the response is already marked Connection: close, which skips drain). |
+| http/src/h1server/response.mbt | 1 | Forward-compatible Body arm: a future response body representation cannot be constructed in this release and is refused as Invalid before writing a head. |
 | http/src/sim/contracts.mbt | 2 | Defensive arms: `check_coordination_contract` requiring the outer supervision to raise its monitor's failure after a nested one was cancelled (the earlier monitor-failure step already requires it, and cancellation cannot be caught, so a nested supervision cannot turn into a normal return that would hide it); and the read of the stream `check_backend_contract` attaches with a negative declared length, which `StreamBody::take` refuses, so no backend can read it. |
 | mttp/src/multipart/multipart.mbt | 1 | Forward-compatible Body arm: a future body representation cannot be constructed in this release and is refused as an unsupported part. |
 | mttp/src/multipart/stream_body.mbt | 1 | Defensive closed-stream guard: the `StreamBody` wrapping the multipart stream returns EOF once closed, before delegating again, so this branch cannot be reached through the public body API. |
