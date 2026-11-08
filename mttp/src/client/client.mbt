@@ -180,6 +180,14 @@ async fn[T, M] Client::exchange(
   }
   let head = response.head()
   let selected = (reader.select)(head, reader.any_status)
+  let selected = match selected.prepare {
+    Some(prepare) => prepare(head, response.body, limit)
+    None => selected
+  }
+  if options.timeout_ms is Some(ms) &&
+    self.clock.now_unix_ms() - started >= ms.to_int64() {
+    raise timeout(ms)
+  }
   if selected.streaming {
     transferred = true
     return Streaming(response, selected)

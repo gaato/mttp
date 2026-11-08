@@ -215,6 +215,7 @@ pub fn[A, B, M] ResponsePlan::map(Self[A, M], (A) -> B raise) -> Self[B, M]
 pub fn[A, B, E, M] ResponsePlan::map_ok(Self[Result[A, E], M], (A) -> B raise) -> Self[Result[B, E], M]
 pub fn[A, B, M] ResponsePlan::map_with_head(Self[A, M], (A, @http.ResponseHead) -> B raise) -> Self[B, M]
 pub fn[T] ResponsePlan::new((@http.ResponseHead, Bytes) -> T raise) -> Self[T, Buffered]
+pub fn[A, T] ResponsePlan::prepared_stream((@http.ResponseHead, Bytes) -> Result[A, T] raise, async (A) -> T) -> Self[T, Streaming]
 pub fn[T] ResponsePlan::reject() -> Self[Result[T, ResponseFailure], Buffered]
 pub fn[T] ResponsePlan::stream(async (@http.ResponseHead, &@http.BodyStream, Int32) -> T) -> Self[Result[T, ResponseFailure], Streaming]
 

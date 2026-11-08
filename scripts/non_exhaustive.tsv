@@ -31,3 +31,8 @@ gaato/mttp/cookie	SameSite
 gaato/mttp/client	ResponseFailure
 gaato/mttp/testing	Canned
 gaato/mttp/schema	DecodeKind
+gaato/mttp/endpoint	AuthScheme
+gaato/mttp/endpoint	Location
+gaato/mttp/endpoint	BodyValue
+gaato/mttp/endpoint	Seg
+gaato/mttp/endpoint	FailureStage
