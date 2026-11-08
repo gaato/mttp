@@ -214,8 +214,11 @@ mutable; they are owned by a single exchange or reader.
    plus the policy's default decision. A streaming callback starts only after
    the attempt's release and observation; its result or exception is never
    retried.
-2. Every acquire that returns has exactly one release. Cancelled admission
-   waits have none. Release uses the received head even when reading fails.
+2. Every acquire that returns has exactly one release, with that acquire's
+   Admission. Cancelled admission waits have none. Release uses the received
+   head even when reading fails. Each retry has its own Admission. Return
+   tokens only to their issuing limiter; a second release of the same token
+   is ignored, including after a failed release attempt.
 3. Body factories run only after admission and a deadline check. Without a
    factory, stream requests cannot retry, regardless of the decision function.
 4. A release failure after an exchange produced a value reaches the caller and

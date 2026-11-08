@@ -75,6 +75,13 @@ pub(all) suberror InvalidRequest {
 pub fn InvalidRequest::to_repr(Self) -> @debug.Repr
 
 // Types and methods
+pub struct Admission {
+  // private fields
+}
+pub fn Admission::bucket(Self) -> String
+pub fn Admission::new(String, sequence~ : Int64) -> Self
+pub fn Admission::sequence(Self) -> Int64
+
 pub(all) struct Attempt {
   request : @http.RequestHead
   attributes : @http.Attributes
@@ -118,10 +125,11 @@ pub async fn FollowRedirects::send(Self, @http.Request, @http.SendOptions) -> @h
 pub impl @http.Backend for FollowRedirects
 
 pub struct NoLimiter {
+  // private fields
 }
-pub async fn NoLimiter::acquire(Self, String, global_exempt~ : Bool) -> Unit
+pub async fn NoLimiter::acquire(Self, String, global_exempt~ : Bool) -> Admission
 pub fn NoLimiter::new() -> Self
-pub async fn NoLimiter::release(Self, String, status~ : Int32, headers~ : @http.Headers) -> Unit
+pub async fn NoLimiter::release(Self, Admission, status~ : Int32, headers~ : @http.Headers) -> Unit
 pub impl RateLimiter for NoLimiter
 
 pub(all) struct Page[T] {
@@ -283,8 +291,8 @@ pub type StreamResponseAs[T] = ResponsePlan[T, Streaming]
 
 // Traits
 pub(open) trait RateLimiter {
-  async fn acquire(Self, String, global_exempt~ : Bool) -> Unit
-  async fn release(Self, String, status~ : Int32, headers~ : @http.Headers) -> Unit
+  async fn acquire(Self, String, global_exempt~ : Bool) -> Admission
+  async fn release(Self, Admission, status~ : Int32, headers~ : @http.Headers) -> Unit
 }
 
 pub trait ResponseMode {

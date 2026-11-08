@@ -1,0 +1,24 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/client/cookies"
+
+import {
+  "gaato/http",
+  "gaato/mttp/cookie",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct Cookies {
+  // private fields
+}
+pub fn Cookies::close(Self) -> Unit
+pub fn Cookies::new(&@http.Backend, @cookie.CookieJar) -> Self
+pub async fn Cookies::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
+pub impl @http.Backend for Cookies
+
+// Type aliases
+
+// Traits

@@ -275,7 +275,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
     raw.body is (Empty | Bytes(_))
   for attempt = 0; ; attempt = attempt + 1 {
     self.check_total(started)
-    self.limiter.acquire(bucket, global_exempt=exempt)
+    let admission = self.limiter.acquire(bucket, global_exempt=exempt)
     let received = Ref(None)
     let attempt_started = self.clock.now_unix_ms()
     let mut releasing = false
@@ -300,7 +300,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
         discard(value)
       }
       if !releasing {
-        self.release_cancelled(bucket, received.val)
+        self.release_cancelled(admission, received.val)
       }
     }
     let options : @http.SendOptions = {
@@ -335,7 +335,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
     }
     releasing = true
     self.limiter.release(
-      bucket,
+      admission,
       status=received.val.map(h => h.status).unwrap_or(0),
       headers=received.val.map(h => h.headers).unwrap_or(@http.Headers::empty()),
     ) catch {
@@ -568,11 +568,11 @@ fn Client::budget(
 ///|
 async fn Client::release_cancelled(
   self : Client,
-  bucket : String,
+  admission : Admission,
   head : @http.ResponseHead?,
 ) -> Unit noraise {
   self.limiter.release(
-    bucket,
+    admission,
     status=head.map(h => h.status).unwrap_or(0),
     headers=head.map(h => h.headers).unwrap_or(@http.Headers::empty()),
   ) catch {

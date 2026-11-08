@@ -13,6 +13,10 @@ import {
   "gaato/http/sim",
 } for "test"
 
+import {
+  "gaato/http/driver",
+} for "wbtest"
+
 options(
   "allow-experimental-packages": [ "gaato/http/driver" ],
 )

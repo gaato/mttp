@@ -11,9 +11,9 @@ native.
 > **Status**: this version is being rebuilt in the
 > [mttp repository](https://github.com/gaato/mttp). The packages arrive one
 > at a time: `jsonkit`, `sse`, `multipart`, `cookie`, `schema`, the OpenAPI
-> document model `apispec`, the client with its retry rules, and the test
-> doubles, typed endpoints, endpoint test helpers, the router and OpenAPI
-> projection are here.
+> document model `apispec`, the client with its retry rules, rate limits, the
+> cookie wrapper, the test doubles, typed endpoints, endpoint test helpers, the
+> router and OpenAPI projection are here.
 
 ## Install
 
@@ -34,6 +34,8 @@ your `moon.mod`.
 | `gaato/mttp/cookie` | An RFC 6265 cookie jar on an injected clock |
 | `gaato/mttp/client` | Request and response plans with Result-valued readers, the `Client` send loop (defaults, admission, deadlines, decoded-body limits, retries), `FollowRedirects`, `Paginator`, Retry-After and `Link` helpers |
 | `gaato/mttp/client/retry` | Retry rules and decisions as data, and the Retry-After parsers |
+| `gaato/mttp/client/ratelimit` | Bounded window state, grouped pacing, global quotas and header-driven admission on an injected clock |
+| `gaato/mttp/client/cookies` | A CookieJar backend wrapper; put it inside FollowRedirects to process every hop |
 | `gaato/mttp/testing` | `BackendStub`, canned answers and fault injection for client tests |
 | `gaato/mttp/schema` | Text, JSON and body codecs that carry their JSON Schema, validators, and decoding that collects every issue with its JSON pointer |
 | `gaato/mttp/apispec` (experimental) | OpenAPI 3.1 document records with their JSON codecs |
