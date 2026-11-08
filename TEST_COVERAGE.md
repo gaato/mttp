@@ -68,3 +68,5 @@ Budgets are exact uncovered counts at the last measurement.
 | File | Budget | Reason |
 | --- | --- | --- |
 | http/src/driver/driver.mbt | 2 | Defensive arms: a task suspended by something other than its Driver (no async runtime is linked, so nothing else can suspend it), and `cancel_and_join` called with no task of its own Driver running, where it only requests cancellation. Structured cleanup calls it only while that Driver is stepping a task. |
+| mttp/src/multipart/multipart.mbt | 1 | Forward-compatible Body arm: a future body representation cannot be constructed in this release and is refused as an unsupported part. |
+| mttp/src/multipart/stream_body.mbt | 1 | Defensive closed-stream guard: the `StreamBody` wrapping the multipart stream returns EOF once closed, before delegating again, so this branch cannot be reached through the public body API. |

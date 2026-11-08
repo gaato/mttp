@@ -43,6 +43,9 @@ a test from hanging.
 | `http/driver` rounds of cancellation when `run` ends | `max_unwind_rounds` = 8 | `run` raises `DriverError(UnwindIncomplete(live~))`; the surviving tasks stay live | `http/src/driver/driver_test.mbt`: "unwinding gives up after max_unwind_rounds rounds" |
 | `http/driver` timer callbacks per run | `max_steps`, independent of task steps | Raises `NoQuiescence`, discards timers and cancels live tasks | `http/src/driver/driver_test.mbt`: "self-rearming due timers obey a callback budget" |
 | `http/driver` cleanup steps per cancellation round | The larger of `max_steps` and twice the number of live tasks at the round's start | Ends the round; at most `max_unwind_rounds` rounds | `http/src/driver/driver_test.mbt`: "exhausted execution budget still unwinds ten thousand tasks", "unwinding gives up after max_unwind_rounds rounds" |
+| `mttp/sse` one event: its `data` lines, the `event` and `id` lines in effect, and the line being read | `max_event_bytes`, default 16 MiB, in raw bytes without line terminators; below 1 only blank lines pass | Raises `TooLarge(limit)` in phase Body and ends the stream; events the same chunk completed earlier are returned first and the next `feed` or `finish` raises | `mttp/src/sse/parser_test.mbt`: "one event is bounded by the lines it keeps plus the line being read", "the default bound is 16 MiB", "an overflow after events in the same chunk raises on the next call" |
+| `mttp/sse` reconnection delay (`retry`) | One hour | Clamped: a longer or overflowing digit run reads as 3 600 000 ms | `mttp/src/sse/parser_test.mbt`: "a retry hint past an hour reads as an hour", "the reconnection time takes effect when read and outlives the stream" |
+| `mttp/multipart` boundary and the scan of stream parts | 1 to 70 `bchars`, so the delimiter is at most 74 bytes; the scan keeps a match counter, never part bytes | `InvalidBoundary` before any byte is encoded; a stream part containing the delimiter raises `Protocol` in phase Body before the delimiter's last byte is returned | `mttp/src/multipart/multipart_test.mbt`: "boundary validation and header quoting"; `mttp/src/multipart/boundary_scan_wbtest.mbt`: "BoundaryScan finds the delimiter as body_collides does", "BoundaryScan agrees with body_collides however the body is chunked"; `mttp/src/multipart/stream_test.mbt`: "a stream part containing the boundary fails before the collision is sent" |
 
 ## Bounded by rate and lifetime
 
@@ -58,6 +61,9 @@ Growth that follows what the caller asks for, not what the network sends.
 | `http` headers, URL strings, attribute maps and byte bodies | Values explicitly constructed by the caller | Parsers and engines impose the network input limits; these value constructors do not consume network input. |
 | `http` URI builder | Caller-provided components | Interpolation is linear in the supplied text and stages one query parameter. |
 | `http/driver` ready queue, live-task map, timer heap | Tasks the test spawns and timers it arms | A test helper: the test decides how many; `max_steps` stops a run that keeps spawning. Cancelled timers stay in the heap until they reach its top or `run` ends. |
+| `mttp/jsonkit` builders and decoded fields | Fields the caller writes; a JSON tree already parsed | The builder grows only with the caller's writes; decoders read a tree whose bytes the reader that parsed it bounded. |
+| `mttp/sse` events returned by one `feed` | The chunk the caller feeds | Each event is bounded above, and each takes at least six bytes of input (`data`, a line end and a blank line). |
+| `mttp/multipart` framing and part descriptors | Caller-supplied parts | Framing and in-memory bodies are what the caller passed; a stream body holds the part streams and the part being read, and the boundary scan above. |
 
 ## Known gaps
 
