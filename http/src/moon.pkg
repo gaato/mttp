@@ -1,1 +1,17 @@
+import {
+  "gaato/http/internal/text",
+  "gaato/http/internal/form",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/percent",
+  "moonbitlang/core/encoding/base64",
+}
 
+import {
+  "gaato/http/driver",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/random",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/http/driver" ],
+)

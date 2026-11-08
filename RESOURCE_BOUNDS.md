@@ -36,6 +36,9 @@ a test from hanging.
 
 | Structure | Bound | On overflow | Tests |
 |---|---|---|---|
+| `http` buffered stream read (`read_bounded`) | The caller's explicit limit; a negative limit is refused | Closes the stream and raises `TooLarge(limit)` in phase Body at the crossing chunk, before buffering it; overflow-safe | `http/src/body_test.mbt`: "read bounded accepts exact limit and closes at crossing chunk", "read bounded closes on invalid limits and empty chunks" |
+| `http` taken `StreamBody` with a declared length | The declared length; a negative one is refused before any read | Raises `Protocol` in phase Body at the crossing chunk or a premature EOF and closes the source; no byte past the length is exposed | `http/src/body_test.mbt`: "stream body rejects negative short long and empty chunks" |
+| `http` decoded form pairs (`form_urldecode`) | `max_pairs`, default 256 nonempty pairs; the input byte bound belongs to the caller that read the body | Raises `TooLarge(limit)` in phase Body before decoding an excess pair | `http/src/form_decode_test.mbt`: "form pair limit accepts exact bounds and defaults to 256" |
 | `http/driver` steps of one `Driver::run` (and of manual `step` calls since it started) | `max_steps`, default 100 000 000 | `step` raises `DriverError(NoQuiescence(steps~))`; `run` cancels and unwinds the live tasks first | `http/src/driver/driver_test.mbt`: "max_steps allows exactly that many steps per run", "livelock raises NoQuiescence" |
 | `http/driver` rounds of cancellation when `run` ends | `max_unwind_rounds` = 8 | `run` raises `DriverError(UnwindIncomplete(live~))`; the surviving tasks stay live | `http/src/driver/driver_test.mbt`: "unwinding gives up after max_unwind_rounds rounds" |
 | `http/driver` timer callbacks per run | `max_steps`, independent of task steps | Raises `NoQuiescence`, discards timers and cancels live tasks | `http/src/driver/driver_test.mbt`: "self-rearming due timers obey a callback budget" |
@@ -52,6 +55,8 @@ Growth that follows what the caller asks for, not what the network sends.
 
 | Structure | Grows with | Why it is not bounded here |
 |---|---|---|
+| `http` headers, URL strings, attribute maps and byte bodies | Values explicitly constructed by the caller | Parsers and engines impose the network input limits; these value constructors do not consume network input. |
+| `http` URI builder | Caller-provided components | Interpolation is linear in the supplied text and stages one query parameter. |
 | `http/driver` ready queue, live-task map, timer heap | Tasks the test spawns and timers it arms | A test helper: the test decides how many; `max_steps` stops a run that keeps spawning. Cancelled timers stay in the heap until they reach its top or `run` ends. |
 
 ## Known gaps
