@@ -18,6 +18,10 @@ gaato/http	gaato/http/h1client	js	88
 gaato/http	gaato/http/h1client	native	88
 gaato/http	gaato/http/h1client	wasm	88
 gaato/http	gaato/http/h1client	wasm-gc	88
+gaato/http	gaato/http/h1server	js	62
+gaato/http	gaato/http/h1server	native	62
+gaato/http	gaato/http/h1server	wasm	62
+gaato/http	gaato/http/h1server	wasm-gc	62
 gaato/http	gaato/http/internal/control	js	9
 gaato/http	gaato/http/internal/control	native	9
 gaato/http	gaato/http/internal/control	wasm	9
