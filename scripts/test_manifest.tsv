@@ -22,10 +22,10 @@ gaato/http	gaato/http/rt	js	4
 gaato/http	gaato/http/rt	native	4
 gaato/http	gaato/http/rt	wasm	4
 gaato/http	gaato/http/rt	wasm-gc	4
-gaato/http	gaato/http/sim	js	38
-gaato/http	gaato/http/sim	native	38
-gaato/http	gaato/http/sim	wasm	38
-gaato/http	gaato/http/sim	wasm-gc	38
+gaato/http	gaato/http/sim	js	40
+gaato/http	gaato/http/sim	native	40
+gaato/http	gaato/http/sim	wasm	40
+gaato/http	gaato/http/sim	wasm-gc	40
 gaato/http-async	gaato/http-async	js	1
 gaato/http-async	gaato/http-async	native	1
 gaato/http-async	gaato/http-async	wasm	1

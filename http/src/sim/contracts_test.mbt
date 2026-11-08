@@ -292,6 +292,73 @@ test "coordination check refuses each flawed supervision" {
   )
 }
 
+///|
+/// A correct coordination that starts the monitor before primary, as a
+/// runtime may: the port promises no order between the children.
+priv struct MonitorFirst {
+  driver : @driver.Driver
+  inner : &@rt.Coordination
+}
+
+///|
+impl @rt.Coordination for MonitorFirst with fn signal(self) {
+  self.inner.signal()
+}
+
+///|
+impl @rt.Coordination for MonitorFirst with fn supervise(
+  self,
+  primary~,
+  monitor~,
+) {
+  let failure : Ref[@http.TransportError?] = Ref(None)
+  let completed = Ref(false)
+  let primary_task : Ref[@driver.Task?] = Ref(None)
+  let watching = self.driver.spawn(() => {
+    monitor() catch {
+      error =>
+        if !completed.val {
+          if failure.val is None {
+            failure.val = Some(error)
+          }
+          if primary_task.val is Some(work) {
+            work.cancel()
+          }
+        }
+    }
+  })
+  let work = self.driver.spawn(() => {
+    primary() catch {
+      error => if failure.val is None { failure.val = Some(error) }
+    }
+    completed.val = true
+  })
+  primary_task.val = Some(work)
+  defer self.driver.cancel_and_join([work, watching])
+  let _ = work.wait() catch { _ => false }
+  if failure.val is Some(error) {
+    raise error
+  }
+}
+
+///|
+test "a monitor-first coordination passes the coordination and connection checks" {
+  let d = @driver.Driver::new()
+  let coordination = MonitorFirst::{
+    driver: d,
+    inner: @sim.SimCoordination::new(d),
+  }
+  let (left, right) = @sim.pair(@sim.SimCoordination::new(d))
+  d.run(() => {
+    @sim.check_coordination_contract(coordination, suspend=() => d.pause())
+    @sim.check_coordination_contract(coordination, suspend=() => d.sleep(1))
+    @sim.check_conn(left, right, coordination~, suspend=() => d.pause(), shutdown_left=() => {
+      left.shutdown_write()
+    })
+  })
+  assert_eq(d.live_tasks(), 0)
+}
+
 // -------------------------------------------------------------- connections
 
 ///|
@@ -342,6 +409,10 @@ priv enum Fault {
   NonStickyEof
   /// A read woken by close returns a byte.
   LiesAfterClose
+  /// After a large read, a small read returns wrong bytes.
+  GarbledReply
+  /// After a large read, a small read returns an empty chunk.
+  EmptyReply
 }
 
 ///|
@@ -353,11 +424,20 @@ priv struct Faulty {
   mut interrupted : Bool
   mut closed : Bool
   mut eof : Bool
+  mut large : Bool
 }
 
 ///|
 fn Faulty::new(inner : @sim.SimConn, fault : Fault) -> Faulty {
-  { inner, fault, reads: 0, interrupted: false, closed: false, eof: false, }
+  {
+    inner,
+    fault,
+    reads: 0,
+    interrupted: false,
+    closed: false,
+    eof: false,
+    large: false,
+  }
 }
 
 ///|
@@ -376,6 +456,13 @@ impl @rt.Conn for Faulty with fn read(self, max_len~) {
       self.interrupted = false
       got
     }
+    GarbledReply | EmptyReply if max_len > 2 => {
+      self.large = true
+      self.inner.read(max_len~)
+    }
+    GarbledReply if self.large =>
+      self.inner.read(max_len~).map(chunk => Bytes::make(chunk.length(), b'#'))
+    EmptyReply if self.large => Some(b"")
     ExtraByte if max_len > 2 =>
       self.inner
       .read(max_len=max_len - 1)
@@ -446,6 +533,8 @@ test "connection check refuses each broken rule" {
       Phantom,
       NonStickyEof,
       LiesAfterClose,
+      GarbledReply,
+      EmptyReply,
     ] {
     let d = @driver.Driver::new()
     let coordination = @sim.SimCoordination::new(d)
@@ -510,6 +599,8 @@ test "connection check refuses each broken rule" {
       #|  "check_conn: a read returned although the peer wrote nothing",
       #|  "check_conn: the peer of a closed end must read a sticky EOF",
       #|  "check_conn: a read woken by close returned bytes",
+      #|  "check_conn: concurrent read and write corrupted the bytes",
+      #|  "check_conn: a read returned an empty chunk",
       #|  "check_conn: EOF before all written bytes arrived",
       #|  "check_conn: EOF after the peer's shutdown is not sticky",
       #|]
@@ -772,4 +863,95 @@ test "body stream check stops a stream after max_reads reads" {
       #|]
     ),
   )
+}
+
+///|
+/// A SimConn end that runs one operation at a time: a read in progress
+/// holds the lock a write needs.
+priv struct Serialized {
+  inner : @sim.SimConn
+  coordination : &@rt.Coordination
+  mut busy : Bool
+  mut freed : &@rt.Signal
+}
+
+///|
+fn Serialized::new(
+  inner : @sim.SimConn,
+  coordination : &@rt.Coordination,
+) -> Serialized {
+  { inner, coordination, busy: false, freed: coordination.signal(), }
+}
+
+///|
+async fn Serialized::lock(self : Serialized) -> Unit noraise {
+  while self.busy {
+    self.freed.wait()
+  }
+  self.busy = true
+}
+
+///|
+fn Serialized::unlock(self : Serialized) -> Unit {
+  self.busy = false
+  let freed = self.freed
+  self.freed = self.coordination.signal()
+  freed.notify()
+}
+
+///|
+impl @rt.Conn for Serialized with fn read(self, max_len~) {
+  self.lock()
+  defer self.unlock()
+  self.inner.read(max_len~)
+}
+
+///|
+impl @rt.Conn for Serialized with fn write(self, bytes) {
+  self.lock()
+  defer self.unlock()
+  self.inner.write(bytes)
+}
+
+///|
+impl @rt.Conn for Serialized with fn close(self) {
+  self.inner.close()
+}
+
+///|
+test "connection check hangs on an end that serializes its reads and writes" {
+  // No port can tell a stuck end from a slow one, so the hang is the
+  // signal: under the Driver it is a Deadlock, on either end.
+  let outcomes = []
+  for serialized_left in [true, false] {
+    let d = @driver.Driver::new()
+    let coordination = @sim.SimCoordination::new(d)
+    let (left, right) = @sim.pair(coordination)
+    let (l, r) : (&@rt.Conn, &@rt.Conn) = if serialized_left {
+      (Serialized::new(left, coordination), right)
+    } else {
+      (left, Serialized::new(right, coordination))
+    }
+    let outcome = d.run(() => {
+      outcome(() => {
+        @sim.check_conn(l, r, coordination~, suspend=() => d.pause())
+      })
+    }) catch {
+      @driver.DriverError(kind=Deadlock(..), ..) => "deadlock"
+      error => "driver: \{error}"
+    }
+    outcomes.push(outcome)
+  }
+  assert_eq(outcomes, ["deadlock", "deadlock"])
+  // The same ends pass when only one operation is outstanding at a time.
+  let d = @driver.Driver::new()
+  let coordination = @sim.SimCoordination::new(d)
+  let (left, right) = @sim.pair(coordination)
+  let l : &@rt.Conn = Serialized::new(left, coordination)
+  d.run(() => {
+    l.write(b"one at a time")
+    assert_eq(right.read(max_len=64), Some(b"one at a time"))
+    right.write(b"ok")
+    assert_eq(l.read(max_len=64), Some(b"ok"))
+  })
 }
