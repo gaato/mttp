@@ -532,9 +532,11 @@ pub fn TimerHandle::cancel(self : TimerHandle) -> Unit {
 // B1. Each `run` starts with a fresh budget of `max_steps` task steps and
 //     `max_steps` timer callbacks; each unwind round starts with a fresh one
 //     of at least twice the live tasks.
-// B2. A step fires only the due timers armed before it began; a timer armed
-//     during the step, by a callback or a task, fires on a later step. No
-//     timer can keep `step` from resuming a ready task.
+// B2. A step fires exactly the timers that were armed and due when it began
+//     and are not cancelled before their turn, in (deadline, arming) order;
+//     a timer armed during the step, by a callback or a task, fires on a
+//     later step whatever its deadline. No timer can keep `step` from
+//     resuming a ready task, or hide an older due one.
 // B3. Unwinding does not advance time, and each round starts with no armed
 //     timer, so a timer armed while unwinding cannot carry into the next
 //     round.
@@ -546,21 +548,34 @@ pub fn TimerHandle::cancel(self : TimerHandle) -> Unit {
 
 ///|
 fn Driver::fire_due(self : Driver) -> Unit raise DriverError {
-  // B2: only timers armed before this call fire now. One armed by a
-  // callback (a timer re-arming itself) waits for the next step, so it
-  // cannot keep this step from resuming a ready task.
-  let armed_before = self.next_seq
-  while self.timers.peek() is Some(t) &&
-        t.at <= self.now &&
-        t.seq <= armed_before {
+  // B2: the timers due when the step starts are taken out of the heap first,
+  // in (deadline, arming) order, and only they fire now. One a callback arms
+  // (a timer re-arming itself, or one with an even earlier deadline) goes to
+  // the heap and waits for the next step, so it can neither keep this step
+  // from resuming a ready task nor hide an older due timer.
+  let due = []
+  while self.timers.peek() is Some(t) && t.at <= self.now {
+    self.timers.remove_top()
+    due.push(t)
+  }
+  for i, t in due {
+    // A callback earlier in this step may have cancelled it.
+    if t.cancelled {
+      continue
+    }
     if self.timer_firings >= self.budget_limit {
+      // The unfired ones go back, so a caller that steps on still has them.
+      for rest in due[i:] {
+        if !rest.cancelled {
+          self.timers.push(rest)
+        }
+      }
       raise DriverError(
         kind=NoQuiescence(steps=self.timer_firings),
         detail="timer callback budget exhausted",
       )
     }
     self.timer_firings += 1
-    self.timers.remove_top()
     t.cancelled = true
     (t.action)()
   }

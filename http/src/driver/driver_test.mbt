@@ -1411,3 +1411,161 @@ test "B4: a task is queued once however often it is woken or cancelled" {
   })
   assert_eq(queued, 1)
 }
+
+///|
+test "B2: a timer armed earlier than an older due one does not hide it" {
+  let d = @driver.Driver::new(auto_advance=false, start_ms=10L)
+  let log = []
+  let _ = d.add_timer(0L, () => {
+    log.push("t0")
+    let _ = d.add_timer(0L, () => log.push("new"))
+  })
+  let _ = d.add_timer(1L, () => log.push("t1"))
+  // Both timers armed before the step and due fire in it, before main runs;
+  // the one armed by the first callback waits for the next step.
+  d.run(() => log.push("main"))
+  assert_eq(log, ["t0", "t1", "main"])
+}
+
+///|
+/// A deterministic xorshift generator, so the property test needs no
+/// randomness from the platform.
+priv struct Xorshift {
+  mut state : UInt32
+}
+
+///|
+fn Xorshift::below(self : Xorshift, n : Int32) -> Int32 {
+  let mut x = self.state
+  x = x ^ (x << 13)
+  x = x ^ (x >> 17)
+  x = x ^ (x << 5)
+  self.state = x
+  (x % n.reinterpret_as_uint()).reinterpret_as_int()
+}
+
+///|
+/// What a timer's callback does when it fires: arm timers with these
+/// deadlines (they get the next ids, in order), then cancel one timer.
+priv struct Plan {
+  arms : Array[Int64]
+  cancel : Int32?
+}
+
+///|
+priv struct ModelTimer {
+  id : Int32
+  at : Int64
+  mut cancelled : Bool
+  mut fired : Bool
+}
+
+///|
+/// The reference: a step fires, in (deadline, arming) order, the timers
+/// armed before it that are due when it starts and not cancelled by then;
+/// a timer armed during the step fires on a later step.
+fn model_steps(
+  plans : Array[Plan],
+  initial : Array[Int64],
+  start_ms : Int64,
+  advances : Array[Int32],
+) -> Array[Array[Int32]] {
+  let timers : Array[ModelTimer] = []
+  let arm = (at : Int64) => {
+    timers.push({ id: timers.length(), at, cancelled: false, fired: false, })
+  }
+  for at in initial {
+    arm(at)
+  }
+  let mut now = start_ms
+  let steps = []
+  for advance in advances {
+    let due = timers.filter(t => !t.cancelled && !t.fired && t.at <= now)
+    due.sort_by((a, b) => {
+      if a.at == b.at {
+        a.id - b.id
+      } else {
+        a.at.compare(b.at)
+      }
+    })
+    let fired = []
+    for t in due {
+      if t.cancelled {
+        continue
+      }
+      t.fired = true
+      fired.push(t.id)
+      if plans.get(t.id) is Some(plan) {
+        for at in plan.arms {
+          arm(at)
+        }
+        if plan.cancel is Some(id) && id < timers.length() {
+          timers[id].cancelled = true
+        }
+      }
+    }
+    steps.push(fired)
+    now = now + advance.to_int64()
+  }
+  steps
+}
+
+///|
+/// The same scenario on a Driver, stepped by hand outside any run.
+fn driver_steps(
+  plans : Array[Plan],
+  initial : Array[Int64],
+  start_ms : Int64,
+  advances : Array[Int32],
+) -> Array[Array[Int32]] raise {
+  let d = @driver.Driver::new(auto_advance=false, start_ms~)
+  let handles : Array[@driver.TimerHandle] = []
+  let fired : Array[Int32] = []
+  fn arm(at : Int64) -> Unit {
+    let id = handles.length()
+    handles.push(
+      d.add_timer(at, () => {
+        fired.push(id)
+        if plans.get(id) is Some(plan) {
+          for next in plan.arms {
+            arm(next)
+          }
+          if plan.cancel is Some(target) && target < handles.length() {
+            handles[target].cancel()
+          }
+        }
+      }),
+    )
+  }
+  for at in initial {
+    arm(at)
+  }
+  let steps = []
+  for advance in advances {
+    let _ = d.step()
+    steps.push(fired.copy())
+    fired.clear()
+    d.advance(advance)
+  }
+  steps
+}
+
+///|
+test "B2: per-step timer firing matches the reference model" {
+  let rng = Xorshift::{ state: 0x9E3779B9, }
+  for case_ in 0..<300 {
+    let start_ms = rng.below(4).to_int64()
+    let initial = Array::makei(rng.below(6), _ => rng.below(6).to_int64())
+    let plans = Array::makei(40, _ => {
+      let arms = Array::makei(rng.below(3), _ => rng.below(6).to_int64())
+      let cancel = if rng.below(3) == 0 { Some(rng.below(40)) } else { None }
+      Plan::{ arms, cancel, }
+    })
+    let advances = Array::makei(8, _ => rng.below(2))
+    assert_eq(
+      driver_steps(plans, initial, start_ms, advances),
+      model_steps(plans, initial, start_ms, advances),
+      msg="case \{case_}",
+    )
+  }
+}
