@@ -86,7 +86,9 @@ fn Wire::unread(self : Wire, bytes : BytesView) -> Unit {
 
 ///|
 /// Reads one response head within `limits`, leaving the bytes after it
-/// pending. EOF first is a `Network` failure of `phase`.
+/// pending. Every failure is one of `phase`: EOF first is `Network`, a
+/// read failure without a phase takes `phase`, a codec error is
+/// `Protocol`.
 async fn Wire::head(
   self : Wire,
   limits : @h1.Limits,
@@ -94,7 +96,12 @@ async fn Wire::head(
 ) -> @h1.ParsedResponse raise @http.TransportError {
   let decoder = @h1.HeadDecoder::new(max=limits.max_head_bytes)
   for ;; {
-    guard self.read(io_bytes) is Some(bytes) else {
+    // A read failure is this head's, whoever runs it: inside a phase
+    // timer or not, it reports `phase`.
+    let read = self.read(io_bytes) catch {
+      error => raise failure(phase, error)
+    }
+    guard read is Some(bytes) else {
       raise @http.TransportError(
         kind=Network,
         phase~,

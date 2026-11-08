@@ -149,9 +149,11 @@ async fn duplex(
   let mut uploaded = false
   coordination.supervise(
     monitor=() => {
+      // Both halves store failures with their phase, as the one-write path
+      // reports them, so a failure does not depend on the body's size.
       state.sent = Some(
         Ok(upload(wire, head, body, framing, timer)) catch {
-          error => Err(error)
+          error => Err(failure(Write, error))
         },
       )
       state.changed.notify()
@@ -161,7 +163,7 @@ async fn duplex(
         monitor=() => {
           state.head = Some(
             Ok(final_head(wire, limits)) catch {
-              error => Err(error)
+              error => Err(failure(Head, error))
             },
           )
           state.head_ready.notify()
