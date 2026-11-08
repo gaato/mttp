@@ -1,1 +1,23 @@
+import {
+  "gaato/http",
+  "gaato/mttp/client",
+  "moonbitlang/x/crypto",
+}
 
+import {
+  "moonbitlang/core/debug",
+  "gaato/http/driver",
+  "gaato/http/sim",
+} for "wbtest"
+
+import {
+  "gaato/mttp-digest" @mttp_digest,
+  "gaato/http/driver",
+  "gaato/http/sim",
+  "gaato/mttp/client/retry",
+  "gaato/mttp/testing",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/http/driver" ],
+)

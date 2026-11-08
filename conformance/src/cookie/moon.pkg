@@ -1,0 +1,7 @@
+import {
+  "gaato/http",
+  "gaato/mttp/cookie" @jar,
+  "gaato/http/sim" @mock,
+  "moonbitlang/core/json",
+  "moonbitlang/core/string",
+} for "test"

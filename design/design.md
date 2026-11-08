@@ -137,7 +137,8 @@ Every package that imports core/async lists the exact core/async packages it use
 | Package | Targets | Responsibility | Source in PR #2 |
 |---|---|---|---|
 | `runtime` | native, wasm, js | AsyncClock (`@async.sleep`, `now`), ClockTimer (task group + `spawn_bg`), SemaphoreGate (`@semaphore`), RuntimeCoordination (`Cond`), `with_timeout_opt`, VirtualClock, NoQuiescence | `mttp-net/runtime` (rewritten) |
-| `conn` | native, wasm | `TcpDialer`: `Tcp::connect_to_host`, then `Tls::client(ConnIo(&Conn), host~, trust~)`, so TLS also runs inside a CONNECT tunnel. Public type `Trust { System; Insecure; PemFile(String) }`; no core type is exposed. `internal/socketconn` adapts a Tcp/Tls to `&@rt.Conn` | `mttp-net/conn`, `mttp-net/internal/socketconn` (rewritten) |
+| root | native, wasm, js | `Trust { System; Insecure; PemFile(String) }`, shared by socket dialers and the cross-target backend constructor; ignored by JS fetch | moved from `conn` during PR 16 |
+| `conn` | native, wasm | `TcpDialer`: `Tcp::connect_to_host`, then `Tls::client(ConnIo(&Conn), host~, trust~)`, so TLS also runs inside a CONNECT tunnel. Trust comes from the root package; no core type is exposed. `internal/socketconn` adapts a Tcp/Tls to `&@rt.Conn` | `mttp-net/conn`, `mttp-net/internal/socketconn` (rewritten) |
 | `server` | native, wasm | Listener: TcpServer accepts and hands each connection to `@h1server.serve_conn`. Bind and accept failures are `ListenError` | `mttp-net/server` (rewritten; tests kept) |
 | `backend` | native, wasm, js | One type, `AsyncBackend`: on native/wasm the h1client engine + TcpDialer + Decompress; on js `fetch` over core's js_async. `impl @http.Backend` | `mttp-net/backend` |
 | `codings` | native, wasm, js | Bounded ContentDecoder/ContentEncoder, coding plans, negotiation; **new** `Decompress` (Backend wrapper) and `compress` (Handler wrapper) | `mttp-net/codings` |
@@ -863,10 +864,11 @@ pub async fn[X] with_timeout_opt(clock : &@rt.Clock, ms : Int, f : async () -> X
 pub fn VirtualClock::VirtualClock(start_ms? : Int64) -> VirtualClock   // ported: discord calls VirtualClock(..) at ~230 sites
 // advance, advance_to_next, next_deadline, settle(until~), pending; NoQuiescence(rounds~)
 
-// conn (native, wasm)
+// root (native, wasm, js): shared data keeps the backend signature portable
 #non_exhaustive
 pub(all) enum Trust { System; Insecure; PemFile(String) } derive(Eq, Debug)
-pub fn TcpDialer::new(trust? : Trust) -> TcpDialer           // impl @rt.Dialer
+// conn (native, wasm)
+pub fn TcpDialer::new(trust? : @http_async.Trust) -> TcpDialer // impl @rt.Dialer
 // connect: Tcp::connect_to_host; start_tls: Tls::client(ConnIo(&Conn), host~, trust~). ConnIo implements core's
 // Binary*Impl over any &@rt.Conn, so TLS runs over a plain socket or inside a CONNECT tunnel alike.
 // Half-close: core has no shutdown-write API, so Conn has none; the adapter documents it as unavailable.
@@ -882,7 +884,7 @@ pub async fn serve(handler : @http.Handler, addr~ : String, on_listen? : (String
 // TcpServer accepts; each connection goes to @h1server.serve_conn with scheme~="http"
 
 // backend (native, wasm, js)
-pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust? : Trust) -> AsyncBackend  // (new form); on js only config.max_body_bytes applies
+pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust? : @http_async.Trust) -> AsyncBackend // on js only config.max_body_bytes applies; trust is ignored
 pub impl @http.Backend for AsyncBackend                      // idle_connections
 // native/wasm: @h1client.Client over TcpDialer, AsyncClock, ClockTimer, RuntimeCoordination, always wrapped in Decompress
 // (a request that sets its own Accept-Encoding opts out, per the table below)

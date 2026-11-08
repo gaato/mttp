@@ -11,6 +11,8 @@ priv struct ProbeIo {
   wait_write : Bool
   mut writing : Bool
   mut cleaned : Bool
+  after_read : (() -> Unit)?
+  yield_before_read : Bool
 }
 
 ///|
@@ -19,6 +21,8 @@ fn probe(
   fail_read~ : Bool = false,
   fail_write~ : Bool = false,
   wait_write~ : Bool = false,
+  after_read? : () -> Unit,
+  yield_before_read~ : Bool = false,
 ) -> ProbeIo {
   {
     reader: @io.BinaryReaderController(),
@@ -32,6 +36,8 @@ fn probe(
     wait_write,
     writing: false,
     cleaned: false,
+    after_read,
+    yield_before_read,
   }
 }
 
@@ -57,6 +63,9 @@ impl @io.BinaryReaderImpl for ProbeIo with fn raw_read_impl(
   offset~,
   max_len~,
 ) {
+  if self.yield_before_read {
+    @async.pause()
+  }
   self.limits.push(max_len)
   if self.fail_read {
     raise Injected
@@ -66,7 +75,35 @@ impl @io.BinaryReaderImpl for ProbeIo with fn raw_read_impl(
     out[offset + i] = self.bytes[self.offset + i]
   }
   self.offset += count
+  if self.after_read is Some(after) {
+    after()
+  }
   count
+}
+
+///|
+async test "cancelled read waiter retains bytes committed by its completed child" {
+  let cancel : Ref[(() -> Unit)?] = Ref(None)
+  let io = probe(bytes=b"abc", yield_before_read=true, after_read=() => {
+    cancel.val.unwrap()()
+  })
+  let conn : &@rt.Conn = wrap(io, Ref(0))
+  defer conn.close()
+  @async.with_task_group(group => {
+    let task = group.spawn(allow_failure=true, () => {
+      ignore(conn.read(max_len=3))
+      fail("cancelled read returned")
+    })
+    cancel.val = Some(() => task.cancel())
+    task.wait() catch {
+      @async.WaitedTaskAlreadyCancelled => ()
+      error => raise error
+    }
+  })
+  assert_eq(io.offset, 3)
+  assert_eq(conn.read(max_len=1), Some(b"a"))
+  assert_eq(conn.read(max_len=1), Some(b"b"))
+  assert_eq(conn.read(max_len=1), Some(b"c"))
 }
 
 ///|
@@ -104,6 +141,7 @@ fn wrap(io : ProbeIo, closes : Ref[Int32]) -> SocketConn[ProbeIo, ProbeIo] {
     close_: () => closes.val += 1,
     closed: false,
     eof: false,
+    pending: b"",
     cancel_read: None,
     cancel_write: None,
   }

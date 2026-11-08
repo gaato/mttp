@@ -1,34 +1,13 @@
 ///|
-/// TLS peer verification. System roots are the default. PemFile replaces
-/// system roots with exactly the supplied certificates. To trust system and
-/// private roots together, supply a PEM bundle containing both. Insecure
-/// disables certificate verification.
-#non_exhaustive
-#derive(Eq, Debug)
-pub(all) enum Trust {
-  System
-  Insecure
-  PemFile(String)
-}
-
-///|
-/// Compares certificate trust policies.
-pub extend Trust with Eq::{equal, not_equal}
-
-///|
-/// Formats a certificate trust policy for diagnostics.
-pub extend Trust with @debug.Debug::{to_repr}
-
-///|
 /// TCP and TLS over portable connections. Neither write-half shutdown nor
 /// ALPN negotiation is exposed by this adapter.
 pub struct TcpDialer {
-  priv trust : Trust
+  priv trust : @http_async.Trust
 }
 
 ///|
 /// Creates a dialer using system certificate roots unless specified otherwise.
-pub fn TcpDialer::new(trust~ : Trust = System) -> TcpDialer {
+pub fn TcpDialer::new(trust~ : @http_async.Trust = System) -> TcpDialer {
   { trust, }
 }
 
@@ -61,6 +40,12 @@ pub impl @rt.Dialer for TcpDialer with fn start_tls(self, inner, host~) {
       System => SystemRoot
       Insecure => NoVerification
       PemFile(path) => CustomPemFile(path)
+      @http_async.Trust::.. =>
+        raise @http.TransportError(
+          kind=Invalid,
+          phase=Dial,
+          detail="unsupported TLS trust policy",
+        )
     },
   ) catch {
     error => raise dial_error(error)

@@ -12,10 +12,11 @@ socket reads and writes use slices of at most 64 KiB.
 test "choose TLS trust without exposing a runtime type" {
   let _ = @conn.TcpDialer::new()
   let _ = @conn.TcpDialer::new(trust=PemFile("roots.pem"))
-  assert_eq(@conn.Trust::System, @conn.Trust::System)
+  assert_eq(@http_async.Trust::System, @http_async.Trust::System)
 }
 ```
 
+`Trust` is defined in the cross-target `gaato/http-async` root package.
 `Trust::System` is the default and uses system certificate roots.
 `Trust::Insecure` disables verification. `Trust::PemFile(path)` trusts exactly
 the certificates in that PEM file, **replacing** system roots, matching core's

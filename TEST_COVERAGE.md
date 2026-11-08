@@ -69,10 +69,26 @@ Accepted as uncovered (needs a row):
 
 Budgets are exact uncovered counts at the last measurement.
 
+The Digest port (`mttp-digest/src/backend.mbt`, `digest.mbt`) and the private
+conformance harness (`conformance/src/harness/*.mbt`) are fully covered on
+native: 234/234 and 62/62 instrumented lines. Digest's black-box suites cover
+the Backend checker, request stream cleanup, unchanged SendOptions,
+cancellation, and POST → 401 → dial failure under an unsent-only retry rule.
+The nonce-count regression suites exercise three concurrent same-nonce
+challenges with both empty and populated caches, strictly increasing challenge
+and subsequent preemptive counts, and new/stale nonce resets. White-box
+boundary tests cover allocation of `ffffffff`, refusal to reuse an exhausted
+count, retained challenge updates, FIFO eviction, and caller ownership of an
+unanswered 401 at exhaustion.
+The conformance suites exercise the harness through URL, cookie and SSE
+corpora, including seeded SSE mutations and every short-input split. No
+uncovered-line budget is needed for these additions.
+
 ## Accepted uncovered
 
 | File | Budget | Reason |
 | --- | --- | --- |
+| http-async/src/conn/dialer.mbt | 1 | Forward-compatible Trust arm: Trust now belongs to the cross-target root package, so the dialer must refuse future constructors that cannot be constructed in this release. |
 | http-async/src/conn/conn_io.mbt | 1 | BinaryWriterImpl::get_controller is not called by core's current writer defaults; the controller is a stateless marker reserved for future buffering/locking. Each bridge still constructs and owns its controller as required by the core trait. |
 | http-async/src/codings/body_source.mbt | 1 | Forward-compatible Body arm: a future body representation is refused instead of silently treated as empty. |
 | http-async/src/codings/decompress.mbt | 1 | Defensive fallback for a non-TransportError from read_decoded: this wrapper supplies a TransportError-only reader and ContentDecoder translates codec errors to TransportError. Cancellation is a scheduler signal. |

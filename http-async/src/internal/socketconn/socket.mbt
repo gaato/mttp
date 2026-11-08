@@ -5,6 +5,7 @@ priv struct SocketConn[R, W] {
   close_ : () -> Unit
   mut closed : Bool
   mut eof : Bool
+  mut pending : Bytes
   mut cancel_read : (() -> Unit)?
   mut cancel_write : (() -> Unit)?
 }
@@ -21,17 +22,28 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
       detail="max_len must be positive",
     )
   }
-  if self.closed || self.eof {
+  if self.closed || (self.eof && self.pending.is_empty()) {
     return None
   }
+  if !self.pending.is_empty() {
+    return Some(self.take_pending(max_len))
+  }
   let buffer = FixedArray::make(max_len.min(65536), b'\x00')
-  let count = Ref(0)
   // core's handle close can detach an outstanding read without waking it.
   // Keep a structured child per direction so close can request cancellation,
   // while this operation joins cleanup before another operation may start.
   @async.with_task_group(group => {
     let task = group.spawn(
-      () => self.reader.read_into(buffer),
+      () => {
+        let n = self.reader.read_into(buffer)
+        // Commit consumed bytes in the child before waking its waiter. A
+        // cancelled read-ahead waiter must not discard the next request.
+        if n == 0 {
+          self.eof = true
+        } else {
+          self.pending = Bytes::from_array(buffer[:n])
+        }
+      },
       allow_failure=true,
     )
     self.cancel_read = Some(() => task.cancel())
@@ -41,20 +53,29 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
     if self.closed {
       task.cancel()
     }
-    count.val = task.wait() catch {
-      @async.WaitedTaskAlreadyCancelled if self.closed => 0
+    task.wait() catch {
+      @async.WaitedTaskAlreadyCancelled if self.closed => ()
       error => raise error
     }
   }) catch {
     error => raise transport_error(error)
   }
-  let n = count.val
-  if n == 0 {
-    self.eof = true
+  if self.closed || self.pending.is_empty() {
     None
   } else {
-    Some(Bytes::from_array(buffer[:n]))
+    Some(self.take_pending(max_len))
   }
+}
+
+///|
+fn[R, W] SocketConn::take_pending(
+  self : SocketConn[R, W],
+  max_len : Int32,
+) -> Bytes {
+  let n = self.pending.length().min(max_len)
+  let bytes = self.pending[:n].to_owned()
+  self.pending = self.pending[n:].to_owned()
+  bytes
 }
 
 ///|
@@ -108,6 +129,7 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
 ) {
   if !self.closed {
     self.closed = true
+    self.pending = b""
     if self.cancel_read is Some(cancel) {
       cancel()
     }
@@ -140,6 +162,7 @@ pub fn from_tcp(tcp : @socket.Tcp) -> &@rt.Conn {
     close_: () => tcp.close(),
     closed: false,
     eof: false,
+    pending: b"",
     cancel_read: None,
     cancel_write: None,
   }
@@ -157,6 +180,7 @@ pub fn from_tls(tls : @tls.Tls, inner : &@rt.Conn) -> &@rt.Conn {
     },
     closed: false,
     eof: false,
+    pending: b"",
     cancel_read: None,
     cancel_write: None,
   }

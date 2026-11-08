@@ -1,11 +1,11 @@
 import {
+  "gaato/http-async" @http_async,
   "gaato/http",
   "gaato/http/rt",
   "gaato/http-async/internal/socketconn",
   "moonbitlang/core/async/io",
   "moonbitlang/core/async/socket",
   "moonbitlang/core/async/tls",
-  "moonbitlang/core/debug",
 }
 
 import {
