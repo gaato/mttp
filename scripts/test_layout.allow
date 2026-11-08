@@ -3,3 +3,5 @@
 # needs its own decision. Rules: async-test, async-intrinsic, testing-import,
 # wbtest-testing-import, clock.
 http/src/rt/random.mbt clock # default_random is the host boundary for jitter and boundaries; callers take a random source with it as the default, so deterministic tests never read host entropy.
+mttp/src/endpoint/moon.pkg wbtest-testing-import # Driver runs the async contract tests of private BufferedStream, ResponseOwner, LimitedInput and EventBody; these adapter types are intentionally absent from the public API, so they cannot be tested directly from a black-box package.
+mttp/src/endpoint/moon.pkg wbtest-testing-import # The shared sim BodyStream checker receives each private adapter directly, and sim Feed supplies its source; black-box tests cannot name those adapter types, so this separate sim import is needed alongside Driver.

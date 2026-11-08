@@ -49,10 +49,10 @@ gaato/mttp	gaato/mttp/apispec	js	11
 gaato/mttp	gaato/mttp/apispec	native	11
 gaato/mttp	gaato/mttp/apispec	wasm	11
 gaato/mttp	gaato/mttp/apispec	wasm-gc	11
-gaato/mttp	gaato/mttp/client	js	82
-gaato/mttp	gaato/mttp/client	native	82
-gaato/mttp	gaato/mttp/client	wasm	82
-gaato/mttp	gaato/mttp/client	wasm-gc	82
+gaato/mttp	gaato/mttp/client	js	85
+gaato/mttp	gaato/mttp/client	native	85
+gaato/mttp	gaato/mttp/client	wasm	85
+gaato/mttp	gaato/mttp/client	wasm-gc	85
 gaato/mttp	gaato/mttp/client/retry	js	19
 gaato/mttp	gaato/mttp/client/retry	native	19
 gaato/mttp	gaato/mttp/client/retry	wasm	19
@@ -61,6 +61,10 @@ gaato/mttp	gaato/mttp/cookie	js	38
 gaato/mttp	gaato/mttp/cookie	native	38
 gaato/mttp	gaato/mttp/cookie	wasm	38
 gaato/mttp	gaato/mttp/cookie	wasm-gc	38
+gaato/mttp	gaato/mttp/endpoint	js	57
+gaato/mttp	gaato/mttp/endpoint	native	57
+gaato/mttp	gaato/mttp/endpoint	wasm	57
+gaato/mttp	gaato/mttp/endpoint	wasm-gc	57
 gaato/mttp	gaato/mttp/internal/form	js	0
 gaato/mttp	gaato/mttp/internal/form	native	0
 gaato/mttp	gaato/mttp/internal/form	wasm	0

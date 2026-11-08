@@ -1,0 +1,25 @@
+import {
+  "gaato/http",
+  "gaato/mttp/schema",
+  "gaato/mttp/client",
+  "gaato/mttp/sse",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/base64",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "gaato/http/driver",
+  "gaato/http/sim",
+  "moonbitlang/core/json",
+} for "test"
+
+import {
+  "gaato/http/driver",
+  "gaato/http/sim",
+} for "wbtest"
+
+options(
+  experimental: true,
+  "allow-experimental-packages": [ "gaato/http/driver" ],
+)

@@ -51,6 +51,7 @@ pub extend Streaming with ResponseMode::{fresh, may_stream}
 ///|
 priv struct Selected[T] {
   read : async (@http.ResponseHead, @http.Body, Int32) -> T
+  prepare : (async (@http.ResponseHead, @http.Body, Int32) -> Selected[T])?
   streaming : Bool
   excerpt : Bool
 }
@@ -83,6 +84,7 @@ pub fn[T] ResponsePlan::new(
     any_status: true,
     select: (_, _) => {
       streaming: false,
+      prepare: None,
       excerpt: false,
       read: (head, body, limit) => decode(head, read_body(body, limit)),
     },
@@ -164,6 +166,7 @@ async fn error_excerpt(body : @http.Body) -> Bytes raise @http.TransportError {
 fn[T] rejected() -> Selected[Result[T, ResponseFailure]] {
   {
     streaming: false,
+    prepare: None,
     excerpt: true,
     read: (head, body, _) => {
       Err(UnexpectedStatus(head, body=error_excerpt(body)))
@@ -190,6 +193,7 @@ pub fn as_bytes() -> ResponseAs[Result[Bytes, ResponseFailure]] {
       } else {
         {
           streaming: false,
+          prepare: None,
           excerpt: false,
           read: (_, body, limit) => Ok(read_body(body, limit)),
         }
@@ -269,6 +273,7 @@ pub fn ignore_body() -> ResponseAs[Result[Unit, ResponseFailure]] {
       } else {
         {
           streaming: false,
+          prepare: None,
           excerpt: false,
           read: (_, body, _) => {
             if body is Stream(stream) {
@@ -334,6 +339,7 @@ pub fn[T] ResponsePlan::stream(
       } else {
         {
           streaming: true,
+          prepare: None,
           excerpt: false,
           read: (head, body, limit) => {
             let stream = stream_of(body)
@@ -422,13 +428,58 @@ pub fn[A, B, M] ResponsePlan::map_with_head(
   {
     mode: self.mode,
     any_status: self.any_status,
-    select: (head, any) => {
-      let selected = (self.select)(head, any)
-      {
-        streaming: selected.streaming,
-        excerpt: selected.excerpt,
-        read: (h, body, limit) => f((selected.read)(h, body, limit), h),
-      }
+    select: (head, any) => map_selected((self.select)(head, any), f),
+  }
+}
+
+///|
+fn[A, B] map_selected(
+  selected : Selected[A],
+  f : (A, @http.ResponseHead) -> B raise,
+) -> Selected[B] {
+  {
+    streaming: selected.streaming,
+    excerpt: selected.excerpt,
+    prepare: selected.prepare.map(prepare => {
+      (h, body, limit) => map_selected(prepare(h, body, limit), f)
+    }),
+    read: (h, body, limit) => f((selected.read)(h, body, limit), h),
+  }
+}
+
+///|
+/// Decodes bounded bytes inside the attempt, then hands a successful value
+/// to a scoped callback after release and retry decisions. An Err is already
+/// the final value, so failures can be inspected before any callback starts.
+pub fn[A, T] ResponsePlan::prepared_stream(
+  decode : (@http.ResponseHead, Bytes) -> Result[A, T] raise,
+  use_ : async (A) -> T,
+) -> ResponsePlan[T, Streaming] {
+  {
+    mode: Streaming::{ },
+    any_status: true,
+    select: (_, _) => {
+      streaming: false,
+      excerpt: false,
+      read: (_, _, _) => abort("prepared reader must be prepared first"),
+      prepare: Some((head, body, limit) => {
+        match decode(head, read_body(body, limit)) {
+          Err(value) =>
+            {
+              streaming: false,
+              excerpt: false,
+              prepare: None,
+              read: (_, _, _) => value,
+            }
+          Ok(value) =>
+            {
+              streaming: true,
+              excerpt: false,
+              prepare: None,
+              read: (_, _, _) => use_(value),
+            }
+        }
+      }),
     },
   }
 }
