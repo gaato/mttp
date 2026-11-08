@@ -23,7 +23,8 @@ way on wasm-gc, wasm, js and native without an async runtime.
   `defer` and `errdefer` blocks run, and no `catch` can intercept it.
 - Time is virtual. `Driver::sleep` arms a timer; when no task is ready, `run`
   jumps to the earliest timer (auto-advance). `Driver::add_timer` runs a
-  callback at a virtual instant.
+  callback at a virtual instant; one step fires only the timers armed before
+  it, so a callback that re-arms itself cannot starve the tasks.
 - `Driver::run(main)` returns `main`'s value or raises its error, then
   cancels the tasks still alive and lets them unwind.
 - `run_sync(f)` is `run` with auto-advance off: it refuses to wait, raising

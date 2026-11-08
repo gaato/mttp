@@ -1267,3 +1267,147 @@ test "a failure seen by a waiter stays silent when cancel_and_join also joins" {
   })
   assert_true(seen)
 }
+
+// ------------------------------------------------------------ invariants
+// One test per invariant stated in driver.mbt (O1–O4, B1–B5, C1–C3) where
+// the tests above do not already pin it.
+
+///|
+/// Arms a timer due now that re-arms itself every time it fires, forever.
+fn rearm_forever(d : @driver.Driver, fired : Ref[Int32]) -> Unit {
+  let _ = d.add_timer(d.now(), () => {
+    fired.val += 1
+    rearm_forever(d, fired)
+  })
+}
+
+///|
+test "B2: a self-rearming due timer does not starve ready tasks" {
+  let d = @driver.Driver::new(max_steps=100)
+  let fired = Ref(0)
+  let r = d.run(() => {
+    rearm_forever(d, fired)
+    for _ in 0..<5 {
+      d.pause()
+    }
+    "main finished"
+  })
+  assert_eq(r, "main finished")
+  // At most one firing per step.
+  assert_true(fired.val <= d.steps())
+  assert_eq(d.pending_timers(), 0)
+}
+
+///|
+test "B3: a timer armed while unwinding does not stall the other cleanups" {
+  let d = @driver.Driver::new(max_steps=50)
+  let fired = Ref(0)
+  let log = []
+  let _ = d.run(() => {
+    let _ = d.spawn(() => {
+      defer rearm_forever(d, fired)
+      d.sleep(1000)
+    })
+    for name in ["b", "c", "e"] {
+      let _ = d.spawn(() => {
+        defer log.push(name)
+        d.sleep(1000)
+      })
+    }
+    d.pause()
+  })
+  assert_eq(log, ["b", "c", "e"])
+  assert_eq(d.live_tasks(), 0)
+  assert_eq(d.pending_timers(), 0)
+}
+
+///|
+test "O2: waiting on a task that already failed counts as seeing it" {
+  let d = @driver.Driver::new()
+  let seen = d.run(() => {
+    let target = d.spawn(() => {
+      d.sleep(10)
+      fail("target failed")
+    })
+    let first = d.spawn(() => ignore(target.wait()))
+    // Runs right after the target fails and before `first` resumes: it
+    // sees the failure, then cancels `first`, which never does.
+    let second = d.spawn(() => {
+      d.sleep(10)
+      let saw = target.wait() catch { _ => false }
+      first.cancel()
+      assert_false(saw)
+    })
+    second.wait()
+  })
+  assert_true(seen)
+}
+
+///|
+test "O3: a waiter cancelled before the failure but resumed after is released once" {
+  let d = @driver.Driver::new()
+  let r = driver_error_kind(() => {
+    d.run(() => {
+      let waiter_task : Ref[@driver.Task?] = Ref(None)
+      // Its timer is armed first, so it cancels the waiter just before the
+      // target fails; the waiter resumes only after the failure.
+      let _ = d.spawn(() => {
+        d.sleep(10)
+        if waiter_task.val is Some(w) {
+          w.cancel()
+        }
+      })
+      let target = d.spawn(
+        () => {
+          d.sleep(10)
+          fail("target failed")
+        },
+        label="target",
+      )
+      waiter_task.val = Some(d.spawn(() => ignore(target.wait())))
+      d.sleep(20)
+      "main finished"
+    })
+  })
+  guard r is Ok(TaskFailed(label="target", ..)) else {
+    fail("got \{@debug.to_string(r)}")
+  }
+}
+
+///|
+test "C1: waiting on a task of another driver fails run with NotInTask" {
+  let d = @driver.Driver::new()
+  let other = @driver.Driver::new()
+  let log = []
+  let target = other.spawn(() => ())
+  let r = driver_error_kind(() => {
+    d.run(() => {
+      defer log.push("main unwound")
+      ignore(target.wait())
+      log.push("not reached")
+    })
+  })
+  guard r is Ok(NotInTask) else { fail("got \{@debug.to_string(r)}") }
+  assert_eq(log, ["main unwound"])
+  // The target is untouched and still runs on its own driver.
+  other.run(() => ())
+  assert_true(target.is_done())
+}
+
+///|
+test "B4: a task is queued once however often it is woken or cancelled" {
+  let d = @driver.Driver::new()
+  let wakers : Array[@driver.Waker] = []
+  let queued = d.run(() => {
+    let t = d.spawn(() => d.park(w => wakers.push(w)))
+    d.pause()
+    wakers[0].wake()
+    wakers[0].wake()
+    t.cancel()
+    t.cancel()
+    let queued = d.ready_tasks()
+    let _ = t.wait()
+    queued
+  })
+  assert_eq(queued, 1)
+}
