@@ -1,0 +1,44 @@
+name: Release
+
+# The four modules are released together. A tag `<module dir>-v<version>`
+# (for example `http-v0.6.0`) runs the release preflight; nothing here
+# publishes. Publication is a separately approved local command (see
+# scripts/release.sh).
+on:
+  push:
+    tags:
+      - 'http-v*'
+      - 'http-async-v*'
+      - 'mttp-v*'
+      - 'mttp-digest-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.20-65efd5b93
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tag names a module at its moon.mod version
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          dir=${TAG%-v*}; version=${TAG##*-v}
+          actual=$(sed -nE 's/^version = "(.*)"$/\1/p' "$dir/moon.mod")
+          if [ "$actual" != "$version" ]; then
+            echo "$TAG: $dir/moon.mod has version '$actual'" >&2
+            exit 1
+          fi
+      - run: moon update
+      # Includes the resolver gate: real archives, an isolated registry and
+      # consumers outside the workspace.
+      - run: scripts/gates.sh full
+      - run: scripts/release.sh publish --dry-run
