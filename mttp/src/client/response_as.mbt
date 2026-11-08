@@ -363,19 +363,7 @@ pub fn as_sse(
   stop~ : (@sse.SseEvent) -> Bool = _ => false,
 ) -> StreamResponseAs[Result[Unit, ResponseFailure]] {
   as_stream((_, stream) => {
-    let parser = @sse.SseParser::new(max_event_bytes~)
-    while stream.read_some() is Some(chunk) {
-      for event in parser.feed(chunk) {
-        if stop(event) {
-          return
-        }
-        receive(event)
-      }
-      // An overflow behind the events this chunk completed is raised now,
-      // not after a read that may never come.
-      ignore(parser.feed(b""))
-    }
-    let _ = parser.finish()
+    @sse.SseReader::new(stream, max_event_bytes~).each(receive, stop~)
   })
 }
 

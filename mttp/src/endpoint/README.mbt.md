@@ -55,6 +55,9 @@ requires `stream_request(..., use_)` through the same send pipeline. It also
 supports buffered outputs. The callback runs once, after retry decisions,
 and its borrowed streams close when it exits. `call` and `call_with` are
 convenience forms. `EventStream.each` closes on EOF, failure or cancellation.
+SSE outputs share `sse.SseReader` with `client.as_sse`: queued complete events
+are delivered before an oversized event fails, and pending overflow is raised
+before another read, even when the peer goes quiet.
 
 `path` captures one decoded segment. `paths` captures the final `{name...}`
 tail as an array, retaining empty segments and encoded slashes. A custom
