@@ -45,7 +45,10 @@ pub fn validate_url(url : String) -> Unit raise TransportError {
 }
 
 ///|
-/// Validates the method token, raw URL and headers before a backend sends it.
+/// Validates the method token, raw URL, headers and declared stream length
+/// before a backend sends it. A stream body declaring a negative length is
+/// refused here as `StreamBody::take` would refuse it, and its source is
+/// closed, since no sender will take it.
 pub fn Request::validate(self : Request) -> Unit raise TransportError {
   let meth = self.meth.to_string()
   if meth.is_empty() || !meth.iter().all(is_token) {
@@ -53,6 +56,9 @@ pub fn Request::validate(self : Request) -> Unit raise TransportError {
   }
   validate_url(self.url)
   self.headers.validate()
+  if self.body is Stream(stream) && stream.length is Some(length) && length < 0L {
+    ignore(stream.take())
+  }
 }
 
 ///|
