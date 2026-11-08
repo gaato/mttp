@@ -1,111 +1,149 @@
 ///|
-// Sequence numbers establish permission to relax; dates are deadlines only.
-// A Retry-After is an independent replacement for ordinary bucket exhaustion.
-// Successes never shorten an active block, even when eligible to refresh quota.
+// Quota and Retry-After are independent constraints. Absence is the identity
+// for a transfer, never a reason to delete the other key's live constraint.
+fn merge_quota(a : RecordedQuota?, b : RecordedQuota?) -> RecordedQuota? {
+  match (a, b) {
+    (None, _) => b
+    (_, None) => a
+    (Some(a), Some(b)) =>
+      Some({
+        value: {
+          remaining: a.value.remaining.min(b.value.remaining),
+          reset_at_unix_ms: a.value.reset_at_unix_ms.max(
+            b.value.reset_at_unix_ms,
+          ),
+        },
+        until: a.until.max(b.until),
+        restricted_by: a.restricted_by.max(b.restricted_by),
+        consumed_by: a.consumed_by.max(b.consumed_by),
+      })
+  }
+}
+
+///|
+fn merge_block(a : RecordedBlock?, b : RecordedBlock?) -> RecordedBlock? {
+  match (a, b) {
+    (None, _) => b
+    (_, None) => a
+    (Some(a), Some(b)) =>
+      Some({
+        ..(if b.until > a.until { b } else { a }),
+        sequence: a.sequence.max(b.sequence),
+      })
+  }
+}
+
+///|
+fn merge(a : RecordedState, b : RecordedState) -> RecordedState {
+  {
+    quota: merge_quota(a.quota, b.quota),
+    block: merge_block(a.block, b.block),
+  }
+}
+
+///|
+// A response updates exactly one axis. Unlike a stored key snapshot, it
+// cannot be empty or be mistaken for a transfer of both constraints.
+priv enum WindowUpdate {
+  Quota(RecordedQuota)
+  Block(RecordedBlock)
+}
+
+///|
+// Only an actual response, never a key transfer, may authorize relaxation.
+// Keep active blocks conservative; an eligible Retry-After response may
+// replace earlier ordinary exhaustion without erasing a newer quota window.
 fn reconcile(
   current : RecordedState,
-  candidate : RecordedState,
+  update : WindowUpdate,
+  sequence : Int64,
 ) -> RecordedState {
-  let blocked_until = current.blocked_until.max(candidate.blocked_until)
-  if candidate.block_only {
-    let restrictive = candidate.blocked_until > current.blocked_until ||
-      current.value.remaining > 0
-    return {
-      ..candidate,
-      until: blocked_until,
-      blocked_until,
-      restricted_by: if restrictive {
-        current.restricted_by.max(candidate.restricted_by)
-      } else {
-        current.restricted_by
-      },
-      consumed_by: current.consumed_by,
-    }
+  let quota_sequence = current.quota.map(q => q.restricted_by).unwrap_or(0L)
+  let consumed = current.quota.map(q => q.consumed_by).unwrap_or(0L)
+  let block_sequence = current.block.map(b => b.sequence).unwrap_or(0L)
+  let eligible = sequence > quota_sequence.max(block_sequence) &&
+    sequence >= consumed
+  let quota = match update {
+    Block(_) => if eligible { None } else { current.quota }
+    Quota(next) =>
+      match current.quota {
+        None => if eligible { Some(next) } else { None }
+        Some(old) => {
+          let restrictive = next.value.remaining < old.value.remaining ||
+            (next.value.remaining == 0 && next.until > old.until)
+          if eligible {
+            Some({
+              ..next,
+              restricted_by: if restrictive {
+                sequence
+              } else {
+                old.restricted_by
+              },
+              consumed_by: old.consumed_by,
+            })
+          } else {
+            merge_quota(
+              Some(old),
+              Some({
+                ..next,
+                restricted_by: if restrictive {
+                  sequence
+                } else {
+                  old.restricted_by
+                },
+              }),
+            )
+          }
+        }
+      }
   }
-  if candidate.restricted_by > current.restricted_by &&
-    candidate.restricted_by >= current.consumed_by {
-    let restrictive = candidate.value.remaining < current.value.remaining ||
-      (candidate.value.remaining == 0 && candidate.until > current.until)
-    return {
-      ..candidate,
-      blocked_until,
-      restricted_by: if restrictive {
-        candidate.restricted_by
-      } else {
-        current.restricted_by
-      },
-      consumed_by: current.consumed_by,
-    }
+  let block = match update {
+    Block(block) => merge_block(current.block, Some(block))
+    Quota(_) => current.block
   }
-  if current.block_only {
-    return { ..current, blocked_until, }
-  }
-  let restrictive = candidate.value.remaining < current.value.remaining ||
-    (candidate.value.remaining == 0 && candidate.until > current.until)
+  { quota, block, }
+}
+
+///|
+fn RecordedState::live(self : RecordedState, now : Int64) -> RecordedState {
   {
-    ..current,
-    value: {
-      remaining: current.value.remaining.min(candidate.value.remaining),
-      reset_at_unix_ms: current.value.reset_at_unix_ms.max(
-        candidate.value.reset_at_unix_ms,
-      ),
-    },
-    until: current.until.max(candidate.until),
-    blocked_until,
-    restricted_by: if restrictive {
-      current.restricted_by.max(candidate.restricted_by)
-    } else {
-      current.restricted_by
-    },
+    quota: self.quota.filter(q => q.until > now),
+    block: self.block.filter(b => b.until > now),
   }
 }
 
 ///|
-// A key transition is not a response and cannot authorize relaxation. Carry
-// both constraints and the larger restriction watermark before switching.
-fn merge(current : RecordedState, carried : RecordedState) -> RecordedState {
-  let blocked_until = current.blocked_until.max(carried.blocked_until)
-  let restricted_by = current.restricted_by.max(carried.restricted_by)
-  let consumed_by = current.consumed_by.max(carried.consumed_by)
-  if current.block_only || carried.block_only {
-    let block = if carried.block_only { carried } else { current }
-    return {
-      ..block,
-      until: blocked_until,
-      blocked_until,
-      restricted_by,
-      consumed_by,
-    }
-  }
-  {
-    ..current,
-    value: {
-      remaining: current.value.remaining.min(carried.value.remaining),
-      reset_at_unix_ms: current.value.reset_at_unix_ms.max(
-        carried.value.reset_at_unix_ms,
-      ),
-    },
-    until: current.until.max(carried.until),
-    blocked_until,
-    restricted_by,
-    consumed_by,
-  }
+fn RecordedState::empty(self : RecordedState) -> Bool {
+  self.quota is None && self.block is None
 }
 
 ///|
-// Unswept, fully expired state is absent: a stale deadline must not invalidate
-// live quota carried to the same key.
+fn WindowLimiter::prune(
+  self : WindowLimiter,
+  key : String,
+  now : Int64,
+) -> RecordedState? {
+  let live = self.states.get(key).map(s => s.live(now)).filter(s => !s.empty())
+  match live {
+    Some(state) => self.states[key] = state
+    None => self.states.remove(key)
+  }
+  live
+}
+
+///|
 fn WindowLimiter::record(
   self : WindowLimiter,
   key : String,
-  candidate : RecordedState,
+  candidate : WindowUpdate,
+  sequence : Int64,
   now : Int64,
 ) -> Unit {
-  self.states[key] = match self.states.get(key) {
-    Some(current) if current.until > now || current.blocked_until > now =>
-      reconcile(current, candidate)
-    _ => candidate
-  }
+  let current = self.states
+    .get(key)
+    .map(s => s.live(now))
+    .unwrap_or({ quota: None, block: None, })
+  self.states[key] = reconcile(current, candidate, sequence)
 }
 
 ///|
@@ -115,16 +153,16 @@ fn WindowLimiter::transfer(
   carried : RecordedState,
   now : Int64,
 ) -> Unit {
-  self.states[key] = match self.states.get(key) {
-    Some(current) if current.until > now || current.blocked_until > now =>
-      merge(current, carried)
-    _ => carried
-  }
+  let current = self.states
+    .get(key)
+    .map(s => s.live(now))
+    .unwrap_or({ quota: None, block: None, })
+  self.states[key] = merge(current, carried.live(now))
 }
 
 ///|
-// Materialize live shared constraints before detaching. At capacity retain
-// the old route: forgetting a restriction would permit an early admission.
+// Expiry uses the same constraint join as explicit alias changes. At capacity
+// retain the old route until both live constraints can be carried safely.
 fn WindowLimiter::expire_alias(
   self : WindowLimiter,
   bucket : String,
@@ -133,8 +171,8 @@ fn WindowLimiter::expire_alias(
   guard self.aliases.get(bucket) is Some(learned) && learned.until <= now else {
     return
   }
-  if self.states.get(learned.key) is Some(state) &&
-    (state.until > now || state.blocked_until > now) {
+  if self.states.get(learned.key).map(s => s.live(now)).filter(s => !s.empty())
+    is Some(state) {
     if !self.states.contains(bucket) && self.states.length() >= max_entries {
       return
     }

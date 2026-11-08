@@ -1,30 +1,25 @@
-// An unbounded reference keeps quota constraints as a list. An authorized
-// response discards older quota constraints; stale responses append bounds.
+// An unbounded reference keeps quota bounds and Retry-After independently.
+// Joining keys appends quota bounds and takes the longest block; neither
+// constraint's existence, authority or expiry depends on the other's shape.
 // No production reconciliation, alias or decision helper is used by the model.
 
 ///|
 priv struct ModelBucket {
   caps : Array[(Int32, Int64)]
   mut block : Int64
-  mut block_only : Bool
+  mut block_sequence : Int64
   mut restricted : Int64
   mut consumed : Int64
 }
 
 ///|
 fn ModelBucket::left(self : ModelBucket) -> Int32 {
-  self.caps.fold(init=if self.block_only { 0 } else { 2147483647 }, (n, c) => {
-    n.min(c.0)
-  })
+  self.caps.fold(init=2147483647, (n, c) => n.min(c.0))
 }
 
 ///|
 fn ModelBucket::until(self : ModelBucket) -> Int64 {
-  if self.block_only {
-    self.block
-  } else {
-    self.caps.fold(init=0L, (t, c) => t.max(c.1))
-  }
+  self.caps.fold(init=0L, (t, c) => t.max(c.1))
 }
 
 ///|
@@ -53,7 +48,7 @@ fn SequenceModel::join(
     .unwrap_or({
       caps: [],
       block: 0L,
-      block_only: false,
+      block_sequence: 0L,
       restricted: 0L,
       consumed: 0L,
     })
@@ -62,7 +57,7 @@ fn SequenceModel::join(
   self.buckets[to] = {
     caps,
     block: source.block.max(dest.block),
-    block_only: source.block_only || dest.block_only,
+    block_sequence: source.block_sequence.max(dest.block_sequence),
     restricted: source.restricted.max(dest.restricted),
     consumed: source.consumed.max(dest.consumed),
   }
@@ -74,7 +69,16 @@ fn SequenceModel::expire(self : SequenceModel, now : Int64) -> Unit {
     .keys()
     .filter(k => {
       let b = self.buckets[k]
-      b.until() <= now && b.block <= now
+      if b.until() <= now {
+        b.caps.clear()
+        b.restricted = 0L
+        b.consumed = 0L
+      }
+      if b.block <= now {
+        b.block = 0L
+        b.block_sequence = 0L
+      }
+      b.caps.is_empty() && b.block == 0L
     })
     .to_array()
   for key in expired {
@@ -95,7 +99,8 @@ fn SequenceModel::consume(
   self : SequenceModel,
   admission : @client.Admission,
 ) -> Unit {
-  if self.buckets.get(self.key(admission.bucket())) is Some(b) {
+  if self.buckets.get(self.key(admission.bucket())) is Some(b) &&
+    !b.caps.is_empty() {
     b.caps.push(((b.left() - 1).max(0), b.until()))
     b.consumed = b.consumed.max(admission.sequence())
   }
@@ -116,43 +121,43 @@ fn SequenceModel::release(
   self.join(self.key(bucket), key)
   let seq = admission.sequence()
   if quota is Some(_) || retry is Some(_) {
-    match self.buckets.get(key) {
-      None =>
-        self.buckets[key] = {
-          caps: quota.map(q => [q]).unwrap_or([]),
-          block: retry.map(ms => now + ms.to_int64()).unwrap_or(0L),
-          block_only: retry is Some(_),
-          restricted: seq,
-          consumed: 0L,
+    let b = self.buckets
+      .get(key)
+      .unwrap_or({
+        caps: [],
+        block: 0L,
+        block_sequence: 0L,
+        restricted: 0L,
+        consumed: 0L,
+      })
+    let eligible = seq > b.restricted.max(b.block_sequence) && seq >= b.consumed
+    if retry is Some(ms) {
+      if eligible {
+        b.caps.clear()
+        b.restricted = 0L
+        b.consumed = 0L
+      }
+      b.block = b.block.max(now + ms.to_int64())
+      b.block_sequence = b.block_sequence.max(seq)
+    } else if quota is Some(q) {
+      let left = b.left()
+      let until = b.until()
+      if b.caps.is_empty() {
+        if eligible {
+          b.caps.push(q)
+          b.restricted = seq
         }
-      Some(b) => {
-        let left = b.left()
-        let until = b.until()
-        if retry is Some(ms) {
-          let deadline = now + ms.to_int64()
-          if deadline > b.block || left > 0 {
-            b.restricted = b.restricted.max(seq)
-          }
-          b.block = b.block.max(deadline)
-          b.block_only = true
+      } else {
+        if eligible {
           b.caps.clear()
-        } else if quota is Some(q) {
-          if seq > b.restricted && seq >= b.consumed {
-            b.caps.clear()
-            b.block_only = false
-            b.caps.push(q)
-            if q.0 < left || (q.0 == 0 && q.1 > until) {
-              b.restricted = seq
-            }
-          } else if !b.block_only {
-            b.caps.push(q)
-            if q.0 < left || (q.0 == 0 && q.1 > until) {
-              b.restricted = b.restricted.max(seq)
-            }
-          }
+        }
+        b.caps.push(q)
+        if q.0 < left || (q.0 == 0 && q.1 > until) {
+          b.restricted = b.restricted.max(seq)
         }
       }
     }
+    self.buckets[key] = b
   }
   if named is Some(key) {
     if key == bucket {
@@ -173,19 +178,47 @@ fn SequenceModel::check(
   let now = clock.now_unix_ms()
   self.expire(now)
   for bucket in ["a", "b", "shared"] {
-    let actual = limiter.state(bucket)
-    if self.buckets.get(self.key(bucket)) is Some(b) {
-      assert_true(actual is Some(_), msg=context)
-      let state = limiter.states[limiter.resolve(bucket, limiter.now())]
-      assert_eq(state.value.remaining, b.left(), msg=context)
-      assert_eq(state.restricted_by, b.restricted, msg=context)
-      assert_eq(state.consumed_by, b.consumed, msg=context)
-      assert_eq(state.until, b.until(), msg=context)
-      assert_eq(
-        delay_until(state.blocked_until, now),
-        delay_until(b.block, now),
-        msg=context,
-      )
+    let state = limiter.states.get(limiter.resolve(bucket, limiter.now()))
+    let quota = state.bind(s => s.quota).filter(q => q.until > now)
+    let block = state.bind(s => s.block).filter(b => b.until > now)
+    let expected = self.buckets.get(self.key(bucket))
+    assert_eq(
+      quota is Some(_),
+      expected is Some(b) && !b.caps.is_empty(),
+      msg=context + ": quota presence",
+    )
+    assert_eq(
+      block is Some(_),
+      expected is Some(b) && b.block > now,
+      msg=context + ": block presence",
+    )
+    if expected is Some(b) {
+      if quota is Some(q) {
+        assert_eq(
+          q.value.remaining,
+          b.left(),
+          msg=context + ": quota remaining",
+        )
+        assert_eq(q.until, b.until(), msg=context + ": quota deadline")
+        assert_eq(
+          q.restricted_by,
+          b.restricted,
+          msg=context + ": quota sequence",
+        )
+        assert_eq(
+          q.consumed_by,
+          b.consumed,
+          msg=context + ": consumption sequence",
+        )
+      }
+      if block is Some(block) {
+        assert_eq(block.until, b.block, msg=context + ": block deadline")
+        assert_eq(
+          block.sequence,
+          b.block_sequence,
+          msg=context + ": block sequence",
+        )
+      }
     }
   }
 }
@@ -269,6 +302,134 @@ test "delivery permutations follow admission sequence with relative and absolute
           }
         }
       }
+    }
+  })
+}
+
+///|
+test "alias joins preserve independent constraints for every pair of state shapes" {
+  @driver.run_sync(() => {
+    // 0: quota only, 1: Retry-After only, 2: both. All nine transfer pairs
+    // are checked with exhausted/positive quota and lazy/forced block expiry.
+    for source in 0..<3 {
+      for destination in 0..<3 {
+        for left in [0, 2] {
+          for sweep in [false, true] {
+            let clock = @sim.FakeClock::new()
+            let limiter = alias_limiter(clock)
+            let model : SequenceModel = { buckets: Map([]), routes: Map([]), }
+            let naming = limiter.acquire("a", global_exempt=false)
+            let source_block = limiter.acquire("a", global_exempt=false)
+            let source_quota = limiter.acquire("a", global_exempt=false)
+            let dest_block = limiter.acquire("shared", global_exempt=false)
+            let dest_quota = limiter.acquire("shared", global_exempt=false)
+            for
+              (shape, block, quota, reset, ms) in [
+                (source, source_block, source_quota, 60, 1000),
+                (destination, dest_block, dest_quota, 90, 2000),
+              ] {
+              if shape != 0 {
+                limiter.release(
+                  block,
+                  status=429,
+                  headers=@http.Headers::of([("retry-after-ms", "\{ms}")]),
+                )
+                model.release(block, None, Some(ms), None, 0L)
+              } else {
+                limiter.release(block, status=0, headers=@http.Headers::empty())
+              }
+              if shape != 1 {
+                limiter.release(
+                  quota,
+                  status=200,
+                  headers=alias_quota("\{left}", "\{reset}"),
+                )
+                model.release(
+                  quota,
+                  Some((left, reset.to_int64() * 1000L)),
+                  None,
+                  None,
+                  0L,
+                )
+              } else {
+                limiter.release(quota, status=0, headers=@http.Headers::empty())
+              }
+            }
+            model.check(limiter, clock, "before shape join")
+            limiter.release(
+              naming,
+              status=200,
+              headers=@http.Headers::of([("key", "shared")]),
+            )
+            model.release(naming, None, None, Some("shared"), 0L)
+            let context = "source=\{source} destination=\{destination} left=\{left} sweep=\{sweep}"
+            model.check(limiter, clock, context + ": joined")
+            clock.advance(2500)
+            if sweep {
+              limiter.sweep_states(limiter.now(), force=true)
+            }
+            model.check(limiter, clock, context + ": block expired")
+            let has_quota = source != 1 || destination != 1
+            let required = if has_quota && left == 0 {
+              (if destination != 1 { 90000 } else { 60000 }) - 2500
+            } else {
+              0
+            }
+            let next = limiter.acquire("a", global_exempt=false)
+            assert_eq(
+              clock.slept(),
+              if required > 0 {
+                [required]
+              } else {
+                []
+              },
+              msg=context,
+            )
+            model.expire(clock.now_unix_ms())
+            model.consume(next)
+            model.check(limiter, clock, context + ": admitted")
+            limiter.release(next, status=0, headers=@http.Headers::empty())
+            assert_eq(limiter.admissions.length(), 0)
+          }
+        }
+      }
+    }
+  })
+}
+
+///|
+test "quota expiry preserves a separately merged longer Retry-After block" {
+  @driver.run_sync(() => {
+    for sweep in [false, true] {
+      let clock = @sim.FakeClock::new()
+      let limiter = alias_limiter(clock)
+      let model : SequenceModel = { buckets: Map([]), routes: Map([]), }
+      let naming = limiter.acquire("a", global_exempt=false)
+      let quota = limiter.acquire("a", global_exempt=false)
+      let block = limiter.acquire("shared", global_exempt=false)
+      limiter.release(quota, status=200, headers=alias_quota("2", "1"))
+      model.release(quota, Some((2, 1000L)), None, None, 0L)
+      limiter.release(
+        block,
+        status=429,
+        headers=@http.Headers::of([("retry-after", "60")]),
+      )
+      model.release(block, None, Some(60000), None, 0L)
+      limiter.release(
+        naming,
+        status=200,
+        headers=@http.Headers::of([("key", "shared")]),
+      )
+      model.release(naming, None, None, Some("shared"), 0L)
+      model.check(limiter, clock, "independent quota before expiry")
+      clock.advance(1000)
+      if sweep {
+        limiter.sweep_states(limiter.now(), force=true)
+      }
+      model.check(limiter, clock, "independent block after quota expiry")
+      let next = limiter.acquire("a", global_exempt=false)
+      assert_eq(clock.slept(), [59000])
+      limiter.release(next, status=0, headers=@http.Headers::empty())
     }
   })
 }

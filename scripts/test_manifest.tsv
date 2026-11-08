@@ -70,10 +70,10 @@ gaato/mttp	gaato/mttp/client/cookies	js	9
 gaato/mttp	gaato/mttp/client/cookies	native	9
 gaato/mttp	gaato/mttp/client/cookies	wasm	9
 gaato/mttp	gaato/mttp/client/cookies	wasm-gc	9
-gaato/mttp	gaato/mttp/client/ratelimit	js	83
-gaato/mttp	gaato/mttp/client/ratelimit	native	83
-gaato/mttp	gaato/mttp/client/ratelimit	wasm	83
-gaato/mttp	gaato/mttp/client/ratelimit	wasm-gc	83
+gaato/mttp	gaato/mttp/client/ratelimit	js	87
+gaato/mttp	gaato/mttp/client/ratelimit	native	87
+gaato/mttp	gaato/mttp/client/ratelimit	wasm	87
+gaato/mttp	gaato/mttp/client/ratelimit	wasm-gc	87
 gaato/mttp	gaato/mttp/client/retry	js	19
 gaato/mttp	gaato/mttp/client/retry	native	19
 gaato/mttp	gaato/mttp/client/retry	wasm	19

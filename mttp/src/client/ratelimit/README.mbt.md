@@ -18,22 +18,27 @@ to release, including on transport failure or cancellation. A token belongs
 to its issuing limiter. The first release removes it before processing the
 head; duplicate releases are ignored, even if recording the first head failed.
 
-Responses are ordered by admission identity, never by reset timestamps. A
-key remembers the sequence of the response that last lowered remaining quota
-or set/extended a block. A response may relax quota only if its own admission
-sequence is greater than that restriction watermark. Otherwise it can only
-lower remaining quota or extend a wait. Local quota consumption also records
-its admission sequence: a response cannot undo a later admission, while a
-request's own response can refresh the quota it consumed. Relative reset
-delivery drift and different absolute resets therefore confer no permission
-to replenish quota. The old conservative cohort debt is unnecessary.
+Each key holds two optional, independent constraints: an ordinary quota with
+remaining/reset and restriction/consumption sequences, and a Retry-After
+block with its own deadline and admission sequence. They expire independently:
+expiring a short block never discards a longer quota window, and expiring
+quota never discards a longer block.
 
-A bucket 429's Retry-After is an independent block on the resolved key. It
-replaces prior ordinary exhaustion, whether or not quota headers are present;
-an ordinary reset cannot extend that Retry-After deadline. Stale positive
-responses cannot reinstate ordinary quota during that block. An eligible
-newer response can supply fresh quota for use after the block; responses
-never shorten an active block, even when eligible to refresh quota.
+Responses are ordered by admission identity, never by reset timestamps. An
+ordinary quota remembers the greatest sequence that restricted it; a block
+retains the greatest sequence of its Retry-After responses. A response may
+relax quota only if its own sequence exceeds both active authority watermarks.
+It must also not predate local quota consumption: a request's own response
+can refresh the quota it consumed, while an older response cannot undo later
+admissions. Relative reset delivery drift confers no permission to replenish.
+
+An eligible bucket 429 can replace prior ordinary exhaustion with its
+Retry-After block, including when quota headers are absent. An ineligible
+429 keeps newer ordinary quota and only adds or extends the independent block.
+Stale positive responses cannot reinstate quota while a newer block fences
+them. An eligible newer response can supply fresh quota for use after the
+block; responses never shorten an active block. Ordinary quota cannot change
+the block's deadline, but can independently require a longer admission wait.
 
 `Pace` groups buckets with a minimum interval between admissions.
 `GlobalWindow` counts non-exempt admissions across buckets. On 429,
@@ -51,10 +56,13 @@ wait consumes neither global nor bucket quota and returns any held gate.
 The final global, bucket and pace checks commit without suspension.
 
 `server_key` can map several caller buckets to one server window. Every key
-transition must preserve active blocks, restriction/consumption watermarks
-and the lower remaining quota. Learning, changing or removing an alias first reconciles the
-previously resolved state into the destination, even without parsed quota
-headers. The source stays available to other buckets still using it. The
+transition joins the two constraints independently and cannot relax either.
+Quota joins take the smaller remaining count, later reset and greater quota
+watermarks; block joins take the later block deadline and greater block
+sequence. An absent quota or block contributes no restriction and never deletes
+the destination's existing constraint. Learning, changing or removing an alias
+first joins the previously resolved state into the destination, even without
+parsed quota headers. The source stays available to other buckets. The
 response is then reconciled using its own sequence, so a genuinely eligible
 response may refresh quota after the transfer.
 

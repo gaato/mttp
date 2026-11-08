@@ -498,7 +498,7 @@ test "a bucket follows the key its latest response names" {
   run_now(d, () => limiter.respond("a", status=200, headers=headers("3", "60")))
   assert_eq(limiter.resolve("a", limiter.now()), "k1")
   assert_eq(
-    limiter.states.get("k1").map(r => r.value),
+    limiter.states.get("k1").bind(r => r.quota).map(q => q.value),
     Some({ remaining: 3, reset_at_unix_ms: 61000L, }),
   )
   run_now(d, () => {
