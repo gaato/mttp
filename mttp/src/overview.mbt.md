@@ -10,12 +10,46 @@ native.
 
 > **Status**: this version is being rebuilt in the
 > [mttp repository](https://github.com/gaato/mttp). The packages arrive one
-> at a time; until then this module has no public API.
+> at a time: `jsonkit`, `sse` and `multipart` are here; cookies, the client,
+> schemas, endpoints, the router and OpenAPI follow.
 
 ## Install
 
 ```sh
 moon add gaato/mttp
+```
+
+A package that names `@http` types imports `gaato/http` too, so list both in
+your `moon.mod`.
+
+## Packages
+
+| Package | What it holds |
+|---|---|
+| `gaato/mttp/jsonkit` | `Presence` (omitted, `null` or a value), an object builder, field decoders and open enums for JSON models |
+| `gaato/mttp/sse` | An incremental, bounded `text/event-stream` parser and an event encoder |
+| `gaato/mttp/multipart` | A `multipart/form-data` writer with streamed file parts and injected boundary randomness |
+
+## Usage
+
+Build an upload and read a server-sent event stream. Neither touches the
+network: a transport from `gaato/http-async`, or a test double, sends the
+request and supplies the chunks.
+
+```mbt check
+///|
+test "an upload and an event stream" {
+  let request = @multipart.body(
+    @http.Request::post("https://example.com/upload"),
+    [@multipart.Part::json("meta", { "draft": true })],
+    boundary=@multipart.make_boundary(() => 0.25),
+  )
+  assert_true(request.headers.get("content-type") is Some(_))
+  let parser = @sse.SseParser::new()
+  let events = parser.feed(b"data: one\n\ndata: tw")
+  events.append(parser.feed(b"o\n\n"))
+  assert_eq(events.map(e => e.data), ["one", "two"])
+}
 ```
 
 ## License
