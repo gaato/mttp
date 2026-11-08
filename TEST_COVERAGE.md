@@ -69,6 +69,21 @@ Accepted as uncovered (needs a row):
 
 Budgets are exact uncovered counts at the last measurement.
 
+The Digest port (`mttp-digest/src/backend.mbt`, `digest.mbt`) and the private
+conformance harness (`conformance/src/harness/*.mbt`) are fully covered on
+native: 234/234 and 62/62 instrumented lines. Digest's black-box suites cover
+the Backend checker, request stream cleanup, unchanged SendOptions,
+cancellation, and POST → 401 → dial failure under an unsent-only retry rule.
+The nonce-count regression suites exercise three concurrent same-nonce
+challenges with both empty and populated caches, strictly increasing challenge
+and subsequent preemptive counts, and new/stale nonce resets. White-box
+boundary tests cover allocation of `ffffffff`, refusal to reuse an exhausted
+count, retained challenge updates, FIFO eviction, and caller ownership of an
+unanswered 401 at exhaustion.
+The conformance suites exercise the harness through URL, cookie and SSE
+corpora, including seeded SSE mutations and every short-input split. No
+uncovered-line budget is needed for these additions.
+
 ## Accepted uncovered
 
 | File | Budget | Reason |

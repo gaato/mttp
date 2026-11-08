@@ -3,3 +3,5 @@
 # needs its own decision. Rules: async-test, async-intrinsic, testing-import,
 # wbtest-testing-import, clock.
 http/src/rt/random.mbt clock # default_random is the host boundary for jitter and boundaries; callers take a random source with it as the default, so deterministic tests never read host entropy.
+mttp-digest/src/moon.pkg wbtest-testing-import # driver runs the nonce-exhaustion regression on every target; white-box access seeds the private count at fffffffe instead of making about 4 billion public sends or exposing a test-only API.
+mttp-digest/src/moon.pkg wbtest-testing-import # sim.Feed verifies caller ownership of the exhausted challenge's 401 body in that white-box regression; a black-box fixture cannot seed the private count near its limit.
