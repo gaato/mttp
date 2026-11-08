@@ -1,0 +1,8 @@
+import {
+  "moonbitlang/core/immut/hashmap" @persistent,
+  "moonbitlang/core/immut/vector",
+}
+
+import {
+  "moonbitlang/core/quickcheck" @qc,
+} for "test"
