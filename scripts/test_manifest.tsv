@@ -45,10 +45,10 @@ gaato/mttp	gaato/mttp/client/retry	js	19
 gaato/mttp	gaato/mttp/client/retry	native	19
 gaato/mttp	gaato/mttp/client/retry	wasm	19
 gaato/mttp	gaato/mttp/client/retry	wasm-gc	19
-gaato/mttp	gaato/mttp/cookie	js	37
-gaato/mttp	gaato/mttp/cookie	native	37
-gaato/mttp	gaato/mttp/cookie	wasm	37
-gaato/mttp	gaato/mttp/cookie	wasm-gc	37
+gaato/mttp	gaato/mttp/cookie	js	38
+gaato/mttp	gaato/mttp/cookie	native	38
+gaato/mttp	gaato/mttp/cookie	wasm	38
+gaato/mttp	gaato/mttp/cookie	wasm-gc	38
 gaato/mttp	gaato/mttp/jsonkit	js	9
 gaato/mttp	gaato/mttp/jsonkit	native	9
 gaato/mttp	gaato/mttp/jsonkit	wasm	9
