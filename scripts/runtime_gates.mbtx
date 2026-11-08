@@ -85,6 +85,7 @@ struct Package {
   dir : String
   targets : Array[String]
   four_target : Bool
+  benchmark : Bool
 }
 
 ///|
@@ -148,7 +149,11 @@ async fn packages() -> Array[Package] {
       raise GateError("scripts/modules.tsv: malformed row: \{line}")
     }
     let module_targets = cell_list(targets)
-    let root = if kind == "example" { dir } else { "\{dir}/src" }
+    let root = if kind == "example" || kind == "benchmark" {
+      dir
+    } else {
+      "\{dir}/src"
+    }
     if !@fs.exists(root) {
       continue
     }
@@ -169,6 +174,7 @@ async fn packages() -> Array[Package] {
         dir: pkg_dir,
         targets,
         four_target: kind == "four-target",
+        benchmark: kind == "benchmark",
       })
     }
   }
@@ -258,6 +264,23 @@ async fn run_tests(
       failures.push("moon check on \{target}")
     }
     for pkg in selected {
+      if pkg.benchmark {
+        // Link the executable as well as checking it; executing a benchmark
+        // here would turn host-dependent timings into a CI workload.
+        let built = @shell.Cmd(
+          "moon",
+          ["build", "--deny-warn", "--target", target, pkg.dir],
+          env=moon_env(target),
+        ).output(timeout_ms=timeout_ms())
+        let log = built.stdout() + built.stderr()
+        if built.exit_code() != 0 || log.contains(experimental_warning) {
+          println(log)
+          failures.push("moon build \{pkg.name} on \{target}")
+        } else {
+          println("+ \{pkg.name} on \{target}: built (benchmark not run)")
+        }
+        continue
+      }
       let key = key_of(pkg, target)
       let result = @shell.Cmd(
         "moon",
@@ -372,6 +395,7 @@ async fn check_manifest() -> Unit {
   }
   let wanted : Map[String, Unit] = Map([])
   for pkg in pkgs {
+    guard !pkg.benchmark else { continue }
     for target in pkg.targets {
       wanted[key_of(pkg, target)] = ()
     }

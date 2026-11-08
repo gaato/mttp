@@ -103,14 +103,26 @@ fn parse_rows(text : String) -> Array[Row] raise {
     }
     let cells = line.split("\t").map(s => s.to_owned()).to_array()
     guard cells
-      is [dir, name, kind, _targets, module_deps, package_imports, experimental] else {
-      fail("scripts/modules.tsv: expected 7 tab-separated cells: \{line}")
+      is [
+        dir,
+        name,
+        kind,
+        _targets,
+        module_deps,
+        package_imports,
+        experimental,
+        release,
+      ] else {
+      fail("scripts/modules.tsv: expected 8 tab-separated cells: \{line}")
     }
-    guard kind is ("four-target" | "runtime" | "example") else {
+    guard kind is ("four-target" | "runtime" | "example" | "benchmark") else {
       fail("scripts/modules.tsv: unknown kind \{kind}: \{line}")
     }
+    guard release is ("yes" | "no") else {
+      fail("scripts/modules.tsv: release must be yes or no: \{line}")
+    }
     rows.push({
-      example: kind == "example",
+      example: kind == "example" || kind == "benchmark",
       dir,
       name,
       module_deps: cell_list(module_deps),

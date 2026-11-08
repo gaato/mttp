@@ -1,0 +1,24 @@
+import {
+  "gaato/http",
+  "gaato/http/rt",
+  "gaato/http/h1client",
+  "gaato/http/h1server",
+  "gaato/http-async/backend",
+  "gaato/http-async/runtime",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/bench",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "native"
+
+options(
+  "allow-experimental-packages": [
+    "gaato/http/h1client",
+    "gaato/http/h1server",
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/socket",
+  ],
+)

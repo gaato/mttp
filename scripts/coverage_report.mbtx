@@ -61,7 +61,7 @@ fn[T] die(code : Int32, message : String) -> T {
 
 ///|
 /// The measured modules: the directories of scripts/modules.tsv, all of
-/// which build on native.
+/// which build on native, excluding example and benchmark executables.
 async fn read_modules() -> Array[String] {
   @fs.read_text("scripts/modules.tsv")
   .split("\n")
@@ -69,7 +69,8 @@ async fn read_modules() -> Array[String] {
     !line.is_empty() &&
     !line.has_prefix("#") &&
     !line.has_prefix("dir\t") &&
-    !line.contains("\texample\t")
+    !line.contains("\texample\t") &&
+    !line.contains("\tbenchmark\t")
   })
   .map(line => line.split("\t").next().unwrap().to_owned())
   .to_array()

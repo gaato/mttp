@@ -5,4 +5,5 @@ members = [
   "mttp-digest",
   "conformance",
   "examples/get",
+  "benchmarks/transport",
 ]
