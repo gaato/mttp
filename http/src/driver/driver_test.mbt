@@ -1212,3 +1212,360 @@ test "cancel_and_join on an idle driver from another driver's task reports NotIn
   other.run(() => ())
   assert_eq(log, ["unwound"])
 }
+
+///|
+test "a failure of a task joined only by cancel_and_join fails run" {
+  let d = @driver.Driver::new()
+  let r = driver_error_kind(() => {
+    d.run(() => {
+      // The child starts and fails before it reaches a cancellation point.
+      let child = d.spawn(() => fail("child failed"), label="child")
+      d.cancel_and_join([child])
+      "main finished"
+    })
+  })
+  guard r is Ok(TaskFailed(label="child", ..)) else {
+    fail("got \{@debug.to_string(r)}")
+  }
+}
+
+///|
+test "a task that cancel_and_join ends by cancellation stays silent" {
+  let d = @driver.Driver::new()
+  let log = []
+  let r = d.run(() => {
+    let child = d.spawn(() => {
+      defer log.push("child unwound")
+      d.sleep(1000)
+    })
+    d.pause()
+    d.cancel_and_join([child])
+    child.is_cancelled()
+  })
+  assert_true(r)
+  assert_eq(log, ["child unwound"])
+}
+
+///|
+test "a failure seen by a waiter stays silent when cancel_and_join also joins" {
+  let d = @driver.Driver::new()
+  let seen = d.run(() => {
+    let child = d.spawn(
+      () => {
+        // Parks, and fails rather than unwinding when it is cancelled.
+        ignore(d.park_check_cancel(_ => ()))
+        fail("child failed")
+      },
+      label="child",
+    )
+    let waiter = d.spawn(() => {
+      let _ = child.wait() catch { _ => false }
+    })
+    d.pause()
+    d.cancel_and_join([child])
+    waiter.wait()
+  })
+  assert_true(seen)
+}
+
+// ------------------------------------------------------------ invariants
+// One test per invariant stated in driver.mbt (O1–O4, B1–B5, C1–C3) where
+// the tests above do not already pin it.
+
+///|
+/// Arms a timer due now that re-arms itself every time it fires, forever.
+fn rearm_forever(d : @driver.Driver, fired : Ref[Int32]) -> Unit {
+  let _ = d.add_timer(d.now(), () => {
+    fired.val += 1
+    rearm_forever(d, fired)
+  })
+}
+
+///|
+test "B2: a self-rearming due timer does not starve ready tasks" {
+  let d = @driver.Driver::new(max_steps=100)
+  let fired = Ref(0)
+  let r = d.run(() => {
+    rearm_forever(d, fired)
+    for _ in 0..<5 {
+      d.pause()
+    }
+    "main finished"
+  })
+  assert_eq(r, "main finished")
+  // At most one firing per step.
+  assert_true(fired.val <= d.steps())
+  assert_eq(d.pending_timers(), 0)
+}
+
+///|
+test "B3: a timer armed while unwinding does not stall the other cleanups" {
+  let d = @driver.Driver::new(max_steps=50)
+  let fired = Ref(0)
+  let log = []
+  let _ = d.run(() => {
+    let _ = d.spawn(() => {
+      defer rearm_forever(d, fired)
+      d.sleep(1000)
+    })
+    for name in ["b", "c", "e"] {
+      let _ = d.spawn(() => {
+        defer log.push(name)
+        d.sleep(1000)
+      })
+    }
+    d.pause()
+  })
+  assert_eq(log, ["b", "c", "e"])
+  assert_eq(d.live_tasks(), 0)
+  assert_eq(d.pending_timers(), 0)
+}
+
+///|
+test "O2: waiting on a task that already failed counts as seeing it" {
+  let d = @driver.Driver::new()
+  let seen = d.run(() => {
+    let target = d.spawn(() => {
+      d.sleep(10)
+      fail("target failed")
+    })
+    let first = d.spawn(() => ignore(target.wait()))
+    // Runs right after the target fails and before `first` resumes: it
+    // sees the failure, then cancels `first`, which never does.
+    let second = d.spawn(() => {
+      d.sleep(10)
+      let saw = target.wait() catch { _ => false }
+      first.cancel()
+      assert_false(saw)
+    })
+    second.wait()
+  })
+  assert_true(seen)
+}
+
+///|
+test "O3: a waiter cancelled before the failure but resumed after is released once" {
+  let d = @driver.Driver::new()
+  let r = driver_error_kind(() => {
+    d.run(() => {
+      let waiter_task : Ref[@driver.Task?] = Ref(None)
+      // Its timer is armed first, so it cancels the waiter just before the
+      // target fails; the waiter resumes only after the failure.
+      let _ = d.spawn(() => {
+        d.sleep(10)
+        if waiter_task.val is Some(w) {
+          w.cancel()
+        }
+      })
+      let target = d.spawn(
+        () => {
+          d.sleep(10)
+          fail("target failed")
+        },
+        label="target",
+      )
+      waiter_task.val = Some(d.spawn(() => ignore(target.wait())))
+      d.sleep(20)
+      "main finished"
+    })
+  })
+  guard r is Ok(TaskFailed(label="target", ..)) else {
+    fail("got \{@debug.to_string(r)}")
+  }
+}
+
+///|
+test "C1: waiting on a task of another driver fails run with NotInTask" {
+  let d = @driver.Driver::new()
+  let other = @driver.Driver::new()
+  let log = []
+  let target = other.spawn(() => ())
+  let r = driver_error_kind(() => {
+    d.run(() => {
+      defer log.push("main unwound")
+      ignore(target.wait())
+      log.push("not reached")
+    })
+  })
+  guard r is Ok(NotInTask) else { fail("got \{@debug.to_string(r)}") }
+  assert_eq(log, ["main unwound"])
+  // The target is untouched and still runs on its own driver.
+  other.run(() => ())
+  assert_true(target.is_done())
+}
+
+///|
+test "B4: a task is queued once however often it is woken or cancelled" {
+  let d = @driver.Driver::new()
+  let wakers : Array[@driver.Waker] = []
+  let queued = d.run(() => {
+    let t = d.spawn(() => d.park(w => wakers.push(w)))
+    d.pause()
+    wakers[0].wake()
+    wakers[0].wake()
+    t.cancel()
+    t.cancel()
+    let queued = d.ready_tasks()
+    let _ = t.wait()
+    queued
+  })
+  assert_eq(queued, 1)
+}
+
+///|
+test "B2: a timer armed earlier than an older due one does not hide it" {
+  let d = @driver.Driver::new(auto_advance=false, start_ms=10L)
+  let log = []
+  let _ = d.add_timer(0L, () => {
+    log.push("t0")
+    let _ = d.add_timer(0L, () => log.push("new"))
+  })
+  let _ = d.add_timer(1L, () => log.push("t1"))
+  // Both timers armed before the step and due fire in it, before main runs;
+  // the one armed by the first callback waits for the next step.
+  d.run(() => log.push("main"))
+  assert_eq(log, ["t0", "t1", "main"])
+}
+
+///|
+/// A deterministic xorshift generator, so the property test needs no
+/// randomness from the platform.
+priv struct Xorshift {
+  mut state : UInt32
+}
+
+///|
+fn Xorshift::below(self : Xorshift, n : Int32) -> Int32 {
+  let mut x = self.state
+  x = x ^ (x << 13)
+  x = x ^ (x >> 17)
+  x = x ^ (x << 5)
+  self.state = x
+  (x % n.reinterpret_as_uint()).reinterpret_as_int()
+}
+
+///|
+/// What a timer's callback does when it fires: arm timers with these
+/// deadlines (they get the next ids, in order), then cancel one timer.
+priv struct Plan {
+  arms : Array[Int64]
+  cancel : Int32?
+}
+
+///|
+priv struct ModelTimer {
+  id : Int32
+  at : Int64
+  mut cancelled : Bool
+  mut fired : Bool
+}
+
+///|
+/// The reference: a step fires, in (deadline, arming) order, the timers
+/// armed before it that are due when it starts and not cancelled by then;
+/// a timer armed during the step fires on a later step.
+fn model_steps(
+  plans : Array[Plan],
+  initial : Array[Int64],
+  start_ms : Int64,
+  advances : Array[Int32],
+) -> Array[Array[Int32]] {
+  let timers : Array[ModelTimer] = []
+  let arm = (at : Int64) => {
+    timers.push({ id: timers.length(), at, cancelled: false, fired: false, })
+  }
+  for at in initial {
+    arm(at)
+  }
+  let mut now = start_ms
+  let steps = []
+  for advance in advances {
+    let due = timers.filter(t => !t.cancelled && !t.fired && t.at <= now)
+    due.sort_by((a, b) => {
+      if a.at == b.at {
+        a.id - b.id
+      } else {
+        a.at.compare(b.at)
+      }
+    })
+    let fired = []
+    for t in due {
+      if t.cancelled {
+        continue
+      }
+      t.fired = true
+      fired.push(t.id)
+      if plans.get(t.id) is Some(plan) {
+        for at in plan.arms {
+          arm(at)
+        }
+        if plan.cancel is Some(id) && id < timers.length() {
+          timers[id].cancelled = true
+        }
+      }
+    }
+    steps.push(fired)
+    now = now + advance.to_int64()
+  }
+  steps
+}
+
+///|
+/// The same scenario on a Driver, stepped by hand outside any run.
+fn driver_steps(
+  plans : Array[Plan],
+  initial : Array[Int64],
+  start_ms : Int64,
+  advances : Array[Int32],
+) -> Array[Array[Int32]] raise {
+  let d = @driver.Driver::new(auto_advance=false, start_ms~)
+  let handles : Array[@driver.TimerHandle] = []
+  let fired : Array[Int32] = []
+  fn arm(at : Int64) -> Unit {
+    let id = handles.length()
+    handles.push(
+      d.add_timer(at, () => {
+        fired.push(id)
+        if plans.get(id) is Some(plan) {
+          for next in plan.arms {
+            arm(next)
+          }
+          if plan.cancel is Some(target) && target < handles.length() {
+            handles[target].cancel()
+          }
+        }
+      }),
+    )
+  }
+  for at in initial {
+    arm(at)
+  }
+  let steps = []
+  for advance in advances {
+    let _ = d.step()
+    steps.push(fired.copy())
+    fired.clear()
+    d.advance(advance)
+  }
+  steps
+}
+
+///|
+test "B2: per-step timer firing matches the reference model" {
+  let rng = Xorshift::{ state: 0x9E3779B9, }
+  for case_ in 0..<300 {
+    let start_ms = rng.below(4).to_int64()
+    let initial = Array::makei(rng.below(6), _ => rng.below(6).to_int64())
+    let plans = Array::makei(40, _ => {
+      let arms = Array::makei(rng.below(3), _ => rng.below(6).to_int64())
+      let cancel = if rng.below(3) == 0 { Some(rng.below(40)) } else { None }
+      Plan::{ arms, cancel, }
+    })
+    let advances = Array::makei(8, _ => rng.below(2))
+    assert_eq(
+      driver_steps(plans, initial, start_ms, advances),
+      model_steps(plans, initial, start_ms, advances),
+      msg="case \{case_}",
+    )
+  }
+}

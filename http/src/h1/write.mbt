@@ -1,10 +1,13 @@
 ///|
 /// Validates every outgoing field, then replaces Content-Length and
-/// Transfer-Encoding with the ones `framing` implies.
+/// Transfer-Encoding with the ones `framing` implies. `NoBody` writes
+/// `Content-Length: 0` when `empty_length`: where a recipient would
+/// otherwise read until close, or where the method anticipates content.
 fn wire_fields(
   headers : @http.Headers,
   framing : Framing,
   v : Version,
+  empty_length~ : Bool,
 ) -> @http.Headers raise ParseError {
   // Fields replaced below are validated too: a framing override must not
   // hide a malformed value the caller supplied.
@@ -16,6 +19,7 @@ fn wire_fields(
   }
   let headers = headers.remove("content-length").remove("transfer-encoding")
   match framing {
+    NoBody if empty_length => headers.add("content-length", "0")
     NoBody => headers
     Length(n) => {
       if n < 0L {
@@ -59,10 +63,21 @@ fn head_bytes(start : String, headers : @http.Headers) -> Bytes {
 }
 
 ///|
-/// Serializes a response head with the standard reason phrase, replacing
-/// Content-Length and Transfer-Encoding with the ones `framing` implies;
-/// `UntilClose` adds `Connection: close`. Refuses a status outside 100 to
-/// 599, body framing on a 1xx or 204, a negative length, chunked HTTP/1.0
+/// Serializes a response to `meth` with the standard reason phrase,
+/// replacing Content-Length and Transfer-Encoding with the ones `framing`
+/// implies, so that `response_framing` reads back the same body:
+///
+/// - `NoBody` on a status that has a body writes `Content-Length: 0`, on
+///   HTTP/1.0 too, since a response without either field is read until
+///   close. A response that never has a body (to HEAD, a 1xx, 204 or 304, a
+///   2xx to CONNECT) gets no framing field.
+/// - `Length(n)` and `Chunked` on a response to HEAD or a 304 describe the
+///   body a GET would have had (RFC 9110, sections 8.6 and 15.4.5); no body
+///   follows either way.
+/// - `UntilClose` adds `Connection: close`.
+///
+/// Refuses a status outside 100 to 599, body framing on a 1xx, 204 or 2xx to
+/// CONNECT (RFC 9110, section 9.3.6), a negative length, chunked HTTP/1.0
 /// and invalid fields. Values are written as Latin-1 octets, matching the
 /// parser; encode text beyond Latin-1 before putting it in a field. No body
 /// bytes are written.
@@ -78,6 +93,20 @@ fn head_bytes(start : String, headers : @http.Headers) -> Bytes {
 ///   assert_eq(
 ///     head, b"HTTP/1.1 200 OK\r\ncontent-type: text/plain\r\ncontent-length: 5\r\n\r\n",
 ///   )
+///   let empty = @h1.write_response_head(
+///     200,
+///     @http.Headers::empty(),
+///     NoBody,
+///     Http11,
+///   )
+///   assert_eq(empty, b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
+///   let none = @h1.write_response_head(
+///     204,
+///     @http.Headers::empty(),
+///     NoBody,
+///     Http11,
+///   )
+///   assert_eq(none, b"HTTP/1.1 204 No Content\r\n\r\n")
 /// }
 /// ```
 pub fn write_response_head(
@@ -85,14 +114,25 @@ pub fn write_response_head(
   headers : @http.Headers,
   framing : Framing,
   v : Version,
+  meth~ : @http.Method = Get,
 ) -> Bytes raise ParseError {
   if status < 100 || status > 599 {
     raise malformed("invalid status code")
   }
-  if (status / 100 == 1 || status == 204) && framing != NoBody {
+  if (
+      status / 100 == 1 ||
+      status == 204 ||
+      (meth == Connect && status / 100 == 2)
+    ) &&
+    framing != NoBody {
     raise malformed("status prohibits body framing")
   }
-  let headers = wire_fields(headers, framing, v)
+  let headers = wire_fields(
+    headers,
+    framing,
+    v,
+    empty_length=!has_no_body(status, meth),
+  )
   head_bytes(
     "\{version_text(v)} \{status} \{@http.reason_phrase(status)}",
     headers,
@@ -101,7 +141,10 @@ pub fn write_response_head(
 
 ///|
 /// Serializes a request head, replacing Content-Length and Transfer-Encoding
-/// with the ones `framing` implies, and keeping duplicate fields. The result
+/// with the ones `framing` implies, and keeping duplicate fields. `NoBody`
+/// writes `Content-Length: 0` for POST, PUT and PATCH, whose semantics
+/// anticipate content, and no framing field for other methods (RFC 9110,
+/// section 8.6); pass `Length(0)` to send it for another method. The result
 /// passes the same checks as `parse_request_head` (target form, Host), and a
 /// request cannot be `UntilClose`. No body bytes are written.
 ///
@@ -129,7 +172,12 @@ pub fn write_request_head(
   if framing == UntilClose {
     raise malformed("a request cannot be close-delimited")
   }
-  let headers = wire_fields(headers, framing, v)
+  let headers = wire_fields(
+    headers,
+    framing,
+    v,
+    empty_length=meth is (Post | Put | Patch),
+  )
   let head = head_bytes("\{meth} \{target} \{version_text(v)}", headers)
   let _ = parse_request_head(head, limits={
     ..Limits::default(),

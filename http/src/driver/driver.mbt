@@ -23,9 +23,10 @@ pub(all) enum DriverErrorKind {
   /// them for `max_unwind_rounds` rounds: they kept spawning new tasks while
   /// unwinding. `live` counts them.
   UnwindIncomplete(live~ : Int32)
-  /// A task spawned without `allow_failure` failed and no task saw it: none
-  /// was waiting on it, or every waiter was cancelled before it resumed.
-  /// `cause` is its error.
+  /// A task spawned without `allow_failure` failed (other than by
+  /// cancellation) and no `Task::wait` caller saw it: none was waiting, or
+  /// every waiter was cancelled before it resumed. `cancel_and_join` does
+  /// not count, since it hands back no outcome. `cause` is its error.
   TaskFailed(label~ : String, cause~ : Error)
   /// The main task of `run` finished by cancellation.
   MainCancelled
@@ -97,12 +98,22 @@ pub struct Task {
   priv mut cancel_requested : Bool
   priv mut cancel_mask : Int32
   priv mut gen : Int32
-  priv joiners : Array[Waker]
+  priv joiners : Array[Joiner]
   priv allow_failure : Bool
-  /// Waiters still to resume after this task failed while they waited.
+  /// `Task::wait` callers still to resume after this task failed while they
+  /// waited.
   priv mut failure_waiters : Int32
   /// Whether one of those waiters resumed and saw the failure.
   priv mut failure_observed : Bool
+}
+
+///|
+/// A task parked until another finishes. Only a `Task::wait` caller is
+/// handed the outcome (`observes`); `cancel_and_join` only waits for the
+/// end, so its registration never counts as seeing a failure.
+priv struct Joiner {
+  waker : Waker
+  observes : Bool
 }
 
 ///|
@@ -343,6 +354,22 @@ pub fn Driver::pending_timers(self : Driver) -> Int32 {
   n
 }
 
+// Who is running. The invariants the task-only operations rely on:
+//
+// C1. An operation that parks or joins (`park_check_cancel`, `park`,
+//     `pause`, `sleep`, `cancel_and_join`, and `Task::wait`, which parks on
+//     the target's driver) acts only when `is_stepping()`: this driver's
+//     `step` is running one of its tasks right now. `active` names the
+//     innermost stepping driver, so a nested driver's task is never taken
+//     for the outer driver's. Otherwise the operation suspends nothing, and
+//     the innermost stepping driver, if any, fails with `NotInTask`.
+// C2. `current_task` and the ambient helpers (`current`, `sleep`, `pause`,
+//     `now`, `spawn`) read the innermost stepping driver, and raise
+//     `NotInTask` when there is none.
+// C3. `run` and `step` refuse to be entered again from their own driver,
+//     from a task or a timer callback (`Reentrant`); a nested driver is a
+//     different driver and may run.
+
 ///|
 /// Whether a task of this driver is running and calling into it right now.
 fn Driver::is_stepping(self : Driver) -> Bool {
@@ -431,6 +458,24 @@ fn Driver::report(self : Driver, e : DriverError) -> Unit {
   }
 }
 
+// Outcomes. The invariants that decide whether a failure fails the run:
+//
+// O1. A task's outcome is set once, by `finish`, during that task's own
+//     step; it never changes afterwards.
+// O2. A failure of a task spawned without `allow_failure` is decided once.
+//     It is reported as `TaskFailed` at `finish` when no `Task::wait` caller
+//     is registered, or else when the last waiter that `finish` counted
+//     resumes without any `wait` having returned the failure. A `wait` that
+//     returns it before that point, from a resumed waiter or from a new call
+//     on the finished task, counts as seeing it. A `wait` after the report
+//     still raises the error; the report stands.
+// O3. Each `Task::wait` registration is resolved exactly once: removed by
+//     its waiter when it is cancelled before the target finishes, or counted
+//     by `finish` and released when that waiter resumes, woken or cancelled
+//     before it resumed.
+// O4. `cancel_and_join` registrations never count as seeing an outcome, and
+//     an outcome by cancellation is never reported.
+
 ///|
 fn Driver::finish(self : Driver, task : Task, outcome : State) -> Unit {
   task.state = outcome
@@ -438,31 +483,32 @@ fn Driver::finish(self : Driver, task : Task, outcome : State) -> Unit {
   self.live.remove(task.id)
   match outcome {
     Failed(e) if !task.allow_failure =>
-      if task.joiners.is_empty() {
-        self.report(
-          DriverError(
-            kind=TaskFailed(label=task.label, cause=e),
-            detail="task \{task.id} failed and no task waited on it",
-          ),
-        )
-      } else {
+      match task.joiners.filter(j => j.observes).length() {
+        0 =>
+          self.report(
+            DriverError(
+              kind=TaskFailed(label=task.label, cause=e),
+              detail="task \{task.id} failed and no task waited on it",
+            ),
+          )
         // Whether a waiter sees the failure is known once each resumes: one
         // cancelled after this wake-up does not (`Task::waiter_resumed`).
-        task.failure_waiters = task.joiners.length()
+        waiters => task.failure_waiters = waiters
       }
     _ => ()
   }
   let joiners = task.joiners.copy()
   task.joiners.clear()
-  for w in joiners {
-    w.wake()
+  for j in joiners {
+    j.waker.wake()
   }
 }
 
 ///|
 /// Arms a timer that runs `action` (synchronously, from `step`) once
 /// virtual time reaches `at`. Timers with equal deadlines fire in the order
-/// they were armed.
+/// they were armed. A timer armed during a step, already due, fires on the
+/// next step, so a callback that re-arms itself yields to the ready tasks.
 pub fn Driver::add_timer(
   self : Driver,
   at : Int64,
@@ -481,17 +527,55 @@ pub fn TimerHandle::cancel(self : TimerHandle) -> Unit {
   self.cancelled = true
 }
 
+// Budgets, timers and queues. The invariants that keep every run bounded:
+//
+// B1. Each `run` starts with a fresh budget of `max_steps` task steps and
+//     `max_steps` timer callbacks; each unwind round starts with a fresh one
+//     of at least twice the live tasks.
+// B2. A step fires exactly the timers that were armed and due when it began
+//     and are not cancelled before their turn, in (deadline, arming) order;
+//     a timer armed during the step, by a callback or a task, fires on a
+//     later step whatever its deadline. No timer can keep `step` from
+//     resuming a ready task, or hide an older due one.
+// B3. Unwinding does not advance time, and each round starts with no armed
+//     timer, so a timer armed while unwinding cannot carry into the next
+//     round.
+// B4. The ready queue holds a task at most once: only a parked task is
+//     pushed, and pushing makes it ready.
+// B5. `step` saves and restores `current` and `active` around each task it
+//     resumes, so a driver nested inside a task leaves the outer driver as
+//     it found it.
+
 ///|
 fn Driver::fire_due(self : Driver) -> Unit raise DriverError {
+  // B2: the timers due when the step starts are taken out of the heap first,
+  // in (deadline, arming) order, and only they fire now. One a callback arms
+  // (a timer re-arming itself, or one with an even earlier deadline) goes to
+  // the heap and waits for the next step, so it can neither keep this step
+  // from resuming a ready task nor hide an older due timer.
+  let due = []
   while self.timers.peek() is Some(t) && t.at <= self.now {
+    self.timers.remove_top()
+    due.push(t)
+  }
+  for i, t in due {
+    // A callback earlier in this step may have cancelled it.
+    if t.cancelled {
+      continue
+    }
     if self.timer_firings >= self.budget_limit {
+      // The unfired ones go back, so a caller that steps on still has them.
+      for rest in due[i:] {
+        if !rest.cancelled {
+          self.timers.push(rest)
+        }
+      }
       raise DriverError(
         kind=NoQuiescence(steps=self.timer_firings),
         detail="timer callback budget exhausted",
       )
     }
     self.timer_firings += 1
-    self.timers.remove_top()
     t.cancelled = true
     (t.action)()
   }
@@ -576,11 +660,12 @@ pub fn Driver::step(self : Driver) -> Bool raise DriverError {
 fn Driver::shutdown(self : Driver) -> (Int32, DriverError?) {
   let mut rounds = 0
   let mut first_error : DriverError? = None
-  // Cancelled tasks are woken directly. Discard due timer callbacks before
-  // cleanup so a self-rearming timer cannot starve cancellation delivery.
-  self.timers.clear()
   while !self.live.is_empty() && rounds < max_unwind_rounds {
     rounds += 1
+    // B3: cancelled tasks are woken directly and time does not advance, so
+    // armed timers only matter as callbacks. Each round starts without any,
+    // including those a task armed while unwinding in the round before.
+    self.timers.clear()
     self.budget_base = self.steps
     self.timer_firings = 0
     self.budget_limit = self.max_steps.max(
@@ -645,7 +730,7 @@ fn Driver::drive(self : Driver, main_task : Task) -> Unit raise DriverError {
 ///
 /// Raises `DriverError`: `Deadlock` (or `Suspended` with auto-advance off)
 /// when every task is parked and no timer can wake one, `NoQuiescence` when
-/// the step budget runs out, `TaskFailed` when a task nobody waits on fails,
+/// the step budget runs out, `TaskFailed` when no waiter sees a task fail,
 /// `MainCancelled` when `main` is cancelled, `UnwindIncomplete` when tasks
 /// survive `max_unwind_rounds` rounds of cancellation, and `Reentrant` when
 /// called from a task of this driver. Live tasks are cancelled and unwound
@@ -824,9 +909,11 @@ pub fn Task::cancel(self : Task) -> Unit {
 ///|
 /// Cancels `tasks` and waits until each has finished, before delivering a
 /// pending cancellation of the caller at a later suspension. The mask is
-/// task-local and supports nested cleanup. Called from anything but a task
-/// of this driver, it only requests the cancellations, and the driver
-/// running the caller fails with `NotInTask`.
+/// task-local and supports nested cleanup. It hands back no outcome: a
+/// joined task that fails instead of ending by cancellation still fails the
+/// run with `TaskFailed` unless a `Task::wait` caller sees it. Called from
+/// anything but a task of this driver, it only requests the cancellations,
+/// and the driver running the caller fails with `NotInTask`.
 pub async fn Driver::cancel_and_join(
   self : Driver,
   tasks : Array[Task],
@@ -854,7 +941,11 @@ pub async fn Driver::cancel_and_join(
   }
   for task in tasks {
     while !task.is_finished() {
-      ignore(self.park_check_cancel(waker => task.joiners.push(waker)))
+      ignore(
+        self.park_check_cancel(waker => {
+          task.joiners.push({ waker, observes: false, })
+        }),
+      )
     }
   }
 }
@@ -900,19 +991,24 @@ pub fn Task::label(self : Task) -> String {
 
 ///|
 /// Waits for the task to finish: true if it completed, false if it was
-/// cancelled; raises its error if it failed. A task waited on does not fail
-/// the enclosing `run` with `TaskFailed`.
+/// cancelled; raises its error if it failed. A failure that a waiter sees
+/// this way does not also fail the enclosing `run` with `TaskFailed`.
 pub async fn Task::wait(self : Task) -> Bool {
   while true {
     match self.state {
       Done => return true
       Cancelled => return false
-      Failed(e) => raise e
+      Failed(e) => {
+        // O2: seeing the failure here counts, even for a call that never
+        // registered, as long as the failure is not reported yet.
+        self.failure_observed = true
+        raise e
+      }
       Ready | Running | Parked => {
         let mut mine : Waker? = None
         let resumed = self.driver.park_check_cancel(w => {
           mine = Some(w)
-          self.joiners.push(w)
+          self.joiners.push({ waker: w, observes: true, })
         })
         guard resumed is Cancelled else {
           self.waiter_resumed(observed=true)
@@ -923,7 +1019,7 @@ pub async fn Task::wait(self : Task) -> Bool {
           // leaves without having counted as an observer.
           match
             self.joiners.search_by(j => {
-              physical_equal(j.task, w.task) && j.gen == w.gen
+              physical_equal(j.waker.task, w.task) && j.waker.gen == w.gen
             }) {
             Some(i) => ignore(self.joiners.remove(i))
             None => self.waiter_resumed(observed=false)

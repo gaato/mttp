@@ -96,12 +96,20 @@ pub fn response_framing(
   meth~ : @http.Method = Get,
 ) -> Framing raise ParseError {
   let framing = framing_fields(headers)
-  if meth == Head ||
-    status / 100 == 1 ||
-    status == 204 ||
-    status == 304 ||
-    (meth == Connect && status / 100 == 2) {
+  if has_no_body(status, meth) {
     return NoBody
   }
   framing.unwrap_or(UntilClose)
+}
+
+///|
+/// Whether a response never has a body, whatever its fields say (RFC 9112,
+/// section 6.3): a response to HEAD, a 1xx, 204 or 304, and a 2xx to
+/// CONNECT.
+fn has_no_body(status : Int32, meth : @http.Method) -> Bool {
+  meth == Head ||
+  status / 100 == 1 ||
+  status == 204 ||
+  status == 304 ||
+  (meth == Connect && status / 100 == 2)
 }

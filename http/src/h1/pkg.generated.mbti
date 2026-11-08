@@ -21,7 +21,7 @@ pub fn scan_head(BytesView, max~ : Int32, skip_leading_crlf? : Bool) -> Int32? r
 
 pub fn write_request_head(@http.Method, String, @http.Headers, Framing, Version) -> Bytes raise ParseError
 
-pub fn write_response_head(Int32, @http.Headers, Framing, Version) -> Bytes raise ParseError
+pub fn write_response_head(Int32, @http.Headers, Framing, Version, meth? : @http.Method) -> Bytes raise ParseError
 
 // Errors
 #derive(@debug.Debug)
