@@ -138,6 +138,37 @@ async fn copy_module(source : String, destination : String) -> Unit {
 }
 
 ///|
+/// The file names in the central directory of a zip archive. Read here
+/// rather than with `unzip`, which the CI image does not have.
+fn zip_names(archive : Bytes) -> Array[String] {
+  let u16 = (at : Int32) => {
+    archive[at].to_int() | (archive[at + 1].to_int() << 8)
+  }
+  let names = []
+  let mut at = 0
+  while at + 46 <= archive.length() {
+    if archive[at] == b'P' &&
+      archive[at + 1] == b'K' &&
+      archive[at + 2] == b'\x01' &&
+      archive[at + 3] == b'\x02' {
+      let name_length = u16(at + 28)
+      let skip = name_length + u16(at + 30) + u16(at + 32)
+      if at + 46 + name_length <= archive.length() {
+        let name = StringBuilder()
+        for i in 0..<name_length {
+          name.write_char(archive[at + 46 + i].to_int().unsafe_to_char())
+        }
+        names.push(name.to_string())
+      }
+      at = at + 46 + skip
+    } else {
+      at = at + 1
+    }
+  }
+  names
+}
+
+///|
 async fn stage(candidate : Module, registry : String) -> Unit {
   let index = registry + "/index/user/" + candidate.name + ".index"
   let mut rows : Array[String] = []
@@ -195,10 +226,8 @@ async fn stage(candidate : Module, registry : String) -> Unit {
   } else {
     source + "/" + archive
   }
-  let contents = run("unzip", ["-Z1", archive], cwd=source)
-  if !contents
-    .split("\n")
-    .any(path => path == "moon.mod" || path == "moon.mod.json") {
+  let contents = zip_names(@fs.read_binary(archive))
+  if !contents.any(path => path == "moon.mod" || path == "moon.mod.json") {
     raise GateError("archive omits its module manifest: " + candidate.name)
   }
   let checksum = run("sha256sum", [archive], cwd=candidate.dir)
