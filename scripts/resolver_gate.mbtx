@@ -1,0 +1,449 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+----
+
+// Package real release archives of the modules of scripts/modules.tsv into a
+// disposable registry, then compile a consumer of each outside moon.work, on
+// each of the module's targets. Workspace overrides otherwise conceal missing
+// dependencies and manifest/index drift. A consumer imports every public
+// (non-internal) package; the experimental ones are listed in its
+// allow-experimental-packages, and a second build without the list must warn,
+// so the opt-in a user needs is the opt-in the module documents. Nothing is
+// uploaded or published.
+// Usage: moon run scripts/resolver_gate.mbtx [-- --self-test]
+
+///|
+suberror GateError {
+  GateError(String)
+}
+
+///|
+struct Module {
+  dir : String
+  name : String
+  version : String
+  deps : Map[String, Json]
+  packages : Array[String]
+  experimental : Array[String]
+  targets : Array[String]
+}
+
+///|
+fn quoted(line : StringView) -> String raise {
+  guard line.split("\"").collect() is [_, value, ..] else {
+    raise GateError("expected a quoted manifest value")
+  }
+  value.to_owned()
+}
+
+///|
+async fn module_at(dir : String, targets : Array[String]) -> Module {
+  let mut name = ""
+  let mut version = ""
+  let deps : Map[String, Json] = Map([])
+  let mut imports = false
+  for raw in @fs.read_text(dir + "/moon.mod").split("\n") {
+    let line = raw.trim()
+    if line.has_prefix("name =") {
+      name = quoted(line)
+    } else if line.has_prefix("version =") {
+      version = quoted(line)
+    } else if line == "import {" {
+      imports = true
+    } else if imports && line == "}" {
+      imports = false
+    } else if imports && line.has_prefix("\"") {
+      guard quoted(line).split("@").collect() is [dep, version] else {
+        raise GateError("expected a versioned registry dependency")
+      }
+      deps[dep.to_owned()] = Json::string(version.to_owned())
+    }
+  }
+  if name.is_empty() || version.is_empty() {
+    raise GateError("missing module identity: " + dir)
+  }
+  // Public packages: every package outside an `internal` directory.
+  let packages = []
+  let experimental = []
+  let root = dir + "/src"
+  @fs.walk(
+    root,
+    (pkg_dir, entries) => {
+      guard entries.contains("moon.pkg") else { return }
+      let suffix = pkg_dir[root.length():].to_owned()
+      let suffix = suffix
+        .strip_prefix("/")
+        .map(s => s.to_owned())
+        .unwrap_or(suffix)
+      packages.push(suffix)
+      let options = @fs.read_text(pkg_dir + "/moon.pkg")
+      if options.contains("experimental: true") ||
+        options.contains("\"experimental\": true") {
+        experimental.push(suffix)
+      }
+    },
+    exclude=path => {
+      path.has_suffix("/internal") ||
+      path.has_suffix("/_build") ||
+      path.has_suffix("/.mooncakes")
+    },
+    max_concurrency=1,
+  )
+  packages.sort()
+  { dir, name, version, deps, packages, experimental, targets, }
+}
+
+///|
+async fn run(program : String, args : Array[String], cwd~ : String) -> String {
+  let output = @shell.Cmd(program, args, cwd~).output(timeout_ms=600000)
+  if output.exit_code() != 0 {
+    println(output.stdout())
+    println(output.stderr())
+    raise GateError(program + " failed in " + cwd)
+  }
+  output.stdout() + output.stderr()
+}
+
+///|
+async fn copy_module(source : String, destination : String) -> Unit {
+  let excluded = ["_build", ".mooncakes", ".git", ".jj", "moon.work"]
+  @fs.walk(
+    source,
+    (dir, entries) => {
+      let target = destination + dir[source.length():].to_owned()
+      @fs.mkdir(target, recursive=true, allow_exist=true)
+      let files = []
+      for entry in entries {
+        if excluded.contains(entry) {
+          continue
+        }
+        let path = dir + "/" + entry
+        if @fs.kind(path, follow_symlink=false) != Directory {
+          files.push(path)
+        }
+      }
+      if !files.is_empty() {
+        run("cp", ["-a", ..files, target + "/"], cwd=source) |> ignore
+      }
+    },
+    exclude=path => excluded.any(name => path.has_suffix("/" + name)),
+    max_concurrency=1,
+  )
+}
+
+///|
+async fn stage(candidate : Module, registry : String) -> Unit {
+  let index = registry + "/index/user/" + candidate.name + ".index"
+  let mut rows : Array[String] = []
+  if @fs.exists(index) {
+    rows = @fs.read_text(index)
+      .split("\n")
+      .filter(line => !line.is_empty())
+      .map(line => line.to_owned())
+      .collect()
+  }
+  for row in rows {
+    guard @json.parse(row) is Object(json) else {
+      raise GateError("registry entry is not an object")
+    }
+    if json.get("version") == Some(Json::string(candidate.version)) {
+      if json.get("deps") != Some(Json::object(candidate.deps)) {
+        raise GateError(
+          "manifest/index dependency drift: " +
+          candidate.name +
+          "@" +
+          candidate.version,
+        )
+      }
+      // Do not replace an existing release with different local code even if
+      // its imports match: this gate validates unpublished release candidates.
+      raise GateError(
+        "version already exists; reserve a new version: " + candidate.name,
+      )
+    }
+  }
+  // Packaging performs a check. Copy the module outside its original
+  // workspace so sibling overrides cannot validate different dependency code.
+  let source = registry + "/../sources/" + candidate.name
+  @fs.mkdir(source, recursive=true, allow_exist=true)
+  copy_module(candidate.dir, source)
+  let packaged = @shell.Cmd("moon", ["package"], cwd=source, env={
+    "MOON_HOME": registry + "/..",
+  }).output(timeout_ms=600000)
+  if packaged.exit_code() != 0 {
+    println(packaged.stdout())
+    println(packaged.stderr())
+    raise GateError("isolated packaging failed: " + candidate.name)
+  }
+  let output = packaged.stdout() + packaged.stderr()
+  let archives = output
+    .split("\n")
+    .filter(line => line.has_prefix("Package to "))
+    .collect()
+  guard archives is [archive] else {
+    raise GateError("moon package did not report exactly one archive")
+  }
+  let archive = archive[11:].to_owned()
+  let archive = if archive.has_prefix("/") {
+    archive
+  } else {
+    source + "/" + archive
+  }
+  let contents = run("unzip", ["-Z1", archive], cwd=source)
+  if !contents
+    .split("\n")
+    .any(path => path == "moon.mod" || path == "moon.mod.json") {
+    raise GateError("archive omits its module manifest: " + candidate.name)
+  }
+  let checksum = run("sha256sum", [archive], cwd=candidate.dir)
+    .split(" ")
+    .next()
+    .unwrap()
+    .to_owned()
+  let cache = registry + "/cache/" + candidate.name
+  @fs.mkdir(cache, recursive=true, allow_exist=true)
+  run(
+    "cp",
+    [archive, cache + "/" + candidate.version + ".zip"],
+    cwd=candidate.dir,
+  )
+  |> ignore
+  let entry : Json = {
+    "name": candidate.name,
+    "version": candidate.version,
+    "deps": Json::object(candidate.deps),
+    "checksum": checksum,
+    "yanked": false,
+    "created_at": "2026-10-26T00:00:00+00:00",
+  }
+  let parent = registry +
+    "/index/user/" +
+    candidate.name.split("/").next().unwrap().to_owned()
+  @fs.mkdir(parent, recursive=true, allow_exist=true)
+  rows.push(entry.stringify())
+  @fs.write_text(index, rows.join("\n") + "\n")
+  println("staged " + candidate.name + "@" + candidate.version)
+}
+
+///|
+/// The modules of scripts/modules.tsv whose directory exists, in its order,
+/// which is dependency order.
+async fn workspace_modules(root : String) -> Array[Module] {
+  let modules = []
+  for raw in @fs.read_text(root + "/scripts/modules.tsv").split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line.has_prefix("dir\t") {
+      continue
+    }
+    guard line.split("\t").map(s => s.to_owned()).to_array()
+      is [dir, _, _, targets, ..] else {
+      raise GateError("scripts/modules.tsv: malformed row: " + line)
+    }
+    if @fs.exists(root + "/" + dir + "/moon.mod") {
+      let targets = targets
+        .split(",")
+        .map(t => t.trim().to_owned())
+        .filter(t => !t.is_empty())
+        .to_array()
+      modules.push(module_at(root + "/" + dir, targets))
+    }
+  }
+  modules
+}
+
+///|
+/// The consumer's moon.pkg: every public package of `candidate`, and the
+/// experimental ones acknowledged when `acknowledge` is true.
+fn consumer_pkg(candidate : Module, acknowledge~ : Bool) -> String {
+  let full = (pkg : String) => {
+    if pkg.is_empty() {
+      candidate.name
+    } else {
+      candidate.name + "/" + pkg
+    }
+  }
+  let imports = candidate.packages
+    .mapi((index, pkg) => "  \"" + full(pkg) + "\" @p" + index.to_string() + ",")
+    .join("\n")
+  let allow = if acknowledge && !candidate.experimental.is_empty() {
+    ", \"allow-experimental-packages\": [" +
+    candidate.experimental.map(pkg => "\"" + full(pkg) + "\"").join(", ") +
+    "]"
+  } else {
+    ""
+  }
+  "import {\n" +
+  imports +
+  "\n}\noptions(\"is-main\": true, warnings: \"-unused_package\"" +
+  allow +
+  ")\n"
+}
+
+///|
+async fn build(consumer : String, target : String, isolated : String) -> String {
+  let output = @shell.Cmd(
+    "moon",
+    ["build", "--target", target, "--deny-warn"],
+    cwd=consumer,
+    env={ "MOON_HOME": isolated },
+  ).output(timeout_ms=600000)
+  let log = output.stdout() + output.stderr()
+  if output.exit_code() != 0 {
+    println(log)
+    raise GateError("consumer build failed on " + target + ": " + consumer)
+  }
+  log
+}
+
+///|
+async fn check() -> Unit {
+  let root = @fs.realpath(".")
+  let modules = workspace_modules(root)
+  let home = @env.get_env_var("MOON_HOME").unwrap_or(
+    @env.get_env_var("HOME").unwrap() + "/.moon",
+  )
+  // Native build artifacts can exceed a tmpfs quota. Stay outside the
+  // checkout too: an ancestor .gitignore can silently exclude archive files.
+  let scratch_base = @env.get_env_var("MTTP_RESOLVER_TMPDIR").unwrap_or(
+    "/var/tmp",
+  )
+  @fs.mkdir(scratch_base, recursive=true, allow_exist=true)
+  let scratch = run(
+      "mktemp",
+      ["-d", scratch_base + "/mttp-resolver.XXXXXXXX"],
+      cwd=root,
+    )
+    .trim()
+    .to_owned()
+  println("resolver scratch: " + scratch)
+  let isolated = scratch + "/moon"
+  @fs.mkdir(isolated)
+  run(
+    "cp",
+    ["-a", "--reflink=auto", home + "/registry", isolated + "/registry"],
+    cwd=root,
+  )
+  |> ignore
+  @fs.symlink(target=home + "/lib", isolated + "/lib")
+  for candidate in modules {
+    stage(candidate, isolated + "/registry")
+  }
+  for i, candidate in modules {
+    let consumer = scratch + "/consumer-" + i.to_string()
+    @fs.mkdir(consumer)
+    @fs.write_text(
+      consumer + "/moon.mod",
+      "name = \"resolver/consumer\"\nversion = \"0.0.1\"\nsupported_targets = \"" +
+      candidate.targets.join("+") +
+      "\"\nimport {\n  \"" +
+      candidate.name +
+      "@" +
+      candidate.version +
+      "\",\n}\n",
+    )
+    @fs.write_text(
+      consumer + "/main.mbt",
+      "///|\nfn main {\n  println(\"resolver smoke: OK\")\n}\n",
+    )
+    for target in candidate.targets {
+      println("+ packaged " + candidate.name + " on " + target)
+      @fs.write_text(
+        consumer + "/moon.pkg",
+        consumer_pkg(candidate, acknowledge=true),
+      )
+      let log = build(consumer, target, isolated)
+      if log.contains("depends on experimental package") {
+        println(log)
+        raise GateError(
+          "the consumer of " +
+          candidate.name +
+          " warns although it lists every experimental package",
+        )
+      }
+      if !candidate.experimental.is_empty() {
+        @fs.write_text(
+          consumer + "/moon.pkg",
+          consumer_pkg(candidate, acknowledge=false),
+        )
+        if !build(consumer, target, isolated).contains(
+            "depends on experimental package",
+          ) {
+          raise GateError(
+            "a consumer of " +
+            candidate.name +
+            " uses its experimental packages without listing them, and moon does not warn",
+          )
+        }
+      }
+    }
+    if @fs.exists(consumer + "/_build") {
+      @fs.rmdir(consumer + "/_build", recursive=true)
+    }
+  }
+  // The staged registry and the packaged sources are large; a failure above
+  // leaves them for inspection.
+  @fs.rmdir(scratch, recursive=true)
+  println(
+    "resolver gate: OK (\{modules.length()} modules; isolated registry; no workspace overrides)",
+  )
+}
+
+///|
+async fn main {
+  let task : async () -> Unit = () => {
+    if @env.args()[1:] is ["--self-test"] {
+      let root = @fs.tmpdir(prefix="mttp-resolver-selftest-")
+      @fs.mkdir(root + "/index/user/probe", recursive=true)
+      let candidate : Module = {
+        dir: root,
+        name: "probe/library",
+        version: "0.1.0",
+        deps: { "probe/dependency": Json::string("0.2.0") },
+        packages: [],
+        experimental: [],
+        targets: [],
+      }
+      for
+        (version, expected) in [
+          ("0.1.0", "manifest/index dependency drift:"),
+          ("0.2.0", "version already exists;"),
+        ] {
+        let entry : Json = {
+          "name": candidate.name,
+          "version": candidate.version,
+          "deps": { "probe/dependency": version },
+        }
+        @fs.write_text(
+          root + "/index/user/probe/library.index",
+          entry.stringify() + "\n",
+        )
+        let rejected = try {
+          stage(candidate, root)
+          false
+        } catch {
+          GateError(message) => message.has_prefix(expected)
+          other => raise other
+        }
+        if !rejected {
+          raise GateError("resolver negative test did not reject " + version)
+        }
+      }
+      println("resolver gate self-test: drift and existing-version guards OK")
+    } else {
+      check()
+    }
+  }
+  task() catch {
+    GateError(message) => {
+      println("resolver gate: " + message)
+      raise GateError(message)
+    }
+    other => raise other
+  }
+}

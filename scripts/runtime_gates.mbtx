@@ -1,0 +1,548 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+}
+----
+
+///|
+/// Per-target build, test and public-interface gates for every module of
+/// `scripts/modules.tsv`.
+///
+///   moon run scripts/runtime_gates.mbtx -- tests [--target T]...
+///       `moon check --deny-warn`, then the tests of each package on its own
+///       (so a native abort cannot hide the other packages), on each target
+///       (default: all four) the package builds on. Counts are compared with
+///       `scripts/test_manifest.tsv`: a run fails when `moon test` fails,
+///       prints no "Total tests" line, reports a count the manifest does not
+///       record, or warns that a package uses an experimental package it did
+///       not list (moon does not turn that warning into an error).
+///   moon run scripts/runtime_gates.mbtx -- manifest --update
+///       runs every package on every target and rewrites the manifest.
+///   moon run scripts/runtime_gates.mbtx -- manifest --check
+///       the manifest on its own: well formed, one row per package and
+///       target, and equal counts across the targets of a four-target module.
+///   moon run scripts/runtime_gates.mbtx -- interfaces
+///       the public interfaces: the enums `scripts/non_exhaustive.tsv` lists
+///       carry `#non_exhaustive`; no interface names a runtime type
+///       (design, principle 9); and a package's interface is the same on
+///       every target it builds on.
+///
+/// A package builds on its module's targets, narrowed by a
+/// `supported_targets = "a+b"` line in its `moon.pkg`.
+
+///|
+let all_targets : Array[String] = ["wasm-gc", "wasm", "js", "native"]
+
+///|
+let manifest_path : String = "scripts/test_manifest.tsv"
+
+///|
+let manifest_header : String = "module\tpackage\ttarget\tcount"
+
+///|
+/// What a public interface may not mention: core/async types and the old
+/// runtime. A port is a trait of gaato/http/rt instead.
+let runtime_markers : Array[String] = [
+  "@async.", "@socket.", "@tls.", "@io.", "@js_async.", "TaskGroup", "\"moonbitlang/core/async",
+  "\"moonbitlang/async",
+]
+
+///|
+/// The warning moon prints for an unlisted experimental package.
+let experimental_warning : String = "depends on experimental package"
+
+///|
+/// Directory names the walk skips: build output, dependencies, and VCS data.
+let skipped_dirs : Array[String] = [
+  "_build", ".mooncakes", "node_modules", "target", ".git", ".jj", ".repos",
+]
+
+///|
+suberror GateError {
+  GateError(String)
+}
+
+///|
+/// Byte order; `String::compare` puts shorter strings first.
+fn lexical(a : String, b : String) -> Int32 {
+  for i in 0..<a.length().min(b.length()) {
+    if a[i] != b[i] {
+      return a[i].to_int() - b[i].to_int()
+    }
+  }
+  a.length() - b.length()
+}
+
+///|
+/// One package of a module, with the targets it builds on.
+struct Package {
+  module_name : String
+  name : String
+  dir : String
+  targets : Array[String]
+  four_target : Bool
+}
+
+///|
+/// The comma-separated list of a cell; `-` is the empty list.
+fn cell_list(cell : String) -> Array[String] {
+  if cell == "-" || cell.is_empty() {
+    return []
+  }
+  cell
+  .split(",")
+  .map(s => s.trim().to_owned())
+  .filter(s => !s.is_empty())
+  .to_array()
+}
+
+///|
+/// The `supported_targets` of a `moon.pkg`, if it has one.
+fn supported_targets(text : String) -> Array[String]? raise GateError {
+  for raw in text.split("\n") {
+    let line = raw.trim()
+    guard line.has_prefix("supported_targets") else { continue }
+    let parts = line.split("\"").map(s => s.to_owned()).to_array()
+    guard parts is [_, expression, ..] else {
+      raise GateError("unreadable supported_targets: \{line}")
+    }
+    let targets = expression.split("+").map(s => s.trim().to_owned()).to_array()
+    if !targets.all(t => all_targets.contains(t)) {
+      raise GateError(
+        "supported_targets \"\{expression}\" is not a +-list of targets; the gates read that form only",
+      )
+    }
+    return Some(targets)
+  }
+  None
+}
+
+///|
+async fn package_dirs(root : String) -> Array[String] {
+  let found = []
+  @fs.walk(
+    root,
+    (dir, entries) => if entries.contains("moon.pkg") { found.push(dir) },
+    exclude=path => skipped_dirs.any(name => path.has_suffix("/\{name}")),
+    max_concurrency=1,
+  )
+  found.sort()
+  found
+}
+
+///|
+/// Every package of every module whose directory exists, in order.
+async fn packages() -> Array[Package] {
+  let out : Array[Package] = []
+  for raw in @fs.read_text("scripts/modules.tsv").split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line.has_prefix("dir\t") {
+      continue
+    }
+    guard line.split("\t").map(s => s.to_owned()).to_array()
+      is [dir, module_name, kind, targets, ..] else {
+      raise GateError("scripts/modules.tsv: malformed row: \{line}")
+    }
+    let module_targets = cell_list(targets)
+    let root = "\{dir}/src"
+    if !@fs.exists(root) {
+      continue
+    }
+    for pkg_dir in package_dirs(root) {
+      let name = if pkg_dir == root {
+        module_name
+      } else {
+        module_name + pkg_dir[root.length():].to_owned()
+      }
+      let targets = match
+        supported_targets(@fs.read_text("\{pkg_dir}/moon.pkg")) {
+        Some(narrowed) => module_targets.filter(t => narrowed.contains(t))
+        None => module_targets
+      }
+      out.push({
+        module_name,
+        name,
+        dir: pkg_dir,
+        targets,
+        four_target: kind == "four-target",
+      })
+    }
+  }
+  out
+}
+
+///|
+/// The rows of the manifest, keyed `module<TAB>package<TAB>target`.
+async fn manifest() -> Map[String, Int32] {
+  let rows : Map[String, Int32] = Map([])
+  guard @fs.exists(manifest_path) else { return rows }
+  for raw in @fs.read_text(manifest_path).split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line == manifest_header {
+      continue
+    }
+    guard line.split("\t").map(s => s.to_owned()).to_array() is [m, p, t, count] else {
+      raise GateError("\{manifest_path}: malformed row: \{line}")
+    }
+    let key = "\{m}\t\{p}\t\{t}"
+    if rows.contains(key) {
+      raise GateError("\{manifest_path}: duplicate row: \{line}")
+    }
+    rows[key] = @string.parse_int(count) catch {
+      _ => raise GateError("\{manifest_path}: malformed count: \{line}")
+    }
+  }
+  rows
+}
+
+///|
+fn key_of(pkg : Package, target : String) -> String {
+  "\{pkg.module_name}\t\{pkg.name}\t\{target}"
+}
+
+///|
+/// The environment of a `moon` run on `target`: moon's bundled tcc cannot
+/// link native tests on some hosts, so native uses the system `cc` unless
+/// MOON_CC says otherwise.
+fn moon_env(target : String) -> Map[String, String] {
+  match (target, @env.get_env_var("MOON_CC")) {
+    ("native", None) => { "MOON_CC": "cc" }
+    _ => {}
+  }
+}
+
+///|
+fn timeout_ms() -> Int32 {
+  let seconds = @env.get_env_var("GATES_TEST_TIMEOUT").unwrap_or("600")
+  (@string.parse_int(seconds) catch { _ => 600 }) * 1000
+}
+
+///|
+/// Runs every package's tests on `targets`; the counts, keyed as the
+/// manifest is, and the failures.
+async fn run_tests(
+  pkgs : Array[Package],
+  targets : Array[String],
+  expected : Map[String, Int32]?,
+) -> (Map[String, Int32], Array[String], Map[String, Unit]) {
+  let counts : Map[String, Int32] = Map([])
+  let failures : Array[String] = []
+  let failed : Map[String, Unit] = Map([])
+  for target in targets {
+    let selected = pkgs.filter(pkg => pkg.targets.contains(target))
+    if selected.is_empty() {
+      continue
+    }
+    println(
+      "+ moon check --deny-warn --target \{target} (\{selected.length()} packages)",
+    )
+    let checked = @shell.Cmd(
+      "moon",
+      [
+        "check",
+        "--deny-warn",
+        "--no-mbti",
+        "--target",
+        target,
+        ..selected.map(pkg => pkg.dir),
+      ],
+      env=moon_env(target),
+    ).output(timeout_ms=timeout_ms())
+    let log = checked.stdout() + checked.stderr()
+    if checked.exit_code() != 0 || log.contains(experimental_warning) {
+      println(log)
+      failures.push("moon check on \{target}")
+    }
+    for pkg in selected {
+      let key = key_of(pkg, target)
+      let result = @shell.Cmd(
+        "moon",
+        ["test", "--deny-warn", "--target", target, pkg.dir],
+        env=moon_env(target),
+      ).output(timeout_ms=timeout_ms())
+      let log = result.stdout() + result.stderr()
+      let summaries = log
+        .split("\n")
+        .filter(line => line.trim().has_prefix("Total tests: "))
+        .map(line => line.trim().to_owned())
+        .to_array()
+      let failure = if result.exit_code() != 0 {
+        Some("moon test exited with status \{result.exit_code()}")
+      } else if log.contains(experimental_warning) {
+        Some("an experimental package is used but not listed")
+      } else if summaries.last() is Some(summary) {
+        let total = summary["Total tests: ".length():]
+          .split(",")
+          .next()
+          .map(s => @string.parse_int(s.trim()) catch { _ => -1 })
+          .unwrap_or(-1)
+        if total < 0 ||
+          summary != "Total tests: \{total}, passed: \{total}, failed: 0." {
+          Some("unexpected summary: \{summary}")
+        } else {
+          counts[key] = total
+          println("+ \{pkg.name} on \{target}: \{total} tests")
+          if total == 0 && expected is Some(rows) && rows.get(key) != Some(0) {
+            Some("0 tests, and \{manifest_path} does not record 0 for it")
+          } else {
+            None
+          }
+        }
+      } else {
+        Some("no 'Total tests' line")
+      }
+      if failure is Some(message) {
+        println(log)
+        failed[key] = ()
+        failures.push("\{pkg.name} on \{target}: \{message}")
+      }
+    }
+  }
+  (counts, failures, failed)
+}
+
+///|
+fn report(failures : Array[String]) -> Unit raise GateError {
+  if !failures.is_empty() {
+    for failure in failures {
+      println("FAIL: \{failure}")
+    }
+    raise GateError("\{failures.length()} failures")
+  }
+}
+
+///|
+async fn tests(targets : Array[String]) -> Unit {
+  let pkgs = packages()
+  let expected = manifest()
+  let (counts, failures, failed) = run_tests(pkgs, targets, Some(expected))
+  let differences = []
+  for key, count in expected {
+    let target = key.split("\t").last().map(s => s.to_owned()).unwrap_or("")
+    guard targets.contains(target) else { continue }
+    match counts.get(key) {
+      Some(actual) if actual == count => ()
+      Some(actual) =>
+        differences.push("  \{key}: manifest \{count}, run \{actual}")
+      // A package that failed to report is a failure already.
+      None if failed.contains(key) => ()
+      None => differences.push("  \{key}: manifest \{count}, not run")
+    }
+  }
+  for key, count in counts {
+    if !expected.contains(key) {
+      differences.push("  \{key}: not in the manifest, run \{count}")
+    }
+  }
+  if !differences.is_empty() {
+    differences.sort()
+    println("test counts differ from \{manifest_path}:")
+    println(differences.join("\n"))
+    failures.push(
+      "test counts differ from \{manifest_path}; if the change is intended, run 'scripts/gates.sh manifest --update'",
+    )
+  } else {
+    println(
+      "test counts match \{manifest_path} (\{counts.length()} package-target rows)",
+    )
+  }
+  report(failures)
+}
+
+///|
+async fn check_manifest() -> Unit {
+  let pkgs = packages()
+  let rows = manifest()
+  let failures = []
+  if !@fs.exists(manifest_path) {
+    raise GateError(
+      "\{manifest_path} is missing; run 'scripts/gates.sh manifest --update'",
+    )
+  }
+  let first = @fs.read_text(manifest_path)
+    .split("\n")
+    .filter(line => !line.has_prefix("#"))
+    .next()
+  if first.map(s => s.to_owned()) != Some(manifest_header) {
+    failures.push("\{manifest_path}: the first row must be the header")
+  }
+  let wanted : Map[String, Unit] = Map([])
+  for pkg in pkgs {
+    for target in pkg.targets {
+      wanted[key_of(pkg, target)] = ()
+    }
+  }
+  for key, _ in wanted {
+    if !rows.contains(key) {
+      failures.push("\{manifest_path} has no row for \{key}")
+    }
+  }
+  for key, _ in rows {
+    if !wanted.contains(key) {
+      failures.push(
+        "\{manifest_path} has a row for no package of the tree: \{key}",
+      )
+    }
+  }
+  for pkg in pkgs {
+    guard pkg.four_target else { continue }
+    let counts = pkg.targets.map(target => rows.get(key_of(pkg, target)))
+    if counts.any(count => count != counts[0]) {
+      failures.push(
+        "\{pkg.name}: test counts differ across targets in \{manifest_path}",
+      )
+    }
+  }
+  report(failures)
+  println("\{manifest_path}: OK (\{rows.length()} rows)")
+}
+
+///|
+async fn update_manifest() -> Unit {
+  let pkgs = packages()
+  let (counts, failures, _) = run_tests(pkgs, all_targets, None)
+  if !failures.is_empty() {
+    println("not rewriting \{manifest_path}: fix the failures first")
+    report(failures)
+  }
+  let keys = counts.keys().to_array()
+  keys.sort_by(lexical)
+  let lines = [
+    "# Tests per package and target, compared by scripts/runtime_gates.mbtx.", "# Regenerate with 'scripts/gates.sh manifest --update' after adding or",
+    "# removing tests.", manifest_header,
+  ]
+  for key in keys {
+    lines.push("\{key}\t\{counts[key]}")
+  }
+  @fs.write_text(manifest_path, lines.join("\n") + "\n")
+  println("wrote \{manifest_path}")
+  check_manifest()
+}
+
+///|
+/// The interface moon generated for `pkg` on `target`.
+async fn interface(pkg : Package, target : String) -> String {
+  let last = pkg.name.split("/").last().map(s => s.to_owned()).unwrap_or("")
+  let path = "_build/\{target}/debug/check/\{pkg.name}/\{last}.mbti"
+  guard @fs.exists(path) else {
+    raise GateError("no interface for \{pkg.name} on \{target} at \{path}")
+  }
+  @fs.read_text(path)
+}
+
+///|
+async fn interfaces() -> Unit {
+  let pkgs = packages()
+  let failures = []
+  // Extensible enums.
+  for raw in @fs.read_text("scripts/non_exhaustive.tsv").split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line == "package\tenum" {
+      continue
+    }
+    guard line.split("\t").map(s => s.to_owned()).to_array()
+      is [name, enum_name] else {
+      raise GateError("scripts/non_exhaustive.tsv: malformed row: \{line}")
+    }
+    guard pkgs.iter().find_first(pkg => pkg.name == name) is Some(pkg) else {
+      failures.push(
+        "scripts/non_exhaustive.tsv names \{name}, which is no package",
+      )
+      continue
+    }
+    let lines = @fs.read_text("\{pkg.dir}/pkg.generated.mbti")
+      .split("\n")
+      .map(s => s.to_owned())
+      .to_array()
+    let mut found = false
+    let mut annotated = false
+    for i, l in lines {
+      if l == "pub(all) enum \{enum_name} {" || l == "pub enum \{enum_name} {" {
+        found = true
+        // Attributes (such as `#derive`) sit between the annotation and the
+        // enum.
+        for j = i - 1; j >= 0 && lines[j].has_prefix("#"); j = j - 1 {
+          if lines[j] == "#non_exhaustive" {
+            annotated = true
+          }
+        }
+      }
+    }
+    if !found {
+      failures.push("\{name} has no public enum \{enum_name}")
+    } else if !annotated {
+      failures.push("\{name}: enum \{enum_name} is not #non_exhaustive")
+    }
+  }
+  // Runtime types and per-target agreement.
+  let info = @shell.Cmd("moon", ["info", "--target", "all"], stdout=Discard).output(
+    timeout_ms=timeout_ms(),
+  )
+  if info.exit_code() != 0 {
+    println(info.stderr())
+    raise GateError("moon info --target all failed")
+  }
+  for pkg in pkgs {
+    let seen : Array[(String, String)] = []
+    for target in pkg.targets {
+      let text = interface(pkg, target)
+      for marker in runtime_markers {
+        if text.contains(marker) {
+          failures.push(
+            "\{pkg.name} on \{target}: the public interface mentions \{marker}; expose a gaato/http/rt port instead",
+          )
+        }
+      }
+      seen.push((target, text))
+    }
+    if seen is [(first_target, first), .. rest] {
+      for other in rest {
+        if other.1 != first {
+          failures.push(
+            "\{pkg.name}: the public interface on \{other.0} differs from \{first_target}",
+          )
+        }
+      }
+    }
+  }
+  report(failures)
+  println(
+    "runtime interfaces: OK (\{pkgs.length()} packages; no runtime types; every target agrees)",
+  )
+}
+
+///|
+async fn main {
+  let usage = "usage: moon run scripts/runtime_gates.mbtx -- tests [--target T]... | manifest --update | manifest --check | interfaces"
+  let task : async () -> Unit = () => {
+    match @env.args()[1:] {
+      ["tests", .. rest] => {
+        let targets = []
+        for i = 0; i < rest.length(); i = i + 2 {
+          guard rest[i] == "--target" &&
+            i + 1 < rest.length() &&
+            all_targets.contains(rest[i + 1]) else {
+            raise GateError(usage)
+          }
+          targets.push(rest[i + 1])
+        }
+        tests(if targets.is_empty() { all_targets } else { targets })
+      }
+      ["manifest", "--update"] => update_manifest()
+      ["manifest", "--check"] => check_manifest()
+      ["interfaces"] => interfaces()
+      _ => raise GateError(usage)
+    }
+  }
+  task() catch {
+    GateError(message) => {
+      println("runtime gates: \{message}")
+      @env.exit(1)
+    }
+    other => raise other
+  }
+}

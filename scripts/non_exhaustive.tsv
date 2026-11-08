@@ -1,0 +1,7 @@
+# Public enums that must carry #non_exhaustive, so a later version can add a
+# case without breaking callers that match on them (design, section 5.6).
+# One row per enum: the package name, a tab, the enum name. scripts/
+# runtime_gates.mbtx reads the committed pkg.generated.mbti of the package;
+# a row whose package or enum does not exist fails, so add a row together
+# with the enum.
+package	enum

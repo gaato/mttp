@@ -1,0 +1,133 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+}
+----
+
+// Exercises the real entry point, `scripts/gates.sh quick`, on a tiny copy of
+// the workspace: one four-target module and one runtime module that imports
+// moonbitlang/core/async. Each probe changes one thing and expects the gate
+// to fail with a given message, so the count parser and the experimental
+// warning check are tested where they run, not in a copy.
+
+///|
+suberror SelfTestFailed {
+  SelfTestFailed(String)
+}
+
+///|
+let modules_tsv : String =
+  #|# The self-test's modules.
+  #|dir	name	kind	targets	module_deps	package_imports	experimental
+  #|portable	selftest/portable	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core	-
+  #|runtime	selftest/runtime	runtime	native	-	moonbitlang/core	moonbitlang/core/async
+  #|
+
+///|
+let runtime_pkg : String =
+  #|import {
+  #|  "moonbitlang/core/async",
+  #|} for "test"
+  #|
+  #|options(
+  #|  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+  #|)
+  #|
+
+///|
+let runtime_test : String =
+  #|///|
+  #|async test "runs" {
+  #|  @async.sleep(1)
+  #|}
+  #|
+
+///|
+async fn probe(root : String, name : String, expected : String?) -> Unit {
+  let output = @shell.Cmd(
+    "bash",
+    ["scripts/gates.sh", "quick", "--target", "native"],
+    cwd=root,
+  ).output(timeout_ms=300000)
+  let log = output.stdout() + output.stderr()
+  @fs.write_text(root + "/" + name.replace_all(old=" ", new="-") + ".log", log)
+  let correct = match expected {
+    None => output.exit_code() == 0 && log.contains("gates: OK")
+    Some(message) => output.exit_code() != 0 && log.contains(message)
+  }
+  if !correct {
+    println(log)
+    println("gate self-test evidence: " + root)
+    raise SelfTestFailed("gate self-test failed: " + name)
+  }
+  println("gate self-test: " + name + " OK")
+}
+
+///|
+async fn main {
+  let root = @fs.tmpdir(prefix="mttp-gate-selftest-")
+  @fs.mkdir(root + "/scripts")
+  for
+    file in [
+      "scripts/gates.sh", "scripts/runtime_gates.mbtx", "moonbit-version",
+    ] {
+    @fs.write_text(root + "/" + file, @fs.read_text(file))
+  }
+  @fs.write_text(root + "/scripts/modules.tsv", modules_tsv)
+  @fs.write_text(root + "/moon.work", "members = [\"portable\", \"runtime\"]\n")
+  let rows = ["module\tpackage\ttarget\tcount"]
+  for
+    (dir, name, targets) in [
+      ("portable", "selftest/portable", ["native", "js", "wasm", "wasm-gc"]),
+      ("runtime", "selftest/runtime", ["native"]),
+    ] {
+    @fs.mkdir(root + "/" + dir + "/src", recursive=true)
+    @fs.write_text(
+      root + "/" + dir + "/moon.mod",
+      "name = \"" + name + "\"\nversion = \"0.0.1\"\nsource = \"src\"\n",
+    )
+    for target in targets {
+      rows.push(name + "\t" + name + "\t" + target + "\t1")
+    }
+  }
+  @fs.write_text(root + "/portable/src/moon.pkg", "")
+  @fs.write_text(root + "/runtime/src/moon.pkg", runtime_pkg)
+  @fs.write_text(root + "/runtime/src/runs_test.mbt", runtime_test)
+  let manifest = rows.join("\n") + "\n"
+  let source = root + "/portable/src/check_test.mbt"
+  let visible = "///|\ntest \"visible\" {\n  assert_true(true)\n}\n"
+  @fs.write_text(source, visible)
+  @fs.write_text(root + "/scripts/test_manifest.tsv", manifest)
+  probe(root, "passing baseline", None)
+  @fs.write_text(source, "")
+  probe(root, "unexpected zero", Some("0 tests, and"))
+  @fs.write_text(source, "///|\ntest \"failed\" {\n  assert_true(false)\n}\n")
+  probe(root, "failed assertion", Some("moon test exited with status"))
+  @fs.write_text(
+    source,
+    visible + "\n///|\ntest \"extra\" {\n  assert_true(true)\n}\n",
+  )
+  probe(root, "unexpected extra test", Some("test counts differ from"))
+  @fs.write_text(source, visible)
+  @fs.write_text(
+    root + "/scripts/test_manifest.tsv",
+    rows.filter(row => !row.has_prefix("selftest/portable\t")).join("\n") + "\n",
+  )
+  probe(root, "missing manifest entry", Some("test counts differ from"))
+  @fs.write_text(root + "/scripts/test_manifest.tsv", manifest)
+  @fs.write_text(
+    root + "/runtime/src/moon.pkg",
+    "import {\n  \"moonbitlang/core/async\",\n} for \"test\"\n",
+  )
+  probe(
+    root,
+    "unlisted experimental package",
+    Some("an experimental package is used but not listed"),
+  )
+  @fs.write_text(root + "/runtime/src/moon.pkg", runtime_pkg)
+  probe(root, "restored baseline", None)
+  // The copy holds native build output; keep it only when a probe fails.
+  @fs.rmdir(root, recursive=true)
+}
