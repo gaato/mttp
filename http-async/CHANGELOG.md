@@ -7,6 +7,12 @@ never does.
 
 ## [Unreleased]
 
+### Added
+
+- HTTP/1 listener with bounded admission, graceful shutdown and tracked
+  background work; host-neutral streaming fetch handlers and JavaScript host
+  shims, including Lambda's absent-body fix; serve and fetch examples.
+
 ### Changed
 
 - The module moves from [gaato/mbt-sdk](https://github.com/gaato/mbt-sdk) to
