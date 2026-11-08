@@ -1,0 +1,53 @@
+# The workspace modules and what each may depend on. Every gate reads this
+# file instead of naming modules itself, so adding a module is one row here
+# and one member in moon.work (scripts/architecture_gate.mbtx checks that
+# both agree). Rows are in dependency order: scripts/resolver_gate.mbtx stages
+# them into its registry top to bottom.
+#
+# Columns, separated by one tab:
+#   dir              the module directory, as moon.work lists it
+#   name             the module name in its moon.mod
+#   kind             four-target: every package builds and tests on wasm-gc,
+#                    wasm, js and native with the same tests and public API;
+#                    async tests are not allowed (wasm-gc skips them).
+#                    runtime: the module runs on `targets` only; a package may
+#                    narrow them with supported_targets in its moon.pkg.
+#   targets          the targets the module's packages build on
+#   module_deps      the modules its moon.mod may import (`-` for none)
+#   package_imports  the packages its packages may import, besides its own:
+#                    a prefix covers the package and the packages below it,
+#                    `!prefix` denies them even when a broader prefix allows
+#                    them, `*` allows anything
+#   experimental     what its packages may list in
+#                    options("allow-experimental-packages": [...]): an exact
+#                    package name, a `prefix*` pattern, or `test:` before
+#                    either for a package only the tests may import (`-` for
+#                    none)
+#
+# An example or benchmark module may use anything: `*` in package_imports and
+# experimental.
+#
+# Findings of the experimental opt-in probe on MoonBit 0.10.20 (the reasons
+# behind the experimental column and the gates that read it):
+# - A package that imports a package marked `experimental: true` lists it by
+#   exact name: options("allow-experimental-packages": ["moonbitlang/core/async"]).
+#   There are no patterns ("moonbitlang/core/async*" acknowledges nothing),
+#   so each subpackage (async/fs, async/socket, ...) needs its own entry.
+#   `true` acknowledges every experimental package; architecture_gate refuses it.
+# - The same applies inside one module: importing an experimental package of
+#   the module itself needs the entry too.
+# - Imports for tests (`for "test"`) need the entry as well; `async test`
+#   needs moonbitlang/core/async imported for "test". On wasm-gc async tests
+#   are not run (0 tests), which is why four-target modules have none.
+# - Only direct imports count: a package that imports a non-experimental
+#   package built on core/async needs no entry.
+# - A missing entry is a warning that --deny-warn does not turn into an
+#   error, so scripts/runtime_gates.mbtx fails on the warning text itself.
+# - .mbtx front matter accepts `import` and `permission` only, so a script
+#   cannot acknowledge core/async: it runs, with the same warning on stderr.
+#   scripts/gates.sh drops exactly that warning from script output.
+dir	name	kind	targets	module_deps	package_imports	experimental
+http	gaato/http	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core,!moonbitlang/core/async,!moonbitlang/core/compress	-
+http-async	gaato/http-async	runtime	native,wasm,js	gaato/http,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/http,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/http/h1client,gaato/http/h1server,gaato/http/driver
+mttp	gaato/mttp	four-target	wasm-gc,wasm,js,native	gaato/http	moonbitlang/core,!moonbitlang/core/async,gaato/http	test:gaato/http/driver,test:gaato/http/h1client,test:gaato/http/h1server
+mttp-digest	gaato/mttp-digest	four-target	wasm-gc,wasm,js,native	gaato/http,gaato/mttp,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/http,gaato/mttp,moonbitlang/x	-

@@ -1,0 +1,833 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/env",
+}
+----
+
+///|
+/// Check the dependency rules of the workspace (design, principles 8 and 9):
+///
+/// - `module`: every `moon.work` member has a row in `scripts/modules.tsv`,
+///   its `moon.mod` names the module of that row, and imports only the
+///   modules of the row's `module_deps` column.
+/// - `import`: every package of a module imports only packages its row's
+///   `package_imports` column allows, and packages of the module itself.
+/// - `async-runtime`: no `moon.mod`, `moon.pkg` or script imports
+///   `moonbitlang/async`; the runtime is `moonbitlang/core/async`, and two
+///   runtimes in one program cannot share an event loop.
+/// - `experimental`: `allow-experimental-packages` is a list, never `true`,
+///   and names only packages the row's `experimental` column allows, each of
+///   which the package imports. An entry marked `test:` may be imported by
+///   the package's tests only.
+/// - `engine`: the connection engines (`http/src/h1client`,
+///   `http/src/h1server`) import no content coding: decoding is a wrapper
+///   around the engine, in gaato/http-async.
+/// - `host`: gaato/http declares no `extern` function.
+/// - `control`: `http/src/internal/control` holds pure state: no `async fn`,
+///   no `mut` field, no `Ref`, and no import of another gaato package.
+/// - `legacy-manifest`: no `moon.mod.json` or `moon.pkg.json`; the rules read
+///   the current formats only.
+///
+/// Rules about packages that do not exist yet hold vacuously. Script
+/// exemptions from `async-runtime` live in `script_exemptions` below, each
+/// with its reason.
+///
+/// Usage, from the repository root:
+///   moon run scripts/architecture_gate.mbtx [--self-test]
+
+///|
+/// Scripts that may import `moonbitlang/async`, with the reason.
+let script_exemptions : Array[(String, String)] = [
+  (
+    "scripts/docs_audit.mbtx", "shared verbatim with every gaato MoonBit repository; it moves to moonbitlang/core/async in all of them at once",
+  ),
+]
+
+///|
+/// The connection engines and the pure control package.
+let engine_dirs : Array[String] = ["http/src/h1client", "http/src/h1server"]
+
+///|
+let control_dir : String = "http/src/internal/control"
+
+///|
+/// Modules whose sources may not declare `extern` functions.
+let no_extern_modules : Array[String] = ["gaato/http"]
+
+///|
+/// Path components and module names that mark a content coding.
+let coding_markers : Array[String] = [
+  "codings", "gaato/deflate", "gaato/brotli", "gaato/zstd", "gaato/codec_bytes",
+  "moonbitlang/core/compress",
+]
+
+///|
+/// Directory names the walk skips: build output, dependencies, and VCS data.
+let skipped_dirs : Array[String] = [
+  "_build", ".mooncakes", "node_modules", "target", ".git", ".jj", ".repos",
+]
+
+///|
+/// One row of `scripts/modules.tsv`.
+struct Row {
+  dir : String
+  name : String
+  module_deps : Array[String]
+  package_imports : Array[String]
+  experimental : Array[String]
+}
+
+///|
+/// The comma-separated list of a cell; `-` is the empty list.
+fn cell_list(cell : String) -> Array[String] {
+  if cell == "-" || cell.is_empty() {
+    return []
+  }
+  cell
+  .split(",")
+  .map(s => s.trim().to_owned())
+  .filter(s => !s.is_empty())
+  .to_array()
+}
+
+///|
+fn parse_rows(text : String) -> Array[Row] raise {
+  let rows : Array[Row] = []
+  for raw in text.split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line.has_prefix("dir\t") {
+      continue
+    }
+    let cells = line.split("\t").map(s => s.to_owned()).to_array()
+    guard cells
+      is [dir, name, kind, _targets, module_deps, package_imports, experimental] else {
+      fail("scripts/modules.tsv: expected 7 tab-separated cells: \{line}")
+    }
+    guard kind is ("four-target" | "runtime") else {
+      fail("scripts/modules.tsv: unknown kind \{kind}: \{line}")
+    }
+    rows.push({
+      dir,
+      name,
+      module_deps: cell_list(module_deps),
+      package_imports: cell_list(package_imports),
+      experimental: cell_list(experimental),
+    })
+  }
+  rows
+}
+
+///|
+/// Which build an import block serves.
+#derive(Eq)
+enum Block {
+  Main
+  Test
+  Wbtest
+}
+
+///|
+/// One entry of an import block.
+struct Import {
+  path : String
+  block : Block
+  line : Int32
+}
+
+///|
+fn block_of(rest : String) -> Block {
+  if rest.contains("\"wbtest\"") {
+    Wbtest
+  } else if rest.contains("\"test\"") {
+    Test
+  } else {
+    Main
+  }
+}
+
+///|
+/// The quoted strings of `segment`.
+fn quoted_strings(segment : String) -> Array[String] {
+  let parts = segment.split("\"").map(part => part.to_owned()).to_array()
+  let out = []
+  for i = 1; i < parts.length(); i = i + 2 {
+    out.push(parts[i])
+  }
+  out
+}
+
+///|
+/// The entries of every `import { ... }` block of a `moon.pkg`, a `moon.mod`
+/// or a script's front matter. Versions (`name@1.0.0`) are dropped.
+fn parse_imports(text : String) -> Array[Import] {
+  let out : Array[Import] = []
+  let mut pending : Array[(String, Int32)]? = None
+  let finish = (entries : Array[(String, Int32)], rest : String) => {
+    let block = block_of(rest)
+    for entry in entries {
+      let (path, line) = entry
+      let path = match path.find("@") {
+        Some(at) => path[:at].to_owned()
+        None => path
+      }
+      out.push({ path, block, line, })
+    }
+  }
+  let collect = (segment : String, line : Int32, into : Array[(String, Int32)]) => {
+    for path in quoted_strings(segment) {
+      into.push((path, line))
+    }
+  }
+  for index, raw in text.split("\n").to_array() {
+    let line = raw.trim().to_owned()
+    if line.has_prefix("//") {
+      continue
+    }
+    match pending {
+      None =>
+        if line.has_prefix("import {") {
+          let rest = line["import {".length():].to_owned()
+          let entries = []
+          match rest.find("}") {
+            Some(close) => {
+              collect(rest[:close].to_owned(), index + 1, entries)
+              finish(entries, rest[close + 1:].to_owned())
+            }
+            None => {
+              collect(rest, index + 1, entries)
+              pending = Some(entries)
+            }
+          }
+        }
+      Some(entries) =>
+        if line.has_prefix("}") {
+          finish(entries, line[1:].to_owned())
+          pending = None
+        } else {
+          collect(line, index + 1, entries)
+        }
+    }
+  }
+  out
+}
+
+///|
+/// The `allow-experimental-packages` option of a `moon.pkg`.
+enum Allow {
+  Absent
+  All
+  Listed(Array[String])
+  Malformed
+}
+
+///|
+fn parse_allow(text : String) -> Allow {
+  let key = "\"allow-experimental-packages\""
+  let lines = text
+    .split("\n")
+    .filter(line => !line.trim().has_prefix("//"))
+    .map(line => line.to_owned())
+    .to_array()
+  let source = lines.join("\n")
+  guard source.find(key) is Some(at) else { return Absent }
+  let rest = source[at + key.length():].trim_start().to_owned()
+  guard rest.strip_prefix(":") is Some(rest) else { return Malformed }
+  let rest = rest.trim_start().to_owned()
+  if rest.has_prefix("true") {
+    All
+  } else if rest.has_prefix("[") {
+    match rest.find("]") {
+      Some(close) => Listed(quoted_strings(rest[:close].to_owned()))
+      None => Malformed
+    }
+  } else {
+    Malformed
+  }
+}
+
+///|
+/// Whether `path` is `prefix` or a package below it.
+fn under(path : String, prefix : String) -> Bool {
+  path == prefix || path.has_prefix(prefix + "/")
+}
+
+///|
+/// Whether `rules` (prefixes, `!` for a denied prefix, `*` for anything)
+/// allow importing `path`.
+fn permitted(path : String, rules : Array[String]) -> Bool {
+  let denied = rules.any(rule => {
+    rule.strip_prefix("!") is Some(prefix) && under(path, prefix.to_owned())
+  })
+  let allowed = rules.any(rule => {
+    rule == "*" || (!rule.has_prefix("!") && under(path, rule))
+  })
+  allowed && !denied
+}
+
+///|
+/// The rule of the `experimental` column that allows `entry`, if any.
+fn experimental_rule(entry : String, rules : Array[String]) -> (String, Bool)? {
+  for rule in rules {
+    let (pattern, test_only) = match rule.strip_prefix("test:") {
+      Some(rest) => (rest.to_owned(), true)
+      None => (rule, false)
+    }
+    let matches = if pattern == "*" {
+      true
+    } else if pattern.strip_suffix("*") is Some(prefix) {
+      entry.has_prefix(prefix.to_owned())
+    } else {
+      entry == pattern
+    }
+    if matches {
+      return Some((pattern, test_only))
+    }
+  }
+  None
+}
+
+///|
+/// The directory part of a repository-relative path.
+fn dir_of(path : String) -> String {
+  match path.rev_find("/") {
+    Some(at) => path[:at].to_owned()
+    None => ""
+  }
+}
+
+///|
+/// The package name of package directory `dir` of module `row`.
+fn package_name(row : Row, dir : String) -> String {
+  let root = row.dir + "/src"
+  if dir == root {
+    row.name
+  } else {
+    row.name + dir[root.length():].to_owned()
+  }
+}
+
+///|
+/// The members of a `moon.work`.
+fn work_members(text : String) -> Array[String] {
+  let source = text
+    .split("\n")
+    .filter(line => !line.trim().has_prefix("//"))
+    .map(line => line.to_owned())
+    .to_array()
+    .join("\n")
+  guard source.find("members") is Some(at) else { return [] }
+  let rest = source[at:].to_owned()
+  match (rest.find("["), rest.find("]")) {
+    (Some(open), Some(close)) if open < close =>
+      quoted_strings(rest[open + 1:close].to_owned()).map(work_dir => {
+        work_dir.strip_prefix("./").map(s => s.to_owned()).unwrap_or(work_dir)
+      })
+    _ => []
+  }
+}
+
+///|
+/// The front matter of a script: the text between its two `----` lines.
+fn front_matter(text : String) -> String {
+  let lines = text.split("\n").map(line => line.to_owned()).to_array()
+  guard lines is [first, ..] && first.trim() == "----" else { return "" }
+  let out = []
+  for line in lines[1:] {
+    if line.trim() == "----" {
+      break
+    }
+    out.push(line)
+  }
+  out.join("\n")
+}
+
+///|
+/// Whether a source line, outside comments, holds `needle`.
+fn code_contains(line : String, needle : String) -> Bool {
+  let trimmed = line.trim()
+  !trimmed.has_prefix("//") && line.contains(needle)
+}
+
+///|
+/// Every violation in `files` (repository-relative path to text).
+fn audit(files : Map[String, String]) -> Array[String] raise {
+  let problems : Array[String] = []
+  let note = (path : String, rule : String, message : String) => {
+    problems.push("\{path}: [\{rule}] \{message}")
+  }
+  let rows = parse_rows(files.get("scripts/modules.tsv").unwrap_or(""))
+  // Members and module manifests.
+  let dirs_in_work = work_members(files.get("moon.work").unwrap_or(""))
+  for work_dir in dirs_in_work {
+    if !rows.any(row => row.dir == work_dir) {
+      note(
+        "moon.work",
+        "module",
+        "member \{work_dir} has no row in scripts/modules.tsv, so no gate covers it",
+      )
+    }
+  }
+  for path, _ in files {
+    if path.has_suffix("moon.mod.json") || path.has_suffix("moon.pkg.json") {
+      note(path, "legacy-manifest", "use moon.mod / moon.pkg")
+    }
+  }
+  // moonbitlang/async: every manifest and script, wherever it is.
+  for path, text in files {
+    let base = path.split("/").last().map(s => s.to_owned()).unwrap_or(path)
+    let imports = if base == "moon.mod" || base == "moon.pkg" {
+      parse_imports(text)
+    } else if path.has_suffix(".mbtx") {
+      parse_imports(front_matter(text))
+    } else {
+      continue
+    }
+    if script_exemptions.any(exemption => exemption.0 == path) {
+      continue
+    }
+    for item in imports {
+      if under(item.path, "moonbitlang/async") {
+        note(
+          path,
+          "async-runtime",
+          "line \{item.line} imports \{item.path}; use moonbitlang/core/async",
+        )
+      }
+    }
+  }
+  for row in rows {
+    let mod_path = row.dir + "/moon.mod"
+    guard files.get(mod_path) is Some(moon_mod) else { continue }
+    let declared = moon_mod
+      .split("\n")
+      .filter(line => line.trim().has_prefix("name ="))
+      .map(line => quoted_strings(line.to_owned()))
+      .to_array()
+    if !(declared is [[name, ..]] && name == row.name) {
+      note(mod_path, "module", "the module name is not \{row.name}")
+    }
+    for item in parse_imports(moon_mod) {
+      if !row.module_deps.contains(item.path) {
+        note(
+          mod_path,
+          "module",
+          "line \{item.line} imports module \{item.path}, which scripts/modules.tsv does not allow for \{row.name}",
+        )
+      }
+    }
+    // Packages.
+    for path, text in files {
+      guard path.has_prefix(row.dir + "/src/") || path == row.dir + "/src" else {
+        continue
+      }
+      let dir = dir_of(path)
+      if path.has_suffix("/moon.pkg") {
+        let name = package_name(row, dir)
+        let imports = parse_imports(text)
+        for item in imports {
+          if !under(item.path, row.name) &&
+            !permitted(item.path, row.package_imports) {
+            note(
+              path,
+              "import",
+              "line \{item.line}: \{name} imports \{item.path}, which scripts/modules.tsv does not allow for \{row.name}",
+            )
+          }
+          if engine_dirs.any(engine => under(dir, engine)) &&
+            coding_markers.any(marker => {
+              under(item.path, marker) || item.path.contains("/" + marker)
+            }) {
+            note(
+              path,
+              "engine",
+              "line \{item.line}: the engine imports \{item.path}; decoding wraps the engine in gaato/http-async",
+            )
+          }
+          if under(dir, control_dir) && item.path.has_prefix("gaato/") {
+            note(
+              path,
+              "control",
+              "line \{item.line}: the pure control state imports \{item.path}",
+            )
+          }
+        }
+        match parse_allow(text) {
+          Absent => ()
+          All =>
+            note(
+              path, "experimental", "\"allow-experimental-packages\": true acknowledges every experimental package; list them",
+            )
+          Malformed =>
+            note(
+              path, "experimental", "\"allow-experimental-packages\" must be a list of package names",
+            )
+          Listed(entries) =>
+            for entry in entries {
+              match experimental_rule(entry, row.experimental) {
+                None =>
+                  note(
+                    path,
+                    "experimental",
+                    "\{name} may not use experimental package \{entry} (scripts/modules.tsv)",
+                  )
+                Some((_, test_only)) => {
+                  let uses = imports.filter(item => item.path == entry)
+                  if uses.is_empty() {
+                    note(
+                      path,
+                      "experimental",
+                      "\{entry} is allowed but not imported; drop the entry",
+                    )
+                  }
+                  if test_only && uses.any(item => item.block == Main) {
+                    note(
+                      path,
+                      "experimental",
+                      "\{name} imports \{entry} outside its tests; scripts/modules.tsv allows it for tests only",
+                    )
+                  }
+                }
+              }
+            }
+        }
+      } else if path.has_suffix(".mbt") || path.has_suffix(".mbt.md") {
+        let test_file = path.has_suffix("_test.mbt") ||
+          path.has_suffix("_wbtest.mbt") ||
+          path.has_suffix(".mbt.md")
+        for index, raw in text.split("\n").to_array() {
+          let line = raw.to_owned()
+          let at = index + 1
+          if no_extern_modules.contains(row.name) &&
+            code_contains(line, "extern \"") {
+            note(
+              path,
+              "host",
+              "line \{at}: an extern function; \{row.name} uses moonbitlang/core only",
+            )
+          }
+          guard under(dir, control_dir) && !test_file else { continue }
+          let trimmed = line.trim().to_owned()
+          if trimmed.has_prefix("//") {
+            continue
+          }
+          if trimmed.contains("async fn") {
+            note(
+              path,
+              "control",
+              "line \{at}: an async fn in the pure control state",
+            )
+          }
+          if trimmed.has_prefix("mut ") ||
+            (trimmed.contains(" mut ") && !trimmed.contains("let mut ")) {
+            note(
+              path,
+              "control",
+              "line \{at}: a mut field in the pure control state",
+            )
+          }
+          if trimmed.contains("Ref[") ||
+            trimmed.contains("Ref(") ||
+            trimmed.contains("@ref.") {
+            note(path, "control", "line \{at}: a Ref in the pure control state")
+          }
+        }
+      }
+    }
+  }
+  problems.sort()
+  problems
+}
+
+///|
+/// Checks that each rule rejects a small violation and accepts its neighbour.
+fn run_self_test(files : Map[String, String]) -> Unit raise {
+  guard audit(files) is [] else {
+    fail("architecture self-test: the repository itself must pass first")
+  }
+  let with_files = (changes : Array[(String, String)]) => {
+    let copy : Map[String, String] = Map([])
+    for path, text in files {
+      copy[path] = text
+    }
+    for change in changes {
+      copy[change.0] = change.1
+    }
+    copy
+  }
+  let rejects = (
+    label : String,
+    changes : Array[(String, String)],
+    rule : String,
+  ) => {
+    let problems = audit(with_files(changes))
+    if !problems.any(problem => problem.contains("[\{rule}]")) {
+      fail("architecture self-test accepted \{label}: \{problems.join("; ")}")
+    }
+  }
+  let accepts = (label : String, changes : Array[(String, String)]) => {
+    let problems = audit(with_files(changes))
+    if !problems.is_empty() {
+      fail("architecture self-test rejected \{label}: \{problems.join("; ")}")
+    }
+  }
+  let pkg = (dir : String, text : String) => (dir + "/moon.pkg", text)
+  // Modules.
+  rejects(
+    "an import block in gaato/http",
+    [
+      (
+        "http/moon.mod",
+        files.get("http/moon.mod").unwrap_or("") +
+        "\nimport {\n  \"gaato/deflate@0.1.0\",\n}\n",
+      ),
+    ],
+    "module",
+  )
+  rejects(
+    "a moon.work member without a row",
+    [("moon.work", "members = [\"http\", \"examples/get\"]\n")],
+    "module",
+  )
+  rejects(
+    "a legacy package manifest",
+    [("http/src/x/moon.pkg.json", "{}")],
+    "legacy-manifest",
+  )
+  // Package imports.
+  rejects(
+    "core/async in gaato/http",
+    [pkg("http/src/rt", "import {\n  \"moonbitlang/core/async\",\n}\n")],
+    "import",
+  )
+  rejects(
+    "core/compress in gaato/http",
+    [
+      pkg(
+        "http/src/rt", "import { \"moonbitlang/core/compress/gzip\" } for \"test\"\n",
+      ),
+    ],
+    "import",
+  )
+  rejects(
+    "gaato/mttp in gaato/http",
+    [pkg("http/src/rt", "import {\n  \"gaato/mttp/client\",\n} for \"test\"\n")],
+    "import",
+  )
+  rejects(
+    "gaato/http-async in gaato/http",
+    [pkg("http/src/rt", "import { \"gaato/http-async\" @a }\n")],
+    "import",
+  )
+  rejects(
+    "core/async in gaato/mttp",
+    [pkg("mttp/src/client", "import {\n  \"moonbitlang/core/async/fs\",\n}\n")],
+    "import",
+  )
+  rejects(
+    "gaato/http-async in gaato/mttp",
+    [pkg("mttp/src/client", "import {\n  \"gaato/http-async/runtime\",\n}\n")],
+    "import",
+  )
+  rejects(
+    "gaato/mttp in gaato/http-async",
+    [pkg("http-async/src/backend", "import {\n  \"gaato/mttp/client\",\n}\n")],
+    "import",
+  )
+  rejects(
+    "moonbitlang/async in a package",
+    [pkg("http-async/src/backend", "import {\n  \"moonbitlang/async\",\n}\n")],
+    "async-runtime",
+  )
+  rejects(
+    "moonbitlang/async in a script",
+    [
+      (
+        "scripts/x.mbtx", "----\nimport {\n  \"moonbitlang/async@0.22.5/fs\",\n}\n----\n",
+      ),
+    ],
+    "async-runtime",
+  )
+  accepts("gaato/http importing its own packages and core", [
+    pkg(
+      "http/src/h1client", "import {\n  \"gaato/http\",\n  \"gaato/http/rt\" @rt,\n  \"moonbitlang/core/json\",\n}\n",
+    ),
+  ])
+  accepts("gaato/mttp importing gaato/http", [
+    pkg(
+      "mttp/src/client", "import {\n  \"gaato/http\",\n  \"gaato/mttp/sse\",\n}\n",
+    ),
+  ])
+  accepts("core/async in a script", [
+    (
+      "scripts/x.mbtx", "----\nimport {\n  \"moonbitlang/core/async/fs\",\n}\n----\n",
+    ),
+  ])
+  // Engines and control.
+  rejects(
+    "an engine importing codings",
+    [pkg("http/src/h1server", "import {\n  \"gaato/http/codings\",\n}\n")],
+    "engine",
+  )
+  rejects(
+    "an extern function in gaato/http",
+    [
+      (
+        "http/src/rt/clock.mbt", "///|\nextern \"js\" fn now() -> Double =\n  \"Date.now\"\n",
+      ),
+    ],
+    "host",
+  )
+  accepts("extern in a comment", [
+    ("http/src/rt/clock.mbt", "// extern \"js\" fn now() -> Double\n"),
+  ])
+  rejects(
+    "an async fn in control",
+    [(control_dir + "/state.mbt", "///|\nasync fn decide() -> Unit {\n}\n")],
+    "control",
+  )
+  rejects(
+    "a mut field in control",
+    [
+      (
+        control_dir + "/state.mbt",
+        "///|\nstruct State {\n  mut count : Int\n}\n",
+      ),
+    ],
+    "control",
+  )
+  rejects(
+    "a Ref in control",
+    [(control_dir + "/state.mbt", "///|\nlet cell : Ref[Int] = Ref(0)\n")],
+    "control",
+  )
+  rejects(
+    "control importing a gaato package",
+    [pkg(control_dir, "import {\n  \"gaato/http/rt\",\n}\n")],
+    "control",
+  )
+  accepts("a local let mut and a test in control", [
+    (
+      control_dir + "/state.mbt",
+      "///|\nfn f() -> Int {\n  let mut x = 0\n  x = x + 1\n  x\n}\n",
+    ),
+    (
+      control_dir + "/state_test.mbt",
+      "///|\ntest {\n  let r = Ref(0)\n  r.val = 1\n}\n",
+    ),
+  ])
+  // Experimental packages.
+  let async_pkg = (allow : String) => {
+    pkg(
+      "http-async/src/runtime",
+      "import {\n  \"moonbitlang/core/async\",\n  \"moonbitlang/core/async/fs\",\n}\n\noptions(\n  \"allow-experimental-packages\": \{allow},\n)\n",
+    )
+  }
+  accepts("a listed allow", [
+    async_pkg("[\"moonbitlang/core/async\", \"moonbitlang/core/async/fs\"]"),
+  ])
+  accepts("a multi-line listed allow", [
+    async_pkg(
+      "[\n    \"moonbitlang/core/async\",\n    \"moonbitlang/core/async/fs\",\n  ]",
+    ),
+  ])
+  rejects("allow true", [async_pkg("true")], "experimental")
+  rejects(
+    "a malformed allow",
+    [async_pkg("\"moonbitlang/core/async\"")],
+    "experimental",
+  )
+  rejects(
+    "an allow the row does not list",
+    [async_pkg("[\"moonbitlang/core/async\", \"gaato/http/sim\"]")],
+    "experimental",
+  )
+  rejects(
+    "a stale allow entry",
+    [
+      async_pkg(
+        "[\"moonbitlang/core/async\", \"moonbitlang/core/async/socket\"]",
+      ),
+    ],
+    "experimental",
+  )
+  rejects(
+    "core/async allowed in gaato/http",
+    [
+      pkg(
+        "http/src/rt", "options(\"allow-experimental-packages\": [\"moonbitlang/core/async\"])\n",
+      ),
+    ],
+    "experimental",
+  )
+  let mttp_pkg = (block : String) => {
+    pkg(
+      "mttp/src/client",
+      "import {\n  \"gaato/http/driver\",\n}\{block}\noptions(\"allow-experimental-packages\": [\"gaato/http/driver\"])\n",
+    )
+  }
+  accepts("a test-only experimental import in its tests", [
+    mttp_pkg(" for \"test\""),
+  ])
+  rejects(
+    "a test-only experimental import outside tests",
+    [mttp_pkg("")],
+    "experimental",
+  )
+}
+
+///|
+async fn main {
+  let args = @env.args()
+  let self_test = args.length() == 2 && args[1] == "--self-test"
+  if args.length() > 2 || (args.length() == 2 && !self_test) {
+    fail("usage: moon run scripts/architecture_gate.mbtx [--self-test]")
+  }
+  let paths : Array[String] = []
+  @fs.walk(
+    ".",
+    (dir, entries) => {
+      let prefix = if dir == "." {
+        ""
+      } else {
+        dir["./".length():].to_owned() + "/"
+      }
+      for entry in entries {
+        if entry
+          is ("moon.mod"
+          | "moon.pkg"
+          | "moon.mod.json"
+          | "moon.pkg.json"
+          | "moon.work") ||
+          entry.has_suffix(".mbt") ||
+          entry.has_suffix(".mbt.md") ||
+          entry.has_suffix(".mbtx") ||
+          entry == "modules.tsv" {
+          paths.push(prefix + entry)
+        }
+      }
+    },
+    exclude=path => skipped_dirs.any(name => path.has_suffix("/\{name}")),
+    max_concurrency=1,
+  )
+  let files : Map[String, String] = Map([])
+  paths.sort()
+  for path in paths {
+    if @fs.kind(path) is Regular {
+      files[path] = @fs.read_text(path)
+    }
+  }
+  if self_test {
+    run_self_test(files)
+    println("architecture gate self-tests: OK")
+  }
+  let problems = audit(files)
+  if !problems.is_empty() {
+    fail(problems.join("\n"))
+  }
+  let rows = parse_rows(files.get("scripts/modules.tsv").unwrap_or(""))
+  println(
+    "architecture gate: OK (\{rows.length()} modules, \{files.length()} files)",
+  )
+}
