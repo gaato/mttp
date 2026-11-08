@@ -41,10 +41,10 @@ a wildcard arm:
 | `Suspended(parked~)` | every task is parked under `run_sync` (auto-advance off) |
 | `NoQuiescence(steps~)` | one `run` took more than `max_steps` steps (default 100 000 000) |
 | `UnwindIncomplete(live~)` | tasks kept spawning tasks through `max_unwind_rounds` (8) rounds of cancellation |
-| `TaskFailed(label~, cause~)` | a task failed and no task waited on it |
+| `TaskFailed(label~, cause~)` | a task failed and no task saw it: none waited on it, or every waiter was cancelled before it resumed |
 | `MainCancelled` | the main task was cancelled |
 | `Reentrant` | `run` or `step` was called from a task of the same driver |
-| `NotInTask` | a task parked on a driver that is not running it, or `current()`, `current_task()` or an ambient helper was called outside a task |
+| `NotInTask` | a task parked on, or called `cancel_and_join` of, a driver that is not running it, or `current()`, `current_task()` or an ambient helper was called outside a task |
 
 ## Example
 

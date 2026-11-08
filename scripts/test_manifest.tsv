@@ -6,10 +6,10 @@ gaato/http	gaato/http	js	70
 gaato/http	gaato/http	native	70
 gaato/http	gaato/http	wasm	70
 gaato/http	gaato/http	wasm-gc	70
-gaato/http	gaato/http/driver	js	43
-gaato/http	gaato/http/driver	native	43
-gaato/http	gaato/http/driver	wasm	43
-gaato/http	gaato/http/driver	wasm-gc	43
+gaato/http	gaato/http/driver	js	48
+gaato/http	gaato/http/driver	native	48
+gaato/http	gaato/http/driver	wasm	48
+gaato/http	gaato/http/driver	wasm-gc	48
 gaato/http	gaato/http/h1	js	37
 gaato/http	gaato/http/h1	native	37
 gaato/http	gaato/http/h1	wasm	37

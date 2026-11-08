@@ -1094,3 +1094,121 @@ test "a failure while tasks unwind fails a run whose main succeeded" {
   assert_eq(label, "late")
   assert_eq(d.live_tasks(), 0)
 }
+
+// ------------------------------------------- waiters and foreign drivers
+
+///|
+test "a waiter cancelled before the failure does not hide it" {
+  let d = @driver.Driver::new()
+  let r = driver_error_kind(() => {
+    d.run(() => {
+      let target = d.spawn(
+        () => {
+          d.sleep(10)
+          fail("target failed")
+        },
+        label="target",
+      )
+      let waiter = d.spawn(() => ignore(target.wait()))
+      d.pause()
+      d.cancel_and_join([waiter])
+      d.sleep(20)
+      "main finished"
+    })
+  })
+  guard r is Ok(TaskFailed(label="target", ..)) else {
+    fail("got \{@debug.to_string(r)}")
+  }
+}
+
+///|
+test "a waiter cancelled after the failure woke it does not observe it" {
+  let d = @driver.Driver::new()
+  let r = driver_error_kind(() => {
+    d.run(() => {
+      let target = d.spawn(
+        () => {
+          d.sleep(10)
+          fail("target failed")
+        },
+        label="target",
+      )
+      let waiter = d.spawn(() => ignore(target.wait()))
+      // Fires right after the target's timer, so it runs after the failure
+      // has woken the waiter and before the waiter resumes.
+      let _ = d.spawn(() => {
+        d.sleep(10)
+        waiter.cancel()
+      })
+      d.sleep(20)
+      "main finished"
+    })
+  })
+  guard r is Ok(TaskFailed(label="target", ..)) else {
+    fail("got \{@debug.to_string(r)}")
+  }
+}
+
+///|
+test "one waiter that observes a failure covers the cancelled ones" {
+  let d = @driver.Driver::new()
+  let observed = d.run(() => {
+    let target = d.spawn(() => {
+      d.sleep(10)
+      fail("target failed")
+    })
+    let cancelled = d.spawn(() => ignore(target.wait()))
+    let observer = d.spawn(() => {
+      let _ = target.wait() catch { _ => false }
+    })
+    let _ = d.spawn(() => {
+      d.sleep(10)
+      cancelled.cancel()
+    })
+    let _ = observer.wait()
+    d.sleep(20)
+    "main finished"
+  })
+  assert_eq(observed, "main finished")
+}
+
+///|
+test "cancel_and_join from a nested driver's task fails the inner run without spinning" {
+  let outer = @driver.Driver::new()
+  let log = []
+  let r = outer.run(() => {
+    let child = outer.spawn(() => {
+      defer log.push("child unwound")
+      outer.sleep(1000)
+    })
+    outer.pause()
+    let inner = @driver.Driver::new()
+    let kind = driver_error_kind(() => {
+      inner.run(() => outer.cancel_and_join([child]))
+    })
+    // The cancellation request still reached the child; the outer task
+    // can join it itself.
+    outer.cancel_and_join([child])
+    (kind, outer.now())
+  })
+  guard r is (Ok(NotInTask), 0L) else { fail("got \{@debug.to_string(r)}") }
+  assert_eq(log, ["child unwound"])
+  assert_eq(outer.live_tasks(), 0)
+}
+
+///|
+test "cancel_and_join on an idle driver from another driver's task reports NotInTask" {
+  let d = @driver.Driver::new()
+  let other = @driver.Driver::new()
+  let log = []
+  let task = other.spawn(() => {
+    defer log.push("unwound")
+    other.sleep(5)
+  })
+  let r = driver_error_kind(() => d.run(() => other.cancel_and_join([task])))
+  guard r is Ok(NotInTask) else { fail("got \{@debug.to_string(r)}") }
+  // Only the request was made; the task unwinds when its own driver runs.
+  assert_true(task.is_cancel_requested())
+  other.run(() => ())
+  assert_eq(log, ["unwound"])
+}
