@@ -1,0 +1,10 @@
+import {
+  "gaato/http",
+  "gaato/http-async/fetch",
+}
+
+supported_targets = "js"
+
+options(
+  link: { "js": { "exports": [ "fetch", "fetch_with_env" ], "format": "esm" } },
+)
