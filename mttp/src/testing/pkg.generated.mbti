@@ -1,0 +1,50 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/testing"
+
+import {
+  "gaato/http",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn fail_after(&@http.BodyStream, Int32, @http.TransportError) -> &@http.BodyStream raise @http.TransportError
+
+pub fn fail_sends(&@http.Backend, @http.TransportError, times? : Int32) -> &@http.Backend
+
+// Errors
+
+// Types and methods
+pub struct BackendStub {
+  // private fields
+}
+pub fn BackendStub::close(Self) -> Unit
+pub fn BackendStub::expect(Self, (@http.Request) -> Bool, Canned) -> Self
+pub fn BackendStub::new() -> Self
+pub fn BackendStub::remaining(Self) -> Int32
+pub async fn BackendStub::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
+pub fn BackendStub::sent(Self) -> Array[Recorded]
+pub fn BackendStub::verify(Self) -> Unit raise
+pub fn BackendStub::when(Self, (@http.Request) -> Bool, Canned) -> Self
+pub impl @http.Backend for BackendStub
+
+#non_exhaustive
+pub(all) enum Canned {
+  Response(status~ : Int32, headers~ : @http.Headers, body~ : Bytes)
+  Failure(@http.TransportError)
+  Factory(async (@http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError)
+}
+pub fn Canned::bytes(Int32, body? : Bytes, headers? : @http.Headers) -> Self
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Recorded {
+  request : @http.RequestHead
+  options : @http.SendOptions
+  body : Bytes?
+}
+pub fn Recorded::equal(Self, Self) -> Bool
+pub fn Recorded::not_equal(Self, Self) -> Bool
+pub fn Recorded::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
