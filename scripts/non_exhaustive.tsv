@@ -25,3 +25,4 @@ gaato/mttp/client/retry	StopReason
 gaato/mttp/cookie	SameSite
 gaato/mttp/client	ResponseFailure
 gaato/mttp/testing	Canned
+gaato/mttp/schema	DecodeKind
