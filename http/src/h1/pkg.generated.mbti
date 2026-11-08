@@ -17,7 +17,7 @@ pub fn request_framing(@http.Headers) -> Framing raise ParseError
 
 pub fn response_framing(@http.Headers, status~ : Int32, meth? : @http.Method) -> Framing raise ParseError
 
-pub fn scan_head(BytesView, max~ : Int32) -> Int32? raise ParseError
+pub fn scan_head(BytesView, max~ : Int32, skip_leading_crlf? : Bool) -> Int32? raise ParseError
 
 pub fn write_request_head(@http.Method, String, @http.Headers, Framing, Version) -> Bytes raise ParseError
 
@@ -66,7 +66,7 @@ pub struct HeadDecoder {
 }
 pub fn HeadDecoder::feed(Self, BytesView) -> HeadResult raise ParseError
 pub fn HeadDecoder::finish(Self) -> Bytes raise ParseError
-pub fn HeadDecoder::new(max? : Int32) -> Self
+pub fn HeadDecoder::new(max? : Int32, skip_leading_crlf? : Bool) -> Self
 
 #derive(Eq, @debug.Debug)
 pub struct HeadResult {

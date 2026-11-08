@@ -319,7 +319,15 @@ let refused_requests : Array[(String, @h1.ParseKind, Bytes)] = [
     b"POST / HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX: a\r\n b\r\n\r\n",
   ),
   // Request lines.
-  ("leading empty line", Malformed, b"\r\nGET / HTTP/1.1\r\nHost: h\r\n\r\n"),
+  // Empty lines before the request line are skipped only as CRLF.
+  ("leading bare LF", Malformed, b"\nGET / HTTP/1.1\r\nHost: h\r\n\r\n"),
+  (
+    "bare LF after a leading CRLF",
+    Malformed,
+    b"\r\n\nGET / HTTP/1.1\r\nHost: h\r\n\r\n",
+  ),
+  ("leading bare CR", Malformed, b"\rGET / HTTP/1.1\r\nHost: h\r\n\r\n"),
+  ("only empty lines", Malformed, b"\r\n\r\n\r\n"),
   ("two spaces", Malformed, b"GET  / HTTP/1.1\r\nHost: h\r\n\r\n"),
   ("tab separator", Malformed, b"GET\t/ HTTP/1.1\r\nHost: h\r\n\r\n"),
   ("trailing space", Malformed, b"GET / HTTP/1.1 \r\nHost: h\r\n\r\n"),
@@ -365,6 +373,8 @@ let refused_responses : Array[(String, @h1.ParseKind, Bytes)] = [
     b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nab",
   ),
   ("truncated head", Malformed, b"HTTP/1.1 200 OK\r\nX: y\r\n"),
+  // Only a server skips empty lines before the start line.
+  ("leading empty line", Malformed, b"\r\nHTTP/1.1 200 OK\r\n\r\n"),
 ]
 
 ///|
@@ -453,6 +463,20 @@ test "accepted requests read identically at every split" {
       b"",
     ),
     (
+      "one leading empty line",
+      b"\r\nGET / HTTP/1.1\r\nHost: h\r\n\r\n",
+      NoBody,
+      b"",
+      b"",
+    ),
+    (
+      "several leading empty lines before a body",
+      b"\r\n\r\n\r\nPOST / HTTP/1.1\r\nHost: h\r\nContent-Length: 2\r\n\r\nhi",
+      Length(2),
+      b"hi",
+      b"",
+    ),
+    (
       "obs-text and empty values",
       b"GET / HTTP/1.1\r\nHost: h\r\nX: \xe9t\xe9\r\nY:\r\n\r\n",
       NoBody,
@@ -467,7 +491,22 @@ test "accepted requests read identically at every split" {
     assert_eq(message.framing, framing, msg=name)
     assert_eq(message.body, body, msg=name)
     assert_eq(message.rest, rest, msg=name)
+    // Skipped empty lines are not part of the returned head.
+    assert_true(message.head is [b'A'..<=b'Z', ..], msg=name)
   }
+  // A client's extra CRLF after a body on a kept-alive connection: the next
+  // request is read from the bytes after the first.
+  let wire = b"POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 2\r\n\r\nhi\r\nGET /next HTTP/1.1\r\nHost: h\r\n\r\n"
+  guard read_request([wire]) is Ok(first) else { fail("first refused") }
+  assert_eq(first.rest, b"\r\nGET /next HTTP/1.1\r\nHost: h\r\n\r\n")
+  guard check_splits(first.rest, pieces => read_request(pieces)) is Ok(next) else {
+    fail("next refused")
+  }
+  assert_eq(@h1.parse_request_head(next.head).target, "/next")
+  assert_eq(
+    @h1.parse_request_head(b"\r\n\r\nGET /x HTTP/1.1\r\nHost: h\r\n\r\n").target,
+    "/x",
+  )
   let request = @h1.parse_request_head(b"GET / HTTP/1.2\r\nHost: h\r\n\r\n")
   assert_eq(request.version, Http11)
   let request = @h1.parse_request_head(

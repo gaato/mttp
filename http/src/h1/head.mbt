@@ -1,14 +1,17 @@
 ///|
 /// The end-of-head matcher shared by `scan_head` and `HeadDecoder`: it
 /// refuses a bare CR or LF and reports the byte that completes CRLF CRLF.
+/// While `leading`, CRLFs before the start line are skipped instead of
+/// ending the head.
 priv struct HeadScan {
   mut matched : Int32
   mut previous_cr : Bool
+  mut leading : Bool
 }
 
 ///|
-fn HeadScan::new() -> HeadScan {
-  { matched: 0, previous_cr: false, }
+fn HeadScan::new(skip_leading_crlf : Bool) -> HeadScan {
+  { matched: 0, previous_cr: false, leading: skip_leading_crlf, }
 }
 
 ///|
@@ -17,6 +20,12 @@ fn HeadScan::step(self : HeadScan, byte : Byte) -> Bool raise ParseError {
     raise malformed("head requires CRLF line endings")
   }
   self.previous_cr = byte == b'\r'
+  if self.leading {
+    if byte is (b'\r' | b'\n') {
+      return false
+    }
+    self.leading = false
+  }
   self.matched = match (self.matched, byte) {
     (0 | 2, b'\r') => self.matched + 1
     (1 | 3, b'\n') => self.matched + 1
@@ -28,21 +37,33 @@ fn HeadScan::step(self : HeadScan, byte : Byte) -> Bool raise ParseError {
 ///|
 /// Finds the first complete head in `buf` within `max` bytes and returns its
 /// exclusive end, or `None` while the head is incomplete and within `max`.
-/// Refuses a bare CR or LF. Each call scans `buf` from the start; feed
-/// arriving input to a `HeadDecoder` instead, which scans each byte once.
+/// Refuses a bare CR or LF. With `skip_leading_crlf`, empty lines (CRLF)
+/// before the start line are part of the head instead of ending it, and
+/// count against `max`; a server reading requests sets it (RFC 9112,
+/// section 2.2). Each call scans `buf` from the start; feed arriving input
+/// to a `HeadDecoder` instead, which scans each byte once.
 ///
 /// ```mbt check
 /// test {
 ///   let wire = b"HTTP/1.1 204\r\n\r\nnext"
 ///   assert_eq(@h1.scan_head(wire, max=16384), Some(16))
 ///   assert_eq(@h1.scan_head(wire[:10], max=16384), None)
+///   let request = b"\r\nGET / HTTP/1.1\r\nHost: h\r\n\r\n"
+///   assert_eq(
+///     @h1.scan_head(request, max=16384, skip_leading_crlf=true),
+///     Some(request.length()),
+///   )
 /// }
 /// ```
-pub fn scan_head(buf : BytesView, max~ : Int32) -> Int32? raise ParseError {
+pub fn scan_head(
+  buf : BytesView,
+  max~ : Int32,
+  skip_leading_crlf~ : Bool = false,
+) -> Int32? raise ParseError {
   if max < 0 {
     raise malformed("negative head limit")
   }
-  let scan = HeadScan::new()
+  let scan = HeadScan::new(skip_leading_crlf)
   for i, byte in buf {
     if i >= max {
       raise too_large("head exceeds \{max} bytes")
@@ -81,6 +102,7 @@ pub extend HeadResult with Eq::{equal, not_equal}
 /// later `feed` or `finish` raises the first error again.
 pub struct HeadDecoder {
   priv max : Int32
+  priv mut seen : Int32
   priv buffer : Buffer
   priv scan : HeadScan
   priv mut complete : Bytes?
@@ -89,7 +111,11 @@ pub struct HeadDecoder {
 
 ///|
 /// Starts a head accumulator that refuses heads longer than `max` bytes,
-/// final CRLF CRLF included (default 16 KiB, as `Limits::default`).
+/// final CRLF CRLF included (default 16 KiB, as `Limits::default`). With
+/// `skip_leading_crlf`, empty lines (CRLF) before the start line are
+/// consumed, left out of the returned head and counted against `max`, as a
+/// server reading requests should (RFC 9112, section 2.2); a client reading
+/// responses leaves it off, so a leading empty line is refused.
 ///
 /// ```mbt check
 /// test {
@@ -98,13 +124,21 @@ pub struct HeadDecoder {
 ///   let result = decoder.feed(b"\r\nbody")
 ///   assert_eq(result.consumed, 2)
 ///   assert_eq(result.head, Some(b"HTTP/1.1 200 OK\r\n\r\n"))
+///   let requests = @h1.HeadDecoder::new(skip_leading_crlf=true)
+///   let result = requests.feed(b"\r\nGET / HTTP/1.1\r\nHost: h\r\n\r\n")
+///   assert_eq(result.consumed, 29)
+///   assert_eq(result.head, Some(b"GET / HTTP/1.1\r\nHost: h\r\n\r\n"))
 /// }
 /// ```
-pub fn HeadDecoder::new(max~ : Int32 = 16384) -> HeadDecoder {
+pub fn HeadDecoder::new(
+  max~ : Int32 = 16384,
+  skip_leading_crlf~ : Bool = false,
+) -> HeadDecoder {
   {
     max,
+    seen: 0,
     buffer: Buffer(),
-    scan: HeadScan::new(),
+    scan: HeadScan::new(skip_leading_crlf),
     complete: None,
     failure: None,
   }
@@ -134,11 +168,16 @@ pub fn HeadDecoder::feed(
     raise self.fail(malformed("negative head limit"))
   }
   for i, byte in bytes {
-    if self.buffer.length() >= self.max {
+    // Skipped empty lines count too, so a peer cannot send them forever.
+    if self.seen >= self.max {
       raise self.fail(too_large("head exceeds \{self.max} bytes"))
     }
+    self.seen += 1
     let done = self.scan.step(byte) catch {
       ParseError(..) as error => raise self.fail(error)
+    }
+    if self.scan.leading {
+      continue
     }
     self.buffer.write_byte(byte)
     if done {
@@ -164,21 +203,30 @@ pub fn HeadDecoder::finish(self : HeadDecoder) -> Bytes raise ParseError {
 }
 
 ///|
-/// Splits one complete head into its start line and its fields.
+/// Splits one complete head into its start line and its fields, after
+/// any empty lines `skip_leading_crlf` allows.
 fn head_lines(
   head : BytesView,
   limits : Limits,
+  skip_leading_crlf~ : Bool,
 ) -> (String, @http.Headers) raise ParseError {
-  guard scan_head(head, max=limits.max_head_bytes) is Some(end) &&
+  guard scan_head(head, max=limits.max_head_bytes, skip_leading_crlf~)
+    is Some(end) &&
     end == head.length() else {
     raise malformed("expected exactly one complete head")
+  }
+  // Only skipped empty lines precede the start line, so this stops inside
+  // the head.
+  let mut start = 0
+  while skip_leading_crlf && head[start] is (b'\r' | b'\n') {
+    start += 1
   }
   if limits.max_headers < 0 {
     raise malformed("negative field limit")
   }
   // scan_head proved every CR is followed by LF and every LF preceded by CR,
   // so splitting on CRLF recovers the lines exactly.
-  let lines = latin1(head[:head.length() - 4]).split("\r\n")
+  let lines = latin1(head[start:head.length() - 4]).split("\r\n")
   let first = lines.next().unwrap_or("")
   let pairs = []
   for line in lines {
@@ -217,8 +265,8 @@ fn check_version_framing(
 }
 
 ///|
-/// Parses a strict request head: one complete head within `limits`, a
-/// request line of three parts separated by single spaces, a target of the
+/// Parses a strict request head: one complete head within `limits` (empty
+/// lines before the request line are skipped and counted), a request line of three parts separated by single spaces, a target of the
 /// form its method requires, and at most one valid `Host`, which HTTP/1.1
 /// requires. Fields keep their order and duplicates. Body framing is checked
 /// separately by `request_framing`, except that Transfer-Encoding on HTTP/1.0
@@ -239,7 +287,7 @@ pub fn parse_request_head(
   head : BytesView,
   limits~ : Limits = Limits::default(),
 ) -> ParsedRequest raise ParseError {
-  let (line, headers) = head_lines(head, limits)
+  let (line, headers) = head_lines(head, limits, skip_leading_crlf=true)
   let parts = line.split(" ").collect()
   guard parts is [meth, target, v] && token(meth) else {
     raise malformed("invalid request line")
@@ -319,8 +367,8 @@ fn validate_target(
 }
 
 ///|
-/// Parses a strict response head: one complete head within `limits` and a
-/// status line of the version, a single space, three digits from 100 to 599
+/// Parses a strict response head: one complete head within `limits`, with
+/// no empty line before it, and a status line of the version, a single space, three digits from 100 to 599
 /// and an optional reason phrase after another space. A status line without
 /// a reason phrase, with or without the space before it, is accepted
 /// (RFC 9112, section 4). Fields keep their order, duplicates and obs-text.
@@ -338,7 +386,7 @@ pub fn parse_response_head(
   head : BytesView,
   limits~ : Limits = Limits::default(),
 ) -> ParsedResponse raise ParseError {
-  let (line, headers) = head_lines(head, limits)
+  let (line, headers) = head_lines(head, limits, skip_leading_crlf=false)
   guard line.length() >= 12 &&
     line[8] == ' ' &&
     (line.length() == 12 || line[12] == ' ') else {

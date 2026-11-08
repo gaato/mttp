@@ -56,6 +56,42 @@ test "head limit accepts 16 KiB and refuses one byte more" {
 }
 
 ///|
+test "empty lines before a request line count against the head limit" {
+  let limit = @h1.Limits::default().max_head_bytes
+  let request = "GET / HTTP/1.1\r\nHost: h\r\n\r\n"
+  for total in [limit, limit + 1] {
+    let expected = if total == limit { None } else { Some(@h1.HeadTooLarge) }
+    let crlfs = (total - request.length()) / 2
+    let padding = if (total - request.length()) % 2 == 0 { "" } else { "a" }
+    let wire = @http.encode_utf8(
+      "\r\n".repeat(crlfs) + "GET /\{padding} HTTP/1.1\r\nHost: h\r\n\r\n",
+    )
+    assert_eq(wire.length(), total)
+    assert_eq(kind_of(() => ignore(@h1.parse_request_head(wire))), expected)
+    let decoder = @h1.HeadDecoder::new(skip_leading_crlf=true)
+    assert_eq(kind_of(() => ignore(decoder.feed(wire))), expected)
+  }
+  // Empty lines alone, never followed by a request line, stop at the limit.
+  let decoder = @h1.HeadDecoder::new(skip_leading_crlf=true)
+  let flood = @http.encode_utf8("\r\n".repeat(limit / 2))
+  assert_eq(decoder.feed(flood).consumed, limit)
+  assert_eq(
+    kind_of(() => ignore(decoder.feed(b"\r\n"))),
+    Some(@h1.HeadTooLarge),
+  )
+  // The same boundary at every split, with a smaller limit.
+  let limits = { ..@h1.Limits::default(), max_head_bytes: 64, }
+  let request = "GET /a HTTP/1.1\r\nHost: h\r\n\r\n"
+  let at_limit = @http.encode_utf8("\r\n".repeat(18) + request)
+  assert_eq(at_limit.length(), 64)
+  assert_eq(request_refusal(at_limit, limits~), None)
+  let past_limit = @http.encode_utf8(
+    "\r\n".repeat(18) + "GET /ab HTTP/1.1\r\nHost: h\r\n\r\n",
+  )
+  assert_eq(request_refusal(past_limit, limits~), Some(@h1.HeadTooLarge))
+}
+
+///|
 test "head field limit accepts 100 fields and refuses 101" {
   assert_eq(@h1.Limits::default().max_headers, 100)
   for count in [100, 101] {

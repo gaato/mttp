@@ -19,7 +19,7 @@ later call raises the same error.
 ///|
 test "read a chunked request" {
   let wire = b"POST /upload HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
-  let heads = @h1.HeadDecoder::new()
+  let heads = @h1.HeadDecoder::new(skip_leading_crlf=true)
   let result = heads.feed(wire)
   guard result.head is Some(head) else { fail("head incomplete") }
   let request = @h1.parse_request_head(head)
@@ -87,7 +87,7 @@ Every refusal is a `ParseError` whose `kind` says how to answer:
 | Kind | Inputs | A server answers |
 |---|---|---|
 | `HeadTooLarge` | a head, chunk-size line or trailer section past its `Limits` | 431 for a head; 400 inside a body |
-| `Malformed` | bare CR or LF, obs-fold, whitespace before a colon, controls in a field, a missing or invalid `Host` on HTTP/1.1, an invalid target form, any duplicate Content-Length (even identical), an invalid or overflowing length or chunk size | 400 |
+| `Malformed` | bare CR or LF, an empty line before a status line, obs-fold, whitespace before a colon, controls in a field, a missing or invalid `Host` on HTTP/1.1, an invalid target form, any duplicate Content-Length (even identical), an invalid or overflowing length or chunk size | 400 |
 | `Smuggling` | Content-Length with Transfer-Encoding, Transfer-Encoding on HTTP/1.0, a framing or routing field in trailers | 400 |
 | `Unsupported` | a transfer coding other than a single `chunked`, an HTTP version other than 1.x | 501 or 505 |
 
@@ -98,11 +98,18 @@ Accepted although some parsers refuse them: a status line without a reason
 phrase (`HTTP/1.1 200`), obs-text in field values (kept as Latin-1 code
 points), and an HTTP/1 minor version above 1, read as HTTP/1.1.
 
+A server skips empty lines (CRLF) before a request line, as RFC 9112
+section 2.2 asks, because some clients send an extra CRLF after a request
+body: `parse_request_head` does, and so does a `HeadDecoder` or `scan_head`
+with `skip_leading_crlf=true`. The skipped bytes count against the head
+limit. A leading bare LF is still refused, and so is an empty line before a
+status line.
+
 ## Limits
 
 | Bound | Default |
 |---|---|
-| Head, start line and final CRLF CRLF included | 16 KiB |
+| Head, start line, final CRLF CRLF and skipped empty lines included | 16 KiB |
 | Fields per head, and per trailer section | 100 |
 | Chunk-size line, extensions and CRLF included | 4 KiB |
 | Trailer section, final CRLF included | 16 KiB |

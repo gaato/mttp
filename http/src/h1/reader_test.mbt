@@ -12,16 +12,20 @@ struct Message {
 
 ///|
 /// Reads one message from `pieces` the way a connection engine does: the
-/// head through `HeadDecoder`, the framing from `framing`, then the body
+/// head through `HeadDecoder` (skipping empty lines before a request), the framing from `framing`, then the body
 /// through `ChunkedDecoder` or by length. Piece boundaries are kept all the
 /// way, so the result depends on them only if the codec does.
 fn read_message(
   pieces : Array[Bytes],
   limits : @h1.Limits,
+  skip_leading_crlf~ : Bool,
   framing : (Bytes) -> @h1.Framing raise @h1.ParseError,
 ) -> Result[Message, @h1.ParseKind] raise {
   try {
-    let decoder = @h1.HeadDecoder::new(max=limits.max_head_bytes)
+    let decoder = @h1.HeadDecoder::new(
+      max=limits.max_head_bytes,
+      skip_leading_crlf~,
+    )
     let after_head : Array[BytesView] = []
     for piece in pieces {
       if after_head.is_empty() {
@@ -82,7 +86,7 @@ fn read_request(
   pieces : Array[Bytes],
   limits~ : @h1.Limits = @h1.Limits::default(),
 ) -> Result[Message, @h1.ParseKind] raise {
-  read_message(pieces, limits, head => {
+  read_message(pieces, limits, skip_leading_crlf=true, head => {
     @h1.request_framing(@h1.parse_request_head(head, limits~).headers)
   })
 }
@@ -94,7 +98,7 @@ fn read_response(
   meth~ : @http.Method = Get,
   limits~ : @h1.Limits = @h1.Limits::default(),
 ) -> Result[Message, @h1.ParseKind] raise {
-  read_message(pieces, limits, head => {
+  read_message(pieces, limits, skip_leading_crlf=false, head => {
     let response = @h1.parse_response_head(head, limits~)
     @h1.response_framing(response.headers, status=response.status, meth~)
   })
