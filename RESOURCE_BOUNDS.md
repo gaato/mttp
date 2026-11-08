@@ -43,6 +43,8 @@ a test from hanging.
 | `http/driver` rounds of cancellation when `run` ends | `max_unwind_rounds` = 8 | `run` raises `DriverError(UnwindIncomplete(live~))`; the surviving tasks stay live | `http/src/driver/driver_test.mbt`: "unwinding gives up after max_unwind_rounds rounds" |
 | `http/driver` timer callbacks per run | `max_steps`, independent of task steps | Raises `NoQuiescence`, discards timers and cancels live tasks | `http/src/driver/driver_test.mbt`: "self-rearming due timers obey a callback budget" |
 | `http/driver` cleanup steps per cancellation round | The larger of `max_steps` and twice the number of live tasks at the round's start | Ends the round; at most `max_unwind_rounds` rounds | `http/src/driver/driver_test.mbt`: "exhausted execution budget still unwinds ten thousand tasks", "unwinding gives up after max_unwind_rounds rounds" |
+| `http/sim` sized generators (`gen_text`, `gen_headers`) | 128 text pieces (at most 256 UTF-16 units) and 32 header pairs, whatever quickcheck size is requested | Clamps the size before generating a sample | `http/src/sim/gen_test.mbt`: "generators clamp caller sizes and preserve empty input" |
+| `http/sim` reads of `check_body_stream_contract` | `max_reads`, default 1024 reads, the read that returns EOF included | Stops reading and raises `Failure` naming the read budget, so a stream that never ends fails the check instead of hanging it | `http/src/sim/contracts_test.mbt`: "body stream check stops a stream after max_reads reads" |
 
 ## Bounded by rate and lifetime
 
@@ -58,6 +60,7 @@ Growth that follows what the caller asks for, not what the network sends.
 | `http` headers, URL strings, attribute maps and byte bodies | Values explicitly constructed by the caller | Parsers and engines impose the network input limits; these value constructors do not consume network input. |
 | `http` URI builder | Caller-provided components | Interpolation is linear in the supplied text and stages one query parameter. |
 | `http/driver` ready queue, live-task map, timer heap | Tasks the test spawns and timers it arms | A test helper: the test decides how many; `max_steps` stops a run that keeps spawning. Cancelled timers stay in the heap until they reach its top or `run` ends. |
+| `http/sim` recordings and queues: `FakeClock::slept`, `ScriptedConn` writes and script, `ScriptedDialer` connections, dials and TLS hosts, `SimConn` pipes, `SimGate` waiters, `Feed` script | What the test writes, scripts and spawns | Test helpers: the test decides how much; a `SimConn` write never blocks, so a test that floods one end without reading the other grows its pipe. |
 
 ## Known gaps
 

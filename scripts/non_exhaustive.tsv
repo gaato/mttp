@@ -11,3 +11,5 @@ gaato/http	Kind
 gaato/http	Method
 gaato/http	Phase
 gaato/http/driver	DriverErrorKind
+gaato/http/sim	FeedStep
+gaato/http/sim	ReadStep
