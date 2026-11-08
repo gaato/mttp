@@ -553,7 +553,7 @@ pub async fn serve_conn(conn : &@rt.Conn, handler : @http.Handler, clock~ : &@rt
 Engine rules:
 
 - **Client engine.** Pool, slots, wire, body and deadlines run over the ports; the Buffered/Streaming choice comes from `BodyTiming`. It reads response heads, chunk lines, trailers and a proxy's CONNECT answer within `head_limits`, so the old "unbounded client head" gap (F63, risk 20) is closed for every target that uses the engine. A response that arrives early during an upload cancels the unfinished upload and excludes the socket from reuse; informational responses keep upload progress. The outgoing stream's first read happens before the head is written, so a stream that fails or lies about being empty sends nothing.
-- **Stale-connection repair.** A failure on a reused idle connection before any response byte is resent once on a fresh connection only if the request is replayable; otherwise it surfaces with its phase. This repair is not a policy attempt and is reported separately (§4.4 rule 8).
+- **Stale-connection repair.** A failure on a reused idle connection before any response byte is resent once on a fresh connection only if the body is replayable *and* the request is resend-safe (`@http.is_idempotent`: an idempotent method or the `replay_safe` attribute). Receiving no response bytes does not prove the request was unprocessed, so replayability alone never licenses a resend; otherwise the failure surfaces with its phase. This repair is not a policy attempt and is reported separately (§4.4 rule 8).
 - **Server engine.** `serve_conn` owns the accepted connection and closes it on every exit. The handler gets an absolute `Request.url` from `scheme~` and the `Host` header. A supplied background scheduler owns detached work; without one, no `background` attribute is advertised. A client disconnect cancels the handler. Failures reported through `on_error` are `TransportError` values; runtime error identities never escape. Compression is not an engine concern: wrap the handler with `@codings.compress` (§4.11).
 - **Control.** Admission, pool metadata, peer EOF/failure and listener lifecycle are transitions of `internal/control` (§5.11).
 ### 4.6 schema
@@ -1119,7 +1119,7 @@ Binding rules:
 |---|---|
 | Request smuggling (CL with TE, duplicate CL) | Both engines use the same `request_framing`/`response_framing`; `Smuggling` is 400 and close. Checked by the h1 conformance corpus. |
 | Memory exhaustion (head, chunk line, trailers, body, decompression bomb) | Limits, ServerLimits and ClientConfig always carry default bounds. `Exchange(max_bytes~)` cannot be built without a limit. Decoding runs in 64 KiB pulls, and decoded bytes have their own bound (§5.2). |
-| A non-idempotent request resent after it was sent | `Phase` drives `is_unsent`. Stale-connection repair resends only replayable requests; the Client loop never resends a stream without a body factory. |
+| A non-idempotent request resent after it was sent | `Phase` drives `is_unsent`. Stale-connection repair resends only requests with a replayable body that are idempotent or marked `replay_safe`; the Client loop never resends a stream without a body factory. |
 | Two runtimes linked into one process | Only http-async imports core/async; the gate forbids `moonbitlang/async` everywhere. |
 | Experimental API leaking into the stable layer | `experimental: true`, list-form opt-in, and the gate's allow list. |
 | Runtime types in a public API | An mbti grep gate over every module; ports are `@rt` traits. |
