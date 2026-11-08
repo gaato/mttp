@@ -48,6 +48,9 @@ a test from hanging.
 | `mttp/sse` one event: its `data` lines, the `event` and `id` lines in effect, and the line being read | `max_event_bytes`, default 16 MiB, in raw bytes without line terminators; below 1 only blank lines pass | Raises `TooLarge(limit)` in phase Body and ends the stream; events the same chunk completed earlier are returned first and the next `feed` or `finish` raises | `mttp/src/sse/parser_test.mbt`: "one event is bounded by the lines it keeps plus the line being read", "the default bound is 16 MiB", "an overflow after events in the same chunk raises on the next call" |
 | `mttp/sse` reconnection delay (`retry`) | One hour | Clamped: a longer or overflowing digit run reads as 3 600 000 ms | `mttp/src/sse/parser_test.mbt`: "a retry hint past an hour reads as an hour", "the reconnection time takes effect when read and outlives the stream" |
 | `mttp/multipart` boundary and the scan of stream parts | 1 to 70 `bchars`, so the delimiter is at most 74 bytes; the scan keeps a match counter, never part bytes | `InvalidBoundary` before any byte is encoded; a stream part containing the delimiter raises `Protocol` in phase Body before the delimiter's last byte is returned | `mttp/src/multipart/multipart_test.mbt`: "boundary validation and header quoting"; `mttp/src/multipart/boundary_scan_wbtest.mbt`: "BoundaryScan finds the delimiter as body_collides does", "BoundaryScan agrees with body_collides however the body is chunked"; `mttp/src/multipart/stream_test.mbt`: "a stream part containing the boundary fails before the collision is sent" |
+| `mttp/cookie` stored entries | `max_per_domain`, default 50, and `max_total`, default 3000; caps below 0 count as 0 | Evicts expired cookies first, then the least recently accessed (cookies that are not Secure first for the per-domain cap) | `mttp/src/cookie/jar_wbtest.mbt`: "the default caps are 50 cookies per domain and 3000 in all", "zero or negative caps keep nothing", "the per-domain cap evicts the least recently accessed cookie", "the total cap evicts expired cookies, then the least recently accessed" |
+| `mttp/cookie` accepted name and value, and each attribute | 4096 bytes of name and value together, 1024 bytes per attribute | Ignores the cookie, or the attribute, as RFC 6265bis says | `mttp/src/cookie/set_cookie_wbtest.mbt`: "a cookie is ignored past 4096 bytes of name and value and an attribute past 1024" |
+| `mttp/cookie` lifetime | 400 days | Clamps `Max-Age` and `Expires` | `mttp/src/cookie/jar_wbtest.mbt`: "lifetimes are cut to 400 days" |
 
 ## Bounded by rate and lifetime
 
@@ -67,6 +70,7 @@ Growth that follows what the caller asks for, not what the network sends.
 | `mttp/jsonkit` builders and decoded fields | Fields the caller writes; a JSON tree already parsed | The builder grows only with the caller's writes; decoders read a tree whose bytes the reader that parsed it bounded. |
 | `mttp/sse` events returned by one `feed` | The chunk the caller feeds | Each event is bounded above, and each takes at least six bytes of input (`data`, a line end and a blank line). |
 | `mttp/multipart` framing and part descriptors | Caller-supplied parts | Framing and in-memory bodies are what the caller passed; a stream body holds the part streams and the part being read, and the boundary scan above. |
+| `mttp/client/retry` decisions and Retry-After values | One response's headers | Decisions are pure and keep nothing; the Retry-After parsers read one header value, linear in its length, and saturate the result. |
 
 ## Known gaps
 

@@ -13,3 +13,10 @@ gaato/http	Phase
 gaato/http/driver	DriverErrorKind
 gaato/http/sim	FeedStep
 gaato/http/sim	ReadStep
+gaato/mttp/client/retry	Decision
+gaato/mttp/client/retry	Jitter
+gaato/mttp/client/retry	Methods
+gaato/mttp/client/retry	RetryAfterCap
+gaato/mttp/client/retry	RetryAfterSource
+gaato/mttp/client/retry	StopReason
+gaato/mttp/cookie	SameSite
