@@ -526,7 +526,7 @@ test "a bucket follows the key its latest response names" {
 }
 
 ///|
-test "a sweep drops orphaned aliases and pace deadlines already passed" {
+test "a sweep retains live aliases and drops pace deadlines already passed" {
   let d = @driver.Driver::new(auto_advance=false)
   let clock = @sim.FakeClock::new(start_unix_ms=0L)
   let limiter = WindowLimiter::new(
@@ -550,7 +550,8 @@ test "a sweep drops orphaned aliases and pace deadlines already passed" {
   })
   assert_eq(limiter.states.length(), 1)
   assert_true(limiter.states.get("k2") is Some(_))
-  assert_eq(limiter.aliases.length(), 1)
+  assert_eq(limiter.aliases.length(), 2)
+  assert_eq(limiter.aliases.get("a").map(a => a.key), Some("k1"))
   assert_eq(limiter.aliases.get("b").map(a => a.key), Some("k2"))
   assert_eq(limiter.next_admit_at.length(), 1)
   assert_eq(limiter.next_admit_at.get("paced-new"), Some(61_010L))
@@ -571,19 +572,38 @@ test "one-off aliased and paced buckets keep the maps bounded" {
     let bucket = "token-\{i}"
     run_now(d, () => {
       limiter.acquire(bucket, global_exempt=true)
-      limiter.release(
-        bucket,
-        status=200,
-        headers=keyed_headers("key-\{i}", "4", "0.05"),
-      )
+      try
+        limiter.release(
+          bucket,
+          status=200,
+          headers=keyed_headers("key-\{i}", "4", "0.05"),
+        )
+      catch {
+        @http.TransportError(kind=TooLarge(limit=4096), phase=Unknown, ..) =>
+          assert_true(i >= 4096)
+        _ => fail("unexpected alias capacity error")
+      } noraise {
+        _ => assert_true(i < 4096)
+      }
     })
     clock.advance(1)
     largest = largest.max(limiter.swept_entries())
   }
-  // About 50 states and their 50 aliases are live at once, and one pace
-  // deadline; sweeps at twice the live count keep the maps under 4 floors.
-  assert_true(largest <= 4 * states_sweep_floor)
-  assert_true(limiter.aliases.length() <= limiter.states.length())
+  // Quota expires after 50 ms, but aliases retain their own one-hour lifetime.
+  // At capacity, recording refuses another alias and still cleans admission.
+  assert_true(largest <= 3 * max_entries)
+  assert_eq(limiter.aliases.length(), max_entries)
+  assert_eq(limiter.admissions.length(), 0)
+  clock.advance(3_600_000)
+  run_now(d, () => {
+    limiter.acquire("after", global_exempt=true)
+    limiter.release(
+      "after",
+      status=200,
+      headers=keyed_headers("after-key", "1", "1"),
+    )
+  })
+  assert_eq(limiter.aliases.length(), 1)
 }
 
 ///|

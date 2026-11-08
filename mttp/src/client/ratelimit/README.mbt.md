@@ -12,6 +12,18 @@ reset; missing or malformed relative values fall back to the absolute one.
 The limiter consumes remaining quota at admission and records response
 headers on release. A status of zero means no response and preserves state.
 
+Concurrent responses are reconciled by server bucket and reset instant.
+Within the same window, remaining quota can only decrease; an older reset
+cannot replace a newer one. A later reset replaces the quota, while an active
+Retry-After block survives every response and can only be extended.
+Responses also account for admissions made while they were in flight,
+including admissions whose responses have already completed. The release
+port identifies only a bucket, so it cannot match responses to individual
+requests: until all outstanding calls in that bucket finish, accounting
+conservatively charges admissions since its oldest possible request and
+covers other outstanding calls in the learned server bucket. This can understate
+available quota. Accounting starts afresh once that bucket's calls drain.
+
 `Pace` groups buckets with a minimum interval between admissions.
 `GlobalWindow` counts non-exempt admissions across buckets. On 429,
 `LimitScope` selects a bucket block, a global block, shared parsed state, or
@@ -27,9 +39,13 @@ wait consumes neither global nor bucket quota and returns any held gate.
 The final global, bucket and pace checks commit without suspension.
 
 `server_key` can map several caller buckets to one server window. Aliases
-expire independently after one hour; expired state, aliases and pace deadlines
+expire independently after one hour and survive quota resets and sweeps of
+expired quota state. Expired state, aliases and pace deadlines
 are swept on traffic, at doubling thresholds or every 60 seconds. Each map
-(including active gate groups) has a fixed 4096-entry ceiling. New entries
+(including active gate groups and outstanding admission buckets) has a fixed
+4096-entry ceiling. Admission bookkeeping uses counters per bucket, rather
+than retaining individual requests, and is removed by every release,
+including transport failures, ignored responses and recording refusals. New entries
 beyond it raise `TransportError(TooLarge(4096))` after eviction of expired
 entries; live state is retained. The phase is Pool on acquisition and Unknown
 on release, because a response was already received. A release that refuses

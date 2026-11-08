@@ -262,3 +262,34 @@ test "a server key without reset headers still aliases an existing shared window
     assert_eq(clock.slept(), [1000])
   })
 }
+
+///|
+test "admission cohorts are bounded and every release outcome reclaims them" {
+  @driver.run_sync(() => {
+    let limiter = WindowLimiter::new(@sim.FakeClock::new(), (_, _) => None, scope=(
+      _,
+      _,
+    ) => Ignore)
+    for i in 0..<4096 {
+      limiter.acquire("b\{i}", global_exempt=false)
+    }
+    try limiter.acquire("overflow", global_exempt=false) catch {
+      @http.TransportError(kind=TooLarge(limit=4096), phase=Pool, ..) => ()
+      _ => fail("wrong admission capacity error")
+    } noraise {
+      _ => fail("accepted admission overflow")
+    }
+    assert_eq(limiter.admissions.length(), 4096)
+    // Existing buckets need only a counter, not another map entry.
+    limiter.acquire("b0", global_exempt=false)
+    limiter.release("b0", status=429, headers=@http.Headers::empty())
+    assert_eq(limiter.admissions.length(), 4096)
+    for i in 0..<4096 {
+      limiter.release("b\{i}", status=0, headers=@http.Headers::empty())
+    }
+    assert_eq(limiter.admissions.length(), 0)
+    limiter.acquire("after", global_exempt=false)
+    limiter.release("after", status=200, headers=@http.Headers::empty())
+    assert_eq(limiter.admissions.length(), 0)
+  })
+}

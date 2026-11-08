@@ -9,6 +9,14 @@ priv struct BucketGate {
 priv struct RecordedState {
   value : RateLimitState
   until : Int64
+  window_reset : Int64
+  blocked_until : Int64
+}
+
+///|
+priv struct Admissions {
+  mut pending : Int64
+  mut later : Int32
 }
 
 ///|
@@ -39,6 +47,7 @@ pub struct WindowLimiter {
   priv clock : &@rt.Clock
   priv parse : (@http.Headers, Int64) -> RateLimitState?
   priv states : Map[String, RecordedState]
+  priv admissions : Map[String, Admissions]
   priv mut states_sweep_at : Int32
   priv mut states_swept_at_ms : Int64
   priv gate : (() -> &@rt.Gate)?
@@ -66,6 +75,11 @@ pub struct WindowLimiter {
 /// do not promise global FIFO order.
 /// `server_key` shares a response window between buckets. Learned aliases
 /// expire after one hour even if another bucket keeps refreshing the state.
+/// Quota expiry does not expire an alias. Responses for the same server
+/// window can only lower remaining quota; later resets replace quota, older
+/// resets cannot. Active bucket blocks are never shortened. Since release
+/// has no request token, overlapping calls conservatively charge admissions
+/// since the oldest possible outstanding request until that bucket drains.
 /// `scope` classifies 429s; absent it, `global_block` selects Global/Bucket.
 /// Nonpositive global windows impose no limit; negative pacing/fallback
 /// delays mean zero. Parsed and fallback server waits are capped at one hour.
@@ -92,6 +106,7 @@ pub fn WindowLimiter::new(
     gate,
     server_key,
     states: Map([]),
+    admissions: Map([]),
     aliases: Map([]),
     gates: Map([]),
     next_admit_at: Map([]),
@@ -175,20 +190,20 @@ fn WindowLimiter::sweep_states(
   }
   let expired = []
   for key, state in self.states {
-    if state.until <= now {
+    if state.until <= now && state.blocked_until <= now {
       expired.push(key)
     }
   }
   for key in expired {
     self.states.remove(key)
   }
-  let orphaned = []
+  let expired_aliases = []
   for bucket, learned in self.aliases {
-    if learned.until <= now || !self.states.contains(learned.key) {
-      orphaned.push(bucket)
+    if learned.until <= now {
+      expired_aliases.push(bucket)
     }
   }
-  for bucket in orphaned {
+  for bucket in expired_aliases {
     self.aliases.remove(bucket)
   }
   let passed = []
@@ -259,13 +274,31 @@ fn WindowLimiter::leave_gate(
 pub extend WindowLimiter with @client.RateLimiter::{acquire, release}
 
 ///|
-/// The last recorded state for this bucket (or its learned server key).
+/// The reconciled state for this bucket (or its learned server key), showing
+/// zero remaining while a Retry-After block is active.
 /// Expired state may remain visible until the next acquire or sweep.
 pub fn WindowLimiter::state(
   self : WindowLimiter,
   bucket : String,
 ) -> RateLimitState? {
-  self.states.get(self.resolve(bucket, self.now())).map(record => record.value)
+  let now = self.now()
+  self.states
+  .get(self.resolve(bucket, now))
+  .map(record => {
+    if record.blocked_until > now {
+      {
+        remaining: 0,
+        reset_at_unix_ms: record.value.reset_at_unix_ms.max(
+          saturating_add_ms(
+            self.clock.now_unix_ms(),
+            delay_until(record.blocked_until, now),
+          ),
+        ),
+      }
+    } else {
+      record.value
+    }
+  })
 }
 
 ///|
@@ -315,6 +348,9 @@ pub impl @client.RateLimiter for WindowLimiter with fn acquire(
     if step is Wait(ms) {
       delay = delay.max(ms)
     }
+    if state is Some(record) {
+      delay = delay.max(delay_until(record.blocked_until, now))
+    }
     if delay > 0 {
       self.sleep(delay)
       continue
@@ -322,6 +358,7 @@ pub impl @client.RateLimiter for WindowLimiter with fn acquire(
     if min_interval_ms > 0 {
       room(self.next_admit_at, group)
     }
+    room(self.admissions, bucket)
     // No permit or window is changed until all waits and refusals finish.
     if global is Admit(start~, count~) {
       self.global_window_start = Some(start)
@@ -340,6 +377,15 @@ pub impl @client.RateLimiter for WindowLimiter with fn acquire(
     }
     if min_interval_ms > 0 {
       self.next_admit_at[group] = saturating_add_ms(now, min_interval_ms)
+    }
+    for active_bucket, active in self.admissions {
+      if active_bucket == bucket || self.resolve(active_bucket, now) == key {
+        active.later = active.later.max(0).min(2147483646) + 1
+      }
+    }
+    match self.admissions.get(bucket) {
+      Some(active) => active.pending = saturating_add_i64(active.pending, 1L)
+      None => self.admissions[bucket] = { pending: 1L, later: 0, }
     }
     admitted = true
     return
@@ -368,6 +414,7 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
   headers~,
 ) {
   defer self.leave_gate((self.pace)(bucket).group, holding=true)
+  defer self.finish_admission(bucket)
   let now = self.now()
   self.sweep_states(
     now,
@@ -390,6 +437,10 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
   let parsed = (self.parse)(headers, wall).map(state => {
     clamp_server_reset(state, wall)
   })
+  let delay_ms = match @client.retry_after_ms(headers, now_unix_ms=wall) {
+    Some(ms) => Some(ms.min(max_server_wait_ms))
+    None => self.default_retry_after_ms
+  }
   // release_effect uses elapsed instants here, keeping all internal windows
   // in one time domain even when the Unix clock has moved backward.
   let effect = release_effect(
@@ -401,10 +452,7 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
         delay_until(state.reset_at_unix_ms, wall),
       ),
     }),
-    delay_ms=match @client.retry_after_ms(headers, now_unix_ms=wall) {
-      Some(ms) => Some(ms.min(max_server_wait_ms))
-      None => self.default_retry_after_ms
-    },
+    delay_ms~,
     scope~,
     blocked_until=self.global_blocked_until,
     now~,
@@ -427,7 +475,26 @@ pub impl @client.RateLimiter for WindowLimiter with fn release(
     } else {
       parsed.unwrap_or(value)
     }
-    self.states[key] = { value: reported, until: value.reset_at_unix_ms, }
+    let debt = self.admission_debt(bucket, key, now)
+    let candidate = {
+      value: {
+        ..reported,
+        remaining: (reported.remaining.max(0) - debt).max(0),
+      },
+      until: value.reset_at_unix_ms,
+      window_reset: parsed
+      .map(s => s.reset_at_unix_ms)
+      .unwrap_or(reported.reset_at_unix_ms),
+      blocked_until: if status == 429 && scope is Bucket && delay_ms is Some(_) {
+        value.reset_at_unix_ms
+      } else {
+        now
+      },
+    }
+    self.states[key] = match self.states.get(key) {
+      Some(current) => reconcile(current, candidate)
+      None => candidate
+    }
   }
   if named is Some(key) {
     if key == bucket {
