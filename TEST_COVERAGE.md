@@ -54,6 +54,15 @@ peer failure/EOF distinction and input/producer timeout split add no exemptions.
 
 ## Policy
 
+The listener adapter is exercised over real loopback sockets on native and
+wasm, including shutdown, streaming responses, admission, deadlines and
+background cleanup. Its immutable internal lifecycle has the same snapshot
+tests on both targets. The JS-only fetch adapter and host shims run under
+Node, outside this native line-coverage measurement; their 23 tests include
+the 1 MiB/4 MiB boundaries, cancellation, caught input failures during response
+prefetch across every host shim, and the compiled export smoke test. The
+listener's matching post-prefetch behavior also has a real socket regression.
+
 Must be covered by tests:
 
 - pure logic: header, URL and body assembly, the parsers, retry and
@@ -95,6 +104,8 @@ uncovered-line budget is needed for these additions.
 | http-async/src/codings/encoded_body.mbt | 1 | Defensive fallback for a non-TransportError from read_encoded: this wrapper supplies a TransportError-only reader and ContentEncoder translates codec errors to TransportError. |
 | http-async/src/internal/socketconn/socket.mbt | 2 | Not yet tested: reentrant close between spawning a directional child and registering its cancellation handle. The defensive checks remain because TaskGroup::spawn allows a child to start immediately. Ordinary pending read/write close and caller cancellation are tested. |
 | http-async/src/runtime/coordination.mbt | 3 | Defensive Task::wait rethrow and non-TransportError mapping: primary/monitor raise only TransportError, primary errors are recorded before wait returns, and explicit child cancellation has its own arm. |
+| http-async/src/server/response.mbt | 1 | Defensive read-after-close guard of the private response lease: the engine's acquired StreamBody reader already returns EOF without delegating after closure. |
+| http-async/src/server/serve.mbt | 9 | Defensive shutdown handoff and failure arms: stop after capacity wakeup or during accept/register/spawn handoff, accept failure after stop, configuration refused after the same immutable limits were validated before bind, independently cancelled acceptor while Running, worker errors suppressed during cancellation cleanup, and unexpected server-task errors. Stop normally cancels and joins the acceptor as a signal; real accept failure, full-cap shutdown, late accepted socket actions and jobs started during expiry cleanup have dedicated tests. |
 | http-async/src/runtime/timer.mbt | 1 | Defensive ordinary-error fallback of the generic timeout helper. Clock::sleep and Timer's callback are noraise, so current children cannot raise an Error; cancellation propagates independently. |
 | http/src/driver/driver.mbt | 1 | Defensive arm: a task suspended by something other than its Driver. No async runtime is linked, so nothing else can suspend it. |
 | http/src/h1client/client.mbt | 1 | Forward-compatibility arm of the `#non_exhaustive` `BodyTiming` match: every timing the module defines has its own arm. |

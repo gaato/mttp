@@ -53,6 +53,11 @@ let engine_dirs : Array[String] = ["http/src/h1client", "http/src/h1server"]
 let control_dir : String = "http/src/internal/control"
 
 ///|
+let control_dirs : Array[String] = [
+  control_dir, "http-async/src/internal/control",
+]
+
+///|
 /// Modules whose sources may not declare `extern` functions.
 let no_extern_modules : Array[String] = ["gaato/http"]
 
@@ -446,7 +451,8 @@ fn audit(files : Map[String, String]) -> Array[String] raise {
               "line \{item.line}: the engine imports \{item.path}; decoding wraps the engine in gaato/http-async",
             )
           }
-          if under(dir, control_dir) && item.path.has_prefix("gaato/") {
+          if control_dirs.any(root => under(dir, root)) &&
+            item.path.has_prefix("gaato/") {
             note(
               path,
               "control",
@@ -508,7 +514,9 @@ fn audit(files : Map[String, String]) -> Array[String] raise {
               "line \{at}: an extern function; \{row.name} uses moonbitlang/core only",
             )
           }
-          guard under(dir, control_dir) && !test_file else { continue }
+          guard control_dirs.any(root => under(dir, root)) && !test_file else {
+            continue
+          }
           let trimmed = line.trim().to_owned()
           if trimmed.has_prefix("//") {
             continue
@@ -701,6 +709,15 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
   rejects(
     "a Ref in control",
     [(control_dir + "/state.mbt", "///|\nlet cell : Ref[Int] = Ref(0)\n")],
+    "control",
+  )
+  rejects(
+    "runtime listener control is pure too",
+    [
+      (
+        "http-async/src/internal/control/state.mbt", "///|\nstruct State {\n  mut count : Int\n}\n",
+      ),
+    ],
     "control",
   )
   rejects(
