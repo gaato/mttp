@@ -2,7 +2,7 @@ members = [
   "http",
   "http-async",
   "mttp",
-  "mttp-digest",
+  "mttp_digest",
   "conformance",
   "examples/get",
   "examples/serve",

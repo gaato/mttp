@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Release helper for the workspace: gaato/http, gaato/http-async, gaato/mttp
-# and gaato/mttp-digest are released together (design, section 5.8).
+# and gaato/mttp_digest are released together (design, section 5.8).
 #
 #   scripts/release.sh bump <module> <version>   set a module's version and every
 #                                                sibling import of it, and move

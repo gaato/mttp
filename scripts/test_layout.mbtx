@@ -489,7 +489,7 @@ fn run_self_test(repo : Repo, allow : String) -> Unit raise {
     audit(with_file("mttp/src/x/x_test.mbt", async_test), allow)
   })
   must_fail("async test in a doc block", () => {
-    audit(with_file("mttp-digest/src/overview.mbt.md", async_test), allow)
+    audit(with_file("mttp_digest/src/overview.mbt.md", async_test), allow)
   })
   audit(with_file("http/src/x/x_test.mbt", "// async test \"x\" {\n"), allow)
   audit(with_file("http-async/src/x/x_test.mbt", async_test), allow)

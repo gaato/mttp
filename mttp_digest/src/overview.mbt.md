@@ -1,4 +1,4 @@
-# gaato/mttp-digest
+# gaato/mttp_digest
 
 Origin-scoped HTTP Digest authentication for `gaato/http` backends and the
 `gaato/mttp` client. Keeping it in a separate module makes the
@@ -7,7 +7,7 @@ Origin-scoped HTTP Digest authentication for `gaato/http` backends and the
 ## Install
 
 ```sh
-moon add gaato/http gaato/mttp gaato/mttp-digest
+moon add gaato/http gaato/mttp gaato/mttp_digest
 ```
 
 ## Usage
@@ -74,4 +74,4 @@ would exceed `ffffffff`. A same-nonce challenge at exhaustion returns the
 
 ## License
 
-Apache-2.0. See [LICENSE](https://github.com/gaato/mttp/blob/main/mttp-digest/LICENSE).
+Apache-2.0. See [LICENSE](https://github.com/gaato/mttp/blob/main/mttp_digest/LICENSE).

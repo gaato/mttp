@@ -1,4 +1,4 @@
 {
-  "modules": ["http", "http-async", "mttp", "mttp-digest"],
+  "modules": ["http", "http-async", "mttp", "mttp_digest"],
   "generated": []
 }

@@ -60,7 +60,7 @@ dir	name	kind	targets	module_deps	package_imports	experimental	release
 http	gaato/http	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core,!moonbitlang/core/async,!moonbitlang/core/compress	gaato/http/driver	yes
 http-async	gaato/http-async	runtime	native,wasm,js	gaato/http,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/http,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/http/h1client,gaato/http/h1server,gaato/http/driver	yes
 mttp	gaato/mttp	four-target	wasm-gc,wasm,js,native	gaato/http	moonbitlang/core,!moonbitlang/core/async,gaato/http	gaato/mttp/endpoint,gaato/mttp/endpoint/testkit,gaato/mttp/router,gaato/mttp/apispec,gaato/mttp/openapi,test:gaato/http/driver,test:gaato/http/h1client,test:gaato/http/h1server	yes
-mttp-digest	gaato/mttp-digest	four-target	wasm-gc,wasm,js,native	gaato/http,gaato/mttp,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/http,gaato/mttp,moonbitlang/x	test:gaato/http/driver	yes
+mttp_digest	gaato/mttp_digest	four-target	wasm-gc,wasm,js,native	gaato/http,gaato/mttp,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/http,gaato/mttp,moonbitlang/x	test:gaato/http/driver	yes
 conformance	gaato/mttp-conformance	four-target	wasm-gc,wasm,js,native	gaato/http,gaato/mttp	moonbitlang/core,!moonbitlang/core/async,gaato/http,gaato/mttp	-	no
 examples/get	gaato/mttp-example-get	example	native,wasm	gaato/http,gaato/http-async	*	*	no
 examples/serve	gaato/mttp-example-serve	example	native	gaato/http,gaato/http-async	*	*	no

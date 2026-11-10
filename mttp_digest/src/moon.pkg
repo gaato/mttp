@@ -11,7 +11,7 @@ import {
 } for "wbtest"
 
 import {
-  "gaato/mttp-digest" @mttp_digest,
+  "gaato/mttp_digest",
   "gaato/http/driver",
   "gaato/http/sim",
   "gaato/mttp/client/retry",
