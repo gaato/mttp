@@ -81,6 +81,80 @@ async fn js_body(response : @http.Response) -> Bytes {
 }
 
 ///|
+async test "JS injected clock and timer drive fetch head and body idle deadlines" {
+  for explicit_timer in [false, true] {
+    for streaming in [false, true] {
+      let mock = MockFetch::install(
+        if streaming {
+          "read-pending"
+        } else {
+          "pending"
+        },
+        b"",
+      )
+      defer mock.restore()
+      let clock = @runtime.VirtualClock()
+      let deadline_clock = if explicit_timer {
+        @runtime.VirtualClock()
+      } else {
+        clock
+      }
+      let backend = @backend.AsyncBackend::new(
+        clock~,
+        timer?=if explicit_timer {
+          Some(@runtime.ClockTimer::new(clock=deadline_clock))
+        } else {
+          None
+        },
+      )
+      defer backend.close()
+      let done = Ref(false)
+      @async.with_task_group(group => {
+        group.spawn_bg(() => {
+          try {
+            let response = backend.send(
+              @http.Request::get("http://example.test/"),
+              {
+                timeout_ms: if streaming {
+                  None
+                } else {
+                  Some(60)
+                },
+                body: if streaming {
+                  Stream(idle_ms=Some(60))
+                } else {
+                  Exchange(max_bytes=100)
+                },
+              },
+            )
+            ignore(js_body(response))
+          } catch {
+            @http.TransportError(kind=Timeout(ms=60), phase~, ..) =>
+              assert_eq(phase, if streaming { Body } else { Unknown })
+            error => raise error
+          } noraise {
+            _ => fail("stalled fetch succeeded")
+          }
+          done.val = true
+        })
+        deadline_clock.settle(until=() => {
+          mock.stats()[0] == 1 && deadline_clock.pending() == [60]
+        })
+        deadline_clock.advance(59)
+        assert_false(done.val)
+        deadline_clock.advance(1)
+        deadline_clock.settle(until=() => {
+          done.val && deadline_clock.pending().is_empty()
+        })
+        assert_eq(clock.pending(), [])
+        assert_true(mock.stats()[1] > 0)
+        group.return_immediately()
+      })
+    }
+  }
+}
+
+///|
 async test "JS fetch keeps redirects manual strips proxy credentials and normalizes URL" {
   let mock = MockFetch::install("redirect", b"")
   defer mock.restore()

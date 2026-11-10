@@ -25,6 +25,9 @@ environment; an explicit `ClientConfig` supplies the complete configuration.
 On JS only its `max_body_bytes` applies: fetch controls proxies, connection
 pooling, header limits, trust and content decoding. Socket `Trust` lives in
 this root package so the constructor is identical across targets.
+Optional `clock` and `timer` ports drive socket pool expiry and phase timers,
+and fetch upload/head/body deadlines. The defaults are `AsyncClock` and a
+`ClockTimer` on the chosen clock; passing only `clock` controls both.
 
 `gaato/http-async/runtime` supplies clocks, timers, a FIFO admission gate and
 structured coordination through the portable `gaato/http/rt` traits. Its

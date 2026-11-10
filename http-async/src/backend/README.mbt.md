@@ -33,6 +33,14 @@ The engine handles proxy authentication, CONNECT and NO_PROXY. `trust`
 accepts the root package's `gaato/http-async.Trust`, defaulting to `System`.
 `PemFile` replaces system roots; combine roots in that file when necessary.
 
+The optional `clock` and `timer` arguments accept `gaato/http/rt` ports on
+every target. The clock defaults to `runtime.AsyncClock`; the timer defaults
+to `runtime.ClockTimer` built on the chosen clock. On socket targets they
+drive pool idle expiry (checked when the pool is used) and phase deadlines.
+For controlled tests, pass `clock=virtual_clock`, optionally with
+`timer=@runtime.ClockTimer::new(clock=virtual_clock)`. Passing just the clock
+also puts the default timer on virtual time.
+
 JS uses the host's fetch and ReadableStream reader over core `js_async`.
 Only `ClientConfig.max_body_bytes` applies. Its proxy, connection, phase
 timeout and header settings, and the separate `trust` argument, are ignored;
@@ -62,3 +70,5 @@ uses `idle_ms`; the configured ceiling still applies. Timeout, early close,
 read error and caller cancellation abort fetch and cancel its body reader.
 Cancellation propagates unchanged. `idle_connections()` is zero on JS,
 whose connection pool belongs to the host.
+These fetch deadlines use the injected clock and timer too. Socket-only
+phase settings in `ClientConfig` remain ignored on JS.

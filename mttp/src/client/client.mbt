@@ -28,6 +28,7 @@ pub struct Client {
   priv total_ms : Int32?
   priv observer : (Attempt) -> Unit
   priv random : () -> Double
+  priv mut closed : Bool
 }
 
 ///|
@@ -75,13 +76,20 @@ pub fn Client::new(
     total_ms,
     observer,
     random,
+    closed: false,
   }
 }
 
 ///|
-/// Closes the shared backend. Its close operation is idempotent.
+/// Closes the shared backend idempotently and stops retries. A planned retry
+/// returns its last outcome if closed before its wait or when that wait wakes,
+/// without another limiter acquisition. Closing does not interrupt Clock.sleep.
+/// Later sends fail with Closed in phase Pool before admission.
 pub fn Client::close(self : Client) -> Unit {
-  self.backend.close()
+  if !self.closed {
+    self.closed = true
+    self.backend.close()
+  }
 }
 
 ///|
@@ -211,6 +219,8 @@ async fn[T, M] Client::exchange(
 /// retry policy (or `decide_retry`, which also sees the policy's default
 /// decision). A selected stream consumer starts only after that, and its
 /// result or exception is never retried.
+/// Closing the client stops a planned retry before sleeping or, if already
+/// asleep, on waking, and returns the last attempt's reply or raised error.
 #warnings("-fragile_catch_all")
 pub async fn[T, M : ResponseMode] Client::send(
   self : Client,
@@ -274,6 +284,13 @@ async fn[T, M : ResponseMode] Client::send_loop(
   let replayable = request.body_factory is Some(_) ||
     raw.body is (Empty | Bytes(_))
   for attempt = 0; ; attempt = attempt + 1 {
+    if self.closed {
+      raise @http.TransportError(
+        kind=Closed,
+        phase=Pool,
+        detail="client closed",
+      )
+    }
     self.check_total(started)
     let admission = self.limiter.acquire(bucket, global_exempt=exempt)
     let received = Ref(None)
@@ -417,34 +434,38 @@ async fn[T, M : ResponseMode] Client::send_loop(
       ),
     )
     match decision {
-      Wait(ms) => {
-        if held is Some(value) {
-          discard(value)
-        }
-        held = None
+      Wait(ms) if !self.closed => {
         self.clock.sleep(ms)
-      }
-      Stop(_) | Decision::.. => {
-        self.check_total(started)
-        match outcome {
-          Err(error) => raise error
-          Ok(Buffered(body, response)) => {
-            held = None
-            return reply_of(sent, body, response)
+        // Keep the outcome until the wait finishes: close must return the
+        // same reply (including a selected stream) as Stop would have.
+        if !self.closed {
+          if held is Some(value) {
+            discard(value)
           }
-          Ok(Streaming(response, selected)) => {
-            defer response.close()
-            // No retry boundary encloses this consumer, including its errors.
-            let body = (selected.read)(
-              response.head(),
-              response.body,
-              limits.max_body_bytes,
-            )
-            self.check_total(started)
-            held = None
-            return reply_of(sent, body, response)
-          }
+          held = None
+          continue
         }
+      }
+      _ => ()
+    }
+    self.check_total(started)
+    match outcome {
+      Err(error) => raise error
+      Ok(Buffered(body, response)) => {
+        held = None
+        return reply_of(sent, body, response)
+      }
+      Ok(Streaming(response, selected)) => {
+        defer response.close()
+        // No retry boundary encloses this consumer, including its errors.
+        let body = (selected.read)(
+          response.head(),
+          response.body,
+          limits.max_body_bytes,
+        )
+        self.check_total(started)
+        held = None
+        return reply_of(sent, body, response)
       }
     }
   }

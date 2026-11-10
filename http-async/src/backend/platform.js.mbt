@@ -2,16 +2,22 @@
 priv struct FetchDriver {
   ceiling : Int32?
   mut closed : Bool
+  clock : &@rt.Clock
+  timer : &@rt.Timer
 }
 
 ///|
 fn platform_backend(
   config : @h1client.ClientConfig?,
   _trust : @http_async.Trust,
+  clock : &@rt.Clock,
+  timer : &@rt.Timer,
 ) -> AsyncBackend {
   let driver = FetchDriver::{
     ceiling: config.unwrap_or_else(@h1client.ClientConfig::default).max_body_bytes,
     closed: false,
+    clock,
+    timer,
   }
   { inner: driver, idle: () => 0, }
 }
@@ -28,18 +34,25 @@ fn invalid(detail : String) -> @http.TransportError {
 
 ///|
 priv struct FetchTimer {
+  clock : &@rt.Clock
+  timer : &@rt.Timer
   total : Int32?
   deadline : Int64?
   idle : Int32?
 }
 
 ///|
-fn FetchTimer::new(total : Int32?, idle? : Int32) -> FetchTimer {
+fn FetchTimer::new(
+  clock : &@rt.Clock,
+  timer : &@rt.Timer,
+  total : Int32?,
+  idle? : Int32,
+) -> FetchTimer {
   {
+    clock,
+    timer,
     total,
-    deadline: total.map(ms => {
-      @runtime.AsyncClock::new().now_unix_ms() + ms.to_int64()
-    }),
+    deadline: total.map(ms => clock.now_unix_ms() + ms.to_int64()),
     idle,
   }
 }
@@ -50,12 +63,11 @@ async fn[X] FetchTimer::run(
   phase : @http.Phase,
   f : async () -> X,
 ) -> X raise @http.TransportError {
-  let clock = @runtime.AsyncClock::new()
   let budget = match self.deadline {
     Some(at) =>
       Some(
         (
-          (at - clock.now_unix_ms()).max(0L).min(2147483647L).to_int(),
+          (at - self.clock.now_unix_ms()).max(0L).min(2147483647L).to_int(),
           self.total.unwrap(),
         ),
       )
@@ -64,8 +76,15 @@ async fn[X] FetchTimer::run(
   try {
     guard budget is Some((ms, limit)) else { return f() }
     if ms > 0 {
-      if @runtime.with_timeout_opt(clock, ms, f) is Some(value) {
-        return value
+      let mut result : Result[X, Error]? = None
+      let complete = self.timer.within(ms, () => {
+        result = Some(Ok(f()) catch { error => Err(error) })
+      })
+      match result {
+        Some(Ok(value)) => return value
+        Some(Err(error)) => raise error
+        None if complete => raise invalid("timer did not run its callback")
+        None => ()
       }
     }
     raise @http.TransportError(
@@ -158,11 +177,15 @@ impl @http.Backend for FetchDriver with fn send(self, request, options) {
   if verb.to_upper() is ("CONNECT" | "TRACE" | "TRACK") {
     raise invalid("method forbidden by fetch")
   }
-  let timer = FetchTimer::new(options.timeout_ms)
+  let timer = FetchTimer::new(self.clock, self.timer, options.timeout_ms)
   let (body_timer, limit) = match options.body {
     Exchange(max_bytes~) =>
       (timer, Some(self.ceiling.unwrap_or(max_bytes).min(max_bytes)))
-    Stream(idle_ms~) => (FetchTimer::new(None, idle?=idle_ms), self.ceiling)
+    Stream(idle_ms~) =>
+      (
+        FetchTimer::new(self.clock, self.timer, None, idle?=idle_ms),
+        self.ceiling,
+      )
     @http.BodyTiming::.. => raise invalid("unsupported body timing")
   }
   let bytes = upload(request.body, timer)

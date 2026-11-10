@@ -1,5 +1,6 @@
 import {
   "gaato/http",
+  "gaato/http/rt",
   "gaato/http/h1client",
   "gaato/http-async" @http_async,
   "gaato/http-async/runtime",
@@ -25,7 +26,6 @@ import {
 
 #cfg(not(target="js"))
 import {
-  "gaato/http/rt",
   "moonbitlang/core/encoding/utf8",
   "gaato/http/h1server",
   "gaato/http-async/internal/socketconn",
