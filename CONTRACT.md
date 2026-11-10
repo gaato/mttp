@@ -129,6 +129,13 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
 8. **Wrappers** keep rules 1–7 and pass SendOptions through unchanged unless
    they document otherwise.
 
+`http-async/backend.AsyncBackend::new` accepts optional `rt.Clock` and
+`rt.Timer` ports on every target. The defaults are `AsyncClock` and
+`ClockTimer` on the chosen clock. Socket pool idle expiry uses that clock,
+and phase deadlines use that timer. JS fetch uses them for upload, head and
+body deadlines; its host-owned connection pool and wire phase timeouts remain
+outside these ports.
+
 ## SendOptions and BodyTiming
 
 `SendOptions { timeout_ms : Int?, body : BodyTiming }`.
@@ -243,6 +250,13 @@ mutable; they are owned by a single exchange or reader.
    for a custom decision function. Idempotency comes from the method or the
    explicit `replay_safe` attribute; a header alone is not proof. Vendor retry
    rules belong to the vendor SDK.
+9. `Client::close` records closure before closing its shared backend and is
+   idempotent. A planned retry checks closure before backoff and on waking,
+   before another limiter acquire or attempt; closure returns the last
+   attempt's outcome exactly as `Stop` would, including a selected streaming
+   consumer. It does not interrupt an already running `Clock.sleep`; no wake
+   or cancellation port is required. Later sends fail with `Closed` in phase
+   Pool before admission. The completed attempt still releases its Admission.
 
 ## Incremental parsers
 

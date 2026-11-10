@@ -45,9 +45,9 @@ gaato/http	gaato/http/sim	wasm-gc	40
 gaato/http-async	gaato/http-async	js	1
 gaato/http-async	gaato/http-async	native	1
 gaato/http-async	gaato/http-async	wasm	1
-gaato/http-async	gaato/http-async/backend	js	16
-gaato/http-async	gaato/http-async/backend	native	16
-gaato/http-async	gaato/http-async/backend	wasm	16
+gaato/http-async	gaato/http-async/backend	js	17
+gaato/http-async	gaato/http-async/backend	native	18
+gaato/http-async	gaato/http-async/backend	wasm	18
 gaato/http-async	gaato/http-async/codings	js	47
 gaato/http-async	gaato/http-async/codings	native	47
 gaato/http-async	gaato/http-async/codings	wasm	47
@@ -71,10 +71,10 @@ gaato/mttp	gaato/mttp/apispec	js	11
 gaato/mttp	gaato/mttp/apispec	native	11
 gaato/mttp	gaato/mttp/apispec	wasm	11
 gaato/mttp	gaato/mttp/apispec	wasm-gc	11
-gaato/mttp	gaato/mttp/client	js	90
-gaato/mttp	gaato/mttp/client	native	90
-gaato/mttp	gaato/mttp/client	wasm	90
-gaato/mttp	gaato/mttp/client	wasm-gc	90
+gaato/mttp	gaato/mttp/client	js	96
+gaato/mttp	gaato/mttp/client	native	96
+gaato/mttp	gaato/mttp/client	wasm	96
+gaato/mttp	gaato/mttp/client	wasm-gc	96
 gaato/mttp	gaato/mttp/client/cookies	js	9
 gaato/mttp	gaato/mttp/client/cookies	native	9
 gaato/mttp	gaato/mttp/client/cookies	wasm	9

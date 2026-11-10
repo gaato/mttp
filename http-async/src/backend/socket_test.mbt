@@ -147,6 +147,97 @@ async test "socket keep alive reuses one connection and early close discards it"
 }
 
 ///|
+async test "injected clock expires parked sockets at the idle boundary" {
+  with_server(_ => @http.Response::new(200, body=Bytes(b"reuse")), (
+    url,
+    accepts,
+  ) => {
+    let clock = @runtime.VirtualClock()
+    let backend = @backend.AsyncBackend::new(
+      config={ ..@h1client.ClientConfig::default(), idle_max_ms: 50, },
+      clock~,
+    )
+    defer backend.close()
+    for (elapsed, expected) in [(0, 1), (49, 1), (50, 2)] {
+      clock.advance(elapsed)
+      assert_eq(
+        body(
+          backend.send(@http.Request::get(url), @http.SendOptions::default()),
+        ),
+        b"reuse",
+      )
+      assert_eq(accepts.val, expected)
+      assert_eq(backend.idle_connections(), 1)
+    }
+    assert_eq(clock.pending(), [])
+  })
+}
+
+///|
+async test "injected clock and optional timer drive the socket Head phase timeout" {
+  for explicit_timer in [false, true] {
+    let entered = Ref(false)
+    with_server(
+      _ => {
+        entered.val = true
+        @async.sleep(10000)
+        @http.Response::new(200)
+      },
+      (url, _) => {
+        let clock = @runtime.VirtualClock()
+        let deadline_clock = if explicit_timer {
+          @runtime.VirtualClock()
+        } else {
+          clock
+        }
+        let backend = @backend.AsyncBackend::new(
+          config={
+            ..@h1client.ClientConfig::default(),
+            read_timeout_ms: Some(75),
+          },
+          clock~,
+          timer?=if explicit_timer {
+            Some(@runtime.ClockTimer::new(clock=deadline_clock))
+          } else {
+            None
+          },
+        )
+        defer backend.close()
+        let done = Ref(false)
+        @async.with_task_group(group => {
+          group.spawn_bg(() => {
+            try
+              backend.send(
+                @http.Request::get(url),
+                @http.SendOptions::default(),
+              )
+            catch {
+              @http.TransportError(kind=Timeout(ms=75), phase=Head, ..) => ()
+              error => raise error
+            } noraise {
+              _ => fail("stalled head succeeded")
+            }
+            done.val = true
+          })
+          deadline_clock.settle(until=() => {
+            entered.val && deadline_clock.pending() == [75]
+          })
+          deadline_clock.advance(74)
+          assert_false(done.val)
+          deadline_clock.advance(1)
+          deadline_clock.settle(until=() => {
+            done.val && deadline_clock.pending().is_empty()
+          })
+          assert_eq(clock.pending(), [])
+          assert_eq(backend.idle_connections(), 0)
+          group.return_immediately()
+        })
+      },
+    )
+  }
+}
+
+///|
 async test "socket uploads bytes and known and unknown length streams once" {
   with_server(
     request => {

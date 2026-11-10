@@ -12,11 +12,18 @@ pub struct AsyncBackend {
 /// from the process environment once. An explicit config is used verbatim;
 /// its ProxyConfig::none disables environment proxies. On JS only
 /// config.max_body_bytes applies; trust and socket settings are ignored.
+/// `clock` defaults to AsyncClock; `timer` defaults to ClockTimer on that
+/// clock. Socket pool expiry and deadlines use these ports; fetch uses them
+/// for upload, head and body deadlines (host pooling remains outside them).
 pub fn AsyncBackend::new(
   config? : @h1client.ClientConfig,
   trust~ : @http_async.Trust = System,
+  clock? : &@rt.Clock,
+  timer? : &@rt.Timer,
 ) -> AsyncBackend {
-  platform_backend(config, trust)
+  let clock = clock.unwrap_or_else(() => @runtime.AsyncClock::new())
+  let timer = timer.unwrap_or_else(() => @runtime.ClockTimer::new(clock~))
+  platform_backend(config, trust, clock, timer)
 }
 
 ///|

@@ -482,6 +482,7 @@ pub fn Cookies::new(inner : &@http.Backend, jar : @cookie.CookieJar) -> Cookies
 8. **Observer.** Gets one `Attempt` after release is attempted, with the actual status and head, any raised error and the decision. Logical calls, policy attempts, redirects and stale-connection repairs are distinct and never conflated.
 9. **Decision.** `RetryPolicy` is data; `decide_retry` is an optional typed function over `AttemptResult` that also receives the policy's `default_decision`. The executor enforces the retry count, the replay source and the remaining budget whatever the function says: without a body factory, a stream request is never resent; a `Wait` past the budget becomes `Stop(Budget)`. `Wait(ms)` sleeps on the injected clock.
 10. **Idempotency** comes from the method or the explicit `replay_safe` attribute. An Idempotency-Key header alone does not prove that a service deduplicates. Vendor presets (the old `stainless`) belong to the SDK that needs them; the core keeps `none`, `default` and `conservative`.
+11. **Close.** Records shared closure before closing the backend idempotently. A planned retry checks closure before backoff and after waking, before another acquire/attempt, and returns the last outcome as `Stop` would. An existing `Clock.sleep` is not interrupted; later sends fail with `Closed` in phase Pool before admission. The completed attempt still releases its Admission.
 
 **Redirects.** FollowRedirects is configured once (`RedirectConfig`) and overridden per request through the `redirect_limit` attribute (set by `RequestPlan::follow_redirects` and `max_redirects`). It closes intermediate bodies unread, records `redirect_history`, and composes with Cookies. Retry sits above redirects: a 503 on hop 2 re-sends hop 1.
 
@@ -889,7 +890,11 @@ pub async fn serve(handler : @http.Handler, addr~ : String, on_listen? : (String
 // TcpServer accepts; each connection goes to @h1server.serve_conn with scheme~="http"
 
 // backend (native, wasm, js)
-pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust? : @http_async.Trust) -> AsyncBackend // on js only config.max_body_bytes applies; trust is ignored
+pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust~ : @http_async.Trust = System,
+  clock? : &@rt.Clock, timer? : &@rt.Timer) -> AsyncBackend
+// Defaults: AsyncClock and ClockTimer on the chosen clock. Socket pool expiry and
+// phase deadlines use these ports; JS uses them for upload/head/body deadlines.
+// On JS only config.max_body_bytes applies; trust and socket phase settings are ignored.
 pub impl @http.Backend for AsyncBackend                      // idle_connections
 // native/wasm: @h1client.Client over TcpDialer, AsyncClock, ClockTimer, RuntimeCoordination, always wrapped in Decompress
 // (a request that sets its own Accept-Encoding opts out, per the table below)

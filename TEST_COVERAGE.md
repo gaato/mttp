@@ -65,6 +65,16 @@ the 1 MiB/4 MiB boundaries, cancellation, caught input failures during response
 prefetch across every host shim, and the compiled export smoke test. The
 listener's matching post-prefetch behavior also has a real socket regression.
 
+The consumer lifecycle regressions in `mttp/src/client/close_test.mbt` cover
+observer closure and closure during backoff, the last reply/error/selected
+stream, paired Admission release, idempotent close and sends after close.
+They use a local sequential fake clock; the portable Driver only runs the
+coroutines and schedules the other closing task, without virtual-time sleeps.
+`http-async/src/backend/socket_test.mbt` checks idle expiry at 49/50 ms and
+the Head phase timeout at 74/75 ms with injected VirtualClock, with both the
+default and an explicit ClockTimer on an independent clock. `fetch.js_test.mbt`
+checks injected head and body idle deadlines at 59/60 ms and abort cleanup on JS.
+
 Must be covered by tests:
 
 - pure logic: header, URL and body assembly, the parsers, retry and

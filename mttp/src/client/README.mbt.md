@@ -47,6 +47,15 @@ default. Retrying is opt-in (`RetryPolicy::none()` is the default), a stream
 body is never resent without a body factory, and idempotency comes from the
 method or the `replay_safe` attribute.
 
+`Client::close()` records closure and closes the shared backend idempotently.
+If an observer closes the client after a retry decision, the loop returns
+the last attempt's reply or raised error without sleeping or acquiring again.
+Closure during backoff takes effect when the injected clock's sleep wakes;
+it returns that same outcome without another acquire or attempt. An accepted
+stream is still handed to its consumer as with `Stop`. The completed attempt
+keeps its paired release. Sends begun after closure fail with `Closed` in
+phase Pool before admission.
+
 Every successful acquire returns an `Admission`, including its logical bucket
 and issuer-assigned sequence. The Client retains it through success, failure
 and cancellation cleanup; each retry acquires its own token. Custom limiters
