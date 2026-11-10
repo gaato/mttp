@@ -10,7 +10,7 @@ on:
       - 'http-v*'
       - 'http-async-v*'
       - 'mttp-v*'
-      - 'mttp-digest-v*'
+      - 'mttp_digest-v*'
   workflow_dispatch:
 
 permissions:

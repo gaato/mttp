@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/mttp-digest"
+package "gaato/mttp_digest"
 
 import {
   "gaato/http",

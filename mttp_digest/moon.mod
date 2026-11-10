@@ -1,4 +1,4 @@
-name = "gaato/mttp-digest"
+name = "gaato/mttp_digest"
 
 version = "0.1.0"
 

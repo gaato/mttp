@@ -33,7 +33,7 @@ Made by the user on 2026-11-08. They supersede the 2026-10-24 rows marked † in
 |---|---|---|
 | Lower layer | **`gaato/http` 0.6.0**, the breaking successor of the published mbt-sdk `gaato/http` 0.5. It holds the wire vocabulary, the runtime ports, the h1 codec, the client and server connection engines and the `Backend` trait. It depends on moonbitlang/core only and builds on all four targets. Nothing of 0.5's own packages is carried over: retry, sse, cookie, multipart, Retry-After and Link parsing already live in mttp, and Transport plus middleware are replaced by `Backend` and wrappers. | §5.8 "gaato/http never gets a 0.6"; M-01; the `model`, `clock`, `conn` and `h1` packages of gaato/mttp |
 | I/O module | **`gaato/http-async` 0.6.0**, renamed from `gaato/mttp-net` (never published). It depends on gaato/http, `moonbitlang/core/async` and the codec modules, **not on gaato/mttp**. mttp and http-async share only gaato/http, so either can take a minor release without the other (this removes the F29 problem, M-09). | §0.2 "Module names"; M-04, M-09, Q5, Q6 |
-| Policy layer | **`gaato/mttp` 0.1.0** depends on gaato/http and core only: client, retry, rate limits, cookies, SSE reader, multipart, schema, endpoint, router, OpenAPI, test stubs. **`gaato/mttp-digest` 0.1.0** stays as it is. | M-01 |
+| Policy layer | **`gaato/mttp` 0.1.0** depends on gaato/http and core only: client, retry, rate limits, cookies, SSE reader, multipart, schema, endpoint, router, OpenAPI, test stubs. **`gaato/mttp_digest` 0.1.0** stays as it is. | M-01 |
 | Facade | **`quick` is dropped**, together with `client.quick_request` and the root `new_client` factory. One-liners belong to `moonbitlang/core/async/http`. That client has no bound on the response head, accepts Content-Length together with Transfer-Encoding and decodes only gzip, so it is for trusted, throwaway use only; this document and the READMEs say so. | §0.2 "Facade"; M-06, Q3 |
 | Why core/async/http is not the foundation | No head-size bound, CL+TE accepted, gzip only, connection reuse still provisional (F65). A general lower layer cannot be built on it; gaato/http keeps its own codec and engines and uses core/async only through http-async's adapters. | — |
 | Runtime | **Stage R executes now**, on MoonBit 0.10.20 and `moonbitlang/core/async`. `moonbitlang/async` is forbidden in every module (gate, §5.13). Old-stack graphs (anything still on gaato/http ≤ 0.5 or http-async ≤ 0.5) are frozen: they are not patched onto core/async (Q15, G-06 answered with option (b)). | the former Stage R; G-06, Q15 |
@@ -53,7 +53,7 @@ Made by the user on 2026-10-24; they superseded the corresponding [needs-user-in
 | Scope | v0.1–v0.4 are implemented; the endpoint layer, router, openapi and the test toolkit ship as **experimental** in 0.1.x, outside the §5.6 freeze. WebSockets are deferred (see X-06). | V-01, Q1, Q12 |
 | PRs † | This document lands on its own; the implementation follows as stacked PRs, one per review unit (≲ 5k lines, fully gated). Merge commits. Nothing is published from them. | — |
 | `Request.url` | `String`. The raw string is refused if it contains space, CR, LF or other controls (before parsing: the WHATWG parser strips them), then parsed strictly at send time; the engine re-serialises the request target from the parsed form and validates headers. No URL type exists in core or core/async. | X-01, Q2 |
-| Module names † | `gaato/mttp`, `gaato/mttp-net`, and `gaato/mttp-digest`. Later third-party integrations follow sttp/tapir: `gaato/mttp-<lib>-backend`, `gaato/mttp-<lib>-server`. The tapir-equivalent packages stay inside `gaato/mttp`. (Still valid: mttp-digest, the naming of later integrations, the tapir packages in mttp.) | M-04, M-07, Q6 |
+| Module names † | `gaato/mttp`, `gaato/mttp-net`, and `gaato/mttp_digest`. Later third-party integrations follow sttp/tapir: `gaato/mttp-<lib>-backend`, `gaato/mttp-<lib>-server`. The tapir-equivalent packages stay inside `gaato/mttp`. (Still valid: the Digest module, renamed `gaato/mttp_digest` before its first publish because a library's last path segment is its default import alias and `-` is not valid in one; the naming of later integrations; the tapir packages in mttp.) | M-04, M-07, Q6 |
 | Facade † | `mttp-net/quick` and `client.quick_request(req)`; requesto deprecated later. (Still valid: requesto is deprecated and its keyword-argument API is not carried over.) | M-06, Q3 |
 | jsonkit | `gaato/mttp/jsonkit`. | M-03 |
 | Shim | None (G-02 default (d)). | G-02, Q4 |
@@ -81,7 +81,7 @@ Made by the user on 2026-10-24; they superseded the corresponding [needs-user-in
 6. **One mechanism per concern.** One sending path (`Client::send`), one wrapper form (a `Backend` struct, or `from_fn`), one attempt deadline, one bucket channel, one body direction (pull), one response type for both directions, one definition checker, one framing function for both engines. §5.10 lists the mechanisms that were removed.
 7. **Codegen is optional.** Generated code is code a person could write by hand.
 8. **A module boundary needs one of two reasons:** (a) an **external dependency**, because a module's imports reach every consumer's download set and version selection (F31); or (b) an **independent version cadence**, such as a stable lower layer under an experimental upper one (a split isolates consumers' versions only if the parts are versioned independently, F32). Target isolation is *not* a reason: per-package `supported_targets` does it inside one module (F17). Inside a stable module, an experimental package sets `experimental: true` in its moon.pkg, and each importer opts in with the list form of `allow-experimental-packages`; the gate refuses `true`.
-9. **No public signature names a runtime type.** This covers moonbitlang/core/async's `TaskGroup`, `@io.BinaryReader`/`BinaryWriter`, `@socket.Tcp`, `@tls.Tls` and every `@js_async.*` type, and it applies to gaato/http, gaato/mttp and gaato/http-async alike (gaato/mttp-digest has no async adapter to leak). Ports are traits in `gaato/http/rt`; adapters implement them privately. This keeps signatures stable across runtime changes; it does not keep consumers' manifests stable (an `async fn main` still imports the runtime).
+9. **No public signature names a runtime type.** This covers moonbitlang/core/async's `TaskGroup`, `@io.BinaryReader`/`BinaryWriter`, `@socket.Tcp`, `@tls.Tls` and every `@js_async.*` type, and it applies to gaato/http, gaato/mttp and gaato/http-async alike (gaato/mttp_digest has no async adapter to leak). Ports are traits in `gaato/http/rt`; adapters implement them privately. This keeps signatures stable across runtime changes; it does not keep consumers' manifests stable (an `async fn main` still imports the runtime).
 10. **Evolution rules from the first release.** Every `pub(all)` enum that may grow is `#non_exhaustive`. `pub(all)` struct field sets are frozen at release, and users build these structs through `::new`/`::default()` plus record update. Suberrors cannot be made non-exhaustive, so a suberror that may grow carries a `#non_exhaustive` kind enum; every other suberror is frozen at release (§5.6).
 11. **Three layers inside the engines** (§5.11): pure decisions over persistent snapshots, local orchestration over injected ports, and runtime adapters. Effects never enter the pure layer, and adapters commit a new state before acting on it.
 12. **Expected failures are values.** A rejected status or an undecodable body is a `Result` value; transport failures, cancellation and unknown user errors stay effects with their identity (§4.4).
@@ -95,7 +95,7 @@ Made by the user on 2026-10-24; they superseded the corresponding [needs-user-in
 | `gaato/http` 0.6 | stable lower layer; wasm-gc, wasm, js, native | moonbitlang/core only; never `core/async*` or `core/compress*` | (b) Stable cadence. mttp, http-async and third-party libraries build on it; it changes rarely. |
 | `gaato/http-async` 0.6 | the only I/O module; native, wasm, js | gaato/http, moonbitlang/core (incl. `core/async`, opted in), gaato/codec_bytes, gaato/deflate, gaato/brotli, gaato/zstd | (a) External dependencies (codecs) and the one runtime. |
 | `gaato/mttp` 0.1 | policy and description layer; all 4 targets | gaato/http, moonbitlang/core | (b) Experimental cadence over a stable base. |
-| `gaato/mttp-digest` 0.1 | Digest authentication wrapper | gaato/mttp, moonbitlang/x | (a) Crypto dependency; it must not reach every mttp consumer. |
+| `gaato/mttp_digest` 0.1 | Digest authentication wrapper | gaato/mttp, moonbitlang/x | (a) Crypto dependency; it must not reach every mttp consumer. |
 | `gaato/mttp-gen` | tool, **later** | moonbitlang/parser | A tool, installed with `moon install`, never listed in any moon.mod (F51). Dropped until a consumer needs it. |
 
 Unpublished members of the workspace (`moon.work`): `conformance` (corpora, ledgers, cross-layer e2e suite), `examples` (`get`, `serve`, `fetch`) and `benchmarks`. Socket and adversarial suites live inside http-async's own packages as native/wasm tests.
@@ -145,7 +145,7 @@ Every package that imports core/async lists the exact core/async packages it use
 | `fetch` | js | Host-neutral `fetch_handler(handler)(req, background)` | `mttp-net/fetch` |
 | `hosts` | js | JS entry shims for Workers, Fastly, Vercel, Deno, Bun and AWS Lambda URLs | `mttp-net/fetch` host shims |
 
-### 3.4 Packages of gaato/mttp and gaato/mttp-digest
+### 3.4 Packages of gaato/mttp and gaato/mttp_digest
 
 All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design (v0.1–v0.4) are all in mttp 0.1; the endpoint layer, router, apispec, openapi and endpoint/testkit are experimental (`experimental: true`).
 
@@ -167,7 +167,7 @@ All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design
 | `apispec`, `openapi` (experimental) | Typed OpenAPI 3.1 model; `to_openapi`, `docs_endpoint`, `check_documented` | sttp-apispec, tapir openapi-docs |
 | `internal/form`, `internal/text` | Helpers for schema, which imports no HTTP vocabulary | — |
 
-`gaato/mttp-digest` (root package): `DigestScheme` as an origin-scoped Backend wrapper, ported from requesto.
+`gaato/mttp_digest` (root package): `DigestScheme` as an origin-scoped Backend wrapper, ported from requesto.
 
 ### 3.5 Responsibility rules
 
@@ -216,7 +216,7 @@ gaato/mttp  ──► gaato/http                                 (core + http on
    apispec                     (core json only)             [experimental]
    openapi ──► @http, schema, endpoint, apispec             [experimental]
 
-gaato/mttp-digest ──► gaato/mttp (client), gaato/http, moonbitlang/x
+gaato/mttp_digest ──► gaato/mttp (client), gaato/http, moonbitlang/x
 
 gaato/http-async ──► gaato/http                             (never gaato/mttp)
    runtime ──► rt + core/async
@@ -235,7 +235,7 @@ Rules: an endpoint-definition package imports only `@http`, `schema` and `endpoi
 
 ### 3.7 Consumer manifests
 
-Packages of a transitive module cannot be imported (F31). A consumer of gaato/mttp that names `@http.Request` or `@rt.Clock`, which is nearly every consumer, therefore lists `gaato/http` in its own moon.mod as well; gaato/mttp-digest does the same. A consumer that does I/O lists `gaato/http-async` too, and an application with `async fn main` or `async test` imports core/async itself. These three minimums move together in each release train (§8.2).
+Packages of a transitive module cannot be imported (F31). A consumer of gaato/mttp that names `@http.Request` or `@rt.Clock`, which is nearly every consumer, therefore lists `gaato/http` in its own moon.mod as well; gaato/mttp_digest does the same. A consumer that does I/O lists `gaato/http-async` too, and an application with `async fn main` or `async test` imports core/async itself. These three minimums move together in each release train (§8.2).
 
 ## 4. Layer-by-layer design
 
@@ -1034,7 +1034,7 @@ Every policy takes `&@rt.Clock`, and where needed `&@rt.Timer`, `&@rt.Gate` and 
 | Unit | wasm-gc | wasm | js | native |
 |---|---|---|---|---|
 | all of gaato/http (incl. engines; async tests via `run_sync`) | ✓ | ✓ | ✓ | ✓ |
-| all of gaato/mttp, gaato/mttp-digest | ✓ | ✓ | ✓ | ✓ |
+| all of gaato/mttp, gaato/mttp_digest | ✓ | ✓ | ✓ | ✓ |
 | http-async/codings | – | ✓ | ✓ | ✓ |
 | http-async/runtime, backend | – | ✓ (moonrun) | ✓ (request bodies buffered, ≤ 16 MiB) | ✓ |
 | http-async/conn, server | – | ✓ | – | ✓ |
@@ -1179,7 +1179,7 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | compressBody / compression | `@codings.Decompress` (client) and `@codings.compress` (server) in http-async; request compression later |
 | SttpClientException / ResponseException | `TransportError` (raised) / `ResponseFailure` (a value) |
 | FollowRedirectsBackend | `FollowRedirects` (final URL and history as response attributes) |
-| DigestAuthenticationBackend | `gaato/mttp-digest` (`DigestScheme`) |
+| DigestAuthenticationBackend | `gaato/mttp_digest` (`DigestScheme`) |
 | ResolveRelativeUrisBackend | `Client` base_url (prefix join, not RFC 3986) |
 | ListenerBackend, LoggingBackend, OTel/Prometheus | `Client` observer (per attempt) + `from_fn`; `on_attempt_start`, header redaction helper later |
 | CachingBackend | later, as a bounded Backend wrapper, or an explicit omission |
@@ -1231,7 +1231,7 @@ Each PR branches from the previous one, stays at about 5k changed lines or fewer
 | # | Scope | Bounds to register |
 |---|---|---|
 | 1 | This design, CONTRACT.md | — |
-| 2 | Workspace and gates: `moon.work` (http, http-async, mttp, mttp-digest, conformance, examples), module skeletons, scripts ported to core/async, `scripts/modules.tsv`, CI and release for four modules, the experimental opt-in probe; empty RESOURCE_BOUNDS.md and TEST_COVERAGE.md skeletons so `bounds_check` runs from the start | — |
+| 2 | Workspace and gates: `moon.work` (http, http-async, mttp, mttp_digest, conformance, examples), module skeletons, scripts ported to core/async, `scripts/modules.tsv`, CI and release for four modules, the experimental opt-in probe; empty RESOURCE_BOUNDS.md and TEST_COVERAGE.md skeletons so `bounds_check` runs from the start | — |
 | 3 | `http/rt`, `http/driver`, `http/sim` | Driver steps per run, unwind rounds, timer callbacks per run, cleanup steps per round; generator size clamps |
 | 4 | `http` root vocabulary, `Backend`, `SendOptions`/`BodyTiming` | `read_bounded`; StreamBody declared length; `form_urldecode` pairs (256) |
 | 5 | `http/h1` with the struct API and the smuggling and split-read corpus | head bytes and fields (16 KiB, 100); chunk-size line (4 KiB); trailer bytes and fields (16 KiB, 100) |
@@ -1247,7 +1247,7 @@ Each PR branches from the previous one, stays at about 5k changed lines or fewer
 | 15 | http-async `runtime` (+ VirtualClock), `conn` and socketconn, `codings` with `Decompress` and `compress` | decoder stages (5); decoded output per pull (64 KiB); codec windows; encoder output per pull (64 KiB); Accept-Encoding negotiation (16 KiB, 128 entries); VirtualClock `settle` rounds |
 | 16 | http-async `backend` (native, wasm, js), socket integration tests, `examples/get` | JS upload buffer (16 MiB); JS delivery slices (64 KiB) and empty host chunks (1024) |
 | 17 | http-async `server`, `fetch`, `hosts` with the Lambda empty-body fix (`undefined` when the event has no body); `examples/serve`, `examples/fetch` | fetch request body (1 MiB); fetch delivered chunks and empty-input budget; Lambda buffering (1 MiB / 4 MiB) |
-| 18 | `mttp-digest`, `conformance`, `benchmarks`, the coverage ledger, `release.sh check` dry runs for all four modules | Digest challenge (16 KiB) and nonce origins (16) |
+| 18 | `mttp_digest`, `conformance`, `benchmarks`, the coverage ledger, `release.sh check` dry runs for all four modules | Digest challenge (16 KiB) and nonce origins (16) |
 
 TEST_COVERAGE.md rows (uncovered lines with their reason) are added by each PR for its own packages; PR 18 closes the ledger with the full native coverage run.
 
@@ -1270,7 +1270,7 @@ TEST_COVERAGE.md rows (uncovered lines with their reason) are added by each PR f
 | server listener | rewrite | 226 lines; keep its tests |
 | codings | refactor + add the wrappers | Keep the 32 core tests |
 | fetch, hosts | port + fix | Port to core's js_async; review finding: `hosts/lambda.mjs` must pass `undefined` when there is no body |
-| mttp-digest | keep | — |
+| mttp_digest | keep | — |
 
 ## 8. Migration and release
 
@@ -1321,7 +1321,7 @@ gaato/sdk-runtime → gaato/mttp/client:
 | SdkError::Transport / Status / RateLimited / Decode / Config | `TransportError` (raised) / `ResponseFailure` values / `InvalidRequest` |
 | RetryPolicy, RetryDecider, RetryContext; RateLimiter, WindowLimiter and friends; Paginator; json | `@client` (typed `decide_retry`), `@client/ratelimit`, `@client.Paginator` (Result-based), `@jsonkit` |
 
-requesto 0.2 → mttp: `Response.url`/`history` from the `redirect_history` attribute; retries from the observer; Digest from `gaato/mttp-digest`; cookies from `client/cookies`; `steps`/`on_request`/`on_response` as Backend wrappers (they run per attempt) and the observer; MockTransport as BackendStub or Router-as-Backend; `sse(idle_timeout)` as `as_sse` + `read_idle_ms`; RequestoError as TransportError + ResponseFailure.
+requesto 0.2 → mttp: `Response.url`/`history` from the `redirect_history` attribute; retries from the observer; Digest from `gaato/mttp_digest`; cookies from `client/cookies`; `steps`/`on_request`/`on_response` as Backend wrappers (they run per attempt) and the observer; MockTransport as BackendStub or Router-as-Backend; `sse(idle_timeout)` as `as_sse` + `read_idle_ms`; RequestoError as TransportError + ResponseFailure.
 
 discord 0.13 → next:
 
@@ -1344,7 +1344,7 @@ discord 0.13 → next:
 
 **Every step below is an external operation and needs the owner's go-ahead at the time.** Nothing in §7.1 publishes.
 
-1. Publish the four modules in one train: gaato/http 0.6.0, gaato/http-async 0.6.0, gaato/mttp 0.1.0, gaato/mttp-digest 0.1.0. Before that: resolver gate green, `release.sh check` dry runs green, and the SDK and discord migrations green against the candidates as workspace members.
+1. Publish the four modules in one train: gaato/http 0.6.0, gaato/http-async 0.6.0, gaato/mttp 0.1.0, gaato/mttp_digest 0.1.0. Before that: resolver gate green, `release.sh check` dry runs green, and the SDK and discord migrations green against the candidates as workspace members.
 2. Publish openai, anthropic and github in the same train or immediately after (flag-day rule, §5.8).
 3. discord → discord_voice → discord-cli.
 4. kbbi, nekosama, profile-readme.
@@ -1364,7 +1364,7 @@ The log of 2026-10-24, with statuses updated by §0.1. Ids are kept so that §10
 | M-04 | mttp-net: backend, codings, runtime (v0.1); facade (v0.2); server, fetch (v0.3); files later; `internal/io`. No digest. Name mttp-net vs mttp-async. | superseded: `gaato/http-async` 0.6, no `quick` (§0.1, §3.3) | Digest's crypto dependency would reach every consumer; only requesto uses it (S-09). `internal/` keeps the bridges unimportable, as discord does. |
 | M-05 | Runtime transition: signatures stay runtime-free; the switch is a flag day per application graph (Stage R), editing consumers' manifests. | decided: executed now on 0.10.20 (§0.1) | The runtimes cannot coexist (F35); async main/test needs the runtime in each consumer's manifest (F15, R-10). |
 | M-06 | Exactly one facade at v0.2: requesto 0.3 (thin, no HTTP logic) or `mttp-net/quick` with requesto deprecated. | superseded: no facade (§0.1) | Neither has a consumer in the workspace (S-10). |
-| M-07 | Digest and ChallengeAuth leave the core; requesto implements Digest itself if kept. | decided: Digest is `gaato/mttp-digest` | S-09. |
+| M-07 | Digest and ChallengeAuth leave the core; requesto implements Digest itself if kept. | decided: Digest is `gaato/mttp_digest` | S-09. |
 | M-08 | Monorepo with moon.work, plus the resolver gate, manifest-vs-index ledger, per-target test counts and paired-runtime mbti diff. | proposed | Workspace overrides hide real resolutions (F30). |
 | M-09 | mttp ↔ mttp-net compatibility rule: option 1 (each mttp minor compiles the previous mttp-net minor) or option 2 (mttp-net patch per mttp minor). | resolved: mttp and http-async share only gaato/http (§0.1) | Lockstep cannot be enforced (F29, R-07). |
 | M-10 | Reserve `gaato/mttp/v2` as the escape hatch. | decided; `gaato/http/v2` reserved too | Only a new path coexists (F28). |

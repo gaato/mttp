@@ -100,7 +100,7 @@ body suppression and stream closure, dynamic empty/wildcard representations,
 specific-media precedence, ordinary Auth input failures and invalid statuses.
 These additions require no new uncovered-line exemptions.
 
-The Digest port (`mttp-digest/src/backend.mbt`, `digest.mbt`) and the private
+The Digest port (`mttp_digest/src/backend.mbt`, `digest.mbt`) and the private
 conformance harness (`conformance/src/harness/*.mbt`) are fully covered on
 native: 234/234 and 62/62 instrumented lines. Digest's black-box suites cover
 the Backend checker, request stream cleanup, unchanged SendOptions,
