@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-10
+
 ### Changed
 
 - The module moves from [gaato/mbt-sdk](https://github.com/gaato/mbt-sdk) to

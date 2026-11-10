@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-10
+
 ### Added
 
 - HTTP/1 listener with bounded admission, graceful shutdown and tracked
