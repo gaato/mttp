@@ -38,12 +38,10 @@ import {
 ///   moon run scripts/architecture_gate.mbtx [--self-test]
 
 ///|
-/// Scripts that may import `moonbitlang/async`, with the reason.
-let script_exemptions : Array[(String, String)] = [
-  (
-    "scripts/docs_audit.mbtx", "shared verbatim with every gaato MoonBit repository; it moves to moonbitlang/core/async in all of them at once",
-  ),
-]
+/// Scripts that may import `moonbitlang/async`, with the reason. None does:
+/// the shared docs_audit.mbtx, the last one, moved to core/async in every
+/// repository. An entry needs a reason that outweighs a second runtime.
+let script_exemptions : Array[(String, String)] = []
 
 ///|
 /// The connection engines and the pure control package.
