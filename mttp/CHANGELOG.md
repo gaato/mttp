@@ -6,3 +6,11 @@ All notable changes to `gaato/mttp` are documented here. The format follows
 never does.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-11-10
+
+### Added
+
+- First release: a client on `gaato/http.Backend` with retries, rate limits,
+  deadlines, redirects and cookies; typed response readers, server-sent
+  events and multipart; schemas, endpoints, a router and OpenAPI; test stubs.
