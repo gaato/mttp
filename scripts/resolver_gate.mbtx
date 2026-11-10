@@ -219,6 +219,31 @@ fn zip_names(archive : Bytes) -> Array[String] {
 }
 
 ///|
+/// The index rows to keep when `candidate` is staged. A row for the same
+/// version is dropped: between releases, main keeps the published version
+/// number, so the scratch registry must serve the local code under it, as the
+/// next release will. Refusing a version that is already published is the
+/// release's job (`release.sh publish --dry-run` skips it), not this gate's.
+fn unpublished_rows(
+  rows : Array[String],
+  candidate : Module,
+) -> Array[String] raise GateError {
+  let kept = []
+  for row in rows {
+    let json = @json.parse(row) catch {
+      _ => raise GateError("registry entry is not JSON")
+    }
+    guard json is Object(json) else {
+      raise GateError("registry entry is not an object")
+    }
+    if json.get("version") != Some(Json::string(candidate.version)) {
+      kept.push(row)
+    }
+  }
+  kept
+}
+
+///|
 async fn stage(candidate : Module, registry : String) -> Unit {
   let index = registry + "/index/user/" + candidate.name + ".index"
   let mut rows : Array[String] = []
@@ -229,26 +254,7 @@ async fn stage(candidate : Module, registry : String) -> Unit {
       .map(line => line.to_owned())
       .collect()
   }
-  for row in rows {
-    guard @json.parse(row) is Object(json) else {
-      raise GateError("registry entry is not an object")
-    }
-    if json.get("version") == Some(Json::string(candidate.version)) {
-      if json.get("deps") != Some(Json::object(candidate.deps)) {
-        raise GateError(
-          "manifest/index dependency drift: " +
-          candidate.name +
-          "@" +
-          candidate.version,
-        )
-      }
-      // Do not replace an existing release with different local code even if
-      // its imports match: this gate validates unpublished release candidates.
-      raise GateError(
-        "version already exists; reserve a new version: " + candidate.name,
-      )
-    }
-  }
+  let rows = unpublished_rows(rows, candidate)
   // Packaging performs a check. Copy the module outside its original
   // workspace so sibling overrides cannot validate different dependency code.
   let source = registry + "/../sources/" + candidate.name
@@ -505,32 +511,33 @@ async fn main {
         targets: [],
         package_targets: {},
       }
-      for
-        (version, expected) in [
-          ("0.1.0", "manifest/index dependency drift:"),
-          ("0.2.0", "version already exists;"),
-        ] {
-        let entry : Json = {
-          "name": candidate.name,
-          "version": candidate.version,
-          "deps": { "probe/dependency": version },
-        }
-        @fs.write_text(
-          root + "/index/user/probe/library.index",
-          entry.stringify() + "\n",
-        )
-        let rejected = try {
-          stage(candidate, root)
-          false
-        } catch {
-          GateError(message) => message.has_prefix(expected)
-          other => raise other
-        }
-        if !rejected {
-          raise GateError("resolver negative test did not reject " + version)
-        }
+      // A published row for the candidate's version gives way to the local
+      // code; other versions stay.
+      let published : Json = {
+        "name": candidate.name,
+        "version": candidate.version,
+        "deps": { "probe/dependency": "0.1.0" },
       }
-      println("resolver gate self-test: drift and existing-version guards OK")
+      let older : Json = { "name": candidate.name, "version": "0.0.9" }
+      let kept = unpublished_rows(
+        [older.stringify(), published.stringify()],
+        candidate,
+      )
+      if kept != [older.stringify()] {
+        raise GateError(
+          "resolver self-test: the published row was not replaced",
+        )
+      }
+      let refused = try {
+        unpublished_rows(["[]"], candidate) |> ignore
+        false
+      } catch {
+        GateError(_) => true
+      }
+      if !refused {
+        raise GateError("resolver self-test: a malformed row was accepted")
+      }
+      println("resolver gate self-test: published versions are replaced OK")
       // A package narrower than its module is imported, and acknowledged,
       // only by the consumers of its own targets.
       let narrowed : Module = {

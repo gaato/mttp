@@ -1160,7 +1160,7 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | `resolver_gate` | The four modules resolve and build from a scratch consumer outside moon.work; an experimental package needs the consumer's opt-in. |
 | `type_contracts` | Compile-fail fixtures from an external package: a Streaming endpoint refuses a Buffered request; `as_both` refuses streaming readers. |
 
-`scripts/*.mbtx` move to core/async's `fs` and shell APIs. If a `.mbtx` script cannot set the experimental opt-in, the scripts alone stay on moonbitlang/async 0.22.5 as a documented exception to the gate; the workspace PR settles this.
+`scripts/*.mbtx` move to core/async's `fs` and shell APIs. A `.mbtx` script cannot set the experimental opt-in (front matter accepts `import` and `permission` only), so it runs with the experimental warning on stderr, which `scripts/gates.sh` filters. The shared `docs_audit.mbtx` was the last script on moonbitlang/async 0.22.5; it moved in every gaato repository on 2026-11-10, and the gate has no exemption left.
 ## 6. sttp/tapir concept map
 
 | sttp / tapir concept | mttp home, or the reason it is omitted |
