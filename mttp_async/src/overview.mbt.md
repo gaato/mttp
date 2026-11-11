@@ -69,6 +69,25 @@ readable messages.
 | Body size | Buffered bodies up to 64 MiB after decoding | `max_body_bytes=` |
 | TLS | The system's roots | `trust=PemFile(..)` |
 
+## With an API SDK
+
+An SDK built on `gaato/mttp` (such as `gaato/openai` or `gaato/anthropic`)
+creates its own Client with the provider's base URL, authentication and retry
+rules. Give it the I/O with `backend()`, `clock()` and `timer()`; the timer
+lets it enforce its deadlines:
+
+```mbt nocheck
+///|
+let claude = @anthropic.Anthropic::new(
+  api_key~,
+  @mttp_async.backend(),
+  @mttp_async.clock(),
+  timer=@mttp_async.timer(),
+)
+```
+
+The app's `moon.mod` lists the SDK and `gaato/mttp_async`.
+
 ## Serve
 
 `gaato/mttp_async/server` serves any `async (Request) -> Response` handler on
@@ -115,7 +134,7 @@ runtime here; use `gaato/mttp` there and provide its runtime ports.
 
 | Package | Targets | Purpose |
 |---|---|---|
-| `gaato/mttp_async` | native, wasm, js | `run`, `client()`, and re-exports of the types and client functions an app uses |
+| `gaato/mttp_async` | native, wasm, js | `run`, `client()`, `backend()`, `clock()`, `timer()`, and re-exports of the types and client functions an app uses |
 | `backend` | native, wasm, js | `AsyncBackend`: the HTTP/1.1 engine over TCP and TLS with decompression; the host's `fetch` on js |
 | `server` | native, wasm | `serve`: bounded listener, graceful shutdown, background work |
 | `fetch`, `hosts` | js | `fetch_handler` and the host shims |

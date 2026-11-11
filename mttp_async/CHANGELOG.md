@@ -19,6 +19,9 @@ never does.
   - The root package re-exports the vocabulary and the client API an app
     needs (`Request`, `Response`, `Client`, `get`, `post`, `as_json` and so
     on), so `gaato/mttp_async` is the only module in its `moon.mod`.
+  - `backend()`, `clock()` and `timer()` supply the same I/O to a library
+    that builds its own Client, such as an API SDK, which keeps its own base
+    URL, authentication and retry defaults.
 - `ListenError` implements `Show`.
 - The Deno, Bun and Node host shims (`hosts/adapters.mjs`) return `shutdown()`
   beside `fetch` and `whenIdle`. It ends every in-flight response whose
