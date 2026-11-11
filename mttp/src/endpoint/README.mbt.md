@@ -292,7 +292,7 @@ test "a handler reads server-only values without an input" {
   @driver.run_sync(() => {
     let ctx = @endpoint.DispatchContext::new()
     let response = server.dispatch(request, Map([]), ctx)
-    assert_eq(@client.read_body(response.body, 100), b"peer")
+    assert_eq(response.body.read_all(max=100), b"peer")
   })
 }
 ```

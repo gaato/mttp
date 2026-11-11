@@ -46,7 +46,7 @@ test "serve_public_with hands the handler the request's server-only attributes" 
       Map([]),
       @endpoint.DispatchContext::new(),
     )
-    assert_eq(@client.read_body(bare.body, 100), b"no scheduler")
+    assert_eq(bare.body.read_all(max=100), b"no scheduler")
   })
 }
 
