@@ -188,10 +188,12 @@ extern "js" fn exported(promise : @js_async.Promise[WebResponse]) -> JsPromise =
   #| promise => promise
 
 ///|
-/// Builds the host Response. `signal` is the request's: it cancels the body
-/// until the body ends, and every listener on it is removed at the end, so a
-/// host that aborts it after a successful response (Deno's legacy behavior)
-/// cancels nothing.
+/// Builds the host Response. `signal` is the request's. Until the body ends,
+/// its abort (the client went away) ends the body quietly: the source is
+/// closed once and the stream is closed rather than errored, since nobody is
+/// left to read it and an error would only be logged by the host. Every
+/// listener on it is removed when the body ends, so a host that aborts it
+/// after a successful response (Deno's legacy behavior) changes nothing.
 ///
 /// When `cut` holds (the reply has `@mttp.close_on_shutdown`), the Response
 /// carries a non-enumerable function under
@@ -226,15 +228,12 @@ extern "js" fn response(
   #|   const finish = () => {
   #|     if (closed) return;
   #|     closed = true;
-  #|     signal.removeEventListener('abort', cancel);
+  #|     signal.removeEventListener('abort', abandon);
   #|     for (const s of shutdowns) s.removeEventListener('abort', stop);
   #|     interrupt();
   #|     close();
   #|   };
-  #|   const cancel = () => {
-  #|     controller.error(new DOMException('Request aborted', 'AbortError'));
-  #|     finish();
-  #|   };
+  #|   const abandon = () => { controller.close(); finish(); };
   #|   const stop = () => {
   #|     if (closed || stopping) return;
   #|     stopping = true;
@@ -261,8 +260,8 @@ extern "js" fn response(
   #|     },
   #|     cancel() { finish(); }
   #|   }, {highWaterMark: 0});
-  #|   signal.addEventListener('abort', cancel, {once: true});
-  #|   if (signal.aborted) cancel();
+  #|   signal.addEventListener('abort', abandon, {once: true});
+  #|   if (signal.aborted) abandon();
   #|   let result;
   #|   try { result = new Response(body, {status, headers: pairs}); }
   #|   catch (error) { finish(); throw error; }

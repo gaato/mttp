@@ -19,8 +19,12 @@ Promise synchronously, before the adapter returns its response Promise. Work
 registered through `http.background` before the handler returns is included
 in that aggregate; it can outlive the response. Every registered task settles
 before the aggregate resolves or rejects. Late scheduling is ignored. Request
-abort cancels handling and response reads; already scheduled background work
-has an independent lifetime owned by the host's waitUntil/shutdown policy.
+abort before the response head cancels handling and rejects the response
+Promise. After the head, it ends the response body quietly: the source is
+closed once and the stream closes instead of failing, because the client is
+gone and an error would only be logged by the host. Already scheduled
+background work has an independent lifetime owned by the host's
+waitUntil/shutdown policy.
 
 The request ceiling defaults to 1 MiB. Declared overflow is rejected before
 the handler (413); observed overflow remains a failure even if the handler

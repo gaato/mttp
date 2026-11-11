@@ -125,7 +125,7 @@ extern "js" fn interrupt_waiting_read(
   #| }
 
 ///|
-async test "shutdown ends a marked body cleanly while its read waits and closes it once" {
+async test "shutdown or a request abort ends a body cleanly while its read waits and closes it once" {
   for shutdown in [true, false] {
     let source = BlockedSource::{ first: b"data: 1\n\n", reads: 0, closes: 0, }
     let adapter = fetch_handler(_ => streamed(source, Some(true)))
@@ -135,9 +135,9 @@ async test "shutdown ends a marked body cleanly while its read waits and closes 
       adapter(signalled_request("GET", controller.signal()), probe.callback()),
     ).wait()
     let result = interrupt_waiting_read(reply, controller, shutdown).wait()
-    // A shutdown ends the body; a request abort before completion still
-    // cancels it as an error.
-    assert_eq(result, if shutdown { "done" } else { "rejected" })
+    // A shutdown ends the body, and so does a client leaving before the
+    // end: neither is an error a host would log.
+    assert_eq(result, "done")
     assert_eq(source.reads, 2)
     assert_eq(source.closes, 1)
     probe.settled().wait()

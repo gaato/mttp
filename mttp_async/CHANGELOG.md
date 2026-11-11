@@ -44,6 +44,11 @@ never does.
   calls with its shutdown signal. A pull of a response body cancelled by a host
   event (client disconnect, shutdown) now ends at once instead of waiting for
   unrelated MoonBit work to run.
+- A client disconnecting while a fetch response body streams now ends the
+  body quietly: its source is closed once and the stream is closed instead of
+  errored with `AbortError`, which Deno logged twice per disconnected SSE
+  client. A disconnect before the response head still rejects the response
+  Promise.
 
 ## Earlier versions, as gaato/http-async
 

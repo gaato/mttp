@@ -55,8 +55,12 @@ forever. Other responses are left to finish. The fetch adapter marks those
 responses with a function under `Symbol.for("gaato.mttp.closeOnShutdown")`;
 a bridge of your own can call it with an AbortSignal that aborts at shutdown.
 
-A host that aborts `request.signal` after a successful response (Deno's legacy
-behavior) cancels nothing: the adapter drops its listeners once the body ends.
+A client that disconnects while a body streams ends it quietly: the adapter
+closes its source once and closes the stream instead of failing it, so Deno,
+Bun and Node log nothing. A disconnect before the response head still rejects
+the response Promise, which Deno logs as `AbortError`. A host that aborts
+`request.signal` after a successful response (Deno's legacy behavior) cancels
+nothing: the adapter drops its listeners once the body ends.
 
 Lambda Function URLs use `lambda(fetch)` from `lambda.mjs`. It translates the
 v2 event's raw path/query, base64 body, cookies and domain into a Web Request.

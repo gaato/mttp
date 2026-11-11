@@ -1,5 +1,5 @@
 ///|
-async test "abort after response creation closes the output stream and rejects future reads" {
+async test "abort after response creation ends the output quietly and closes the source once" {
   let controller = @js_async.AbortController::new()
   let source = OutputSource::{ reads: 0, closes: 0, }
   let probe = Probe::new()
@@ -11,15 +11,13 @@ async test "abort after response creation closes the output stream and rejects f
   ).wait()
   assert_eq(source.reads, 1)
   controller.abort()
-  let rejected = try {
-    ignore(reply.text().wait())
-    false
-  } catch {
-    _ => true
-  }
-  assert_true(rejected)
+  // The client is gone: the body ends instead of failing, so a host has no
+  // error to log. The prefetched piece is dropped and nothing more is read.
+  assert_eq(reply.text().wait(), "")
+  assert_eq(source.reads, 1)
   assert_eq(source.closes, 1)
   probe.settled().wait()
+  assert_false(probe.failed())
 }
 
 ///|
