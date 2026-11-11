@@ -3,7 +3,7 @@
 The HTTP client of gaato/mttp: a description of what to send and how to read
 the answer, and a `Client` that sends it through any `@mttp.Backend` with
 defaults, admission, deadlines, decoded-body limits and retries. It does no
-I/O itself; `gaato/http-async` provides the backends that do, and
+I/O itself; `gaato/mttp_async` provides the backends that do, and
 `gaato/mttp/testing` the stubs.
 
 ## Requests and response plans

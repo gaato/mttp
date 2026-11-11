@@ -1,0 +1,95 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_async/codings"
+
+import {
+  "gaato/mttp",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn accept_encoding() -> String
+
+pub fn coding_plan(String) -> Array[Coding] raise @mttp.TransportError
+
+pub fn coding_plan_fields(Array[String]) -> CodingPlan raise @mttp.TransportError
+
+pub fn compress(async (@mttp.Request) -> @mttp.Response noraise, min_bytes? : Int32) -> async (@mttp.Request) -> @mttp.Response noraise
+
+pub fn decode_head(@mttp.ResponseHead) -> (@mttp.ResponseHead, ContentDecoder?) raise @mttp.TransportError
+
+pub fn encode_body(@mttp.Body, Coding) -> @mttp.Body raise @mttp.TransportError
+
+pub fn has_body(String, Int32) -> Bool
+
+pub fn negotiate_encoding(@mttp.Headers) -> EncodingChoice raise @mttp.TransportError
+
+pub async fn read_decoded(async () -> Bytes?, ContentDecoder?) -> Bytes?
+
+pub async fn read_encoded(async () -> Bytes?, ContentEncoder) -> Bytes?
+
+// Errors
+
+// Types and methods
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum Coding {
+  Gzip
+  Deflate
+  Brotli
+  Zstd
+}
+pub fn Coding::equal(Self, Self) -> Bool
+pub fn Coding::name(Self) -> String
+pub fn Coding::not_equal(Self, Self) -> Bool
+pub fn Coding::to_repr(Self) -> @debug.Repr
+
+pub struct CodingPlan {
+  undo : Array[Coding]
+  remaining : String?
+}
+
+pub struct ContentDecoder {
+  // private fields
+}
+pub fn ContentDecoder::end(Self) -> Unit raise @mttp.TransportError
+pub fn ContentDecoder::feed(Self, Bytes) -> Unit raise @mttp.TransportError
+pub fn ContentDecoder::new(Array[Coding]) -> Self raise @mttp.TransportError
+pub fn ContentDecoder::pull(Self) -> Pulled raise @mttp.TransportError
+
+pub struct ContentEncoder {
+  // private fields
+}
+pub fn ContentEncoder::end(Self) -> Unit raise @mttp.TransportError
+pub fn ContentEncoder::feed(Self, Bytes) -> Unit raise @mttp.TransportError
+pub fn ContentEncoder::new(Coding) -> Self raise @mttp.TransportError
+pub fn ContentEncoder::pull(Self) -> Pulled raise @mttp.TransportError
+
+pub struct Decompress {
+  // private fields
+}
+pub fn Decompress::close(Self) -> Unit
+pub fn Decompress::new(&@mttp.Backend) -> Self
+pub async fn Decompress::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
+pub impl @mttp.Backend for Decompress
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum EncodingChoice {
+  Identity
+  Encoded(Coding)
+  Unacceptable
+}
+pub fn EncodingChoice::equal(Self, Self) -> Bool
+pub fn EncodingChoice::not_equal(Self, Self) -> Bool
+pub fn EncodingChoice::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+pub(all) enum Pulled {
+  Slice(Bytes)
+  NeedInput
+  Done
+}
+
+// Type aliases
+
+// Traits

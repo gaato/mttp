@@ -1,0 +1,71 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_async"
+
+import {
+  "gaato/mttp",
+  "gaato/mttp/client",
+  "gaato/mttp/h1client",
+  "gaato/mttp/sse",
+  "gaato/mttp_async/trust",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn as_bytes() -> @client.ResponsePlan[Result[Bytes, @client.ResponseFailure], @client.Buffered]
+
+pub fn[T : @json.FromJson] as_json() -> @client.ResponsePlan[Result[T, @client.ResponseFailure], @client.Buffered]
+
+pub fn as_json_value() -> @client.ResponsePlan[Result[@json.Json, @client.ResponseFailure], @client.Buffered]
+
+pub fn as_lines(async (String) -> Unit, max_line_bytes? : Int32) -> @client.ResponsePlan[Result[Unit, @client.ResponseFailure], @client.Streaming]
+
+pub fn as_sse(async (@sse.SseEvent) -> Unit, max_event_bytes? : Int32, stop? : (@sse.SseEvent) -> Bool) -> @client.ResponsePlan[Result[Unit, @client.ResponseFailure], @client.Streaming]
+
+pub fn as_string() -> @client.ResponsePlan[Result[String, @client.ResponseFailure], @client.Buffered]
+
+pub fn client(base_url? : String, headers? : @mttp.Headers, timeout_ms? : Int32, total_ms? : Int32, max_body_bytes? : Int32, retry? : @client.RetryPolicy, retry_budget? : @client.RetryBudget, redirect? : @client.RedirectConfig, limiter? : &@client.RateLimiter, trust? : @trust.Trust, config? : @h1client.ClientConfig) -> @client.Client
+
+pub fn get(String) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
+
+pub fn post(String) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
+
+pub fn request(@mttp.Request) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
+
+pub fn run(async () -> Unit) -> Unit
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+pub using @mttp {type Body}
+
+pub using @client {type Client}
+
+pub using @mttp {type Headers}
+
+pub using @mttp {type Method}
+
+pub using @client {type RedirectConfig}
+
+pub using @client {type Reply}
+
+pub using @mttp {type Request}
+
+pub using @client {type RequestPlan}
+
+pub using @mttp {type Response}
+
+pub using @client {type ResponseFailure}
+
+pub using @client {type ResponsePlan}
+
+pub using @client {type RetryBudget}
+
+pub using @client {type RetryPolicy}
+
+pub using @mttp {type TransportError}
+
+pub using @trust {type Trust}
+
+// Traits

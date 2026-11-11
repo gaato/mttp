@@ -7,7 +7,7 @@ name: Release
 on:
   push:
     tags:
-      - 'http-async-v*'
+      - 'mttp_async-v*'
       - 'mttp-v*'
       - 'mttp_digest-v*'
   workflow_dispatch:

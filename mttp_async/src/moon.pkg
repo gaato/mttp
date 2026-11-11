@@ -1,0 +1,26 @@
+import {
+  "gaato/mttp",
+  "gaato/mttp/client",
+  "gaato/mttp/h1client",
+  "gaato/mttp_async/backend",
+  "gaato/mttp_async/runtime",
+  "gaato/mttp_async/trust",
+  "moonbitlang/core/async",
+}
+
+import {
+  "gaato/mttp_async/server",
+  "moonbitlang/core/async/cond_var",
+  "moonbitlang/core/encoding/utf8",
+} for "test"
+
+supported_targets = "js + native + wasm"
+
+options(
+  "allow-experimental-packages": [
+    "gaato/mttp/h1client",
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/cond_var",
+  ],
+  targets: { "entry_test.mbt": [ "native", "wasm" ] },
+)

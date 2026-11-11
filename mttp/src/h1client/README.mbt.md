@@ -11,7 +11,7 @@ knowing it.
 > **Experimental.** The engine's settings and its reporting may still
 > change; an importer lists it in
 > `options("allow-experimental-packages": ["gaato/mttp/h1client"])`.
-> [`gaato/http-async`](https://mooncakes.io/docs/gaato/http-async) wires it
+> [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) wires it
 > to sockets, TLS and an event loop; most applications use that instead.
 
 ## Sending a request

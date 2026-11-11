@@ -1,5 +1,5 @@
 members = [
-  "http-async",
+  "mttp_async",
   "mttp",
   "mttp_digest",
   "conformance",

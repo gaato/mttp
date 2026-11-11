@@ -70,7 +70,7 @@ observer closure and closure during backoff, the last reply/error/selected
 stream, paired Admission release, idempotent close and sends after close.
 They use a local sequential fake clock; the portable Driver only runs the
 coroutines and schedules the other closing task, without virtual-time sleeps.
-`http-async/src/backend/socket_test.mbt` checks idle expiry at 49/50 ms and
+`mttp_async/src/backend/socket_test.mbt` checks idle expiry at 49/50 ms and
 the Head phase timeout at 74/75 ms with injected VirtualClock, with both the
 default and an explicit ClockTimer on an independent clock. `fetch.js_test.mbt`
 checks injected head and body idle deadlines at 59/60 ms and abort cleanup on JS.
@@ -119,16 +119,17 @@ uncovered-line budget is needed for these additions.
 
 | File | Budget | Reason |
 | --- | --- | --- |
-| http-async/src/conn/dialer.mbt | 1 | Forward-compatible Trust arm: Trust now belongs to the cross-target root package, so the dialer must refuse future constructors that cannot be constructed in this release. |
-| http-async/src/conn/conn_io.mbt | 1 | BinaryWriterImpl::get_controller is not called by core's current writer defaults; the controller is a stateless marker reserved for future buffering/locking. Each bridge still constructs and owns its controller as required by the core trait. |
-| http-async/src/codings/body_source.mbt | 1 | Forward-compatible Body arm: a future body representation is refused instead of silently treated as empty. |
-| http-async/src/codings/decompress.mbt | 1 | Defensive fallback for a non-TransportError from read_decoded: this wrapper supplies a TransportError-only reader and ContentDecoder translates codec errors to TransportError. Cancellation is a scheduler signal. |
-| http-async/src/codings/encoded_body.mbt | 1 | Defensive fallback for a non-TransportError from read_encoded: this wrapper supplies a TransportError-only reader and ContentEncoder translates codec errors to TransportError. |
-| http-async/src/internal/socketconn/socket.mbt | 2 | Not yet tested: reentrant close between spawning a directional child and registering its cancellation handle. The defensive checks remain because TaskGroup::spawn allows a child to start immediately. Ordinary pending read/write close and caller cancellation are tested. |
-| http-async/src/runtime/coordination.mbt | 3 | Defensive Task::wait rethrow and non-TransportError mapping: primary/monitor raise only TransportError, primary errors are recorded before wait returns, and explicit child cancellation has its own arm. |
-| http-async/src/server/response.mbt | 1 | Defensive read-after-close guard of the private response lease: the engine's acquired StreamBody reader already returns EOF without delegating after closure. |
-| http-async/src/server/serve.mbt | 9 | Defensive shutdown handoff and failure arms: stop after capacity wakeup or during accept/register/spawn handoff, accept failure after stop, configuration refused after the same immutable limits were validated before bind, independently cancelled acceptor while Running, worker errors suppressed during cancellation cleanup, and unexpected server-task errors. Stop normally cancels and joins the acceptor as a signal; real accept failure, full-cap shutdown, late accepted socket actions and jobs started during expiry cleanup have dedicated tests. |
-| http-async/src/runtime/timer.mbt | 1 | Defensive ordinary-error fallback of the generic timeout helper. Clock::sleep and Timer's callback are noraise, so current children cannot raise an Error; cancellation propagates independently. |
+| mttp_async/src/entry.mbt | 1 | The body of `run` starts core/async's event loop, which a test cannot do from inside the loop it already runs in; examples/get runs it. |
+| mttp_async/src/conn/dialer.mbt | 1 | Forward-compatible Trust arm: Trust belongs to the cross-target trust package, so the dialer must refuse future constructors that cannot be constructed in this release. |
+| mttp_async/src/conn/conn_io.mbt | 1 | BinaryWriterImpl::get_controller is not called by core's current writer defaults; the controller is a stateless marker reserved for future buffering/locking. Each bridge still constructs and owns its controller as required by the core trait. |
+| mttp_async/src/codings/body_source.mbt | 1 | Forward-compatible Body arm: a future body representation is refused instead of silently treated as empty. |
+| mttp_async/src/codings/decompress.mbt | 1 | Defensive fallback for a non-TransportError from read_decoded: this wrapper supplies a TransportError-only reader and ContentDecoder translates codec errors to TransportError. Cancellation is a scheduler signal. |
+| mttp_async/src/codings/encoded_body.mbt | 1 | Defensive fallback for a non-TransportError from read_encoded: this wrapper supplies a TransportError-only reader and ContentEncoder translates codec errors to TransportError. |
+| mttp_async/src/internal/socketconn/socket.mbt | 2 | Not yet tested: reentrant close between spawning a directional child and registering its cancellation handle. The defensive checks remain because TaskGroup::spawn allows a child to start immediately. Ordinary pending read/write close and caller cancellation are tested. |
+| mttp_async/src/runtime/coordination.mbt | 3 | Defensive Task::wait rethrow and non-TransportError mapping: primary/monitor raise only TransportError, primary errors are recorded before wait returns, and explicit child cancellation has its own arm. |
+| mttp_async/src/server/response.mbt | 1 | Defensive read-after-close guard of the private response lease: the engine's acquired StreamBody reader already returns EOF without delegating after closure. |
+| mttp_async/src/server/serve.mbt | 9 | Defensive shutdown handoff and failure arms: stop after capacity wakeup or during accept/register/spawn handoff, accept failure after stop, configuration refused after the same immutable limits were validated before bind, independently cancelled acceptor while Running, worker errors suppressed during cancellation cleanup, and unexpected server-task errors. Stop normally cancels and joins the acceptor as a signal; real accept failure, full-cap shutdown, late accepted socket actions and jobs started during expiry cleanup have dedicated tests. |
+| mttp_async/src/runtime/timer.mbt | 1 | Defensive ordinary-error fallback of the generic timeout helper. Clock::sleep and Timer's callback are noraise, so current children cannot raise an Error; cancellation propagates independently. |
 | mttp/src/driver/driver.mbt | 1 | Defensive arm: a task suspended by something other than its Driver. No async runtime is linked, so nothing else can suspend it. |
 | mttp/src/h1client/client.mbt | 1 | Forward-compatibility arm of the `#non_exhaustive` `BodyTiming` match: every timing the module defines has its own arm. |
 | mttp/src/h1client/failure.mbt | 3 | Defensive arm: an error that is neither a `TransportError` nor a codec `ParseError`. The ports raise only `TransportError`, and every codec call inside a phase raises `ParseError`; cancellation is not an `Error`. |

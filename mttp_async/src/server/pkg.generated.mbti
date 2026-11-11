@@ -1,0 +1,26 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_async/server"
+
+import {
+  "gaato/mttp",
+  "gaato/mttp/h1server",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub async fn serve(async (@mttp.Request) -> @mttp.Response noraise, addr~ : String, limits? : @h1server.ServerLimits, on_listen? : (String) -> Unit, on_error? : (@mttp.TransportError) -> Unit) -> Unit raise ListenError
+
+// Errors
+#derive(@debug.Debug)
+pub(all) suberror ListenError {
+  Config(@h1server.ServerConfigError)
+  Bind(detail~ : String)
+  Accept(detail~ : String)
+}
+pub fn ListenError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+
+// Type aliases
+
+// Traits

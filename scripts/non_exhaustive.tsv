@@ -5,10 +5,10 @@
 # a row whose package or enum does not exist fails, so add a row together
 # with the enum.
 package	enum
-gaato/http-async	Trust
-gaato/http-async/codings	Coding
-gaato/http-async/codings	Pulled
-gaato/http-async/codings	EncodingChoice
+gaato/mttp_async/trust	Trust
+gaato/mttp_async/codings	Coding
+gaato/mttp_async/codings	Pulled
+gaato/mttp_async/codings	EncodingChoice
 gaato/mttp	Body
 gaato/mttp	BodyTiming
 gaato/mttp	Kind

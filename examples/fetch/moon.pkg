@@ -1,6 +1,6 @@
 import {
   "gaato/mttp",
-  "gaato/http-async/fetch",
+  "gaato/mttp_async/fetch",
 }
 
 supported_targets = "js"

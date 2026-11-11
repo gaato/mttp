@@ -47,7 +47,7 @@ your `moon.mod`.
 ## Usage
 
 Build an upload and read a server-sent event stream. Neither touches the
-network: a transport from `gaato/http-async`, or a test double, sends the
+network: a transport from `gaato/mttp_async`, or a test double, sends the
 request and supplies the chunks.
 
 ```mbt check

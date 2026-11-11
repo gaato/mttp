@@ -13,7 +13,7 @@ and builds on wasm-gc, wasm, js and native.
 > driver are here.
 
 Sockets, TLS, an event loop and content codings live in
-[`gaato/http-async`](https://mooncakes.io/docs/gaato/http-async), and the
+[`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async), and the
 client with retries, cookies and endpoints lives in
 [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp).
 
