@@ -147,3 +147,25 @@ test "references in component media parameters headers webhooks and path items a
   })
   assert_eq(@openapi.check_references(empty), [])
 }
+
+///|
+test "references in OpenAPI 3.2's item schemas, media types and additional operations are checked" {
+  let bad : Json = { "$ref": "#/missing" }
+  let streamed = {
+    "text/event-stream": @apispec.MediaTypeObject::new(item_schema=bad),
+  }
+  let copy = @apispec.Operation::new(responses={
+    "200": @apispec.ResponseObject::new(content=streamed),
+  })
+  let spec = @apispec.OpenApi::new(
+    @apispec.Info::new("Test", "1"),
+    paths={
+      "/": @apispec.PathItem::new(additional_operations={ "COPY": copy }),
+    },
+    components=@apispec.Components::new(media_types={
+      "Events": @apispec.MediaTypeObject::new(item_schema=bad),
+    }),
+  )
+  // One in the component media type, one under the COPY operation.
+  assert_eq(@openapi.check_references(spec).length(), 2)
+}
