@@ -20,16 +20,22 @@ moon add gaato/mttp_async
 
 ```mbt check
 ///|
-/// Fetches a user and prints it, or the status that stopped it.
+/// Fetches a user and prints it, the status that stopped it, or the network
+/// failure.
 pub async fn print_user(id : Int32) -> Unit {
   let api = @mttp_async.client(base_url="https://api.example.com")
   defer api.close()
   let reply = api.send(
     @mttp_async.get("/users/\{id}").response(@mttp_async.as_json_value()),
-  )
+  ) catch {
+    error => {
+      println("network: \{error}")
+      return
+    }
+  }
   match reply.body {
     Ok(user) => println(user.stringify())
-    Err(_) => println("HTTP \{reply.status}")
+    Err(failure) => println(failure.to_string())
   }
 }
 ```
@@ -48,7 +54,8 @@ fn main {
 `as_string`, `as_bytes`, `as_lines` and `as_sse` say how to read the reply.
 An HTTP failure, such as a 404 or a body that does not decode, is a value in
 `reply.body`; a network failure is raised as a `TransportError` that says in
-which phase it happened and whether the request was sent.
+which phase it happened and whether the request was sent. Both print as
+readable messages.
 
 ## What `client()` does by default
 
@@ -77,6 +84,23 @@ them with `gaato/mttp`'s `endpoint` and `router` packages (add `gaato/mttp`
 to the app as well) and serve `router.handler()`. On JavaScript hosts,
 `gaato/mttp_async/fetch` turns the same handler into a `fetch` export for
 Cloudflare Workers, Deno, Bun, Node, Fastly, Vercel and AWS Lambda.
+
+## Tests and concurrency
+
+A plain `test` block runs async code with `run`, again without importing
+core/async:
+
+```mbt nocheck
+///|
+test "reads the user" {
+  @mttp_async.run(async fn() { print_user(1) })
+}
+```
+
+Running work concurrently (spawning tasks, task groups, `async test`) is
+`moonbitlang/core/async`'s job: import it and list it in the package's
+`allow-experimental-packages`. This module does not re-export it, because
+its public API names no runtime types.
 
 ## Targets
 

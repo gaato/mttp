@@ -134,3 +134,37 @@ test "builders preserve metadata and explicit limiter buckets independently of o
     Some("application/octet-stream"),
   )
 }
+
+///|
+/// A pattern validator in a top-level definition, as an application writes
+/// its endpoints: building it never raises.
+let slug_pattern_endpoint : @endpoint.Endpoint[
+  Unit,
+  String,
+  @endpoint.NoError,
+  String,
+  @client.Buffered,
+] = @endpoint.endpoint
+  .get("/links/{code}")
+  .input(
+    @endpoint.path("code", @schema.string.validate(@schema.pattern("^[a-z]+$"))),
+  )
+  .output(@endpoint.text_out())
+
+///|
+test "a pattern validator composes at the top level, and an unsupported one is refused by the definition check" {
+  assert_eq(@endpoint.check_definitions([slug_pattern_endpoint.doc()]), [])
+  let unsupported = @endpoint.endpoint
+    .get("/links/{code}")
+    .input(
+      @endpoint.path(
+        "code",
+        @schema.string.validate(@schema.pattern("(?<n>a)")),
+      ),
+    )
+    .output(@endpoint.text_out())
+  let problems = @endpoint.check_definitions([unsupported.doc()])
+  assert_eq(problems.length(), 1)
+  assert_true(problems[0].message.contains("unsupported pattern (?<n>a)"))
+  assert_true(problems[0].fatal)
+}

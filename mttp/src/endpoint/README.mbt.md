@@ -100,6 +100,24 @@ the typed value; `body_out` carries a per-response content type and bytes.
 `set_cookie` keeps separate Set-Cookie fields and returns each named cookie's
 value and attributes without interpreting its application-specific contents.
 
-The router and `endpoint/testkit` arrive in follow-up changes. Until then,
-`ServerEndpoint::dispatch` accepts captures and a `DispatchContext`; a
-`@client.from_handler` backend can connect the two interpreters in memory.
+Serve endpoints through `gaato/mttp/router`, and stub them in tests with
+`gaato/mttp/endpoint/testkit`. `ServerEndpoint::dispatch` remains for adapters
+that route themselves: it takes the captures and a `DispatchContext`.
+
+Each endpoint documents the errors its own output declares. Shared error
+types are fine, but give each endpoint an `Out` with only the variants it can
+return, so a public route does not document 401 or 409:
+
+```mbt check
+///|
+test "each endpoint declares only its own errors" {
+  let not_found = @endpoint.empty_variant(404)
+  let read = @endpoint.endpoint
+    .get("/items/{id}")
+    .input(@endpoint.path("id", @schema.string))
+    .output(@endpoint.text_out())
+    .errors(@endpoint.one_of([not_found]))
+  let statuses = read.doc().errors.map(variant => variant.status)
+  assert_eq(statuses, [404])
+}
+```

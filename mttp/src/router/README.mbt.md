@@ -19,7 +19,9 @@ test "in-process router example" {
 ```
 
 An explicit HEAD endpoint wins; otherwise GET handles HEAD and its body is
-closed and removed. OPTIONS is generated from the selected path's methods.
+closed and removed. The GET handler runs in full for such a HEAD request, so a
+GET with side effects (a hit counter, say) sees HEAD requests too; declare a
+HEAD endpoint to answer them separately. OPTIONS is generated from the selected path's methods.
 Default failures use application/problem+json; internal exception details and
 authentication credentials are not included. Configure `ServerOptions` to
 override error policies and add middleware such as `cors`.

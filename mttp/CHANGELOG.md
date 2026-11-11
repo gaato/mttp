@@ -28,6 +28,10 @@ never does.
   `Operation::new` takes `responses~` (default empty) and `ResponseObject::new`
   takes `description?`; the 3.1 documents `openapi` emits still always describe
   each response.
+- `@schema.pattern` no longer raises: an unsupported pattern is recorded as a
+  definition problem, which the endpoint definition check reports as a
+  `DefinitionError`, so validators compose in top-level definitions.
+  `UnsupportedPattern` is no longer public.
 
 ### Added
 
@@ -43,6 +47,10 @@ never does.
   `SecurityScheme.deprecated` and `oauth2_metadata_url`,
   `Components.media_types`, and `PathItem`'s `query` operation and
   `additional_operations`. They stay unset in the 3.1 documents `openapi` emits.
+- `Show` for the error types (`TransportError`, `UrlError`, `InvalidRequest`,
+  `ResponseFailure`, `DecodeFailure`, `DefinitionError`, `InputErrors`,
+  `ServerConfigError`), so they interpolate as readable messages;
+  `reason_phrase` covers every status code RFC 9110, 6585 and 7725 register.
 
 ## [0.1.0] - 2026-11-10
 

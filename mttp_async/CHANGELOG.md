@@ -19,6 +19,7 @@ never does.
   - The root package re-exports the vocabulary and the client API an app
     needs (`Request`, `Response`, `Client`, `get`, `post`, `as_json` and so
     on), so `gaato/mttp_async` is the only module in its `moon.mod`.
+- `ListenError` implements `Show`.
 
 ### Changed
 

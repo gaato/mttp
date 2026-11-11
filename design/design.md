@@ -33,7 +33,7 @@ Decided by the owner on 2026-11-11 after a review from first principles. Where Â
 
 1. **Who chooses it**: MoonBit users who outgrow `moonbitlang/core/async/http`: API clients and SDKs, long-running services, typed APIs with OpenAPI. Simple GETs are left to the standard library. What the family offers on top: policy (retries under a budget, deadlines, rate limits, redirects, cookies), typed errors, typed endpoints with OpenAPI, and an I/O-free core tested identically on four targets. Bounded parsing is not a selling point once core fixes its #4612 P0-2 findings.
 2. **Quality is the entry ticket**: bounded defaults, deterministic tests and the gates stay.
-3. **One module per job** for an app, whose first example fits in about ten lines compiled in CI; no experimental opt-in on a recommended path.
+3. **One module per job** for an app, whose first example fits in about ten lines compiled in CI; no experimental opt-in on a recommended path. One accepted exception: an app with typed endpoints lists gaato/mttp as well, because its endpoint definitions belong in an I/O-free package that the server, the client and the tests share, and that package depends on gaato/mttp anyway.
 4. **Libraries carry no I/O**: an SDK depends on no I/O module, builds on wasm-gc, and does not re-release when the runtime or a codec changes.
 5. **Module boundaries only by principle 8.** In this family the only boundary with a reason is I/O. Package boundaries follow dependencies.
 6. **Names**: every module carries the brand `mttp`; each description names the job; the first line of each README routes the reader.
@@ -58,6 +58,8 @@ Decided by the owner on 2026-11-11 after a review from first principles. Where Â
   - AsyncAPI: there is nothing to describe (no WebSockets; SSE is described with `itemSchema`).
   - An endpoint core without the client (as tapir-core is without sttp's client): the client interpreter uses the endpoint's private internals, so separating it would freeze them as a public API and turn `ep.request(...)` into a function; it saves only one package's compile for server-only users, and the family has one client while tapir has several.
   - Reporting core/async/http's head bound and CL+TE handling: core's own review tracks both as P0-2 with reproductions.
+  - Re-exporting core/async's concurrency API (tasks, task groups) from gaato/mttp_async so that apps need no opt-in for it: that would name runtime types in mttp_async's public API (principle 9). The README shows `run` in plain tests and says where concurrency comes from.
+- **Trial before the first release** (2026-11-11): a short-link service built on these modules found that `@schema.pattern` raised (now it records a definition problem instead, so endpoints can be top-level values), that error types lacked `Show`, that typed SSE dropped event ids and names and could not stop early, and that endless streams held up shutdown; all were fixed before 0.2.0, together with the full RFC 9110 reason-phrase table and the documentation gaps it found.
 - **Waiting on outside facts**: OpenAPI 3.2 output (code generators and Redoc cannot read 3.2 yet); WebSockets (core/async's websocket lacks bounds and masking checks, X-06); HTTP/2 (core/tls has no ALPN). Backends on other runtimes (moonbitstack's moonfetch would bring HTTP/2 and 3) wait for those libraries to move off moonbitlang/async 0.22, which cannot share a program with core/async.
 
 

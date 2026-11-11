@@ -72,7 +72,10 @@ pub fn status_of(ResponseFailure) -> Int32?
 pub(all) suberror InvalidRequest {
   InvalidRequest(message~ : String)
 }
+pub fn InvalidRequest::output(Self, &Logger) -> Unit
 pub fn InvalidRequest::to_repr(Self) -> @debug.Repr
+pub fn InvalidRequest::to_string(Self) -> String
+pub impl Show for InvalidRequest
 
 // Types and methods
 pub struct Admission {
@@ -204,7 +207,10 @@ pub(all) enum ResponseFailure {
 pub fn ResponseFailure::equal(Self, Self) -> Bool
 pub fn ResponseFailure::head(Self) -> @mttp.ResponseHead
 pub fn ResponseFailure::not_equal(Self, Self) -> Bool
+pub fn ResponseFailure::output(Self, &Logger) -> Unit
 pub fn ResponseFailure::to_repr(Self) -> @debug.Repr
+pub fn ResponseFailure::to_string(Self) -> String
+pub impl Show for ResponseFailure
 
 pub struct ResponsePlan[T, M] {
   // private fields

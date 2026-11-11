@@ -89,11 +89,17 @@ pub fn unit() -> Input[Unit]
 pub(all) suberror DefinitionError {
   DefinitionError(Array[DefinitionProblem])
 }
+pub fn DefinitionError::output(Self, &Logger) -> Unit
 pub fn DefinitionError::to_repr(Self) -> @debug.Repr
+pub fn DefinitionError::to_string(Self) -> String
+pub impl Show for DefinitionError
 
 pub(all) suberror InputErrors {
   InputErrors(Array[InputFailure])
 }
+pub fn InputErrors::output(Self, &Logger) -> Unit
+pub fn InputErrors::to_string(Self) -> String
+pub impl Show for InputErrors
 
 // Types and methods
 pub struct Atom {

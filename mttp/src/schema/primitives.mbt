@@ -86,7 +86,7 @@ pub fn[T] custom(
   check : (T) -> String?,
   keywords~ : Map[String, Json] = {},
 ) -> Validator[T] {
-  { check, keywords: keywords.copy(), }
+  { check, keywords: keywords.copy(), problems: [], }
 }
 
 ///|
@@ -139,7 +139,7 @@ pub fn[T] JsonCodec::validate(
     ..self,
     from_: (j, path, d) => check((self.from_)(j, path, d), path),
     missing_: self.missing_.map(f => () => check(f(), "")),
-    schema_: self.schema_.patch(v.keywords),
+    schema_: with_problems(self.schema_.patch(v.keywords), v.problems),
   }
 }
 
@@ -169,4 +169,14 @@ pub fn[T, U] JsonCodec::map(
 pub fn string_enum(name : String, values : Array[String]) -> JsonCodec[String] {
   let codec = jstring.validate(one_of_values(values))
   { ..codec, schema_: codec.schema_.named(name), }
+}
+
+///|
+/// `schema` with a validator's construction problems added.
+fn with_problems(schema : Schema, problems : Array[String]) -> Schema {
+  if problems.is_empty() {
+    schema
+  } else {
+    { ..schema, problems: [..schema.problems, ..problems], }
+  }
 }
