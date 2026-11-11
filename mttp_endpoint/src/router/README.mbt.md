@@ -1,4 +1,4 @@
-# In-process router (experimental)
+# In-process router
 
 Router validates definitions at construction and dispatches through ordered
 middleware. Literal segments beat captures, and a final rest capture is less

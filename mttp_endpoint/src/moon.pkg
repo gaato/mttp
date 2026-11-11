@@ -1,0 +1,14 @@
+import {
+  "gaato/http/driver",
+  "gaato/http/sim",
+  "gaato/mttp/client",
+  "gaato/mttp/schema",
+  "gaato/mttp_endpoint/apispec",
+  "gaato/mttp_endpoint/endpoint",
+  "gaato/mttp_endpoint/openapi",
+  "gaato/mttp_endpoint/router",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/http/driver" ],
+)

@@ -1,10 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/mttp/openapi"
+package "gaato/mttp_endpoint/openapi"
 
 import {
   "gaato/http",
-  "gaato/mttp/apispec",
-  "gaato/mttp/endpoint",
+  "gaato/mttp_endpoint/apispec",
+  "gaato/mttp_endpoint/endpoint",
 }
 
 // Values

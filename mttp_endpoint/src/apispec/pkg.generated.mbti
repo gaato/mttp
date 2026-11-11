@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/mttp/apispec"
+package "gaato/mttp_endpoint/apispec"
 
 import {
   "moonbitlang/core/debug",

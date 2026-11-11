@@ -20,6 +20,5 @@ import {
 } for "wbtest"
 
 options(
-  experimental: true,
   "allow-experimental-packages": [ "gaato/http/driver" ],
 )

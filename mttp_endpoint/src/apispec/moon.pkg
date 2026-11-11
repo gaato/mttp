@@ -2,10 +2,3 @@ import {
   "moonbitlang/core/json",
   "moonbitlang/core/debug",
 }
-
-// Experimental with the endpoint layer it documents (design, section 3.4):
-// an importing package lists it in allow-experimental-packages.
-
-options(
-  experimental: true,
-)

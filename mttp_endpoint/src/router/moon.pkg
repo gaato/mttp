@@ -1,7 +1,7 @@
 import {
   "gaato/http",
   "gaato/http/rt",
-  "gaato/mttp/endpoint",
+  "gaato/mttp_endpoint/endpoint",
   "gaato/mttp/schema",
 }
 
@@ -12,6 +12,5 @@ import {
 } for "test"
 
 options(
-  experimental: true,
-  "allow-experimental-packages": [ "gaato/mttp/endpoint", "gaato/http/driver" ],
+  "allow-experimental-packages": [ "gaato/http/driver" ],
 )

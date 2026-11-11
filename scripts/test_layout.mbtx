@@ -50,7 +50,7 @@ let testing_component : String = "testkit"
 
 ///|
 /// Module directories whose sources may not read the clock or randomness.
-let clock_free_dirs : Array[String] = ["http", "mttp"]
+let clock_free_dirs : Array[String] = ["http", "mttp", "mttp_endpoint"]
 
 ///|
 /// The rule names allow entries may use.
@@ -514,7 +514,7 @@ fn run_self_test(repo : Repo, allow : String) -> Unit raise {
   for
     testing in [
       "gaato/http/driver", "gaato/http/sim", "gaato/http/sim/feed", "gaato/mttp/testing",
-      "gaato/mttp/testing/conn", "gaato/mttp/endpoint/testkit",
+      "gaato/mttp/testing/conn", "gaato/mttp_endpoint/endpoint/testkit",
     ] {
     must_fail("production import of \{testing}", () => {
       audit(

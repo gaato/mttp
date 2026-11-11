@@ -33,7 +33,7 @@ Made by the user on 2026-11-08. They supersede the 2026-10-24 rows marked † in
 |---|---|---|
 | Lower layer | **`gaato/http` 0.6.0**, the breaking successor of the published mbt-sdk `gaato/http` 0.5. It holds the wire vocabulary, the runtime ports, the h1 codec, the client and server connection engines and the `Backend` trait. It depends on moonbitlang/core only and builds on all four targets. Nothing of 0.5's own packages is carried over: retry, sse, cookie, multipart, Retry-After and Link parsing already live in mttp, and Transport plus middleware are replaced by `Backend` and wrappers. | §5.8 "gaato/http never gets a 0.6"; M-01; the `model`, `clock`, `conn` and `h1` packages of gaato/mttp |
 | I/O module | **`gaato/http-async` 0.6.0**, renamed from `gaato/mttp-net` (never published). It depends on gaato/http, `moonbitlang/core/async` and the codec modules, **not on gaato/mttp**. mttp and http-async share only gaato/http, so either can take a minor release without the other (this removes the F29 problem, M-09). | §0.2 "Module names"; M-04, M-09, Q5, Q6 |
-| Policy layer | **`gaato/mttp` 0.1.0** depends on gaato/http and core only: client, retry, rate limits, cookies, SSE reader, multipart, schema, endpoint, router, OpenAPI, test stubs. **`gaato/mttp_digest` 0.1.0** stays as it is. | M-01 |
+| Policy layer | **`gaato/mttp` 0.1.0** depends on gaato/http and core only: client, retry, rate limits, cookies, SSE reader, multipart, schema, test stubs (endpoint, router and OpenAPI moved to `gaato/mttp_endpoint` on 2026-11-11, see Endpoint module). **`gaato/mttp_digest` 0.1.0** stays as it is. | M-01 |
 | Facade | **`quick` is dropped**, together with `client.quick_request` and the root `new_client` factory. One-liners belong to `moonbitlang/core/async/http`. That client has no bound on the response head, accepts Content-Length together with Transfer-Encoding and decodes only gzip, so it is for trusted, throwaway use only; this document and the READMEs say so. | §0.2 "Facade"; M-06, Q3 |
 | Why core/async/http is not the foundation | No head-size bound, CL+TE accepted, gzip only, connection reuse still provisional (F65). A general lower layer cannot be built on it; gaato/http keeps its own codec and engines and uses core/async only through http-async's adapters. | — |
 | Runtime | **Stage R executes now**, on MoonBit 0.10.20 and `moonbitlang/core/async`. `moonbitlang/async` is forbidden in every module (gate, §5.13). Old-stack graphs (anything still on gaato/http ≤ 0.5 or http-async ≤ 0.5) are frozen: they are not patched onto core/async (Q15, G-06 answered with option (b)). | the former Stage R; G-06, Q15 |
@@ -44,6 +44,7 @@ Made by the user on 2026-11-08. They supersede the 2026-10-24 rows marked † in
 | Rewrite or keep | Chosen per component by quality, from "move as is" to "rewrite" (§7.2). Starting from zero is allowed where the reference is weak. | — |
 | Toolchain | 0.10.20+65efd5b93, pinned. The `%async` intrinsics used by the Driver exist in 0.10.20 and are confined to one file (§5.6). | §5.6 toolchain pins |
 | OpenAPI version | (2026-11-11) **3.1 now, ready for 3.2.** Code generators cannot read 3.2 yet: openapi-generator's parser, swagger-parser 2.1.48, rejects a 3.2 document, and Redoc reads up to 3.1. A document other languages cannot generate clients from loses the point of one definition for server, client and docs. Ready for 3.2 means each sequential item is already described in 3.2's shape: an SSE event is `x-oai-itemSchema` (the OpenAPI Initiative's registered extension for `itemSchema` before 3.2) with string `event`/`data`/`id`, integer `retry` and the JSON payload as `contentSchema` of `data`. Moving to 3.2 renames that member to `itemSchema` and changes the version field. | P-11 (3.1-only needs-user-input), the OpenAPI half of open question 2 (§12), `x-mttp-sse-data-schema` |
+| Endpoint module | (2026-11-11) **The endpoint layer is its own module, `gaato/mttp_endpoint`**, in this repository: `gaato/mttp_endpoint/{endpoint,endpoint/testkit,router,apispec,openapi}`, root package an overview only. Reason: principle 8 (b). The layer will keep changing (a handler-first style, for example) while gaato/mttp underlies the SDKs; inside mttp each breaking change would either bump mttp's minor, which forces every SDK to re-release (F28), or break in a patch under the experimental exemption, which empties the version of meaning for endpoint users. The repository stays shared so that changes crossing the client and the endpoint layer land in one PR with one set of gates. The packages are no longer experimental: the module's own 0.x minors carry their breaking changes. gaato/mttp 0.1.1 removes them (allowed for experimental packages, §0.2 Scope); gaato/discord 0.15.1 moves with it. mttp_endpoint imports gaato/http and gaato/mttp (client, schema, sse, testing, multipart); schema and jsonkit stay in mttp. Tapir keeps its core free of the HTTP client (tapir-core needs only sttp-model and sttp-shared; tapir-sttp-client is separate); doing the same here is open (§12). | §0.2 Module names (the tapir packages in mttp), the Scope row's experimental endpoint layer, M-04 |
 
 ### 0.2 Original decisions (2026-10-24)
 
@@ -54,7 +55,7 @@ Made by the user on 2026-10-24; they superseded the corresponding [needs-user-in
 | Scope | v0.1–v0.4 are implemented; the endpoint layer, router, openapi and the test toolkit ship as **experimental** in 0.1.x, outside the §5.6 freeze. WebSockets are deferred (see X-06). | V-01, Q1, Q12 |
 | PRs † | This document lands on its own; the implementation follows as stacked PRs, one per review unit (≲ 5k lines, fully gated). Merge commits. Nothing is published from them. | — |
 | `Request.url` | `String`. The raw string is refused if it contains space, CR, LF or other controls (before parsing: the WHATWG parser strips them), then parsed strictly at send time; the engine re-serialises the request target from the parsed form and validates headers. No URL type exists in core or core/async. | X-01, Q2 |
-| Module names † | `gaato/mttp`, `gaato/mttp-net`, and `gaato/mttp_digest`. Later third-party integrations follow sttp/tapir: `gaato/mttp-<lib>-backend`, `gaato/mttp-<lib>-server`. The tapir-equivalent packages stay inside `gaato/mttp`. (Still valid: the Digest module, renamed `gaato/mttp_digest` before its first publish because a library's last path segment is its default import alias and `-` is not valid in one; the naming of later integrations; the tapir packages in mttp.) | M-04, M-07, Q6 |
+| Module names † | `gaato/mttp`, `gaato/mttp-net`, and `gaato/mttp_digest`. Later third-party integrations follow sttp/tapir: `gaato/mttp-<lib>-backend`, `gaato/mttp-<lib>-server`. The tapir-equivalent packages stay inside `gaato/mttp` (superseded 2026-11-11: §0.1 Endpoint module). (Still valid: the Digest module, renamed `gaato/mttp_digest` before its first publish because a library's last path segment is its default import alias and `-` is not valid in one; the naming of later integrations.) | M-04, M-07, Q6 |
 | Facade † | `mttp-net/quick` and `client.quick_request(req)`; requesto deprecated later. (Still valid: requesto is deprecated and its keyword-argument API is not carried over.) | M-06, Q3 |
 | jsonkit | `gaato/mttp/jsonkit`. | M-03 |
 | Shim | None (G-02 default (d)). | G-02, Q4 |
@@ -95,7 +96,8 @@ Made by the user on 2026-10-24; they superseded the corresponding [needs-user-in
 |---|---|---|---|
 | `gaato/http` 0.6 | stable lower layer; wasm-gc, wasm, js, native | moonbitlang/core only; never `core/async*` or `core/compress*` | (b) Stable cadence. mttp, http-async and third-party libraries build on it; it changes rarely. |
 | `gaato/http-async` 0.6 | the only I/O module; native, wasm, js | gaato/http, moonbitlang/core (incl. `core/async`, opted in), gaato/codec_bytes, gaato/deflate, gaato/brotli, gaato/zstd | (a) External dependencies (codecs) and the one runtime. |
-| `gaato/mttp` 0.1 | policy and description layer; all 4 targets | gaato/http, moonbitlang/core | (b) Experimental cadence over a stable base. |
+| `gaato/mttp` 0.1 | policy layer; all 4 targets | gaato/http, moonbitlang/core | (b) Its own cadence over a stable base. |
+| `gaato/mttp_endpoint` 0.1 | description layer (endpoints, router, OpenAPI); all 4 targets | gaato/http, gaato/mttp, moonbitlang/core | (b) A faster cadence than mttp, which the SDKs build on (§0.1 Endpoint module). |
 | `gaato/mttp_digest` 0.1 | Digest authentication wrapper | gaato/mttp, moonbitlang/x | (a) Crypto dependency; it must not reach every mttp consumer. |
 | `gaato/mttp-gen` | tool, **later** | moonbitlang/parser | A tool, installed with `moon install`, never listed in any moon.mod (F51). Dropped until a consumer needs it. |
 
@@ -146,9 +148,9 @@ Every package that imports core/async lists the exact core/async packages it use
 | `fetch` | js | Host-neutral `fetch_handler(handler)(req, background)` | `mttp-net/fetch` |
 | `hosts` | js | JS entry shims for Workers, Fastly, Vercel, Deno, Bun and AWS Lambda URLs | `mttp-net/fetch` host shims |
 
-### 3.4 Packages of gaato/mttp and gaato/mttp_digest
+### 3.4 Packages of gaato/mttp, gaato/mttp_endpoint and gaato/mttp_digest
 
-All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design (v0.1–v0.4) are all in mttp 0.1; the endpoint layer, router, apispec, openapi and endpoint/testkit are experimental (`experimental: true`).
+All of gaato/mttp and gaato/mttp_endpoint builds on all four targets. The tiers of the 2026-10-24 design (v0.1–v0.4) are all in mttp 0.1. The endpoint layer, router, apispec, openapi and endpoint/testkit, experimental in mttp 0.1.0, are packages of gaato/mttp_endpoint since 2026-11-11 and no longer experimental; the table names them by their path inside that module.
 
 | Package | Responsibility | sttp/tapir counterpart |
 |---|---|---|
@@ -162,10 +164,10 @@ All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design
 | `client/cookies` | The `Cookies` Backend wrapper | client4 cookie handling |
 | `testing` | BackendStub (`expect`/`when`/`sent`/`verify`), Canned, Recorded, `fail_sends` | client4 testing |
 | `schema` | Schema (JSON Schema 2020-12 + defs), Issue, DecodeFailure, Validator, TextCodec, JsonCodec, BodyCodec | tapir Codec, Schema, Validator |
-| `endpoint` (experimental) | Inputs, outputs, declared errors, Endpoint builders with a response mode, server dispatch, client interpreter, definition checker | tapir core + interpreters |
-| `endpoint/testkit` (experimental) | `when_endpoint`, `verify` | tapir stub / verifier |
-| `router` (experimental) | Router, ServerOptions, Middleware, problem+json, CORS, `impl @http.Backend for Router` | tapir server core + stub server |
-| `apispec`, `openapi` (experimental) | Typed OpenAPI 3.1 model; `to_openapi`, `docs_endpoint`, `check_documented` | sttp-apispec, tapir openapi-docs |
+| mttp_endpoint: `endpoint` | Inputs, outputs, declared errors, Endpoint builders with a response mode, server dispatch, client interpreter, definition checker | tapir core + interpreters |
+| mttp_endpoint: `endpoint/testkit` | `when_endpoint`, `verify` | tapir stub / verifier |
+| mttp_endpoint: `router` | Router, ServerOptions, Middleware, problem+json, CORS, `impl @http.Backend for Router` | tapir server core + stub server |
+| mttp_endpoint: `apispec`, `openapi` | Typed OpenAPI 3.1 model; `to_openapi`, `docs_endpoint`, `check_documented` | sttp-apispec, tapir openapi-docs |
 | `internal/form`, `internal/text` | Helpers for schema, which imports no HTTP vocabulary | — |
 
 `gaato/mttp_digest` (root package): `DigestScheme` as an origin-scoped Backend wrapper, ported from requesto.
@@ -179,7 +181,7 @@ All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design
   - **h1client / h1server** drive one or many connections over `rt` ports, with wire-level bounds and deadlines. They never import codings.
   - **internal/control** decides; it never acts.
   - **driver / sim** are test infrastructure. No production package imports them (gate).
-- **gaato/mttp** owns policy and descriptions. A client policy goes in one of three places:
+- **gaato/mttp** owns policy, and **gaato/mttp_endpoint** owns descriptions. A client policy goes in one of three places:
   - a **Backend wrapper**, if it needs only the request and the response head: redirects, cookies, header injection, wire logging, Digest;
   - the **Client loop**, if it must see the read outcome or pair work across one attempt: retry, rate-limit admission and release, deadlines, decoded-body limits, the attempt observer;
   - the **Client defaults**: base URL, default headers, default SendOptions.
@@ -211,11 +213,13 @@ gaato/mttp  ──► gaato/http                                 (core + http on
    client/cookies ──► client, cookie
    testing ──► @http, client
    schema ──► jsonkit, internal/*                           (no HTTP vocabulary)
-   endpoint ──► @http, schema, client                       [experimental]
-   router ──► @http, schema, client, endpoint               [experimental]
-   endpoint/testkit ──► @http, client, endpoint, router, testing   [experimental]
-   apispec                     (core json only)             [experimental]
-   openapi ──► @http, schema, endpoint, apispec             [experimental]
+
+gaato/mttp_endpoint ──► gaato/mttp, gaato/http              (core + http + mttp only)
+   endpoint ──► @http, mttp/schema, mttp/client, mttp/sse
+   router ──► @http, mttp/schema, endpoint
+   endpoint/testkit ──► @http, endpoint, router, mttp/testing
+   apispec                     (core json only)
+   openapi ──► @http, mttp/schema, endpoint, apispec
 
 gaato/mttp_digest ──► gaato/mttp (client), gaato/http, moonbitlang/x
 
@@ -227,7 +231,7 @@ gaato/http-async ──► gaato/http                             (never gaato/m
    server ──► h1server, conn, runtime, codings
    fetch, hosts ──► @http + js_async                          (js)
 
-consumers ──► mttp (+ http-async for I/O): gaato/discord, discord_voice, discord-cli,
+consumers ──► mttp (+ http-async for I/O; discord's endpoint_http also mttp_endpoint): gaato/discord, discord_voice, discord-cli,
            gaato/{openai,anthropic,github}, codex-protocol, kbbi, nekosama, profile-readme
 tools (never imported): mbt-sdk tools/gen (Python); gaato/mttp-gen (later)
 ```
@@ -236,7 +240,7 @@ Rules: an endpoint-definition package imports only `@http`, `schema` and `endpoi
 
 ### 3.7 Consumer manifests
 
-Packages of a transitive module cannot be imported (F31). A consumer of gaato/mttp that names `@http.Request` or `@rt.Clock`, which is nearly every consumer, therefore lists `gaato/http` in its own moon.mod as well; gaato/mttp_digest does the same. A consumer that does I/O lists `gaato/http-async` too, and an application with `async fn main` or `async test` imports core/async itself. These three minimums move together in each release train (§8.2).
+Packages of a transitive module cannot be imported (F31). A consumer of gaato/mttp that names `@http.Request` or `@rt.Clock`, which is nearly every consumer, therefore lists `gaato/http` in its own moon.mod as well; gaato/mttp_digest does the same. A consumer of gaato/mttp_endpoint lists `gaato/mttp` too when it names `@schema` or `@client` types, as nearly every endpoint definition does. A consumer that does I/O lists `gaato/http-async` too, and an application with `async fn main` or `async test` imports core/async itself. These three minimums move together in each release train (§8.2).
 
 ## 4. Layer-by-layer design
 
@@ -1050,7 +1054,7 @@ CI lists packages per target and **asserts the test count per package and target
 - **Deprecated forms** the toolchain warns about (`#derive`, `clamped_view`, `Map([])`, `Json(v)`, `to_owned`, Debug instead of Show) are fixed at once, and the generators emit the new forms.
 - **Snapshots.** mbti per package and target; diffs are reviewed in every PR.
 - **Containment.** Runtime API churn stays in http-async (its `internal/` adapters). Intrinsic churn stays in one file of `driver`.
-- **Evolution rules.**
+- **Evolution rules.** They bind gaato/mttp_endpoint as well, at its own 0.x cadence: a patch release keeps them; a minor release may break them and says so in its CHANGELOG.
   - **(a) Enums.** `#non_exhaustive` on Body, Method, Kind, Phase, BodyTiming, `@retry.Decision`, ResponseFailure, DecodeKind, AuthScheme, Location, FailureStage, h1 Framing, ParseKind, Version, Trust, DriverErrorKind, and any later enum that may grow.
   - **(b) Structs.** Downstream code builds `pub(all)` structs through `::new`/`::default()` plus record update. Field sets frozen at release: Request, Response, RequestHead, ResponseHead, SendOptions, RetryContext, RetryPolicy, RedirectConfig, Attempt, Reply, SseEvent, multipart Part, RetryRule and its records, GlobalWindow, Pace, RateLimitState, Page, h1 Limits, ClientConfig, ServerLimits, DispatchContext, FailureContext, DefinitionProblem, InputFailure, Schema, Issue, ServerOptions, apispec records.
   - **Read-only instead of frozen.** ParsedRequest, ParsedResponse, Decoded, Atom, VariantDoc and EndpointDoc are read-only `pub`, so they can grow.
@@ -1154,11 +1158,11 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 
 | Gate | Checks |
 |---|---|
-| `architecture_gate` | gaato/http imports no module and no `core/async*` or `core/compress*` package, and contains no `extern` and no `async test`. gaato/mttp imports only gaato/http and core. gaato/http-async never imports gaato/mttp. The engines never import codings. `moonbitlang/async` is forbidden everywhere. `internal/control` has no `async fn`, `mut` or `Ref`. `allow-experimental-packages` is always a list. |
+| `architecture_gate` | gaato/http imports no module and no `core/async*` or `core/compress*` package, and contains no `extern` and no `async test`. gaato/mttp imports only gaato/http and core; gaato/mttp_endpoint only gaato/http, gaato/mttp and core. gaato/http-async never imports gaato/mttp. The engines never import codings. `moonbitlang/async` is forbidden everywhere. `internal/control` has no `async fn`, `mut` or `Ref`. `allow-experimental-packages` is always a list. |
 | `runtime_gates` | No public mbti of any module names a runtime type. gaato/http and gaato/mttp produce identical mbti on all four targets. Test counts per package and target are pinned. |
 | `test_layout` | `%async` appears only in `http/src/driver/intrinsics.mbt`. No production package imports `driver`, `sim` or `testing`. |
 | `bounds_check` | Every RESOURCE_BOUNDS row names an existing test; wire and decoded bytes are separate rows. |
-| `resolver_gate` | The four modules resolve and build from a scratch consumer outside moon.work; an experimental package needs the consumer's opt-in. |
+| `resolver_gate` | The library modules resolve and build from a scratch consumer outside moon.work; an experimental package needs the consumer's opt-in. |
 | `type_contracts` | Compile-fail fixtures from an external package: a Streaming endpoint refuses a Buffered request; `as_both` refuses streaming readers. |
 
 `scripts/*.mbtx` move to core/async's `fs` and shell APIs. A `.mbtx` script cannot set the experimental opt-in (front matter accepts `import` and `permission` only), so it runs with the experimental warning on stderr, which `scripts/gates.sh` filters. The shared `docs_audit.mbtx` was the last script on moonbitlang/async 0.22.5; it moved in every gaato repository on 2026-11-10, and the gate has no exemption left.
@@ -1600,4 +1604,5 @@ Still open:
 
 1. **SDK phase 2.** Should openai, anthropic and github emit Endpoint values after phase 1? Proposed: decide after the train; no SDK emits endpoints before then.
 2. **Protocols.** No AsyncAPI (proposed)? The OpenAPI version is decided in §0.1; HTTP/1.1 only is settled (no ALPN, F67).
-3. **Upstream reports** about core/async/http (head bound, CL+TE rejection, status lines without a reason phrase): an external operation, handled separately, after checking overlap with the earlier async reports.
+3. **Endpoint core without the client.** tapir-core depends only on sttp-model and sttp-shared, and the sttp client interpreter is a separate artifact. Here `endpoint` uses the client's `Buffered`/`Streaming` markers and `read_body`, so separating them is a redesign. Proposed: decide when a server-only consumer needs it; it changes only gaato/mttp_endpoint, inside its 0.x.
+4. **Upstream reports** about core/async/http (head bound, CL+TE rejection, status lines without a reason phrase): an external operation, handled separately, after checking overlap with the earlier async reports.

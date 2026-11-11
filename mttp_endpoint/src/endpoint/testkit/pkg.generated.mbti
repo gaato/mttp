@@ -1,10 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/mttp/endpoint/testkit"
+package "gaato/mttp_endpoint/endpoint/testkit"
 
 import {
   "gaato/http/rt",
-  "gaato/mttp/endpoint",
   "gaato/mttp/testing",
+  "gaato/mttp_endpoint/endpoint",
 }
 
 // Values

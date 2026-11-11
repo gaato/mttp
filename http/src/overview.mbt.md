@@ -14,8 +14,9 @@ and builds on wasm-gc, wasm, js and native.
 
 Sockets, TLS, an event loop and content codings live in
 [`gaato/http-async`](https://mooncakes.io/docs/gaato/http-async), and the
-client with retries, cookies and endpoints lives in
-[`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp).
+client with retries and cookies lives in
+[`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp), and typed endpoints in
+[`gaato/mttp_endpoint`](https://mooncakes.io/docs/gaato/mttp_endpoint).
 
 ## Install
 

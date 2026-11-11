@@ -4,16 +4,12 @@ HTTP for [MoonBit](https://www.moonbitlang.com/) with the split of
 responsibilities of Scala's [sttp](https://sttp.softwaremill.com/) family, on
 top of [`gaato/http`](https://mooncakes.io/docs/gaato/http): a client that owns
 retries, rate limits and deadlines, server-sent events, multipart bodies,
-cookies, endpoint descriptions with server and client interpreters, a router
-and OpenAPI documents. It does no I/O itself and runs on wasm-gc, wasm, js and
+cookies and schemas. It does no I/O itself and runs on wasm-gc, wasm, js and
 native.
 
-> **Status**: this version is being rebuilt in the
-> [mttp repository](https://github.com/gaato/mttp). The packages arrive one
-> at a time: `jsonkit`, `sse`, `multipart`, `cookie`, `schema`, the OpenAPI
-> document model `apispec`, the client with its retry rules, rate limits, the
-> cookie wrapper, the test doubles, typed endpoints, endpoint test helpers, the
-> router and OpenAPI projection are here.
+Typed endpoints with server and client interpreters, the router and OpenAPI
+documents live in
+[`gaato/mttp_endpoint`](https://mooncakes.io/docs/gaato/mttp_endpoint).
 
 ## Install
 
@@ -38,11 +34,6 @@ your `moon.mod`.
 | `gaato/mttp/client/cookies` | A CookieJar backend wrapper; put it inside FollowRedirects to process every hop |
 | `gaato/mttp/testing` | `BackendStub`, canned answers and fault injection for client tests |
 | `gaato/mttp/schema` | Text, JSON and body codecs that carry their JSON Schema, validators, and decoding that collects every issue with its JSON pointer |
-| `gaato/mttp/apispec` (experimental) | OpenAPI 3.1 document records with their JSON codecs |
-| `gaato/mttp/endpoint` (experimental) | Typed endpoint inputs, output unions, Result-based client calls and bounded server dispatch over `gaato/http` |
-| `gaato/mttp/endpoint/testkit` (experimental) | Typed endpoint stubs and the shared definition checker |
-| `gaato/mttp/router` (experimental) | Path and method dispatch, bounded server policy, middleware, CORS and an in-process Backend |
-| `gaato/mttp/openapi` (experimental) | Checked OpenAPI 3.1 projection, schema reference checking and a documentation endpoint |
 
 ## Usage
 

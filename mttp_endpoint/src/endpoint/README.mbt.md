@@ -1,8 +1,8 @@
-# Typed endpoints (experimental)
+# Typed endpoints
 
 An endpoint describes request inputs, response representations and declared
 errors. The same definition creates a client request, a server interpreter and
-documentation metadata. This API is experimental in 0.1.x.
+documentation metadata.
 
 ```mbt check
 ///|

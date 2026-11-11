@@ -1,6 +1,6 @@
 name: Release
 
-# The four modules are released together. A tag `<module dir>-v<version>`
+# The five library modules are released together. A tag `<module dir>-v<version>`
 # (for example `http-v0.6.0`) runs the release preflight; nothing here
 # publishes. Publication is a separately approved local command (see
 # scripts/release.sh).
@@ -11,6 +11,7 @@ on:
       - 'http-async-v*'
       - 'mttp-v*'
       - 'mttp_digest-v*'
+      - 'mttp_endpoint-v*'
   workflow_dispatch:
 
 permissions:

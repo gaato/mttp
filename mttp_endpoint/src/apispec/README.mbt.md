@@ -1,4 +1,4 @@
-# OpenAPI document data (experimental)
+# OpenAPI document data
 
 These core-only records describe the OpenAPI 3.1 subset emitted by the endpoint
 interpreter. They are plain data, independent of HTTP handlers and runtime I/O.
@@ -38,10 +38,6 @@ nothing:
 
 An unmodeled member never replaces a typed field or an extension when
 encoding.
-
-The package is experimental, as is the endpoint layer it documents: a package
-that imports it lists `gaato/mttp/apispec` in its
-`allow-experimental-packages`.
 
 The repository's `scripts/gen_apispec.mbtx` generates the record codecs from
 a field table. Explicit codecs keep wire field names such as `operationId`,
