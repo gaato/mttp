@@ -57,7 +57,9 @@ after a whole event, and the source is closed once.
 Use `with_env(request, value)` in the Workers entry before calling the adapter;
 the opaque environment is then available through the `env` attribute. Other
 hosts leave it absent. The association uses a WeakMap and does not modify the
-Request object.
+Request object. `env_string(env, "NAME")` reads a string binding, such as a
+`vars` entry or a secret, and is `None` when the binding is absent or not a
+string (a JSON var, a KV namespace); it never raises.
 
 See the [host adapters](https://github.com/gaato/mttp/tree/main/mttp_async/hosts)
 for Workers, Fastly, Vercel, Node, Deno, Bun and Lambda Function URLs. Lambda

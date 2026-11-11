@@ -26,5 +26,8 @@ jobs:
       # The full gate runs target tests before its static registry refresh.
       - name: Update registry index before testing
         run: moon update
+      # full ends with the Workers example on workerd: npm ci fetches the
+      # wrangler that examples/fetch/workers/package-lock.json pins, and the
+      # image's Node runs it.
       - name: Validate all targets and ledgers
         run: scripts/gates.sh full

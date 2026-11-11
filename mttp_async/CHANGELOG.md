@@ -39,6 +39,9 @@ never does.
   empty segments, backslashes and NUL are refused raw or encoded, and the file's
   real path must lie below the root's, so a symlink pointing outside is a 404.
   No directory listings and no ranges.
+- `fetch.env_string(env, key)` reads a string binding of a host environment,
+  such as a Workers `vars` entry or secret, without hand-written FFI. It is
+  `None` when the binding is absent or not a string, and never raises.
 
 ### Changed
 
@@ -70,6 +73,14 @@ never does.
   names the address and the system's reason (such as `Address already in
   use`), and an address that does not parse says so. They used to say only
   `could not bind server address` and `listener accept failed`.
+- The Workers host shim takes a loader, `workers(() => import('./app.js'))`,
+  instead of `fetch_with_env`, and imports the app inside the first request.
+  The README's static import did not start on workerd: evaluating a compiled
+  MoonBit module draws its hash seed from `crypto.getRandomValues`, which
+  Workers refuses in global scope. All requests share one import; a failed
+  import rejects each request with an Error naming it. The other shims keep
+  the static import, which Fastly needs for its synchronous `waitUntil`.
+  `scripts/gates.sh full` and CI now run a Workers app on workerd itself.
 
 ## Earlier versions, as gaato/http-async
 

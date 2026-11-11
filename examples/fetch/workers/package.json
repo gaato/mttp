@@ -1,0 +1,11 @@
+{
+  "name": "mttp-workers-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node check.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.126.0"
+  }
+}

@@ -17,9 +17,14 @@
 #                                           bounds, interface and coverage
 #                                           audits, the manifest's own
 #                                           consistency, release.sh check
+#   scripts/gates.sh workerd                the Workers example on real
+#                                           workerd: builds it, installs the
+#                                           wrangler its lockfile pins (npm
+#                                           ci, needs the network) and runs
+#                                           examples/fetch/workers/check.mjs
 #   scripts/gates.sh full                   quick on all four targets, static,
-#                                           the self-test of this script and
-#                                           the resolver gate
+#                                           the self-test of this script, the
+#                                           resolver gate and workerd
 #   scripts/gates.sh manifest --update      runs every package's tests on
 #                                           every target and rewrites
 #                                           scripts/test_manifest.tsv
@@ -92,6 +97,18 @@ static_gates() {
   step script scripts/coverage_report.mbtx
 }
 
+# The Node tests of the fetch package run the host shims under Node, which
+# allows what Workers refuses (random values in global scope, for one); this
+# runs the Workers entry the README shows on the runtime itself.
+WORKERD_DIR=examples/fetch/workers
+workerd_gate() {
+  step moon build --deny-warn --target js "$WORKERD_DIR"
+  # wrangler runs without its dependencies' postinstall checks, and npm
+  # versions differ in whether they run them unasked.
+  step npm ci --prefix "$WORKERD_DIR" --ignore-scripts --no-audit --no-fund
+  step node "$WORKERD_DIR/check.mjs"
+}
+
 finish() {
   if [ "${#failures[@]}" -gt 0 ]; then
     echo >&2
@@ -133,6 +150,12 @@ case "$mode" in
     step script scripts/gate_selftest.mbtx
     step script scripts/resolver_gate.mbtx -- --self-test
     step script scripts/resolver_gate.mbtx
+    workerd_gate
+    finish
+    ;;
+  workerd)
+    [ $# = 0 ] || usage
+    workerd_gate
     finish
     ;;
   manifest)

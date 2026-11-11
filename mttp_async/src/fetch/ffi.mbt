@@ -63,6 +63,33 @@ pub fn with_env(request : JsRequest, value : JsEnv) -> JsRequest {
 }
 
 ///|
+/// The property read for `env_string`: an empty array unless `env` is an
+/// object or function whose property `key` is a primitive string. A throwing
+/// getter or Proxy trap reads as absent.
+extern "js" fn JsEnv::string_property(
+  self : JsEnv,
+  key : String,
+) -> FixedArray[String] =
+  #| (env, key) => {
+  #|   try {
+  #|     if (env === null || (typeof env !== 'object' && typeof env !== 'function')) return [];
+  #|     const value = env[key];
+  #|     return typeof value === 'string' ? [value] : [];
+  #|   } catch (_) { return []; }
+  #| }
+
+///|
+/// The string binding `key` of a host environment, such as a Workers `vars`
+/// entry or secret; `None` when it is absent or not a string (a JSON `vars`
+/// value, a KV namespace or another binding object). It never raises.
+pub fn env_string(env : JsEnv, key : String) -> String? {
+  match env.string_property(key) {
+    [value] => Some(value)
+    _ => None
+  }
+}
+
+///|
 extern "js" fn JsRequest::url(self : JsRequest) -> String =
   #| req => req.url
 
