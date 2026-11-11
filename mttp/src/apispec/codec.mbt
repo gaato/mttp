@@ -102,13 +102,21 @@ fn[T : @json.FromJson] optional_field(
 ///|
 /// Whether `key` names a field PathItem types, operations included.
 fn is_path_item_field(key : String) -> Bool {
-  key is ("summary" | "description" | "servers" | "parameters") ||
+  key
+  is ("summary"
+  | "description"
+  | "servers"
+  | "parameters"
+  | "additionalOperations") ||
   is_method(key)
 }
 
 ///|
 /// The operations and metadata for one path; operation keys are lowercase
 /// HTTP methods, and an operation under any other key is not encoded.
+/// `query` (the QUERY method) and `additional_operations` (other methods,
+/// keyed as sent, such as `COPY`) are OpenAPI 3.2 fields, left empty in a
+/// 3.1 document.
 /// Members it does not type (a `$ref`) are kept in `unmodeled`, and `x-*`
 /// members in `extensions`.
 #derive(Eq, Debug)
@@ -118,6 +126,7 @@ pub(all) struct PathItem {
   description : String?
   servers : Array[Server]
   parameters : Array[Parameter]
+  additional_operations : Map[String, Operation]
   unmodeled : Map[String, Json]
   extensions : Map[String, Json]
 }
@@ -130,6 +139,7 @@ pub fn PathItem::new(
   description? : String,
   servers~ : Array[Server] = [],
   parameters~ : Array[Parameter] = [],
+  additional_operations~ : Map[String, Operation] = {},
   unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> PathItem {
@@ -139,6 +149,7 @@ pub fn PathItem::new(
     description,
     servers,
     parameters,
+    additional_operations: additional_operations.copy(),
     unmodeled: unmodeled.copy(),
     extensions: extensions.copy(),
   }
@@ -166,6 +177,9 @@ pub impl ToJson for PathItem with fn to_json(self) {
       obj[key] = Json(value)
     }
   }
+  if !self.additional_operations.is_empty() {
+    obj["additionalOperations"] = Json(self.additional_operations)
+  }
   add_unmodeled(obj, self.unmodeled, is_path_item_field)
   add_extensions(obj, self.extensions)
   Json::object(obj)
@@ -188,6 +202,12 @@ pub impl @json.FromJson for PathItem with fn from_json(value, path) {
     description: optional_field(obj, "description", path),
     servers: field(obj, "servers", path, default=[]),
     parameters: field(obj, "parameters", path, default=[]),
+    additional_operations: field(
+      obj,
+      "additionalOperations",
+      path,
+      default=Map([]),
+    ),
     unmodeled: unmodeled_fields(obj, is_path_item_field),
     extensions: extension_fields(obj),
   }
@@ -204,7 +224,8 @@ fn is_method(key : String) -> Bool {
     | "options"
     | "head"
     | "patch"
-    | "trace" => true
+    | "trace"
+    | "query" => true
     _ => false
   }
 }

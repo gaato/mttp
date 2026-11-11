@@ -1,4 +1,4 @@
-# Endpoint test helpers (experimental)
+# Endpoint test helpers
 
 `when_endpoint` adds a typed route to BackendStub. It uses a one-endpoint Router
 to perform actual input decoding and output encoding. Security inputs are

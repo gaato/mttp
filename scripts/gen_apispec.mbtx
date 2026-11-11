@@ -6,7 +6,7 @@ import {
 }
 ----
 
-// Generates mttp/src/apispec/models.mbt: the OpenAPI 3.1 records with
+// Generates mttp/src/apispec/models.mbt: the OpenAPI records with
 // explicit JSON codecs, from the table in `records` below. Explicit codecs
 // keep wire names (`in`, `operationId`) apart from MoonBit names, omit absent
 // optional fields and fields at their empty default, and flatten `x-*`
@@ -70,7 +70,9 @@ fn optional(name : String, type_ : String, wire? : String) -> Field {
 
 ///|
 /// The records, in output order, with the OpenAPI 3.1 fixed fields each one
-/// types. A member a record does not type (an `example`, a `callbacks` map,
+/// types and those 3.2 adds. The 3.2 fields are optional and stay unset in a
+/// 3.1 document, so the field sets are complete for both versions and a move
+/// to 3.2 adds no field (design, section 0.1). A member a record does not type (an `example`, a `callbacks` map,
 /// OAuth `flows`, a path item `$ref`) is kept verbatim in `unmodeled`, so a
 /// document survives decoding and encoding unchanged. `PathItem` is written
 /// by hand in `codec.mbt`: its operations are keyed by method, not by field.
@@ -93,6 +95,8 @@ fn records() -> Array[(String, Array[Field])] {
         optional("security", security),
         default("tags", "Array[Tag]", "[]"),
         optional("external_docs", "ExternalDocs", wire="externalDocs"),
+        // 3.2: the document's own URI, also its base URI.
+        optional("self_", "String", wire="$self"),
       ],
     ),
     (
@@ -129,6 +133,8 @@ fn records() -> Array[(String, Array[Field])] {
         required("url", "String"),
         optional("description", "String"),
         default("variables", "Map[String, ServerVariable]", "{}"),
+        // 3.2
+        optional("name", "String"),
       ],
     ),
     (
@@ -149,6 +155,11 @@ fn records() -> Array[(String, Array[Field])] {
         required("name", "String"),
         optional("description", "String"),
         optional("external_docs", "ExternalDocs", wire="externalDocs"),
+        // 3.2: a short label, the name of the tag this one is nested under,
+        // and a machine-readable category such as "nav" or "audience".
+        optional("summary", "String"),
+        optional("parent", "String"),
+        optional("kind", "String"),
       ],
     ),
     (
@@ -180,13 +191,23 @@ fn records() -> Array[(String, Array[Field])] {
         optional("content", "Map[String, MediaTypeObject]"),
       ],
     ),
-    ("MediaTypeObject", [optional("schema", "Json")]),
+    (
+      "MediaTypeObject",
+      [
+        optional("schema", "Json"),
+        // 3.2: the schema of each item of a sequential media type such as
+        // text/event-stream; a 3.1 document carries it as x-oai-itemSchema.
+        optional("item_schema", "Json", wire="itemSchema"),
+      ],
+    ),
     (
       "ResponseObject",
       [
         required("description", "String"),
         default("headers", "Map[String, HeaderObject]", "{}"),
         default("content", "Map[String, MediaTypeObject]", "{}"),
+        // 3.2
+        optional("summary", "String"),
       ],
     ),
     (
@@ -224,6 +245,9 @@ fn records() -> Array[(String, Array[Field])] {
         optional("bearer_format", "String", wire="bearerFormat"),
         optional("open_id_connect_url", "String", wire="openIdConnectUrl"),
         optional("description", "String"),
+        // 3.2
+        default("deprecated", "Bool", "false"),
+        optional("oauth2_metadata_url", "String", wire="oauth2MetadataUrl"),
       ],
     ),
     (
@@ -246,6 +270,13 @@ fn records() -> Array[(String, Array[Field])] {
           wire="securitySchemes",
         ),
         default("path_items", "Map[String, PathItem]", "{}", wire="pathItems"),
+        // 3.2
+        default(
+          "media_types",
+          "Map[String, MediaTypeObject]",
+          "{}",
+          wire="mediaTypes",
+        ),
       ],
     ),
   ]

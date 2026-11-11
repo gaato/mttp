@@ -1,4 +1,4 @@
-# OpenAPI from endpoints (experimental)
+# OpenAPI from endpoints
 
 `to_openapi` projects checked endpoint definitions onto
 [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.1.html). It merges response

@@ -38,11 +38,11 @@ your `moon.mod`.
 | `gaato/mttp/client/cookies` | A CookieJar backend wrapper; put it inside FollowRedirects to process every hop |
 | `gaato/mttp/testing` | `BackendStub`, canned answers and fault injection for client tests |
 | `gaato/mttp/schema` | Text, JSON and body codecs that carry their JSON Schema, validators, and decoding that collects every issue with its JSON pointer |
-| `gaato/mttp/apispec` (experimental) | OpenAPI 3.1 document records with their JSON codecs |
-| `gaato/mttp/endpoint` (experimental) | Typed endpoint inputs, output unions, Result-based client calls and bounded server dispatch over `gaato/http` |
-| `gaato/mttp/endpoint/testkit` (experimental) | Typed endpoint stubs and the shared definition checker |
-| `gaato/mttp/router` (experimental) | Path and method dispatch, bounded server policy, middleware, CORS and an in-process Backend |
-| `gaato/mttp/openapi` (experimental) | Checked OpenAPI 3.1 projection, schema reference checking and a documentation endpoint |
+| `gaato/mttp/apispec` | OpenAPI 3.1 document records with their JSON codecs |
+| `gaato/mttp/endpoint` | Typed endpoint inputs, output unions, Result-based client calls and bounded server dispatch over `gaato/http` |
+| `gaato/mttp/endpoint/testkit` | Typed endpoint stubs and the shared definition checker |
+| `gaato/mttp/router` | Path and method dispatch, bounded server policy, middleware, CORS and an in-process Backend |
+| `gaato/mttp/openapi` | Checked OpenAPI 3.1 projection, schema reference checking and a documentation endpoint |
 
 ## Usage
 

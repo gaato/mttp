@@ -14,6 +14,7 @@ fn is_open_api_field(key : String) -> Bool {
     "security" => true
     "tags" => true
     "externalDocs" => true
+    "$self" => true
     _ => false
   }
 }
@@ -33,6 +34,7 @@ pub(all) struct OpenApi {
   security : Array[Map[String, Array[String]]]?
   tags : Array[Tag]
   external_docs : ExternalDocs?
+  self_ : String?
   unmodeled : Map[String, Json]
   extensions : Map[String, Json]
 }
@@ -50,6 +52,7 @@ pub fn OpenApi::new(
   security? : Array[Map[String, Array[String]]],
   tags~ : Array[Tag] = [],
   external_docs? : ExternalDocs,
+  self_? : String,
   unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> OpenApi {
@@ -64,6 +67,7 @@ pub fn OpenApi::new(
     security,
     tags,
     external_docs,
+    self_,
     unmodeled: unmodeled.copy(),
     extensions: extensions.copy(),
   }
@@ -98,6 +102,9 @@ pub impl ToJson for OpenApi with fn to_json(self) {
   if self.external_docs is Some(value) {
     obj["externalDocs"] = Json(value)
   }
+  if self.self_ is Some(value) {
+    obj["$self"] = Json(value)
+  }
   add_unmodeled(obj, self.unmodeled, is_open_api_field)
   add_extensions(obj, self.extensions)
   Json::object(obj)
@@ -118,6 +125,7 @@ pub impl @json.FromJson for OpenApi with fn from_json(value, path) {
     security: optional_field(obj, "security", path),
     tags: field(obj, "tags", path, default=[]),
     external_docs: optional_field(obj, "externalDocs", path),
+    self_: optional_field(obj, "$self", path),
     unmodeled: unmodeled_fields(obj, is_open_api_field),
     extensions: extension_fields(obj),
   }
@@ -439,6 +447,7 @@ fn is_server_field(key : String) -> Bool {
     "url" => true
     "description" => true
     "variables" => true
+    "name" => true
     _ => false
   }
 }
@@ -451,6 +460,7 @@ pub(all) struct Server {
   url : String
   description : String?
   variables : Map[String, ServerVariable]
+  name : String?
   unmodeled : Map[String, Json]
   extensions : Map[String, Json]
 }
@@ -461,6 +471,7 @@ pub fn Server::new(
   url : String,
   description? : String,
   variables~ : Map[String, ServerVariable] = {},
+  name? : String,
   unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> Server {
@@ -468,6 +479,7 @@ pub fn Server::new(
     url,
     description,
     variables,
+    name,
     unmodeled: unmodeled.copy(),
     extensions: extensions.copy(),
   }
@@ -485,6 +497,9 @@ pub impl ToJson for Server with fn to_json(self) {
   if !self.variables.is_empty() {
     obj["variables"] = Json(self.variables)
   }
+  if self.name is Some(value) {
+    obj["name"] = Json(value)
+  }
   add_unmodeled(obj, self.unmodeled, is_server_field)
   add_extensions(obj, self.extensions)
   Json::object(obj)
@@ -498,6 +513,7 @@ pub impl @json.FromJson for Server with fn from_json(value, path) {
     url: field(obj, "url", path),
     description: optional_field(obj, "description", path),
     variables: field(obj, "variables", path, default={}),
+    name: optional_field(obj, "name", path),
     unmodeled: unmodeled_fields(obj, is_server_field),
     extensions: extension_fields(obj),
   }
@@ -692,6 +708,9 @@ fn is_tag_field(key : String) -> Bool {
     "name" => true
     "description" => true
     "externalDocs" => true
+    "summary" => true
+    "parent" => true
+    "kind" => true
     _ => false
   }
 }
@@ -704,6 +723,9 @@ pub(all) struct Tag {
   name : String
   description : String?
   external_docs : ExternalDocs?
+  summary : String?
+  parent : String?
+  kind : String?
   unmodeled : Map[String, Json]
   extensions : Map[String, Json]
 }
@@ -714,6 +736,9 @@ pub fn Tag::new(
   name : String,
   description? : String,
   external_docs? : ExternalDocs,
+  summary? : String,
+  parent? : String,
+  kind? : String,
   unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> Tag {
@@ -721,6 +746,9 @@ pub fn Tag::new(
     name,
     description,
     external_docs,
+    summary,
+    parent,
+    kind,
     unmodeled: unmodeled.copy(),
     extensions: extensions.copy(),
   }
@@ -738,6 +766,15 @@ pub impl ToJson for Tag with fn to_json(self) {
   if self.external_docs is Some(value) {
     obj["externalDocs"] = Json(value)
   }
+  if self.summary is Some(value) {
+    obj["summary"] = Json(value)
+  }
+  if self.parent is Some(value) {
+    obj["parent"] = Json(value)
+  }
+  if self.kind is Some(value) {
+    obj["kind"] = Json(value)
+  }
   add_unmodeled(obj, self.unmodeled, is_tag_field)
   add_extensions(obj, self.extensions)
   Json::object(obj)
@@ -751,6 +788,9 @@ pub impl @json.FromJson for Tag with fn from_json(value, path) {
     name: field(obj, "name", path),
     description: optional_field(obj, "description", path),
     external_docs: optional_field(obj, "externalDocs", path),
+    summary: optional_field(obj, "summary", path),
+    parent: optional_field(obj, "parent", path),
+    kind: optional_field(obj, "kind", path),
     unmodeled: unmodeled_fields(obj, is_tag_field),
     extensions: extension_fields(obj),
   }
@@ -1047,6 +1087,7 @@ pub extend HeaderObject with @json.FromJson::{from_json}
 fn is_media_type_object_field(key : String) -> Bool {
   match key {
     "schema" => true
+    "itemSchema" => true
     _ => false
   }
 }
@@ -1057,6 +1098,7 @@ fn is_media_type_object_field(key : String) -> Bool {
 #derive(Eq, Debug)
 pub(all) struct MediaTypeObject {
   schema : Json?
+  item_schema : Json?
   unmodeled : Map[String, Json]
   extensions : Map[String, Json]
 }
@@ -1065,10 +1107,16 @@ pub(all) struct MediaTypeObject {
 /// Creates MediaTypeObject data with defaults for optional fields.
 pub fn MediaTypeObject::new(
   schema? : Json,
+  item_schema? : Json,
   unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> MediaTypeObject {
-  { schema, unmodeled: unmodeled.copy(), extensions: extensions.copy(), }
+  {
+    schema,
+    item_schema,
+    unmodeled: unmodeled.copy(),
+    extensions: extensions.copy(),
+  }
 }
 
 ///|
@@ -1078,6 +1126,9 @@ pub impl ToJson for MediaTypeObject with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
   if self.schema is Some(value) {
     obj["schema"] = Json(value)
+  }
+  if self.item_schema is Some(value) {
+    obj["itemSchema"] = Json(value)
   }
   add_unmodeled(obj, self.unmodeled, is_media_type_object_field)
   add_extensions(obj, self.extensions)
@@ -1090,6 +1141,7 @@ pub impl @json.FromJson for MediaTypeObject with fn from_json(value, path) {
   let obj = expect_object(value, path)
   {
     schema: optional_field(obj, "schema", path),
+    item_schema: optional_field(obj, "itemSchema", path),
     unmodeled: unmodeled_fields(obj, is_media_type_object_field),
     extensions: extension_fields(obj),
   }
@@ -1118,6 +1170,7 @@ fn is_response_object_field(key : String) -> Bool {
     "description" => true
     "headers" => true
     "content" => true
+    "summary" => true
     _ => false
   }
 }
@@ -1130,6 +1183,7 @@ pub(all) struct ResponseObject {
   description : String
   headers : Map[String, HeaderObject]
   content : Map[String, MediaTypeObject]
+  summary : String?
   unmodeled : Map[String, Json]
   extensions : Map[String, Json]
 }
@@ -1140,6 +1194,7 @@ pub fn ResponseObject::new(
   description : String,
   headers~ : Map[String, HeaderObject] = {},
   content~ : Map[String, MediaTypeObject] = {},
+  summary? : String,
   unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> ResponseObject {
@@ -1147,6 +1202,7 @@ pub fn ResponseObject::new(
     description,
     headers,
     content,
+    summary,
     unmodeled: unmodeled.copy(),
     extensions: extensions.copy(),
   }
@@ -1164,6 +1220,9 @@ pub impl ToJson for ResponseObject with fn to_json(self) {
   if !self.content.is_empty() {
     obj["content"] = Json(self.content)
   }
+  if self.summary is Some(value) {
+    obj["summary"] = Json(value)
+  }
   add_unmodeled(obj, self.unmodeled, is_response_object_field)
   add_extensions(obj, self.extensions)
   Json::object(obj)
@@ -1177,6 +1236,7 @@ pub impl @json.FromJson for ResponseObject with fn from_json(value, path) {
     description: field(obj, "description", path),
     headers: field(obj, "headers", path, default={}),
     content: field(obj, "content", path, default={}),
+    summary: optional_field(obj, "summary", path),
     unmodeled: unmodeled_fields(obj, is_response_object_field),
     extensions: extension_fields(obj),
   }
@@ -1447,6 +1507,8 @@ fn is_security_scheme_field(key : String) -> Bool {
     "bearerFormat" => true
     "openIdConnectUrl" => true
     "description" => true
+    "deprecated" => true
+    "oauth2MetadataUrl" => true
     _ => false
   }
 }
@@ -1463,6 +1525,8 @@ pub(all) struct SecurityScheme {
   bearer_format : String?
   open_id_connect_url : String?
   description : String?
+  deprecated : Bool
+  oauth2_metadata_url : String?
   unmodeled : Map[String, Json]
   extensions : Map[String, Json]
 }
@@ -1477,6 +1541,8 @@ pub fn SecurityScheme::new(
   bearer_format? : String,
   open_id_connect_url? : String,
   description? : String,
+  deprecated~ : Bool = false,
+  oauth2_metadata_url? : String,
   unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> SecurityScheme {
@@ -1488,6 +1554,8 @@ pub fn SecurityScheme::new(
     bearer_format,
     open_id_connect_url,
     description,
+    deprecated,
+    oauth2_metadata_url,
     unmodeled: unmodeled.copy(),
     extensions: extensions.copy(),
   }
@@ -1517,6 +1585,12 @@ pub impl ToJson for SecurityScheme with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
+  if self.deprecated {
+    obj["deprecated"] = Json(self.deprecated)
+  }
+  if self.oauth2_metadata_url is Some(value) {
+    obj["oauth2MetadataUrl"] = Json(value)
+  }
   add_unmodeled(obj, self.unmodeled, is_security_scheme_field)
   add_extensions(obj, self.extensions)
   Json::object(obj)
@@ -1534,6 +1608,8 @@ pub impl @json.FromJson for SecurityScheme with fn from_json(value, path) {
     bearer_format: optional_field(obj, "bearerFormat", path),
     open_id_connect_url: optional_field(obj, "openIdConnectUrl", path),
     description: optional_field(obj, "description", path),
+    deprecated: field(obj, "deprecated", path, default=false),
+    oauth2_metadata_url: optional_field(obj, "oauth2MetadataUrl", path),
     unmodeled: unmodeled_fields(obj, is_security_scheme_field),
     extensions: extension_fields(obj),
   }
@@ -1566,6 +1642,7 @@ fn is_components_field(key : String) -> Bool {
     "headers" => true
     "securitySchemes" => true
     "pathItems" => true
+    "mediaTypes" => true
     _ => false
   }
 }
@@ -1582,6 +1659,7 @@ pub(all) struct Components {
   headers : Map[String, HeaderObject]
   security_schemes : Map[String, SecurityScheme]
   path_items : Map[String, PathItem]
+  media_types : Map[String, MediaTypeObject]
   unmodeled : Map[String, Json]
   extensions : Map[String, Json]
 }
@@ -1596,6 +1674,7 @@ pub fn Components::new(
   headers~ : Map[String, HeaderObject] = {},
   security_schemes~ : Map[String, SecurityScheme] = {},
   path_items~ : Map[String, PathItem] = {},
+  media_types~ : Map[String, MediaTypeObject] = {},
   unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> Components {
@@ -1607,6 +1686,7 @@ pub fn Components::new(
     headers,
     security_schemes,
     path_items,
+    media_types,
     unmodeled: unmodeled.copy(),
     extensions: extensions.copy(),
   }
@@ -1638,6 +1718,9 @@ pub impl ToJson for Components with fn to_json(self) {
   if !self.path_items.is_empty() {
     obj["pathItems"] = Json(self.path_items)
   }
+  if !self.media_types.is_empty() {
+    obj["mediaTypes"] = Json(self.media_types)
+  }
   add_unmodeled(obj, self.unmodeled, is_components_field)
   add_extensions(obj, self.extensions)
   Json::object(obj)
@@ -1655,6 +1738,7 @@ pub impl @json.FromJson for Components with fn from_json(value, path) {
     headers: field(obj, "headers", path, default={}),
     security_schemes: field(obj, "securitySchemes", path, default={}),
     path_items: field(obj, "pathItems", path, default={}),
+    media_types: field(obj, "mediaTypes", path, default={}),
     unmodeled: unmodeled_fields(obj, is_components_field),
     extensions: extension_fields(obj),
   }

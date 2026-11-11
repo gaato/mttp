@@ -37,8 +37,6 @@ supported_targets = "native+wasm+js"
 
 options(
   "allow-experimental-packages": [
-    "gaato/mttp/h1client",
-    "gaato/mttp/h1server",
     "moonbitlang/core/async",
     "moonbitlang/core/async/js_async",
     "moonbitlang/core/async/socket",

@@ -20,12 +20,13 @@ pub(all) struct Components {
   headers : Map[String, HeaderObject]
   security_schemes : Map[String, SecurityScheme]
   path_items : Map[String, PathItem]
+  media_types : Map[String, MediaTypeObject]
   unmodeled : Map[String, @json.Json]
   extensions : Map[String, @json.Json]
 }
 pub fn Components::equal(Self, Self) -> Bool
 pub fn Components::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn Components::new(schemas? : Map[String, @json.Json], responses? : Map[String, ResponseObject], parameters? : Map[String, Parameter], request_bodies? : Map[String, RequestBody], headers? : Map[String, HeaderObject], security_schemes? : Map[String, SecurityScheme], path_items? : Map[String, PathItem], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Components::new(schemas? : Map[String, @json.Json], responses? : Map[String, ResponseObject], parameters? : Map[String, Parameter], request_bodies? : Map[String, RequestBody], headers? : Map[String, HeaderObject], security_schemes? : Map[String, SecurityScheme], path_items? : Map[String, PathItem], media_types? : Map[String, MediaTypeObject], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn Components::not_equal(Self, Self) -> Bool
 pub fn Components::to_json(Self) -> @json.Json
 pub fn Components::to_repr(Self) -> @debug.Repr
@@ -127,12 +128,13 @@ pub impl @json.ToJson for License
 #derive(Eq, @debug.Debug)
 pub(all) struct MediaTypeObject {
   schema : @json.Json?
+  item_schema : @json.Json?
   unmodeled : Map[String, @json.Json]
   extensions : Map[String, @json.Json]
 }
 pub fn MediaTypeObject::equal(Self, Self) -> Bool
 pub fn MediaTypeObject::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn MediaTypeObject::new(schema? : @json.Json, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn MediaTypeObject::new(schema? : @json.Json, item_schema? : @json.Json, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn MediaTypeObject::not_equal(Self, Self) -> Bool
 pub fn MediaTypeObject::to_json(Self) -> @json.Json
 pub fn MediaTypeObject::to_repr(Self) -> @debug.Repr
@@ -151,12 +153,13 @@ pub(all) struct OpenApi {
   security : Array[Map[String, Array[String]]]?
   tags : Array[Tag]
   external_docs : ExternalDocs?
+  self_ : String?
   unmodeled : Map[String, @json.Json]
   extensions : Map[String, @json.Json]
 }
 pub fn OpenApi::equal(Self, Self) -> Bool
 pub fn OpenApi::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn OpenApi::new(Info, paths? : Map[String, PathItem], openapi? : String, json_schema_dialect? : String, servers? : Array[Server], webhooks? : Map[String, PathItem], components? : Components, security? : Array[Map[String, Array[String]]], tags? : Array[Tag], external_docs? : ExternalDocs, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn OpenApi::new(Info, paths? : Map[String, PathItem], openapi? : String, json_schema_dialect? : String, servers? : Array[Server], webhooks? : Map[String, PathItem], components? : Components, security? : Array[Map[String, Array[String]]], tags? : Array[Tag], external_docs? : ExternalDocs, self_? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn OpenApi::not_equal(Self, Self) -> Bool
 pub fn OpenApi::to_json(Self) -> @json.Json
 pub fn OpenApi::to_repr(Self) -> @debug.Repr
@@ -220,12 +223,13 @@ pub(all) struct PathItem {
   description : String?
   servers : Array[Server]
   parameters : Array[Parameter]
+  additional_operations : Map[String, Operation]
   unmodeled : Map[String, @json.Json]
   extensions : Map[String, @json.Json]
 }
 pub fn PathItem::equal(Self, Self) -> Bool
 pub fn PathItem::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn PathItem::new(operations? : Map[String, Operation], summary? : String, description? : String, servers? : Array[Server], parameters? : Array[Parameter], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn PathItem::new(operations? : Map[String, Operation], summary? : String, description? : String, servers? : Array[Server], parameters? : Array[Parameter], additional_operations? : Map[String, Operation], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn PathItem::not_equal(Self, Self) -> Bool
 pub fn PathItem::to_json(Self) -> @json.Json
 pub fn PathItem::to_repr(Self) -> @debug.Repr
@@ -254,12 +258,13 @@ pub(all) struct ResponseObject {
   description : String
   headers : Map[String, HeaderObject]
   content : Map[String, MediaTypeObject]
+  summary : String?
   unmodeled : Map[String, @json.Json]
   extensions : Map[String, @json.Json]
 }
 pub fn ResponseObject::equal(Self, Self) -> Bool
 pub fn ResponseObject::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn ResponseObject::new(String, headers? : Map[String, HeaderObject], content? : Map[String, MediaTypeObject], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn ResponseObject::new(String, headers? : Map[String, HeaderObject], content? : Map[String, MediaTypeObject], summary? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn ResponseObject::not_equal(Self, Self) -> Bool
 pub fn ResponseObject::to_json(Self) -> @json.Json
 pub fn ResponseObject::to_repr(Self) -> @debug.Repr
@@ -275,12 +280,14 @@ pub(all) struct SecurityScheme {
   bearer_format : String?
   open_id_connect_url : String?
   description : String?
+  deprecated : Bool
+  oauth2_metadata_url : String?
   unmodeled : Map[String, @json.Json]
   extensions : Map[String, @json.Json]
 }
 pub fn SecurityScheme::equal(Self, Self) -> Bool
 pub fn SecurityScheme::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn SecurityScheme::new(String, scheme? : String, name? : String, in_? : String, bearer_format? : String, open_id_connect_url? : String, description? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn SecurityScheme::new(String, scheme? : String, name? : String, in_? : String, bearer_format? : String, open_id_connect_url? : String, description? : String, deprecated? : Bool, oauth2_metadata_url? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn SecurityScheme::not_equal(Self, Self) -> Bool
 pub fn SecurityScheme::to_json(Self) -> @json.Json
 pub fn SecurityScheme::to_repr(Self) -> @debug.Repr
@@ -292,12 +299,13 @@ pub(all) struct Server {
   url : String
   description : String?
   variables : Map[String, ServerVariable]
+  name : String?
   unmodeled : Map[String, @json.Json]
   extensions : Map[String, @json.Json]
 }
 pub fn Server::equal(Self, Self) -> Bool
 pub fn Server::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn Server::new(String, description? : String, variables? : Map[String, ServerVariable], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Server::new(String, description? : String, variables? : Map[String, ServerVariable], name? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn Server::not_equal(Self, Self) -> Bool
 pub fn Server::to_json(Self) -> @json.Json
 pub fn Server::to_repr(Self) -> @debug.Repr
@@ -326,12 +334,15 @@ pub(all) struct Tag {
   name : String
   description : String?
   external_docs : ExternalDocs?
+  summary : String?
+  parent : String?
+  kind : String?
   unmodeled : Map[String, @json.Json]
   extensions : Map[String, @json.Json]
 }
 pub fn Tag::equal(Self, Self) -> Bool
 pub fn Tag::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn Tag::new(String, description? : String, external_docs? : ExternalDocs, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Tag::new(String, description? : String, external_docs? : ExternalDocs, summary? : String, parent? : String, kind? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn Tag::not_equal(Self, Self) -> Bool
 pub fn Tag::to_json(Self) -> @json.Json
 pub fn Tag::to_repr(Self) -> @debug.Repr

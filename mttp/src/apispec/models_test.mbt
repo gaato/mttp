@@ -533,3 +533,75 @@ test "every record keeps an unmodeled member through encoding and decoding" {
   same_after_json(spec)
   assert_eq(Json(media), { "zz": [1, "two"] })
 }
+
+///|
+test "OpenAPI 3.2 fields are typed and round-trip" {
+  let doc : Json = {
+    "openapi": "3.2.0",
+    "$self": "https://example.com/openapi.json",
+    "info": { "title": "T", "version": "1" },
+    "servers": [{ "url": "https://example.com", "name": "production" }],
+    "tags": [
+      { "name": "users", "summary": "Users", "parent": "admin", "kind": "nav" },
+      { "name": "admin" },
+    ],
+    "paths": {
+      "/search": {
+        "query": { "responses": { "200": { "description": "found" } } },
+        "additionalOperations": {
+          "COPY": {
+            "responses": {
+              "201": { "description": "copied", "summary": "Copy" },
+            },
+          },
+        },
+      },
+      "/events": {
+        "get": {
+          "responses": {
+            "200": {
+              "description": "events",
+              "content": {
+                "text/event-stream": {
+                  "itemSchema": { "type": "object", "required": ["data"] },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    "components": {
+      "mediaTypes": { "Events": { "itemSchema": { "type": "string" } } },
+      "securitySchemes": {
+        "old": {
+          "type": "oauth2",
+          "deprecated": true,
+          "oauth2MetadataUrl": "https://example.com/.well-known/oauth-authorization-server",
+        },
+      },
+    },
+  }
+  let spec : @apispec.OpenApi = @json.from_json(doc)
+  assert_eq(spec.self_, Some("https://example.com/openapi.json"))
+  assert_eq(spec.servers[0].name, Some("production"))
+  assert_eq(spec.tags[0].parent, Some("admin"))
+  assert_eq(spec.tags[0].kind, Some("nav"))
+  let search = spec.paths["/search"]
+  assert_true(search.operations.contains("query"))
+  assert_eq(
+    search.additional_operations["COPY"].responses["201"].summary,
+    Some("Copy"),
+  )
+  assert_eq(
+    spec.paths["/events"].operations["get"].responses["200"].content["text/event-stream"].item_schema,
+    Some({ "type": "object", "required": ["data"] }),
+  )
+  assert_true(spec.components.media_types.contains("Events"))
+  let old = spec.components.security_schemes["old"]
+  assert_true(old.deprecated)
+  assert_true(old.oauth2_metadata_url is Some(_))
+  // Nothing typed lands in unmodeled, and encoding gives the document back.
+  assert_eq(search.unmodeled, {})
+  assert_eq(spec.to_json(), doc)
+}

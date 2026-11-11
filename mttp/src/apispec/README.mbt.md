@@ -1,7 +1,10 @@
-# OpenAPI document data (experimental)
+# OpenAPI document data
 
-These core-only records describe the OpenAPI 3.1 subset emitted by the endpoint
-interpreter. They are plain data, independent of HTTP handlers and runtime I/O.
+These core-only records describe the OpenAPI documents the endpoint
+interpreter emits. They type the 3.1 fixed fields and those 3.2 adds (`$self`,
+`itemSchema`, the `query` operation and `additionalOperations`, tag
+`parent` and `kind`, and others); the 3.2 fields stay unset in a 3.1
+document, so moving to 3.2 adds no field. They are plain data, independent of HTTP handlers and runtime I/O.
 Constructors supply optional defaults. JSON encoding flattens `extensions`
 entries whose names start with `x-` after the fixed fields.
 
@@ -38,10 +41,6 @@ nothing:
 
 An unmodeled member never replaces a typed field or an extension when
 encoding.
-
-The package is experimental, as is the endpoint layer it documents: a package
-that imports it lists `gaato/mttp/apispec` in its
-`allow-experimental-packages`.
 
 The repository's `scripts/gen_apispec.mbtx` generates the record codecs from
 a field table. Explicit codecs keep wire field names such as `operationId`,
