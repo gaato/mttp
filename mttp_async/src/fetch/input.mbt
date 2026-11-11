@@ -5,12 +5,13 @@
 /// handler did not read to its end. wrangler dev, for one, forwards each
 /// request to the Worker through a proxy worker and drains a body the Worker
 /// left unused once the handler has answered, but skips a body that was
-/// cancelled or is still locked. An upload that had not finished then stays
-/// half forwarded; once the response is sent, workerd logs "Can't read from
-/// request stream after response has been sent" and the next request on the
-/// connection fails with "Network connection lost". Cancelling a body
-/// discarded unread, as an endpoint does when authentication fails before it
-/// reads the body, did exactly that.
+/// cancelled or is still locked. With wrangler 4.126.0 an upload that had
+/// not finished then stayed half forwarded; once the response was sent,
+/// workerd logged "Can't read from request stream after response has been
+/// sent" and the next request on the connection failed with "Network
+/// connection lost". Cancelling a body discarded unread, as an endpoint does
+/// when authentication fails before it reads the body, did exactly that.
+/// wrangler 4.160.1 no longer fails so, but no host needs the cancel.
 priv struct Input {
   request : JsRequest
   mut reader : Reader?

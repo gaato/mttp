@@ -50,10 +50,10 @@ it, and it is never cancelled: at EOF, when the handler closes it, or before
 the host receives a reply that does not stream, the lock is released and the
 host keeps what is left unread. wrangler dev drains a body the Worker left
 unused after the handler answers, but skips one that was cancelled or is
-still locked; an upload still on its way then broke the connection, and the
-next request failed with "Network connection lost". A body read only in part
-while the rest is still arriving has the same effect on wrangler dev however
-it is let go, so on Workers read a body to its end or not at all.
+still locked; with wrangler 4.126.0 (workerd 1.20260825.1) an upload still
+on its way then broke the connection, and the next request failed with
+"Network connection lost". wrangler 4.160.1 (workerd 1.20261110.1) no
+longer shows that, even for a body cancelled or read in part.
 
 Once a response body has ended, the adapter no longer listens to the request
 signal, so a host that aborts it after a successful response (Deno's legacy

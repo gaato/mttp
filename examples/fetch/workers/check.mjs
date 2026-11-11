@@ -151,31 +151,32 @@ try {
     // appeared in some runs only. wrangler dev drains a request body the
     // Worker left unused once the handler has answered; when the adapter had
     // cancelled the body or still held its reader, that drain was skipped or
-    // failed, and a body still being uploaded then broke the connection and
-    // failed the next request with "Network connection lost". A split request
-    // sends its head first and its body 2 ms later: the failure was found with
-    // Deno's fetch as the client, and Node's fetch, which writes a small body
-    // together with its head, did not show it.
-    // The partial read uses a body that arrives in one piece: a Worker that
-    // reads part of a body and answers while the rest is still on its way
-    // loses the connection on wrangler dev however it lets go of the body.
+    // failed, and with wrangler 4.126.0 a body still being uploaded then broke
+    // the connection and failed the next request with "Network connection
+    // lost" (4.160.1 no longer does). A split request sends its head first
+    // and its body 2 ms later: the failure was found with Deno's fetch as the
+    // client, and Node's fetch, which writes a small body together with its
+    // head, did not show it. A partial read gets the first piece the host
+    // delivers, whose size varies.
     const small = JSON.stringify({type: 2, data: {name: 'slow'}, pad: 'x'.repeat(300)});
     const large = 'y'.repeat(256 * 1024);
     const cases = [];
     for (const [name, body, split] of [['small', small, false], ['split', small, true], ['large', large, false]]) {
       cases.push(
         {path: '/slow', name, body, split, status: 200, read: body.length},
+        {path: '/slow/partial', name, body, split, status: 200, read: 'some'},
         {path: '/slow/unread', name, body, split, status: 200, read: 0},
         {path: '/reject', name, body, split, status: 401});
     }
-    cases.push({path: '/slow/partial', name: 'small', body: small, split: false, status: 200, read: small.length});
     const background = cases.filter(c => c.path !== '/reject').length * SLOW_ROUNDS;
     for (let round = 0; round < SLOW_ROUNDS; ++round) {
       for (const {path, name, body, split, status, read} of cases) {
         const reply = split ? await splitPost(path, body) : await json(path, {
           method: 'POST', headers: {'content-type': 'application/json'}, body,
         });
-        check(reply.status === status && (read === undefined || reply.body?.read === read),
+        const got = reply.body?.read;
+        check(reply.status === status &&
+          (read === undefined || got === read || (read === 'some' && got > 0 && got <= body.length)),
           `POST ${path} (${name} body, round ${round + 1}): ${reply.status} ${JSON.stringify(reply.body).slice(0, 200)}`);
       }
     }
