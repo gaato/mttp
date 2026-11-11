@@ -85,6 +85,49 @@ async test "client() follows a redirect and turns retries off on request" {
 }
 
 ///|
+async test "client(cookies=) sends a cookie set on a redirect to the next hop and later calls" {
+  let seen : Array[String?] = []
+  with_local_server(
+    request => {
+      seen.push(request.headers.get("cookie"))
+      if request.url.has_suffix("/login") {
+        @mttp.Response::new(
+          302,
+          headers=@mttp.Headers::of([
+            ("location", "/home"),
+            ("set-cookie", "session=abc; Path=/; HttpOnly"),
+          ]),
+        )
+      } else {
+        @mttp.Response::new(200)
+      }
+    },
+    address => {
+      let jar = @mttp_async.CookieJar::new(@mttp_async.clock())
+      let site = @mttp_async.client(base_url="http://\{address}", cookies=jar)
+      defer site.close()
+      assert_eq(site.send(@mttp_async.get("/login")).status, 200)
+      assert_eq(site.send(@mttp_async.get("/me")).status, 200)
+      assert_eq(jar.length(), 1)
+      // A second Client given the same jar sends it too.
+      let other = @client.Client::new(
+        @mttp_async.backend(cookies=jar),
+        @mttp_async.clock(),
+        base_url="http://\{address}",
+      )
+      defer other.close()
+      assert_eq(other.send(@mttp_async.get("/again")).status, 200)
+    },
+  )
+  assert_eq(seen, [
+    None,
+    Some("session=abc"),
+    Some("session=abc"),
+    Some("session=abc"),
+  ])
+}
+
+///|
 async test "backend(), clock() and timer() give a hand-built Client a total deadline" {
   with_local_server(
     request => {

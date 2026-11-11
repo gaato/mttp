@@ -15,7 +15,9 @@ never does.
     core/async nor its experimental opt-in.
   - `client()` returns a Client over the real network with retries on
     (`RetryPolicy::conservative()` under a `RetryBudget`), a 30 s attempt
-    and 120 s call deadline, redirects (up to 10) and decompression.
+    and 120 s call deadline, redirects (up to 10) and decompression; with
+    `cookies=`, a `CookieJar` (re-exported from `gaato/mttp/cookie`) that
+    every redirect hop sends and stores cookies through.
   - The root package re-exports the vocabulary and the client API an app
     needs (`Request`, `Response`, `Client`, `get`, `post`, `as_json` and so
     on), so `gaato/mttp_async` is the only module in its `moon.mod`.

@@ -31,3 +31,6 @@ pub using @client {
 
 ///|
 pub using @trust {type Trust}
+
+///|
+pub using @cookie {type CookieJar}
