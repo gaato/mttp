@@ -22,6 +22,8 @@ never does.
   - `backend()`, `clock()` and `timer()` supply the same I/O to a library
     that builds its own Client, such as an API SDK, which keeps its own base
     URL, authentication and retry defaults.
+  - `coordination()` supplies the event loop's signals to the parts of
+    `gaato/mttp` that wait without I/O, such as `EventStream::channel`.
 - `ListenError` implements `Show`.
 - The Deno, Bun and Node host shims (`hosts/adapters.mjs`) return `shutdown()`
   beside `fetch` and `whenIdle`. It ends every in-flight response whose

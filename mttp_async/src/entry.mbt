@@ -104,3 +104,10 @@ pub fn clock() -> &@rt.Clock {
 pub fn timer() -> &@rt.Timer {
   @runtime.ClockTimer::new(clock=clock())
 }
+
+///|
+/// Signals on core/async's event loop, for the parts of `gaato/mttp` that wait
+/// without doing I/O themselves, such as `@endpoint.EventStream::channel`.
+pub fn coordination() -> &@rt.Coordination {
+  @runtime.RuntimeCoordination::new()
+}

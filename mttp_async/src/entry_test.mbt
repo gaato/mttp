@@ -116,3 +116,21 @@ async test "backend(), clock() and timer() give a hand-built Client a total dead
     },
   )
 }
+
+///|
+async test "coordination() lets an EventStream channel wait on the event loop" {
+  let (sender, stream) = @endpoint.EventStream::channel(
+    coordination=@mttp_async.coordination(),
+    capacity=1,
+  )
+  @async.with_task_group(group => {
+    group.spawn_bg(() => {
+      assert_true(sender.send(1))
+      assert_true(sender.send(2))
+      sender.close()
+    })
+    assert_eq(stream.next(), Some(1))
+    assert_eq(stream.next(), Some(2))
+    assert_eq(stream.next(), None)
+  })
+}

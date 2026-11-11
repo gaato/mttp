@@ -10,6 +10,7 @@ import {
 }
 
 import {
+  "gaato/mttp/endpoint",
   "gaato/mttp_async/server",
   "moonbitlang/core/async/cond_var",
   "moonbitlang/core/encoding/utf8",
