@@ -318,7 +318,7 @@ test "failed event producers close their sources and in-flight request bodies" {
       @endpoint.DispatchContext::new(),
     )
     let failed = try {
-      ignore(@client.read_body(response.body, 100))
+      ignore(response.body.read_all(max=100))
       false
     } catch {
       @mttp.TransportError(kind=Protocol, ..) => true

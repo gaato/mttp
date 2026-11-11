@@ -17,6 +17,8 @@ pub extend ListenError with @debug.Debug::{to_repr}
 /// shutdown on cancellation. `on_listen` receives the actual bound address.
 /// Stop closes idle connections and the listener, lets active responses and
 /// background jobs finish for `limits.drain_ms`, then cancels and joins them.
+/// The listener sets `SO_REUSEADDR`, so a restart can bind the port while the
+/// previous process's connections are in TIME-WAIT.
 pub async fn serve(
   handler : @mttp.Handler,
   addr~ : String,
@@ -27,8 +29,19 @@ pub async fn serve(
   limits.validate() catch {
     error => raise Config(error)
   }
-  let listener = @socket.TcpServer(@socket.Addr::parse(addr)) catch {
-    _ => raise Bind(detail="could not bind server address")
+  let parsed = @socket.Addr::parse(addr) catch {
+    // InvalidAddr carries no text of its own; say what is expected instead.
+    @socket.InvalidAddr =>
+      raise Bind(
+        detail="invalid address \{Repr(addr)}: expected an IP address and port, such as 127.0.0.1:8080 or [::]:8080",
+      )
+    error => raise Bind(detail="invalid address \{Repr(addr)}: \{error}")
+  }
+  // SO_REUSEADDR, as Go and Node set it: a restart can bind while the old
+  // process's connections sit in TIME-WAIT. It never lets two listeners share
+  // a port on Linux, and core leaves it off on Windows (see the README).
+  let listener = @socket.TcpServer(parsed, reuse_addr=true) catch {
+    error => raise Bind(detail="could not bind \{addr}: \{error}")
   }
   defer listener.close()
   run_listener(listener, handler, on_listen, limits, on_error)
@@ -99,11 +112,11 @@ async fn run_listener(
                 break
               }
               let (tcp, peer) = listener.accept() catch {
-                _ => {
+                error => {
                   if !state.step(AcceptFailed) {
                     break
                   }
-                  raise Accept(detail="listener accept failed")
+                  raise Accept(detail="listener accept failed: \{error}")
                 }
               }
               state.next_id += 1L
@@ -207,6 +220,6 @@ async fn run_listener(
     }
   }) catch {
     Accept(detail~) => raise Accept(detail~)
-    _ => raise Accept(detail="server task failed")
+    error => raise Accept(detail="server task failed: \{error}")
   }
 }

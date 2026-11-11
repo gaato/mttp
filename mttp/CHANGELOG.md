@@ -38,6 +38,12 @@ never does.
   longer means building the whole event; replace
   `to_event=v => @sse.SseEvent::{ data: ..., id: Some(x), .. }` with
   `meta=v => SseMeta::new(id=x)`.
+- `@client.read_body` moved to the root package as
+  `Body::read_all(max~)`, so a server handler can read a request body within
+  a limit without the client package. Its behaviour is unchanged: a body over
+  the limit raises `TooLarge`, a negative limit `Invalid`, and a stream is
+  closed in every case. Replace `@client.read_body(body, limit)` with
+  `body.read_all(max=limit)`.
 
 ### Added
 

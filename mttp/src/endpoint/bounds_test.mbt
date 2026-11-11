@@ -50,13 +50,13 @@ test "optional stream body roundtrips absence and present empty bodies through b
       @endpoint.DispatchContext::new(),
     )
     assert_eq(response.status, 200)
-    assert_eq(@client.read_body(response.body, 100), b"present:0")
+    assert_eq(response.body.read_all(max=100), b"present:0")
     let response = server.dispatch(
       @mttp.Request::post("/upload").header("content-type", "text/plain"),
       {},
       @endpoint.DispatchContext::new(),
     )
-    assert_eq(@client.read_body(response.body, 100), b"absent")
+    assert_eq(response.body.read_all(max=100), b"absent")
   })
 }
 
@@ -192,9 +192,7 @@ test "reported validation issues are capped at one hundred inside a single failu
       @endpoint.DispatchContext::new(),
     )
     assert_eq(response.status, 400)
-    let value = @json.parse(
-      @utf8.decode(@client.read_body(response.body, 65536)),
-    )
+    let value = @json.parse(@utf8.decode(response.body.read_all(max=65536)))
     guard value is { "errors": Array(errors), .. } else {
       fail("missing errors")
     }
@@ -256,7 +254,7 @@ test "default failure policy distinguishes auth media validation and opaque hand
     let response = server.dispatch(@mttp.Request::get("/"), {}, contexts)
     assert_eq(response.status, 500)
     assert_false(
-      @utf8.decode(@client.read_body(response.body, 1000)).contains(
+      @utf8.decode(response.body.read_all(max=1000)).contains(
         "private exception",
       ),
     )

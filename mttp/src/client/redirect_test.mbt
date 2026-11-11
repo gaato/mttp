@@ -48,7 +48,7 @@ test "redirects close intermediate streams and preserve final attributes and his
   assert_eq(response.attributes.get(key), Some("kept"))
   assert_eq(hops.length(), 1)
   assert_eq(hops[0].head.status, 302)
-  assert_eq(d.run(() => @client.read_body(response.body, 100)), b"final")
+  assert_eq(d.run(() => response.body.read_all(max=100)), b"final")
   backend.close()
   backend.close()
   assert_eq(closes.val, 1)

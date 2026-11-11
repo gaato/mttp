@@ -356,6 +356,7 @@ pub fn StreamBody::new(s : &BodyStream, length? : Int64) -> StreamBody // take (
 pub(all) enum Body { Empty; Bytes(Bytes); Stream(StreamBody) }        // Eq (Stream by identity), Debug
 pub fn Body::is_replayable(self : Body) -> Bool
 pub async fn read_bounded(s : &BodyStream, limit : Int) -> Bytes raise TransportError
+pub async fn Body::read_all(self : Body, max~ : Int) -> Bytes raise TransportError  // TooLarge(limit=max); takes and closes a stream
 
 pub fn[T] AttributeKey::new(name : String) -> AttributeKey[T]          // Attributes::empty, put, get
 pub let remote_addr : AttributeKey[String]                            // set by server adapters
@@ -927,12 +928,14 @@ pub fn TcpDialer::new(trust? : @http_async.Trust) -> TcpDialer // impl @rt.Diale
 // server (native, wasm)
 pub(all) suberror ListenError {                              // frozen at release
   Config(@h1server.ServerConfigError)                        // limits refused before binding or on_listen
-  Bind(detail~ : String)
-  Accept(detail~ : String)
+  Bind(detail~ : String)                                     // names the address and keeps the system's reason
+  Accept(detail~ : String)                                   // keeps the runtime's reason
 } derive(Debug)
 pub async fn serve(handler : @mttp.Handler, addr~ : String, on_listen? : (String) -> Unit,
   limits? : @h1server.ServerLimits, on_error? : (@mttp.TransportError) -> Unit) -> Unit raise ListenError
 // TcpServer accepts; each connection goes to @h1server.serve_conn with scheme~="http"
+// TcpServer binds with reuse_addr=true (SO_REUSEADDR, as Go and Node): a restart binds while the old
+// connections are in TIME-WAIT. core/async ignores it on Windows, where it would allow port takeover.
 
 // backend (native, wasm, js)
 pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust~ : @http_async.Trust = System,

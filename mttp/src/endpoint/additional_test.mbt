@@ -133,7 +133,7 @@ test "default rejection lists field locations and security challenges" {
       { "p": "x" },
       @endpoint.DispatchContext::new(),
     )
-    let text = @utf8.decode(@client.read_body(response.body, 2000))
+    let text = @utf8.decode(response.body.read_all(max=2000))
     for location in ["path", "query", "header", "cookie"] {
       assert_true(text.contains(location))
     }

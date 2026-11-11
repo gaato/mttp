@@ -98,6 +98,7 @@ pub fn Body::equal(Self, Self) -> Bool
 pub fn Body::is_replayable(Self) -> Bool
 pub fn Body::length(Self) -> Int64?
 pub fn Body::not_equal(Self, Self) -> Bool
+pub async fn Body::read_all(Self, max~ : Int32) -> Bytes raise TransportError
 pub fn Body::to_repr(Self) -> @debug.Repr
 
 #non_exhaustive

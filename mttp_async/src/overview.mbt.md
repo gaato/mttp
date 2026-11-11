@@ -98,6 +98,28 @@ shutdown:
 @server.serve(request => @mttp_async.Response::new(200), addr="127.0.0.1:8080")
 ```
 
+A request body arrives as a stream. `Body::read_all(max~)` reads it into
+memory and refuses more than `max` bytes:
+
+```mbt check
+///|
+/// Echoes a request body of up to 64 KiB; a larger one gets 413.
+pub async fn echo(
+  request : @mttp_async.Request,
+) -> @mttp_async.Response noraise {
+  let body = request.body.read_all(max=65536) catch {
+    TransportError(kind=TooLarge(..), ..) =>
+      return @mttp_async.Response::new(413)
+    _ => return @mttp_async.Response::new(400)
+  }
+  @mttp_async.Response::new(200, body=Bytes(body))
+}
+```
+
+The server binds with `SO_REUSEADDR`, as Go's and Node's servers do, so a
+restarted process can listen again while the old one's connections wait out
+TIME-WAIT. It does not let two running servers share a port.
+
 For typed endpoints with request validation and an OpenAPI document, define
 them with `gaato/mttp`'s `endpoint` and `router` packages (add `gaato/mttp`
 to the app as well) and serve `router.handler()`. An app with forms and a

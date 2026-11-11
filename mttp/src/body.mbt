@@ -68,6 +68,52 @@ pub fn Body::is_replayable(self : Body) -> Bool {
 }
 
 ///|
+/// Reads the whole body into memory, refusing more than `max` bytes, as a
+/// server handler reads a request body or a backend a response body. A body
+/// over `max` raises `TooLarge(limit=max)` in phase Body; a negative `max`
+/// raises `Invalid`. A stream is taken and closed in every case, read or
+/// refused, so the body cannot be read again.
+///
+/// ```mbt check
+/// test {
+///   let request = @mttp.Request::post("/echo").body_bytes(b"hello")
+///   assert_eq(@driver.run_sync(() => request.body.read_all(max=1024)), b"hello")
+///   let refused = @driver.run_sync(() => {
+///     request.body.read_all(max=4) catch {
+///       @mttp.TransportError(kind=TooLarge(limit=4), ..) => b"too large"
+///       error => raise error
+///     }
+///   })
+///   assert_eq(refused, b"too large")
+/// }
+/// ```
+pub async fn Body::read_all(
+  self : Body,
+  max~ : Int32,
+) -> Bytes raise TransportError {
+  if max < 0 {
+    if self is Stream(stream) {
+      stream.close()
+    }
+    raise TransportError(kind=Invalid, phase=Body, detail="negative body limit")
+  }
+  match self {
+    Empty => b""
+    Bytes(bytes) =>
+      if bytes.length() > max {
+        raise TransportError(
+          kind=TooLarge(limit=max),
+          phase=Body,
+          detail="body exceeds limit",
+        )
+      } else {
+        bytes
+      }
+    Stream(stream) => read_bounded(stream.take(), max)
+  }
+}
+
+///|
 /// A request body read once from a `BodyStream`, with its length when known.
 ///
 /// A transport sends a known length as `Content-Length` and an unknown one,

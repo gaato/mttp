@@ -162,7 +162,7 @@ async fn read_body(
   body : @mttp.Body,
   limit : Int32,
 ) -> Bytes raise @schema.DecodeFailure {
-  @client.read_body(body, limit) catch {
+  body.read_all(max=limit) catch {
     @mttp.TransportError(kind=TooLarge(limit~), ..) =>
       raise @schema.DecodeFailure(
         kind=TooLarge(limit~),

@@ -60,6 +60,14 @@ never does.
   errored with `AbortError`, which Deno logged twice per disconnected SSE
   client. A disconnect before the response head still rejects the response
   Promise.
+- `server.serve` binds with `SO_REUSEADDR`, as Go and Node do, so a server
+  restarted right after it stopped (by systemd, for example) no longer fails
+  to bind while the old connections are in TIME-WAIT. Two running servers
+  still cannot share a port.
+- `ListenError::Bind` and `Accept` keep the cause in `detail`: a bind failure
+  names the address and the system's reason (such as `Address already in
+  use`), and an address that does not parse says so. They used to say only
+  `could not bind server address` and `listener accept failed`.
 
 ## Earlier versions, as gaato/http-async
 

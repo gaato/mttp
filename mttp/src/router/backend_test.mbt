@@ -262,7 +262,7 @@ test "timed router sends require ports and enforce head exchange and idle deadli
       _ => fail("head deadline ignored")
     }
     let response = router.send(@mttp.Request::get("/stream"), options)
-    try ignore(@client.read_body(response.body, 100)) catch {
+    try ignore(response.body.read_all(max=100)) catch {
       @mttp.TransportError(kind=Timeout(ms=5), phase=Body, ..) => ()
       error => raise error
     } noraise {
@@ -288,7 +288,7 @@ test "timed router sends require ports and enforce head exchange and idle deadli
       ..options,
       body: Stream(idle_ms=Some(5)),
     })
-    assert_eq(@client.read_body(response.body, 100), b"xy")
+    assert_eq(response.body.read_all(max=100), b"xy")
     assert_eq(fast.closes(), 1)
     let slow = @sim.Feed::new(driver, [Wait(10), Chunk(b"z")])
     let ep = @endpoint.endpoint
@@ -302,7 +302,7 @@ test "timed router sends require ports and enforce head exchange and idle deadli
       ..options,
       body: Stream(idle_ms=Some(3)),
     })
-    try ignore(@client.read_body(response.body, 100)) catch {
+    try ignore(response.body.read_all(max=100)) catch {
       @mttp.TransportError(kind=Timeout(ms=3), phase=Body, ..) => ()
       error => raise error
     } noraise {
@@ -375,7 +375,7 @@ test "backend cancellation unwinds a prefetched request and a pending response r
       @mttp.Request::get("/"),
       @mttp.SendOptions::default(),
     )
-    let task = driver.spawn(() => ignore(@client.read_body(response.body, 100)))
+    let task = driver.spawn(() => ignore(response.body.read_all(max=100)))
     driver.pause()
     task.cancel()
     assert_false(task.wait())

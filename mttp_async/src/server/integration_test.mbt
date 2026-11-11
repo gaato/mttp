@@ -4,13 +4,14 @@ async fn with_server(
   run : async (String) -> Unit,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
   on_error~ : (@mttp.TransportError) -> Unit = _ => (),
+  addr~ : String = "127.0.0.1:0",
 ) -> Unit {
   @async.with_timeout(5000, () => {
     @async.with_task_group(group => {
       let ready : Ref[String?] = Ref(None)
       let wake = @cond_var.Cond()
       group.spawn_bg(no_wait=true, () => {
-        @server.serve(handler, addr="127.0.0.1:0", limits~, on_error~, on_listen=address => {
+        @server.serve(handler, addr~, limits~, on_error~, on_listen=address => {
           ready.val = Some(address)
           wake.signal()
         })
@@ -66,24 +67,72 @@ async test "configuration is rejected before binding or calling on_listen" {
     }
     assert_false(called.val)
   }
-  for invalid in ["invalid", "127.0.0.1:99999"] {
+  // The parser's own error has no text, so the detail says what is expected;
+  // an unknown IPv6 zone is a system error, whose text is kept.
+  for
+    invalid, cause in {
+      "invalid": "expected an IP address and port",
+      "127.0.0.1:99999": "expected an IP address and port",
+      "[fe80::1%nosuchif0]:80": "nosuchif0",
+    } {
     try @server.serve(_ => @mttp.Response::new(200), addr=invalid) catch {
-      @server.Bind(..) => ()
+      @server.Bind(detail~) => {
+        assert_true(
+          detail.has_prefix("invalid address \"\{invalid}\": "),
+          msg=detail,
+        )
+        assert_true(detail.contains(cause), msg=detail)
+      }
       error => raise error
     } noraise {
       _ => fail("invalid bind succeeded")
     }
   }
+}
+
+///|
+async test "a bind failure names the address and the operating system's cause" {
+  // Bound without SO_REUSEADDR: no listener may share an active port.
   let occupied = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
   defer occupied.close()
-  try
-    @server.serve(_ => @mttp.Response::new(200), addr=occupied.addr.to_string())
-  catch {
-    @server.Bind(..) => ()
+  let address = occupied.addr.to_string()
+  try @server.serve(_ => @mttp.Response::new(200), addr=address) catch {
+    @server.Bind(detail~) => {
+      assert_true(detail.has_prefix("could not bind \{address}: "), msg=detail)
+      // strerror(EADDRINUSE): "Address already in use", or musl's
+      // "Address in use".
+      assert_true(detail.contains("in use"), msg=detail)
+    }
     error => raise error
   } noraise {
     _ => fail("occupied bind succeeded")
   }
+}
+
+///|
+async test "a restart binds the port while the last server's connection is in TIME-WAIT" {
+  let address = Ref("")
+  with_server(_ => @mttp.Response::new(200, body=Bytes(b"first")), bound => {
+    address.val = bound
+    // The server closes first, so its side of the connection, on the
+    // listening port, goes to TIME-WAIT.
+    let response = raw(
+      bound, b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+    )
+    assert_true(response.has_prefix("HTTP/1.1 200"), msg=response)
+    assert_true(response.has_suffix("first"), msg=response)
+  })
+  with_server(
+    _ => @mttp.Response::new(200, body=Bytes(b"second")),
+    addr=address.val,
+    bound => {
+      assert_eq(bound, address.val)
+      let response = raw(
+        bound, b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+      )
+      assert_true(response.has_suffix("second"), msg=response)
+    },
+  )
 }
 
 ///|

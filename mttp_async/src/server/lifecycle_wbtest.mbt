@@ -73,7 +73,12 @@ async test "a real accept failure raises ListenError Accept" {
         _ => (),
       )
     catch {
-      Accept(..) => ()
+      Accept(detail~) => {
+        // The runtime's error follows, so the cause is not lost.
+        let prefix = "listener accept failed: "
+        assert_true(detail.has_prefix(prefix), msg=detail)
+        assert_true(detail.length() > prefix.length(), msg=detail)
+      }
       error => raise error
     } noraise {
       _ => fail("accept failure lost")

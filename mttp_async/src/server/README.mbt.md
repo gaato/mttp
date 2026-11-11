@@ -45,8 +45,19 @@ second), its `close` runs once, a chunked body ends with its last chunk and
 the connection closes. Its clients reconnect, as event-stream clients do.
 `endpoint.sse_out` sets it on the responses it builds.
 
+The listener sets `SO_REUSEADDR`, as Go and Node do, so a restart (a systemd
+`Restart=`, a deploy) binds again while the previous process's connections
+are still in TIME-WAIT. On Linux it never lets a second listener take a port
+that is being listened on. On macOS and the BSDs it also lets a bind to a
+specific address coexist with an earlier wildcard bind of the same port.
+core/async ignores the option on Windows, where TIME-WAIT never blocks a bind
+and `SO_REUSEADDR` would allow another socket to take over the port.
+
 Invalid limits raise `ListenError::Config(ServerConfigError)` before binding
-or calling `on_listen`. Bind and accept failures raise `Bind` and `Accept`.
+or calling `on_listen`. Bind and accept failures raise `Bind` and `Accept`,
+whose `detail` names the address and keeps the system's reason, such as
+`could not bind 127.0.0.1:8080: @socket.TcpServer::new(): Address already in
+use`; an address that does not parse says so and what is expected.
 Connection errors go to `on_error` as `http.TransportError`. Background errors
 preserve `TransportError`; other background errors become `Network` in phase
 `Unknown`, with application details omitted.

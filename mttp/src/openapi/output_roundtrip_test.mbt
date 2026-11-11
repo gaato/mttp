@@ -101,10 +101,7 @@ test "dynamic output status and media describe the actual buffered and streamed 
       "*/*",
     ),
   )
-  assert_eq(
-    @driver.run_sync(() => @client.read_body(response.body, 100)),
-    b"onetwo",
-  )
+  assert_eq(@driver.run_sync(() => response.body.read_all(max=100)), b"onetwo")
   assert_eq(source.closes(), 1)
 }
 
