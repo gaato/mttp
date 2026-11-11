@@ -1,6 +1,6 @@
 # Async client backend
 
-`AsyncBackend` implements `gaato/http.Backend` on native, wasm1 under
+`AsyncBackend` implements `gaato/mttp.Backend` on native, wasm1 under
 moonrun, and JS. Each send performs one exchange. It returns redirects and
 does not retry or store cookies. Close every response after reading it or
 when abandoning its body; close the backend when finished.
@@ -33,7 +33,7 @@ The engine handles proxy authentication, CONNECT and NO_PROXY. `trust`
 accepts the root package's `gaato/mttp_async.Trust`, defaulting to `System`.
 `PemFile` replaces system roots; combine roots in that file when necessary.
 
-The optional `clock` and `timer` arguments accept `gaato/http/rt` ports on
+The optional `clock` and `timer` arguments accept `gaato/mttp/rt` ports on
 every target. The clock defaults to `runtime.AsyncClock`; the timer defaults
 to `runtime.ClockTimer` built on the chosen clock. On socket targets they
 drive pool idle expiry (checked when the pool is used) and phase deadlines.

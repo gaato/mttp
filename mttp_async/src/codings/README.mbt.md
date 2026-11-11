@@ -33,7 +33,7 @@ before upstream EOF, including for live events. This trades some compression
 ratio for bounded response latency. Codec state is bounded independently of
 total input, while the caller retains responsibility for upstream chunk size.
 
-`Decompress::new(inner)` wraps a `gaato/http.Backend`. It adds
+`Decompress::new(inner)` wraps a `gaato/mttp.Backend`. It adds
 `Accept-Encoding: gzip, deflate, br, zstd` only when the caller supplied no
 Accept-Encoding field. Any explicit field, including `identity`, opts out
 of negotiation and decoding. It undoes known outer codings, keeps any unknown

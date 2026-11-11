@@ -1,6 +1,6 @@
-# gaato/http/rt
+# gaato/mttp/rt
 
-The ports through which the connection engines of `gaato/http` and the
+The ports through which the connection engines of `gaato/mttp` and the
 client of `gaato/mttp` reach a runtime. Each is a trait; this package
 implements none of them, so code written against it imports no event loop and
 builds on every target.
@@ -22,7 +22,7 @@ The implementations live elsewhere:
 
 - [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) implements
   them on `moonbitlang/core/async`: sockets, TLS, timers and task groups.
-- `gaato/http/sim` implements them in memory on the deterministic driver, for
+- `gaato/mttp/sim` implements them in memory on the deterministic driver, for
   tests on every target, and holds the contract checkers that both
   implementations pass.
 

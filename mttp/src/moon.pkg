@@ -7,9 +7,14 @@ import {
 }
 
 import {
+  "gaato/mttp/apispec",
+  "gaato/mttp/client",
   "gaato/mttp/driver",
-  "gaato/mttp/multipart",
-  "gaato/mttp/sse",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/openapi",
+  "gaato/mttp/router",
+  "gaato/mttp/schema",
+  "gaato/mttp/sim",
   "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/random",
 } for "test"

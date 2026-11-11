@@ -1,7 +1,7 @@
-# gaato/http/driver
+# gaato/mttp/driver
 
 A deterministic, single-threaded scheduler for MoonBit async code, with
-virtual time. Tests in `gaato/http` and `gaato/mttp` are plain `test` blocks
+virtual time. Tests in `gaato/mttp` are plain `test` blocks
 that drive async code through a `Driver` or `run_sync`, so they run the same
 way on wasm-gc, wasm, js and native without an async runtime.
 
