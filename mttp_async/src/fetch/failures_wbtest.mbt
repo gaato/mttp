@@ -390,3 +390,79 @@ async test "host read failure maps to 400 and cancellation releases an active re
     probe.settled().wait()
   }
 }
+
+///|
+/// A request whose body delivers "abc" and then waits, as an upload still
+/// on its way does; it counts cancellations.
+#external
+priv type UploadProbe
+
+///|
+extern "js" fn UploadProbe::new() -> UploadProbe =
+  #| () => {
+  #|   const state = {cancels: 0, pulls: 0};
+  #|   state.request = new Request('https://example.test/', {method: 'POST', duplex: 'half',
+  #|     body: new ReadableStream({pull(c) {
+  #|       if (state.pulls++ === 0) c.enqueue(new TextEncoder().encode('abc'));
+  #|       else return new Promise(() => {});
+  #|     }, cancel() {++state.cancels;}}, {highWaterMark: 0})});
+  #|   return state;
+  #| }
+
+///|
+extern "js" fn UploadProbe::request(self : UploadProbe) -> JsRequest =
+  #| state => state.request
+
+///|
+extern "js" fn UploadProbe::cancels(self : UploadProbe) -> Int32 =
+  #| state => state.cancels
+
+///|
+extern "js" fn UploadProbe::locked(self : UploadProbe) -> Bool =
+  #| state => state.request.body.locked
+
+///|
+extern "js" fn UploadProbe::used(self : UploadProbe) -> Bool =
+  #| state => state.request.bodyUsed
+
+///|
+async test "the request body is locked only to read it, released before the response and never cancelled" {
+  for mode in ["discard", "unread", "partial"] {
+    let upload = UploadProbe::new()
+    let probe = Probe::new()
+    let adapter = fetch_handler(request => {
+      guard request.body is Stream(stream) else {
+        return @mttp.Response::new(500)
+      }
+      match mode {
+        // An endpoint whose authentication fails before it reads the body.
+        "discard" => {
+          stream.close()
+          @mttp.Response::new(401)
+        }
+        "unread" => @mttp.Response::new(200, body=Bytes(b"ok"))
+        _ => {
+          let piece = stream.take().read_some() catch { _ => None }
+          @mttp.Response::new(200, body=Bytes(piece.unwrap_or(b"")))
+        }
+      }
+    })
+    let reply = awaited(adapter(upload.request(), probe.callback())).wait()
+    // The host has the response: the adapter holds no lock on the body and
+    // has not cancelled it, so the host can still drain or discard the rest.
+    assert_false(upload.locked())
+    assert_eq(upload.cancels(), 0)
+    assert_eq(upload.used(), mode == "partial")
+    assert_eq(
+      reply.text().wait(),
+      match mode {
+        "discard" => ""
+        "unread" => "ok"
+        _ => "abc"
+      },
+    )
+    assert_eq(upload.cancels(), 0)
+    probe.settled().wait()
+    assert_false(probe.failed())
+  }
+}

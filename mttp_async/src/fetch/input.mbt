@@ -1,6 +1,19 @@
 ///|
+/// The request body as the handler reads it. The host body is locked to a
+/// reader only on the first read, and closing only unlocks it again: the
+/// adapter never cancels it, so the host keeps what is left of a body the
+/// handler did not read to its end. wrangler dev, for one, forwards each
+/// request to the Worker through a proxy worker and drains a body the Worker
+/// left unused once the handler has answered, but skips a body that was
+/// cancelled or is still locked. An upload that had not finished then stays
+/// half forwarded; once the response is sent, workerd logs "Can't read from
+/// request stream after response has been sent" and the next request on the
+/// connection fails with "Network connection lost". Cancelling a body
+/// discarded unread, as an endpoint does when authentication fails before it
+/// reads the body, did exactly that.
 priv struct Input {
-  reader : Reader
+  request : JsRequest
+  mut reader : Reader?
   limit : Int32
   mut count : Int32
   mut pending : Bytes
@@ -15,7 +28,21 @@ fn Input::close(self : Input) -> Unit {
   if !self.closed {
     self.closed = true
     self.pending = b""
-    self.reader.close()
+    if self.reader is Some(reader) {
+      reader.close()
+    }
+  }
+}
+
+///|
+fn Input::reader(self : Input) -> Reader {
+  match self.reader {
+    Some(reader) => reader
+    None => {
+      let reader = self.request.reader()
+      self.reader = Some(reader)
+      reader
+    }
   }
 }
 
@@ -43,7 +70,8 @@ impl @mttp.BodyStream for Input with fn read_some(self) {
             detail="too many empty request chunks",
           )
         }
-        let chunk = @js_async.run_promise(signal => self.reader.read(signal))
+        let reader = self.reader()
+        let chunk = @js_async.run_promise(signal => reader.read(signal))
         if chunk.done {
           if self.declared is Some(length) && length != self.count.to_int64() {
             raise @mttp.TransportError(

@@ -5,16 +5,19 @@
 //
 //   node examples/fetch/workers/check.mjs
 //
-// WORKERD_CHECK_VERBOSE=1 prints wrangler's output on success as well.
+// WORKERD_CHECK_VERBOSE=1 prints wrangler's output on success as well;
+// WORKERD_CHECK_ROUNDS=n repeats the unread-body requests n times (20).
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { createServer } from 'node:net';
+import { connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const READY_MS = 60_000;
+// How many times the requests that leave the body unread are repeated.
+const SLOW_ROUNDS = Number(process.env.WORKERD_CHECK_ROUNDS ?? 20);
 
 const freePort = () => new Promise((resolve, reject) => {
   const server = createServer();
@@ -77,6 +80,48 @@ const json = async (path, init) => {
   return {status: response.status, type, body};
 };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// POSTs a JSON body over a socket of its own, writing the head and, 2 ms
+// later, the body. Resolves once the reply is complete (Content-Length or
+// the last chunk); rejects after 10 s.
+const splitPost = (path, body) => new Promise((resolve, reject) => {
+  const socket = connect(port, '127.0.0.1');
+  const timer = setTimeout(() => { socket.destroy(); reject(new Error(`POST ${path}: no complete reply in 10 s`)); }, 10_000);
+  let text = '';
+  const parse = () => {
+    const split = text.indexOf('\r\n\r\n');
+    if (split < 0) return;
+    const head = text.slice(0, split).split('\r\n');
+    let rest = text.slice(split + 4);
+    const length = head.find(line => /^content-length:/i.test(line));
+    if (length !== undefined) {
+      if (rest.length < Number(length.split(':')[1])) return;
+    } else if (head.some(line => /^transfer-encoding:\s*chunked$/i.test(line))) {
+      let decoded = '';
+      for (;;) {
+        const end = rest.indexOf('\r\n');
+        if (end < 0) return;
+        const size = parseInt(rest.slice(0, end), 16);
+        if (size === 0) break;
+        if (rest.length < end + 4 + size) return;
+        decoded += rest.slice(end + 2, end + 2 + size);
+        rest = rest.slice(end + 4 + size);
+      }
+      rest = decoded;
+    }
+    clearTimeout(timer);
+    socket.destroy();
+    let parsed;
+    try { parsed = JSON.parse(Buffer.from(rest, 'latin1').toString()); } catch { parsed = rest; }
+    resolve({status: Number(head[0].split(' ')[1]), body: parsed});
+  };
+  socket.on('data', chunk => { text += chunk.toString('latin1'); parse(); });
+  socket.on('error', error => { clearTimeout(timer); reject(error); });
+  socket.on('connect', () => {
+    socket.write(`POST ${path} HTTP/1.1\r\nhost: 127.0.0.1:${port}\r\n` +
+      `content-type: application/json\r\ncontent-length: ${Buffer.byteLength(body)}\r\n\r\n`);
+    setTimeout(() => socket.write(body), 2);
+  });
+});
 
 try {
   if (!(await ready())) {
@@ -101,6 +146,47 @@ try {
     }
     check(notes.status === 200 && same(notes.body, {notes: ['first note']}),
       `GET /notes after background work: ${notes.status} ${JSON.stringify(notes.body)}`);
+    // Replies that leave the request body unread or partly read, most followed
+    // by background work, repeated because the failure they guard against
+    // appeared in some runs only. wrangler dev drains a request body the
+    // Worker left unused once the handler has answered; when the adapter had
+    // cancelled the body or still held its reader, that drain was skipped or
+    // failed, and a body still being uploaded then broke the connection and
+    // failed the next request with "Network connection lost". A split request
+    // sends its head first and its body 2 ms later: the failure was found with
+    // Deno's fetch as the client, and Node's fetch, which writes a small body
+    // together with its head, did not show it.
+    // The partial read uses a body that arrives in one piece: a Worker that
+    // reads part of a body and answers while the rest is still on its way
+    // loses the connection on wrangler dev however it lets go of the body.
+    const small = JSON.stringify({type: 2, data: {name: 'slow'}, pad: 'x'.repeat(300)});
+    const large = 'y'.repeat(256 * 1024);
+    const cases = [];
+    for (const [name, body, split] of [['small', small, false], ['split', small, true], ['large', large, false]]) {
+      cases.push(
+        {path: '/slow', name, body, split, status: 200, read: body.length},
+        {path: '/slow/unread', name, body, split, status: 200, read: 0},
+        {path: '/reject', name, body, split, status: 401});
+    }
+    cases.push({path: '/slow/partial', name: 'small', body: small, split: false, status: 200, read: small.length});
+    const background = cases.filter(c => c.path !== '/reject').length * SLOW_ROUNDS;
+    for (let round = 0; round < SLOW_ROUNDS; ++round) {
+      for (const {path, name, body, split, status, read} of cases) {
+        const reply = split ? await splitPost(path, body) : await json(path, {
+          method: 'POST', headers: {'content-type': 'application/json'}, body,
+        });
+        check(reply.status === status && (read === undefined || reply.body?.read === read),
+          `POST ${path} (${name} body, round ${round + 1}): ${reply.status} ${JSON.stringify(reply.body).slice(0, 200)}`);
+      }
+    }
+    let finished;
+    for (let i = 0; i < 50; ++i) {
+      finished = await json('/slow');
+      if (finished.body?.finished === background) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    check(finished.status === 200 && finished.body?.finished === background,
+      `GET /slow after background work: ${finished.status} ${JSON.stringify(finished.body)}, expected ${background}`);
     const missing = await json('/nowhere');
     check(missing.status === 404 && same(missing.body, {error: 'not found'}),
       `GET /nowhere: ${missing.status} ${JSON.stringify(missing.body)}`);
