@@ -27,6 +27,46 @@ pub fn parse_http_date(s : String, now_unix_ms~ : Int64) -> Int64? {
 }
 
 ///|
+/// Formats Unix milliseconds as an IMF-fixdate (RFC 9110 §5.6.7), the form
+/// a sender generates for `Date`, `Last-Modified`, `Expires` and a cookie's
+/// `Expires`. Milliseconds are dropped, rounding toward the past. The format
+/// has a four-digit year, so a time before 0001-01-01 or after 9999-12-31 is
+/// clamped to the first or last second it can carry. `parse_http_date`
+/// reads the result back to the same second.
+///
+/// ```mbt check
+/// test {
+///   assert_eq(
+///     @mttp.format_http_date(784111777000L),
+///     "Sun, 06 Nov 1994 08:49:37 GMT",
+///   )
+///   assert_eq(@mttp.format_http_date(-1L), "Wed, 31 Dec 1969 23:59:59 GMT")
+/// }
+/// ```
+pub fn format_http_date(unix_ms : Int64) -> String {
+  let unix_ms = unix_ms.max(-62135596800000L).min(253402300799999L)
+  let (year, month, day, ms_of_day) = civil_of(unix_ms)
+  let weekday = ((days_from_civil(year, month, day) + 4) % 7 + 7) % 7
+  let seconds = ms_of_day / 1000L
+  let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  let months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
+    "Dec",
+  ]
+  let hour = (seconds / 3600L).to_int()
+  let minute = (seconds / 60L % 60L).to_int()
+  let second = (seconds % 60L).to_int()
+  "\{weekdays[weekday]}, \{padded(day, 2)} \{months[month - 1]} \{padded(year, 4)} \{padded(hour, 2)}:\{padded(minute, 2)}:\{padded(second, 2)} GMT"
+}
+
+///|
+/// `n`, nonnegative, in decimal with zeros in front up to `width` digits.
+fn padded(n : Int32, width : Int32) -> String {
+  let text = n.to_string()
+  "0".repeat(width - text.length()) + text
+}
+
+///|
 /// `Sun, 06 Nov 1994 08:49:37 GMT`
 fn imf_fixdate(s : String) -> Int64? {
   guard s.length() == 29 &&

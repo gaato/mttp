@@ -146,7 +146,7 @@ clients reconnect; the endpoint layer's `sse_out` sets it.
 
 | Package | What it holds |
 |---|---|
-| `gaato/mttp` | The vocabulary: methods, headers, URLs, requests, responses and bodies, `Backend` and `SendOptions`, `TransportError`, URL, form and HTTP-date helpers |
+| `gaato/mttp` | The vocabulary: methods, headers, URLs, requests, responses and bodies, `Backend` and `SendOptions`, `TransportError`, URL, form and HTTP-date (parse and format) helpers |
 | `gaato/mttp/client` | Request and response plans with Result-valued readers, the `Client` loop (defaults, admission, deadlines, decoded-body limits, retries and the `RetryBudget`), `FollowRedirects`, `Paginator`, Retry-After and `Link` helpers |
 | `gaato/mttp/client/retry` | Retry rules and decisions as data |
 | `gaato/mttp/client/ratelimit` | Bounded window state, pacing, global quotas and header-driven admission |

@@ -11,8 +11,9 @@ const CHUNK_BYTES : Int32 = 65536
 ///   names a directory and serves its `index` file (`""` serves none);
 ///   directories are never listed, and a directory named without the
 ///   trailing slash is a 404, as is the prefix itself without one.
-/// - A segment that decodes to `.` or `..`, contains `/`, `\` or NUL, or is
-///   empty (other than a final one) is a 404, raw or percent-encoded. The
+/// - A segment that starts with `.` once decoded (so `.`, `..` and hidden
+///   files such as `.env` or `.git`), contains `/`, `\` or NUL, or is empty
+///   (other than a final one) is a 404, raw or percent-encoded. The
 ///   file's real path, with every symlink resolved, must lie below `root`'s
 ///   real path, so a symlink is served only when its target is below `root`.
 ///   Only regular files are opened.
@@ -109,13 +110,9 @@ async fn serve(
     file.close()
     return @mttp.Response::new(304, headers=validators)
   }
-  let mut headers = validators.set(
-    "content-type",
-    content_type(names[names.length() - 1]),
-  )
-  if http_date(mtime.sec()) is Some(date) {
-    headers = headers.set("last-modified", date)
-  }
+  let headers = validators
+    .set("content-type", content_type(names[names.length() - 1]))
+    .set("last-modified", @mttp.format_http_date(mtime.msec()))
   if request.meth is Head {
     file.close()
     return @mttp.Response::new(200, headers~)
@@ -207,10 +204,12 @@ fn raw_path(url : String) -> String? {
 }
 
 ///|
+/// A name a file path may be built from. A leading `.` covers `.` and
+/// `..` and also refuses hidden files, such as `.git` or `.env` left in a
+/// deployed directory.
 fn safe_segment(name : String) -> Bool {
   !name.is_empty() &&
-  name != "." &&
-  name != ".." &&
+  !name.has_prefix(".") &&
   !name.contains("/") &&
   !name.contains("\\") &&
   !name.contains("\u{0}")

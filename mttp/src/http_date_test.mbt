@@ -1,4 +1,42 @@
 ///|
+test "format_http_date writes IMF-fixdate that parses back to the second" {
+  for
+    (epoch, date) in [
+      (0L, "Thu, 01 Jan 1970 00:00:00 GMT"),
+      (784111777000L, "Sun, 06 Nov 1994 08:49:37 GMT"),
+      (951782400000L, "Tue, 29 Feb 2000 00:00:00 GMT"),
+      (1709164800000L, "Thu, 29 Feb 2024 00:00:00 GMT"),
+      (-2203891200000L, "Thu, 01 Mar 1900 00:00:00 GMT"),
+      (-62135596800000L, "Mon, 01 Jan 0001 00:00:00 GMT"),
+      (253402300799000L, "Fri, 31 Dec 9999 23:59:59 GMT"),
+    ] {
+    assert_eq(@mttp.format_http_date(epoch), date)
+    assert_eq(@mttp.parse_http_date(date, now_unix_ms=0L), Some(epoch))
+  }
+  // Milliseconds round toward the past, before and after the epoch.
+  assert_eq(
+    @mttp.format_http_date(784111777999L),
+    "Sun, 06 Nov 1994 08:49:37 GMT",
+  )
+  assert_eq(@mttp.format_http_date(-1L), "Wed, 31 Dec 1969 23:59:59 GMT")
+  assert_eq(@mttp.format_http_date(-1000L), "Wed, 31 Dec 1969 23:59:59 GMT")
+  assert_eq(@mttp.format_http_date(-1001L), "Wed, 31 Dec 1969 23:59:58 GMT")
+}
+
+///|
+test "format_http_date clamps to the years the format can carry" {
+  for
+    (epoch, date) in [
+      (-62135596800001L, "Mon, 01 Jan 0001 00:00:00 GMT"),
+      (-9223372036854775808L, "Mon, 01 Jan 0001 00:00:00 GMT"),
+      (253402300800000L, "Fri, 31 Dec 9999 23:59:59 GMT"),
+      (9223372036854775807L, "Fri, 31 Dec 9999 23:59:59 GMT"),
+    ] {
+    assert_eq(@mttp.format_http_date(epoch), date)
+  }
+}
+
+///|
 test "IMF-fixdate is read in UTC" {
   assert_eq(
     @mttp.parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT", now_unix_ms=0L),

@@ -91,6 +91,9 @@ never does.
   absent required array `[]`), text that does not coerce is an issue at the
   property's pointer, and a property that is not a scalar or an array of scalars
   is a definition problem. Use it with `@endpoint.body`.
+- `format_http_date(unix_ms)` writes an IMF-fixdate (RFC 9110 §5.6.7) for
+  `Date`, `Last-Modified`, `Expires` or a cookie's `Expires`, the counterpart of
+  `parse_http_date`; times outside the years 1 to 9999 are clamped.
 
 ## [0.1.0] - 2026-11-10
 

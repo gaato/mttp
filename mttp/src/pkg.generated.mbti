@@ -21,6 +21,8 @@ pub fn form_urldecode(String, max_pairs? : Int32) -> Array[(String, String)] rai
 
 pub fn form_urlencode(ArrayView[(String, String)]) -> String
 
+pub fn format_http_date(Int64) -> String
+
 pub fn is_idempotent(Request) -> Bool
 
 pub fn is_success(Int32) -> Bool

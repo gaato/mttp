@@ -11,6 +11,10 @@
 /// public/empty/              no index
 /// public/inside -> style.css
 /// public/leak -> ../secret.txt
+/// public/.env                hidden files
+/// public/.git/config
+/// public/.well-known/index.html
+/// public/sub/.hidden
 /// ```
 async fn with_tree(body : async (String) -> Unit) -> Unit {
   let dir = @fs.tmpdir(prefix="mttp-files-")
@@ -23,6 +27,12 @@ async fn with_tree(body : async (String) -> Unit) -> Unit {
   @fs.write_text("\{root}/sub/index.html", "<h1>sub</h1>")
   @fs.write_text("\{root}/sub/notes.txt", "notes")
   @fs.mkdir("\{root}/empty")
+  @fs.write_text("\{root}/.env", "TOKEN=secret")
+  @fs.mkdir("\{root}/.git")
+  @fs.write_text("\{root}/.git/config", "[core]")
+  @fs.mkdir("\{root}/.well-known")
+  @fs.write_text("\{root}/.well-known/index.html", "known")
+  @fs.write_text("\{root}/sub/.hidden", "hidden")
   @fs.symlink(target="style.css", "\{root}/inside")
   @fs.symlink(target="../secret.txt", "\{root}/leak")
   defer @fs.rmdir(dir, recursive=true)
@@ -222,6 +232,28 @@ async test "paths that could leave the root or alias a file are 404" {
     }
     // The same file under a plain path is served.
     assert_eq(files(@mttp.Request::get("/sub/notes.txt")).status, 200)
+  })
+}
+
+///|
+async test "hidden files and directories are 404, raw or encoded" {
+  with_tree(root => {
+    let files = @files.static_files(root)
+    let paths = [
+      "/.env", "/%2eenv", "/%2Eenv", "/.git/config", "/%2egit/config", "/.git/",
+      "/.well-known/", "/sub/.hidden", "/sub/%2ehidden", "http://example.com/.env",
+    ]
+    for path in paths {
+      let response = files(@mttp.Request::get(path))
+      assert_eq(response.status, 404, msg=path)
+      assert_eq(body_of(response), "Not Found\n")
+    }
+    assert_eq(files(@mttp.Request::new(Head, "/.env")).status, 404)
+    // The index option is held to the same rule.
+    let hidden_index = @files.static_files(root, index=".hidden")
+    assert_eq(hidden_index(@mttp.Request::get("/sub/")).status, 404)
+    // A name with a dot elsewhere is an ordinary file.
+    assert_eq(body_of(files(@mttp.Request::get("/sub/notes.txt"))), "notes")
   })
 }
 

@@ -28,14 +28,26 @@ path lies below `prefix` (`/` by default), on native and wasm. Serve it with
   revalidates each time; `""` leaves the field out).
 - An `If-None-Match` that matches the `ETag` under the weak comparison, or is
   `*`, gets a 304 with the `ETag` and `Cache-Control` and no body.
-  `If-Modified-Since` is not evaluated.
-- HEAD gets the same fields as GET without a body. The connection engine
-  writes `Content-Length` only from a body, so a HEAD answer has none.
+  `If-Modified-Since` is not evaluated: every answer carries an `ETag`, so a
+  cache that revalidates sends `If-None-Match`, and when both fields are
+  sent `If-None-Match` takes precedence (RFC 9110, section 13.1.3).
+- HEAD gets the same fields as GET without a body, and without
+  `Content-Length`: the connection engine writes it only from a body, and
+  RFC 9110, section 9.3.2, lets a HEAD answer omit fields that are
+  determined while generating the content.
 - Other methods below `prefix` get a 405 with `Allow: GET, HEAD`; a path
   outside `prefix` is a 404 whatever the method. The request body is closed
   unread.
 - Ranges are not supported: `Range` is ignored and a GET is always a 200
-  with the whole file.
+  with the whole file. The handler is meant for an app's assets
+  (stylesheets, scripts, images), which are fetched whole; media that must
+  resume or seek belongs in an endpoint of its own.
+- Hidden files are never served: a segment starting with `.`, such as
+  `/.env`, `/.git/config` or `/%2eenv`, is a 404, and there is no option to
+  serve them. Deployed directories often hold a `.git` or `.env` that must
+  not leak (Express's serve-static ignores dotfiles by default for the same
+  reason). This includes `/.well-known/`; answer those paths with an
+  endpoint.
 
 Every refusal and every lookup failure is the same plain-text 404, with
 nothing about the file system in it.
@@ -48,9 +60,10 @@ It holds for the file system as it is when the request is checked. Three
 checks enforce it, each enough for the path tricks it names:
 
 1. **The path.** Each segment is percent-decoded on its own. A segment that
-   decodes to `.` or `..`, contains `/`, `\` or NUL, or is empty (other than
-   the final one of a directory path), or does not decode as UTF-8, is a
-   404. Dot segments are refused as sent, not normalized away, so
+   starts with `.` once decoded (which covers `.` and `..`), contains `/`,
+   `\` or NUL, or is empty (other than the final one of a directory path),
+   or does not decode as UTF-8, is a 404. Dot segments are refused as sent,
+   not normalized away, so
    `/a/../b`, `/%2e%2e/secret` and `/..%2fsecret` are all 404, and so are
    `//etc/passwd` and `/C:%5Cwindows`. The `index` option is checked the
    same way.
@@ -67,8 +80,7 @@ core/async's file system API has no `openat` or `O_NOFOLLOW`, so the checks
 and the open are separate calls: someone who can write below `root` while
 it is served could swap a checked path for a symlink between the check and
 the open. Serve only directories that the server's untrusted users cannot
-write to. Hidden files (names starting with `.`) are served like any other;
-keep what must not be public out of `root`.
+write to.
 
 ## Memory and bounds
 
