@@ -7,6 +7,13 @@ never does.
 
 ## [Unreleased]
 
+### Changed
+
+- OpenAPI documents describe each server-sent event in OpenAPI 3.2's item
+  shape, under the media type's `x-oai-itemSchema` extension, instead of
+  `x-mttp-sse-data-schema` inside the schema. The documents stay OpenAPI 3.1.
+  `VariantDoc` gains `item_schema` (experimental `endpoint` package).
+
 ## [0.1.0] - 2026-11-10
 
 ### Added

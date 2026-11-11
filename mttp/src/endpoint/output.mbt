@@ -7,6 +7,7 @@ pub struct Variant[T] {
   priv matches : (T) -> Bool
   priv media_type : String?
   priv schema : @schema.Schema?
+  priv item_schema : @schema.Schema?
   priv headers : Array[String]
   priv header_schemas : Map[String, @schema.Schema]
   priv description : String
@@ -23,6 +24,9 @@ pub struct VariantDoc {
   dynamic_media : Bool
   media_type : String?
   schema : @schema.Schema?
+  // Schema of each item of a sequential media type (an SSE event), as in
+  // OpenAPI 3.2's Media Type Object `itemSchema`.
+  item_schema : @schema.Schema?
   headers : Array[String]
   header_schemas : Map[String, @schema.Schema]
   description : String
@@ -37,6 +41,7 @@ pub fn[T] Variant::doc(self : Variant[T]) -> VariantDoc {
     dynamic_media: self.dynamic_media,
     media_type: self.media_type,
     schema: self.schema,
+    item_schema: self.item_schema,
     headers: self.headers.copy(),
     header_schemas: self.header_schemas.copy(),
     description: self.description,
@@ -58,6 +63,7 @@ pub fn[T] json_variant(
     matches: _ => true,
     media_type: Some(media_type),
     schema: Some(codec.schema()),
+    item_schema: None,
     headers: [],
     header_schemas: {},
     description,
@@ -90,6 +96,7 @@ pub fn empty_variant(
     matches: _ => true,
     media_type: None,
     schema: None,
+    item_schema: None,
     headers: [],
     header_schemas: {},
     description,
@@ -125,6 +132,7 @@ pub fn[A, T] Variant::contramap(
     },
     media_type: self.media_type,
     schema: self.schema,
+    item_schema: self.item_schema,
     headers: self.headers,
     header_schemas: self.header_schemas,
     description: self.description,
@@ -163,6 +171,7 @@ pub fn[T, H] Variant::and_header(
     matches: v => (self.matches)(v.0),
     media_type: self.media_type,
     schema: self.schema,
+    item_schema: self.item_schema,
     headers: [..self.headers, name],
     header_schemas,
     description: self.description,
@@ -467,11 +476,27 @@ pub fn[T] sse_out(
   let defs = Map([])
   let problems = []
   let data_schema = codec.schema().reference(defs, problems~)
-  let wire_schema : @schema.Schema = {
+  // One parsed event, in the shape OpenAPI 3.2 gives text/event-stream items:
+  // every field is a string except retry, and the JSON payload is described
+  // as the content of the data string.
+  let event_schema : @schema.Schema = {
     name: None,
     defs,
     problems,
-    json: { "type": "string", "x-mttp-sse-data-schema": data_schema },
+    json: {
+      "type": "object",
+      "required": ["data"],
+      "properties": {
+        "event": { "type": "string" },
+        "data": {
+          "type": "string",
+          "contentMediaType": "application/json",
+          "contentSchema": data_schema,
+        },
+        "id": { "type": "string" },
+        "retry": { "type": "integer", "minimum": 0 },
+      },
+    },
   }
   let variant : Variant[EventStream[T]] = {
     status: 200,
@@ -479,7 +504,8 @@ pub fn[T] sse_out(
     dynamic_media: false,
     matches: _ => true,
     media_type: Some("text/event-stream"),
-    schema: Some(wire_schema),
+    schema: Some(@schema.string.schema()),
+    item_schema: Some(event_schema),
     headers: [],
     header_schemas: {},
     description: "event stream",

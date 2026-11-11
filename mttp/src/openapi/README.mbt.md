@@ -30,8 +30,11 @@ merged representation of that status supplies it, including framework problem
 responses. Once any representation omits a header, it stays optional even if
 later representations supply it again.
 Fixed headers carry their `const` value. An SSE response describes the framed
-wire body as a string and its JSON event data under `x-mttp-sse-data-schema`;
-named payload schemas are hoisted and their references checked normally.
+wire body as a string and each event under the media type's `x-oai-itemSchema`,
+the OpenAPI Initiative's extension for OpenAPI 3.2's `itemSchema`: an object
+with string `event`, `data` and `id`, an integer `retry`, and the JSON payload
+as the `contentSchema` of `data`. Named payload schemas are hoisted and their
+references checked normally.
 Form schemas admit scalar strings and repeated string arrays for each name.
 
 ```mbt check

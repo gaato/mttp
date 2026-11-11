@@ -474,6 +474,9 @@ pub fn check_definitions(
       if variant.schema is Some(schema) {
         ignore(schema.reference(schemas, problems=schema_problems))
       }
+      if variant.item_schema is Some(schema) {
+        ignore(schema.reference(schemas, problems=schema_problems))
+      }
     }
     for message in schema_problems {
       out.push({ template: d.template, message, fatal: true, })

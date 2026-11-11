@@ -100,11 +100,7 @@ fn ReferenceWalker::visit(
         | "if"
         | "then"
         | "else"
-        | "contentSchema"
-        | "x-mttp-sse-data-schema" =>
-          if !self.visit(value, depth + 1) {
-            return false
-          }
+        | "contentSchema" => if !self.visit(value, depth + 1) { return false }
         _ => ()
       }
     }
@@ -126,7 +122,8 @@ fn ReferenceWalker::content(
   content : Map[String, @apispec.MediaTypeObject],
 ) -> Bool {
   for _, media in content {
-    if !self.optional(media.schema) {
+    if !self.optional(media.schema) ||
+      !self.optional(media.extensions.get(item_schema_extension)) {
       return false
     }
   }
