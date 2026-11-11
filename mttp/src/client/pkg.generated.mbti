@@ -113,7 +113,7 @@ pub struct Client {
   // private fields
 }
 pub fn Client::close(Self) -> Unit
-pub fn Client::new(&@mttp.Backend, &@rt.Clock, base_url? : String, headers? : @mttp.Headers, timeout_ms? : Int32, max_body_bytes? : Int32, read_idle_ms? : Int32, timer? : &@rt.Timer, retry? : RetryPolicy, limiter? : &RateLimiter, total_ms? : Int32, observer? : (Attempt) -> Unit, random? : () -> Double) -> Self
+pub fn Client::new(&@mttp.Backend, &@rt.Clock, base_url? : String, headers? : @mttp.Headers, timeout_ms? : Int32, max_body_bytes? : Int32, read_idle_ms? : Int32, timer? : &@rt.Timer, retry? : RetryPolicy, retry_budget? : RetryBudget, limiter? : &RateLimiter, total_ms? : Int32, observer? : (Attempt) -> Unit, random? : () -> Double) -> Self
 pub async fn[T, M : ResponseMode] Client::send(Self, RequestPlan[T, M], decide_retry? : (AttemptResult[T], RetryContext) -> @retry.Decision) -> Reply[T]
 
 pub struct FollowRedirects {
@@ -218,6 +218,12 @@ pub fn[T] ResponsePlan::new((@mttp.ResponseHead, Bytes) -> T raise) -> Self[T, B
 pub fn[A, T] ResponsePlan::prepared_stream((@mttp.ResponseHead, Bytes) -> Result[A, T] raise, async (A) -> T) -> Self[T, Streaming]
 pub fn[T] ResponsePlan::reject() -> Self[Result[T, ResponseFailure], Buffered]
 pub fn[T] ResponsePlan::stream(async (@mttp.ResponseHead, &@mttp.BodyStream, Int32) -> T) -> Self[Result[T, ResponseFailure], Streaming]
+
+pub struct RetryBudget {
+  // private fields
+}
+pub fn RetryBudget::new(percent? : Double, min_per_second? : Int32, window_ms? : Int32) -> Self
+pub fn RetryBudget::unlimited() -> Self
 
 pub(all) struct RetryContext {
   request : @mttp.RequestHead
