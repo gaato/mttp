@@ -29,6 +29,13 @@ never does.
   stream: the body ends cleanly after a whole event and is closed once, so the
   host's own shutdown no longer waits for it. Stop with `app.shutdown()`, then
   the host's server shutdown, then `await app.whenIdle()`.
+- `gaato/mttp_async/files` with `static_files(root, prefix?, cache_control?,
+  index?)`, a Handler that serves a directory's files to GET and HEAD: streamed
+  in 64 KiB slices, `Content-Type` from the extension, a weak `ETag`,
+  `Last-Modified`, `Cache-Control` and 304 on a matching `If-None-Match`. Dot
+  segments, empty segments, backslashes and NUL are refused raw or encoded, and
+  the file's real path must lie below the root's, so a symlink pointing outside
+  is a 404. No directory listings and no ranges.
 
 ### Changed
 

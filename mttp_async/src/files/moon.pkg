@@ -1,0 +1,25 @@
+import {
+  "gaato/mttp",
+  "moonbitlang/core/async/fs",
+}
+
+import {
+  "gaato/mttp/endpoint",
+  "gaato/mttp/router",
+  "gaato/mttp_async/server",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/async/cond_var",
+  "moonbitlang/core/encoding/utf8",
+} for "test"
+
+supported_targets = "native+wasm"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async/fs",
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/socket",
+    "moonbitlang/core/async/cond_var",
+  ],
+)

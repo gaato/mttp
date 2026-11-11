@@ -105,7 +105,8 @@ cookie session adds the router's `same_origin` middleware, which refuses
 state-changing requests from other sites, and sets its cookies `SameSite`.
 On JavaScript hosts, `gaato/mttp_async/fetch` turns the same handler into a
 `fetch` export for Cloudflare Workers, Deno, Bun, Node, Fastly, Vercel and AWS
-Lambda.
+Lambda. `gaato/mttp_async/files` serves a directory's files, such as
+stylesheets and scripts, as one more handler, alone or behind a Router's 404s.
 
 ## Tests and concurrency
 
@@ -137,6 +138,7 @@ runtime here; use `gaato/mttp` there and provide its runtime ports.
 | `gaato/mttp_async` | native, wasm, js | `run`, `client()`, `backend()`, `clock()`, `timer()`, and re-exports of the types and client functions an app uses |
 | `backend` | native, wasm, js | `AsyncBackend`: the HTTP/1.1 engine over TCP and TLS with decompression; the host's `fetch` on js |
 | `server` | native, wasm | `serve`: bounded listener, graceful shutdown, background work |
+| `files` | native, wasm | `static_files`: a directory's files for GET and HEAD, streamed, with ETag revalidation and paths kept inside the directory |
 | `fetch`, `hosts` | js | `fetch_handler` and the host shims |
 | `runtime` | native, wasm, js | Clocks, timers, an admission gate and coordination for `gaato/mttp`'s runtime ports |
 | `codings` | native, wasm, js | Bounded content codecs, `Decompress` for clients and `compress` for handlers |
