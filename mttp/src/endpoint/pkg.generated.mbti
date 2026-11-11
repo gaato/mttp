@@ -43,6 +43,8 @@ pub fn[T] header(String, @schema.TextCodec[T]) -> Input[T]
 
 pub fn headers() -> Input[@mttp.Headers]
 
+pub fn html_out(status? : Int32) -> Out[String, @client.Buffered]
+
 pub fn[T] json_out(@schema.BodyCodec[T], status? : Int32) -> Out[T, @client.Buffered]
 
 pub fn[T] json_variant(Int32, @schema.BodyCodec[T], description? : String) -> Variant[T]

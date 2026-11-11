@@ -26,6 +26,8 @@ pub fn[T, A] field(String, JsonCodec[A], (T) -> A) -> Field[T, A]
 
 pub fn form_body(max_pairs? : Int32) -> BodyCodec[Array[(String, String)]]
 
+pub let html_body : BodyCodec[String]
+
 pub let int : TextCodec[Int32]
 
 pub let int64 : TextCodec[Int64]

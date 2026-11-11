@@ -71,6 +71,10 @@ never does.
 - `Router::must`: `Router::new` for definitions known to be right, such as a
   top-level `let` in an app or a JavaScript entry, where an error cannot be
   raised; a definition problem aborts with the problems.
+- `schema.html_body` and `endpoint.html_out`: an HTML page as
+  `text/html; charset=utf-8`. The handler renders the page and returns the
+  string, so a client reads back the same string; an error page is
+  `errors(html_out(status=404))`.
 
 ## [0.1.0] - 2026-11-10
 

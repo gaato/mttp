@@ -25,6 +25,11 @@ test "endpoint definition and client encoding" {
 }
 ```
 
+`text_out`, `bytes_out` and `html_out` cover plain text, opaque bytes and
+HTML pages. `html_out` takes the rendered page as a `String`: render it in the
+handler with any template engine, so a client reads back the same string.
+`json_out(codec)` takes any body codec.
+
 Security inputs are decoded and authenticated before regular input failures
 are returned. Head decoding does not read the body. Buffered inputs are bounded
 by the router limit (1 MiB by default); streamed inputs count bytes while the
