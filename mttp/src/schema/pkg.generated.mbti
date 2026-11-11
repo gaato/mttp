@@ -76,7 +76,7 @@ pub fn open_string(Array[String]) -> JsonCodec[String]
 
 pub fn[T] option(JsonCodec[T]) -> JsonCodec[T?]
 
-pub fn pattern(String) -> Validator[String] raise UnsupportedPattern
+pub fn pattern(String) -> Validator[String]
 
 pub fn[T] presence(JsonCodec[T]) -> JsonCodec[@jsonkit.Presence[T]]
 
@@ -98,13 +98,10 @@ pub(all) suberror DecodeFailure {
   DecodeFailure(kind~ : DecodeKind, message~ : String)
 }
 pub fn DecodeFailure::message(Self) -> String
+pub fn DecodeFailure::output(Self, &Logger) -> Unit
 pub fn DecodeFailure::to_repr(Self) -> @debug.Repr
-
-#derive(@debug.Debug)
-pub(all) suberror UnsupportedPattern {
-  UnsupportedPattern(String)
-}
-pub fn UnsupportedPattern::to_repr(Self) -> @debug.Repr
+pub fn DecodeFailure::to_string(Self) -> String
+pub impl Show for DecodeFailure
 
 // Types and methods
 pub struct BodyCodec[T] {

@@ -59,13 +59,7 @@ test "pattern translator refuses unsupported syntax and compilation growth" {
       "(".repeat(33) + "a" + ")".repeat(33),
       "a{256}".repeat(17),
     ] {
-    try {
-      let _ = @schema.pattern(source)
-      fail("unsupported pattern accepted: " + source)
-    } catch {
-      @schema.UnsupportedPattern(_) => ()
-      error => raise error
-    }
+    assert_true(refused(source), msg="unsupported pattern accepted: " + source)
   }
   for
     source in [
@@ -73,12 +67,7 @@ test "pattern translator refuses unsupported syntax and compilation growth" {
       "(".repeat(32) + "a" + ")".repeat(32),
       "a{256}".repeat(16),
     ] {
-    try {
-      let _ = @schema.pattern(source)
-    } catch {
-      @schema.UnsupportedPattern(reason) =>
-        fail("boundary refused: " + source + ": " + reason)
-    }
+    assert_false(refused(source), msg="boundary refused: " + source)
   }
 }
 
@@ -118,33 +107,44 @@ test "pattern refusals cover quantifier and class edge cases" {
       "[a-z-0]", "[\\d-]x[a-\\w]", "a)", "(a", "]", "}", "\\b", "\\u0041", "(?<n>a)",
       "(?!a)", "a\\", "[\\", "[\\b]", "[z-a]",
     ] {
-    try {
-      let _ = @schema.pattern(source)
-      fail("unsupported pattern accepted: " + source)
-    } catch {
-      @schema.UnsupportedPattern(_) => ()
-      error => raise error
-    }
+    assert_true(refused(source), msg="unsupported pattern accepted: " + source)
   }
 }
 
 ///|
 test "pattern expansion budget multiplies counted group repetition" {
-  ignore(@schema.pattern("(?:(?:a{16}){16}){16}"))
+  assert_false(refused("(?:(?:a{16}){16}){16}"))
   // 512 + 14 * 256 = 4096 atoms, the budget exactly.
-  ignore(@schema.pattern("(?:ab){256}" + "a{256}".repeat(14)))
-  ignore(@schema.pattern("(?:)?"))
+  assert_false(refused("(?:ab){256}" + "a{256}".repeat(14)))
+  assert_false(refused("(?:)?"))
   for
     source in [
       "(?:(?:a{16}){16}){17}",
       "(?:ab){256}" + "a{256}".repeat(15) + "a",
     ] {
-    try {
-      let _ = @schema.pattern(source)
-      fail("oversized pattern accepted: " + source)
+    assert_true(refused(source), msg="oversized pattern accepted: " + source)
+  }
+}
+
+///|
+/// Whether `source` is refused: the validator carries a problem into the
+/// schema, and it rejects every value.
+fn refused(source : String) -> Bool {
+  let codec = @schema.string.validate(@schema.pattern(source))
+  let problems = codec.schema().problems
+  if problems.is_empty() {
+    return false
+  }
+  for value in ["a", ""] {
+    let accepted = try {
+      ignore(codec.decode(value))
+      true
     } catch {
-      @schema.UnsupportedPattern(_) => ()
-      error => raise error
+      _ => false
+    }
+    if accepted {
+      return false
     }
   }
+  true
 }

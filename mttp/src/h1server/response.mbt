@@ -2,12 +2,23 @@
 // method (`write_response_head` with `meth~` keeps HEAD, 204 and 304
 // bodiless), a stream's first read before the head so a failing producer can
 // still be answered with 500, and every write sliced to 64 KiB under the
-// body deadline.
+// body deadline. A stream marked `@mttp.close_on_shutdown` is cut once
+// `stopping` holds: it is no longer pulled, and the response ends where the
+// stream had reached.
 
 ///|
 /// Writes `response` to a request of `meth` and closes its body; `true` when
 /// the connection may carry the next request. Sets `sent` once the head is
 /// on its way, so that a failure before it can still be answered.
+///
+/// A stream cut at shutdown ends as its framing allows. A chunked body gets
+/// its last chunk, so the client reads a complete response; every piece
+/// pulled before the cut was written whole, so the body ends on a boundary
+/// the producer chose (an event, for server-sent events). A body with a
+/// Content-Length cannot end early, so the connection closes short of it,
+/// and the client sees the response as incomplete rather than as a shorter
+/// body; a body delimited by the close ends with it. The connection then
+/// closes in every case, since the server is stopping.
 async fn Session::write_response(
   self : Session,
   response : @mttp.Response,
@@ -51,9 +62,11 @@ async fn Session::write_response(
     _ => None
   }
   let limit = self.limits.body_timeout_ms
+  let cut = response.attributes.get(@mttp.close_on_shutdown) == Some(true)
+  let stopped = Ref(false)
   let first = match reader {
     Some(reader) => {
-      let first = self.produce(reader)
+      let first = self.produce(reader, cut~, stopped~)
       // A producer may catch a request-body failure before the head is
       // written. The malformed input must still determine the response.
       if source.failure is Some(error) {
@@ -92,7 +105,7 @@ async fn Session::write_response(
           )
           continue end
         }
-        next = self.produce(reader)
+        next = self.produce(reader, cut~, stopped~)
       }
       if chunked {
         self.wire.write(@h1.encode_chunk(b""), limit)
@@ -100,7 +113,7 @@ async fn Session::write_response(
     }
     _ => ()
   }
-  !close
+  !close && !stopped.val
 }
 
 ///|
@@ -109,16 +122,47 @@ fn invalid_response(detail : String) -> @mttp.TransportError {
 }
 
 ///|
-/// The next piece of a streamed response, within the body deadline.
+/// How often a pull of a stream marked `close_on_shutdown` asks `stopping`.
+/// The caller's `stopping` is a predicate with no notification to wait on,
+/// so the pull asks it on the clock; only such streams pay for it, and only
+/// while a pull waits.
+let shutdown_poll_ms : Int32 = 250
+
+///|
+/// The next piece of a streamed response, within the body deadline. With
+/// `cut`, `None` also once `stopping` holds, before the pull or while it
+/// waits (the pull is cancelled then), and `stopped` records it.
 async fn Session::produce(
   self : Session,
   reader : &@mttp.BodyStream,
+  cut~ : Bool,
+  stopped~ : Ref[Bool],
 ) -> Bytes? raise @mttp.TransportError {
   let limit = self.limits.body_timeout_ms
-  within(
-    self.wire.timer,
-    limit,
-    timeout(limit, Body, "the response body producer"),
-    () => reader.read_some(),
-  )
+  let expired = timeout(limit, Body, "the response body producer")
+  if !cut {
+    return within(self.wire.timer, limit, expired, () => reader.read_some())
+  }
+  if (self.stopping)() {
+    stopped.val = true
+    return None
+  }
+  within(self.wire.timer, limit, expired, () => {
+    let mut next = None
+    self.coordination.supervise(primary=() => next = reader.read_some(), monitor=() => {
+      while !(self.stopping)() {
+        self.clock.sleep(shutdown_poll_ms)
+      }
+      stopped.val = true
+      // Cancels the pull; never leaves `produce`.
+      raise @mttp.TransportError(
+        kind=Closed,
+        phase=Body,
+        detail="the server is shutting down",
+      )
+    }) catch {
+      error => if stopped.val { return None } else { raise error }
+    }
+    next
+  })
 }

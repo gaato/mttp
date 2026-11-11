@@ -11,6 +11,8 @@ pub fn append_query(String, String, String) -> String
 
 pub let background : AttributeKey[(async () -> Unit) -> Unit]
 
+pub let close_on_shutdown : AttributeKey[Bool]
+
 pub fn encode_path(Array[String]) -> String
 
 pub fn encode_utf8(String) -> Bytes
@@ -52,7 +54,10 @@ pub(all) suberror TransportError {
 }
 pub fn TransportError::is_unsent(Self) -> Bool
 pub fn TransportError::message(Self) -> String
+pub fn TransportError::output(Self, &Logger) -> Unit
 pub fn TransportError::to_repr(Self) -> @debug.Repr
+pub fn TransportError::to_string(Self) -> String
+pub impl Show for TransportError
 
 #derive(Eq, @debug.Debug)
 pub(all) suberror UrlError {
@@ -60,7 +65,10 @@ pub(all) suberror UrlError {
 }
 pub fn UrlError::equal(Self, Self) -> Bool
 pub fn UrlError::not_equal(Self, Self) -> Bool
+pub fn UrlError::output(Self, &Logger) -> Unit
 pub fn UrlError::to_repr(Self) -> @debug.Repr
+pub fn UrlError::to_string(Self) -> String
+pub impl Show for UrlError
 
 // Types and methods
 pub struct AttributeKey[T] {

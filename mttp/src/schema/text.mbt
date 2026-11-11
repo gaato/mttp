@@ -59,10 +59,15 @@ pub let string : TextCodec[String] = TextCodec::new(
 )
 
 ///|
-/// A check plus the JSON Schema keywords that state it.
+/// A check plus the JSON Schema keywords that state it. A validator that
+/// could not be built (an unsupported pattern) carries its problems instead
+/// of raising, so it can be composed in a top-level definition; `validate`
+/// moves them into the schema, where the endpoint definition checker refuses
+/// them.
 pub struct Validator[T] {
   priv check : (T) -> String?
   priv keywords : Map[String, Json]
+  priv problems : Array[String]
 }
 
 ///|
@@ -71,6 +76,7 @@ pub fn minimum(n : Int32) -> Validator[Int32] {
   {
     check: v => if v < n { Some("must be >= \{n}") } else { None },
     keywords: { "minimum": Json(n) },
+    problems: [],
   }
 }
 
@@ -91,6 +97,7 @@ pub fn max_length(n : Int32) -> Validator[String] {
     } else {
       { "maxLength": Json(n) }
     },
+    problems: [],
   }
 }
 
@@ -110,7 +117,7 @@ pub fn[T] TextCodec::validate(
       }
     },
     encode_: self.encode_,
-    schema_: self.schema_.patch(v.keywords),
+    schema_: with_problems(self.schema_.patch(v.keywords), v.problems),
   }
 }
 

@@ -35,7 +35,7 @@ rerun the tests.
   covered when any point on them ran.
 
 The h1server read-ahead and timeout regressions run over sim + Driver on all
-four targets (69 tests per target). Its native coverage is 308/311 lines;
+four targets (74 tests per target). Its native coverage is 315/318 lines;
 the three remaining lines are the existing request-body defensive guards and
 future response-Body arm listed below. The ownership handoff, bounded buffer,
 peer failure/EOF distinction and input/producer timeout split add no exemptions.

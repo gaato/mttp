@@ -37,6 +37,14 @@ transition. This also covers HEAD and empty responses without exposing
 runtime hooks in the portable engine. Cleanup that shields cancellation can
 outlast the grace period, as with the underlying cooperative runtime.
 
+An endless stream, such as server-sent events, would hold shutdown for the
+whole `drain_ms`. A response that sets `@mttp.close_on_shutdown` to `true`
+is closed when the server starts to shut down instead of being drained: the
+stream is no longer pulled (a pull that waits is cancelled within a quarter
+second), its `close` runs once, a chunked body ends with its last chunk and
+the connection closes. Its clients reconnect, as event-stream clients do.
+`endpoint.sse_out` sets it on the responses it builds.
+
 Invalid limits raise `ListenError::Config(ServerConfigError)` before binding
 or calling `on_listen`. Bind and accept failures raise `Bind` and `Accept`.
 Connection errors go to `on_error` as `http.TransportError`. Background errors

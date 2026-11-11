@@ -17,7 +17,10 @@ pub(all) suberror ListenError {
   Bind(detail~ : String)
   Accept(detail~ : String)
 }
+pub fn ListenError::output(Self, &Logger) -> Unit
 pub fn ListenError::to_repr(Self) -> @debug.Repr
+pub fn ListenError::to_string(Self) -> String
+pub impl Show for ListenError
 
 // Types and methods
 

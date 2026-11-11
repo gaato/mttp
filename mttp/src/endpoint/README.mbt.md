@@ -57,7 +57,67 @@ and its borrowed streams close when it exits. `call` and `call_with` are
 convenience forms. `EventStream.each` closes on EOF, failure or cancellation.
 SSE outputs share `sse.SseReader` with `client.as_sse`: queued complete events
 are delivered before an oversized event fails, and pending overflow is raised
-before another read, even when the peer goes quiet.
+before another read, even when the peer goes quiet. On the server, an SSE
+response carries `@mttp.close_on_shutdown`, so it ends when the server shuts
+down instead of holding the shutdown for its drain time; clients reconnect
+with `Last-Event-ID`.
+
+`sse_out` writes each value's JSON as the event's `data`. Its `meta` mapping
+gives each value an `id`, an event name and a `retry` hint as an `SseMeta`.
+A client reads them back with `EventStream::next_item` or `each_item`, which
+deliver an `SseItem` holding the value beside those fields; an unnamed event
+has the name `""`, as in `SseMeta::new()`. An item's `id` is the stream's last
+event ID, the value to send back with the `last_event_id()` input to resume.
+`next` and `next_item` pull one event at a time and return `None` from the end
+on. A stream closes itself at the end, on failure and on cancellation; to stop
+earlier, call `close` (a stream borrowed by `call_with` also closes when the
+callback returns). Values a handler returns from `from_pull` or `from_array`
+carry no fields of their own: on the server, `meta` decides them.
+
+```mbt check
+///|
+test "SSE event ids resume a stream" {
+  let events = @endpoint.endpoint
+    .get("/events")
+    .input(@endpoint.last_event_id())
+    .output(
+      @endpoint.sse_out(@schema.jint, meta=n => {
+        @endpoint.SseMeta::new(id="\{n}", event="tick")
+      }),
+    )
+  let server = events.serve_public(last => {
+    let start = match last {
+      Some(id) => @schema.int.decode(id)
+      None => 0
+    }
+    Ok(@endpoint.EventStream::from_array([start + 1, start + 2, start + 3]))
+  })
+  let client = @client.Client::new(
+    @client.from_handler(request => {
+      server.dispatch(request, Map([]), @endpoint.DispatchContext::new())
+    }),
+    @sim.FakeClock::new(),
+  )
+  @driver.run_sync(() => {
+    // Read one event, stop, and resume after it.
+    let last = events
+      .call_with(client, (), None, stream => {
+        let item = stream.next_item().unwrap()
+        assert_eq(item, @endpoint.SseItem::new(1, id="1", event="tick"))
+        item.id
+      })
+      .unwrap()
+      .unwrap()
+    let rest = []
+    events
+    .call_with(client, (), last, stream => stream.each(n => rest.push(n)))
+    .unwrap()
+    .unwrap()
+    assert_eq(rest, [2, 3, 4])
+  })
+  client.close()
+}
+```
 
 `path` captures one decoded segment. `paths` captures the final `{name...}`
 tail as an array, retaining empty segments and encoded slashes. A custom
@@ -100,6 +160,24 @@ the typed value; `body_out` carries a per-response content type and bytes.
 `set_cookie` keeps separate Set-Cookie fields and returns each named cookie's
 value and attributes without interpreting its application-specific contents.
 
-The router and `endpoint/testkit` arrive in follow-up changes. Until then,
-`ServerEndpoint::dispatch` accepts captures and a `DispatchContext`; a
-`@client.from_handler` backend can connect the two interpreters in memory.
+Serve endpoints through `gaato/mttp/router`, and stub them in tests with
+`gaato/mttp/endpoint/testkit`. `ServerEndpoint::dispatch` remains for adapters
+that route themselves: it takes the captures and a `DispatchContext`.
+
+Each endpoint documents the errors its own output declares. Shared error
+types are fine, but give each endpoint an `Out` with only the variants it can
+return, so a public route does not document 401 or 409:
+
+```mbt check
+///|
+test "each endpoint declares only its own errors" {
+  let not_found = @endpoint.empty_variant(404)
+  let read = @endpoint.endpoint
+    .get("/items/{id}")
+    .input(@endpoint.path("id", @schema.string))
+    .output(@endpoint.text_out())
+    .errors(@endpoint.one_of([not_found]))
+  let statuses = read.doc().errors.map(variant => variant.status)
+  assert_eq(statuses, [404])
+}
+```

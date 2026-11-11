@@ -72,6 +72,29 @@ pub let background : AttributeKey[(async () -> Unit) -> Unit] = AttributeKey::ne
 )
 
 ///|
+/// Set on a response by its handler: a streamed response with this attribute
+/// set to true is closed when the server starts to shut down, instead of
+/// being drained; for endless streams such as server-sent events, whose
+/// clients reconnect. The server stops pulling the body, closes it and ends
+/// the response at the point the stream had reached (a chunked body with its
+/// last chunk, otherwise by closing the connection), so shutdown does not
+/// wait out its drain time for a stream that never ends by itself.
+///
+/// ```mbt check
+/// test {
+///   let response = @mttp.Response::new(200)
+///   let response = {
+///     ..response,
+///     attributes: response.attributes.put(@mttp.close_on_shutdown, true),
+///   }
+///   assert_eq(response.attributes.get(@mttp.close_on_shutdown), Some(true))
+/// }
+/// ```
+pub let close_on_shutdown : AttributeKey[Bool] = AttributeKey::new(
+  "close_on_shutdown",
+)
+
+///|
 /// A caller's statement that resending this request is safe even after it
 /// was written (discord's REPLAY_SAFE_HEADER, without a wire header).
 pub let replay_safe : AttributeKey[Bool] = AttributeKey::new("replay_safe")

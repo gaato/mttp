@@ -28,6 +28,16 @@ never does.
   `Operation::new` takes `responses~` (default empty) and `ResponseObject::new`
   takes `description?`; the 3.1 documents `openapi` emits still always describe
   each response.
+- `@schema.pattern` no longer raises: an unsupported pattern is recorded as a
+  definition problem, which the endpoint definition check reports as a
+  `DefinitionError`, so validators compose in top-level definitions.
+  `UnsupportedPattern` is no longer public.
+- `sse_out` takes `meta : (T) -> SseMeta` instead of
+  `to_event : (T) -> @sse.SseEvent`. The library always writes the codec's
+  JSON as an event's `data`, so setting an `id`, event name or `retry` no
+  longer means building the whole event; replace
+  `to_event=v => @sse.SseEvent::{ data: ..., id: Some(x), .. }` with
+  `meta=v => SseMeta::new(id=x)`.
 
 ### Added
 
@@ -43,6 +53,21 @@ never does.
   `SecurityScheme.deprecated` and `oauth2_metadata_url`,
   `Components.media_types`, and `PathItem`'s `query` operation and
   `additional_operations`. They stay unset in the 3.1 documents `openapi` emits.
+- `Show` for the error types (`TransportError`, `UrlError`, `InvalidRequest`,
+  `ResponseFailure`, `DecodeFailure`, `DefinitionError`, `InputErrors`,
+  `ServerConfigError`), so they interpolate as readable messages;
+  `reason_phrase` covers every status code RFC 9110, 6585 and 7725 register.
+- `SseMeta`, `SseItem` and `EventStream::next`, `next_item` and `each_item`: a
+  client reads each typed event's `id`, event name and `retry` beside its
+  value, so it can resume with the `last_event_id()` input, and pulls events
+  one at a time, so it can stop before the end and `close` the stream.
+- `close_on_shutdown`, a response attribute: a streamed response with it set
+  to true is closed when the server starts to shut down instead of being
+  drained, for endless streams such as server-sent events, whose clients
+  reconnect. `h1server.serve_conn` cuts such a stream once `stopping` holds,
+  also while its producer waits (asking `stopping` every 250 ms then): it
+  closes the body, ends a chunked body with its last chunk and closes the
+  connection. `endpoint.sse_out` sets it on the responses it builds.
 
 ## [0.1.0] - 2026-11-10
 

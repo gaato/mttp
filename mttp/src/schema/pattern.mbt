@@ -1,13 +1,8 @@
 ///|
 /// A pattern outside the supported ECMA subset, or beyond compilation limits.
-#derive(Debug)
-pub(all) suberror UnsupportedPattern {
+priv suberror UnsupportedPattern {
   UnsupportedPattern(String)
 }
-
-///|
-/// Formats a pattern-construction error.
-pub extend UnsupportedPattern with @debug.Debug::{to_repr}
 
 ///|
 /// The longest pattern source, in UTF-16 units.
@@ -354,15 +349,28 @@ fn pattern_source(ecma : String) -> String raise UnsupportedPattern {
 /// \f \v`, escaped syntax characters, alternation, `(...)` and `(?:...)`
 /// groups, and greedy or lazy `* + ? {n} {n,} {n,m}` on any atom or group.
 /// Lookarounds, backreferences, named groups, `\b`, Unicode and hex escapes,
-/// and flags are refused when the validator is built.
+/// and flags are refused: the validator then carries the problem, which the
+/// endpoint definition checker reports (`DefinitionError`) when the endpoint
+/// is checked, and it rejects every value.
 ///
 /// Limits: 1024 UTF-16 units of source, 32 nested groups, counts up to 256,
 /// and 4096 atoms once counted repetitions are expanded (`(?:ab){3}` is 6).
 /// The schema states the original ECMA source.
-pub fn pattern(ecma : String) -> Validator[String] raise UnsupportedPattern {
-  let source = pattern_source(ecma)
-  let regex = @string.Regex(source) catch {
-    error => raise UnsupportedPattern("invalid pattern: " + error.to_string())
+pub fn pattern(ecma : String) -> Validator[String] {
+  let compiled = Ok(@string.Regex(pattern_source(ecma))) catch {
+    UnsupportedPattern(reason) => Err(reason)
+    error => Err("invalid pattern: " + error.to_string())
+  }
+  let regex = match compiled {
+    Ok(regex) => regex
+    Err(reason) => {
+      let problem = "unsupported pattern \{ecma}: \{reason}"
+      return {
+        check: _ => Some(problem),
+        keywords: { "pattern": Json(ecma) },
+        problems: [problem],
+      }
+    }
   }
   custom(
     value => {

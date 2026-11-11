@@ -22,7 +22,10 @@ pub(all) suberror ServerConfigError {
   InvalidHandlerTimeoutMs(value~ : Int32)
   InvalidDrainMs(value~ : Int32)
 }
+pub fn ServerConfigError::output(Self, &Logger) -> Unit
 pub fn ServerConfigError::to_repr(Self) -> @debug.Repr
+pub fn ServerConfigError::to_string(Self) -> String
+pub impl Show for ServerConfigError
 
 // Types and methods
 #derive(Eq, @debug.Debug)

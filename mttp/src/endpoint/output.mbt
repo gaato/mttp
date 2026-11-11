@@ -11,6 +11,9 @@ pub struct Variant[T] {
   priv headers : Array[String]
   priv header_schemas : Map[String, @schema.Schema]
   priv description : String
+  /// Attributes every response of this variant carries, such as
+  /// `close_on_shutdown` on server-sent events.
+  priv attributes : @mttp.Attributes
   priv encode : (T) -> (@mttp.Headers, @mttp.Body)
   priv decode_bytes : ((@mttp.ResponseHead, Bytes) -> T raise)?
   priv decode_stream : (async (@mttp.ResponseHead, &@mttp.BodyStream) -> T)?
@@ -67,6 +70,7 @@ pub fn[T] json_variant(
     headers: [],
     header_schemas: {},
     description,
+    attributes: @mttp.Attributes::empty(),
     encode: v => {
       (
         @mttp.Headers::of([("content-type", media_type)]),
@@ -100,6 +104,7 @@ pub fn empty_variant(
     headers: [],
     header_schemas: {},
     description,
+    attributes: @mttp.Attributes::empty(),
     encode: _ => (@mttp.Headers::empty(), Empty),
     decode_bytes: Some((_, _) => ()),
     decode_stream: None,
@@ -136,6 +141,7 @@ pub fn[A, T] Variant::contramap(
     headers: self.headers,
     header_schemas: self.header_schemas,
     description: self.description,
+    attributes: self.attributes,
     encode: t => {
       match project(t) {
         Some(a) => (self.encode)(a)
@@ -175,6 +181,7 @@ pub fn[T, H] Variant::and_header(
     headers: [..self.headers, name],
     header_schemas,
     description: self.description,
+    attributes: self.attributes,
     encode: v => {
       let (hs, body) = enc(v.0)
       (hs.add(name, codec.encode(v.1)), body)
@@ -289,11 +296,13 @@ fn[T, M] Out::encode(self : Out[T, M], v : T) -> @mttp.Response? {
         return None
       }
       let (headers, body) = (variant.encode)(v)
-      if status == 204 || status == 304 {
+      let response = if status == 204 || status == 304 {
         discard(body)
-        return Some(@mttp.Response::new(status, headers~))
+        @mttp.Response::new(status, headers~)
+      } else {
+        @mttp.Response::new(status, headers~, body~)
       }
-      return Some(@mttp.Response::new(status, headers~, body~))
+      return Some({ ..response, attributes: variant.attributes, })
     }
   }
   None
@@ -358,9 +367,81 @@ fn[T, M] Out::decode_bytes(
 }
 
 ///|
+/// The SSE fields `sse_out` writes beside an event's data: its `id`, its event
+/// name (`event`; `""` or `"message"` leaves the event unnamed) and a `retry`
+/// reconnection hint in milliseconds. Build it with `SseMeta::new`.
+#derive(Eq, Debug)
+pub(all) struct SseMeta {
+  id : String?
+  event : String
+  retry : Int32?
+}
+
+///|
+/// Creates event metadata; every field is absent by default.
+///
+/// ```mbt check
+/// test {
+///   let meta = @endpoint.SseMeta::new(id="7", event="update")
+///   assert_eq(meta.id, Some("7"))
+///   assert_eq(meta.retry, None)
+/// }
+/// ```
+pub fn SseMeta::new(
+  id? : String,
+  event~ : String = "",
+  retry? : Int32,
+) -> SseMeta {
+  { id, event, retry, }
+}
+
+///|
+/// Compares all metadata fields.
+pub extend SseMeta with Eq::{equal, not_equal}
+
+///|
+/// Debug representation of event metadata.
+pub extend SseMeta with @debug.Debug::{to_repr}
+
+///|
+/// One typed event with its SSE fields. On a client, `id` is the stream's last
+/// event ID as of this event (an `id` field stays in effect until another
+/// replaces it), so it is the value to send back with `last_event_id()` when
+/// resuming; `event` is the event name, `""` for an unnamed event (also one
+/// named `message`); `retry` is the reconnection hint sent with this event.
+/// Items of a stream made with `from_pull` or `from_array` have no SSE fields:
+/// `id: None, event: "", retry: None`.
+#derive(Eq, Debug)
+pub(all) struct SseItem[T] {
+  data : T
+  id : String?
+  event : String
+  retry : Int32?
+}
+
+///|
+/// Creates an item; the SSE fields are absent by default.
+pub fn[T] SseItem::new(
+  data : T,
+  id? : String,
+  event~ : String = "",
+  retry? : Int32,
+) -> SseItem[T] {
+  { data, id, event, retry, }
+}
+
+///|
+/// Compares the data and all SSE fields.
+pub extend SseItem with Eq::{equal, not_equal}
+
+///|
+/// Debug representation of an item.
+pub extend SseItem with @debug.Debug::{to_repr}
+
+///|
 /// Pull-only event streams (no push bodies in v0.x).
 pub struct EventStream[T] {
-  priv next : async () -> T?
+  priv pull : async () -> SseItem[T]?
   priv close_ : () -> Unit
   priv mut closed : Bool
 }
@@ -371,15 +452,19 @@ pub fn[T] EventStream::from_pull(
   next : async () -> T?,
   close : () -> Unit,
 ) -> EventStream[T] {
-  { next, close_: close, closed: false, }
+  {
+    pull: () => next().map(data => SseItem::new(data)),
+    close_: close,
+    closed: false,
+  }
 }
 
 ///|
 /// Creates a pull stream over the supplied ordered events.
 pub fn[T] EventStream::from_array(items : Array[T]) -> EventStream[T] {
   let i : Ref[Int32] = { val: 0, }
-  {
-    next: () => {
+  EventStream::from_pull(
+    () => {
       if i.val < items.length() {
         i.val += 1
         Some(items[i.val - 1])
@@ -387,9 +472,8 @@ pub fn[T] EventStream::from_array(items : Array[T]) -> EventStream[T] {
         None
       }
     },
-    close_: () => (),
-    closed: false,
-  }
+    () => (),
+  )
 }
 
 ///|
@@ -399,9 +483,46 @@ pub async fn[T] EventStream::each(
   f : async (T) -> Unit,
 ) -> Unit {
   defer self.close()
-  while self.next_event() is Some(v) {
-    f(v)
+  while self.next_item() is Some(item) {
+    f(item.data)
   }
+}
+
+///|
+/// Consumes events with their SSE fields in order, like `each`, and closes the
+/// source even when the callback fails.
+pub async fn[T] EventStream::each_item(
+  self : EventStream[T],
+  f : async (SseItem[T]) -> Unit,
+) -> Unit {
+  defer self.close()
+  while self.next_item() is Some(item) {
+    f(item)
+  }
+}
+
+///|
+/// Pulls the next event, or `None` at the end; after the end every call
+/// returns `None`. The stream closes itself at the end, on failure and on
+/// cancellation; a caller that stops before the end calls `close` (a client
+/// stream borrowed by `stream_request` or `call_with` is also closed when the
+/// callback returns).
+pub async fn[T] EventStream::next(self : EventStream[T]) -> T? {
+  self.next_item().map(item => item.data)
+}
+
+///|
+/// Pulls the next event with its SSE fields, as `next` does.
+pub async fn[T] EventStream::next_item(self : EventStream[T]) -> SseItem[T]? {
+  if self.closed {
+    return None
+  }
+  errdefer self.close()
+  let item = (self.pull)()
+  if item is None {
+    self.close()
+  }
+  item
 }
 
 ///|
@@ -411,19 +532,6 @@ pub fn[T] EventStream::close(self : EventStream[T]) -> Unit {
     self.closed = true
     (self.close_)()
   }
-}
-
-///|
-async fn[T] EventStream::next_event(self : EventStream[T]) -> T? {
-  if self.closed {
-    return None
-  }
-  errdefer self.close()
-  let value = (self.next)()
-  if value is None {
-    self.close()
-  }
-  value
 }
 
 ///|
@@ -468,10 +576,12 @@ impl @mttp.BodyStream for EventBody with fn close(self) {
 }
 
 ///|
-/// Streams JSON event data with optional event metadata mapping.
+/// Streams events whose `data` is the codec's JSON. `meta` gives each value
+/// its `id`, event name and `retry`; without it each event has data only. A
+/// client reads the fields back with `EventStream::next_item` or `each_item`.
 pub fn[T] sse_out(
   codec : @schema.JsonCodec[T],
-  to_event? : (T) -> @sse.SseEvent,
+  meta? : (T) -> SseMeta,
 ) -> Out[EventStream[T], @client.Streaming] {
   let defs = Map([])
   let problems = []
@@ -509,23 +619,25 @@ pub fn[T] sse_out(
     headers: [],
     header_schemas: {},
     description: "event stream",
+    attributes: @mttp.Attributes::empty().put(@mttp.close_on_shutdown, true),
     encode: es => {
       let body : &@mttp.BodyStream = EventBody::{
         pull: () => {
-          match es.next_event() {
+          match es.next() {
             None => None
-            Some(v) => {
-              let event = match to_event {
-                Some(mapper) => mapper(v)
-                None =>
-                  @sse.SseEvent::{
-                    event: "",
-                    data: codec.to_json(v).stringify(),
-                    id: None,
-                    retry: None,
-                  }
+            Some(value) => {
+              let fields = match meta {
+                Some(mapper) => mapper(value)
+                None => SseMeta::new()
               }
-              Some(@sse.encode(event))
+              Some(
+                @sse.encode(@sse.SseEvent::{
+                  event: fields.event,
+                  data: codec.to_json(value).stringify(),
+                  id: fields.id,
+                  retry: fields.retry,
+                }),
+              )
             }
           }
         },
@@ -540,21 +652,30 @@ pub fn[T] sse_out(
     decode_bytes: None,
     decode_stream: Some((h, stream) => {
       let reader = @sse.SseReader::new(stream)
-      EventStream::from_pull(
-        () => {
+      EventStream::{
+        pull: () => {
           match reader.next_event() {
             None => None
-            Some(event) =>
-              Some(
-                codec.body().decode(@mttp.encode_utf8(event.data)) catch {
+            Some(event) => {
+              let data = codec.body().decode(@mttp.encode_utf8(event.data)) catch {
                   failure =>
                     raise DecodeError(h, message=failure.message(), body=b"")
-                },
-              )
+                }
+              // The parser names an unnamed event `message`; items use the
+              // `""` that SseMeta writes for one, so meta round-trips.
+              let name = if event.event == "message" { "" } else { event.event }
+              Some(SseItem::{
+                data,
+                id: event.id,
+                event: name,
+                retry: event.retry,
+              })
+            }
           }
         },
-        () => reader.close(),
-      )
+        close_: () => reader.close(),
+        closed: false,
+      }
     }),
   }
   { mode: @client.Streaming::{ }, variants: [variant], }

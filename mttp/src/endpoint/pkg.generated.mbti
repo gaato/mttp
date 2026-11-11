@@ -5,7 +5,6 @@ import {
   "gaato/mttp",
   "gaato/mttp/client",
   "gaato/mttp/schema",
-  "gaato/mttp/sse",
   "moonbitlang/core/debug",
 }
 
@@ -74,7 +73,7 @@ pub let route_template : @mttp.AttributeKey[String]
 
 pub fn signature_header(String) -> Input[String]
 
-pub fn[T] sse_out(@schema.JsonCodec[T], to_event? : (T) -> @sse.SseEvent) -> Out[EventStream[T], @client.Streaming]
+pub fn[T] sse_out(@schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
 
 pub fn stream_body(media_type? : String) -> Input[&@mttp.BodyStream]
 
@@ -89,11 +88,17 @@ pub fn unit() -> Input[Unit]
 pub(all) suberror DefinitionError {
   DefinitionError(Array[DefinitionProblem])
 }
+pub fn DefinitionError::output(Self, &Logger) -> Unit
 pub fn DefinitionError::to_repr(Self) -> @debug.Repr
+pub fn DefinitionError::to_string(Self) -> String
+pub impl Show for DefinitionError
 
 pub(all) suberror InputErrors {
   InputErrors(Array[InputFailure])
 }
+pub fn InputErrors::output(Self, &Logger) -> Unit
+pub fn InputErrors::to_string(Self) -> String
+pub impl Show for InputErrors
 
 // Types and methods
 pub struct Atom {
@@ -196,8 +201,11 @@ pub struct EventStream[T] {
 }
 pub fn[T] EventStream::close(Self[T]) -> Unit
 pub async fn[T] EventStream::each(Self[T], async (T) -> Unit) -> Unit
+pub async fn[T] EventStream::each_item(Self[T], async (SseItem[T]) -> Unit) -> Unit
 pub fn[T] EventStream::from_array(Array[T]) -> Self[T]
 pub fn[T] EventStream::from_pull(async () -> T?, () -> Unit) -> Self[T]
+pub async fn[T] EventStream::next(Self[T]) -> T?
+pub async fn[T] EventStream::next_item(Self[T]) -> SseItem[T]?
 
 pub(all) struct FailureContext {
   request : @mttp.Request
@@ -310,6 +318,29 @@ pub struct ServerEndpoint {
 }
 pub async fn ServerEndpoint::dispatch(Self, @mttp.Request, Map[String, String], DispatchContext) -> @mttp.Response noraise
 pub fn ServerEndpoint::doc(Self) -> EndpointDoc
+
+#derive(Eq, @debug.Debug)
+pub(all) struct SseItem[T] {
+  data : T
+  id : String?
+  event : String
+  retry : Int32?
+}
+pub fn[T : Eq] SseItem::equal(Self[T], Self[T]) -> Bool
+pub fn[T] SseItem::new(T, id? : String, event? : String, retry? : Int32) -> Self[T]
+pub fn[T : Eq] SseItem::not_equal(Self[T], Self[T]) -> Bool
+pub fn[T : @debug.Debug] SseItem::to_repr(Self[T]) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct SseMeta {
+  id : String?
+  event : String
+  retry : Int32?
+}
+pub fn SseMeta::equal(Self, Self) -> Bool
+pub fn SseMeta::new(id? : String, event? : String, retry? : Int32) -> Self
+pub fn SseMeta::not_equal(Self, Self) -> Bool
+pub fn SseMeta::to_repr(Self) -> @debug.Repr
 
 pub struct Staged[T] {
   // private fields
