@@ -38,9 +38,9 @@ pub fn fetch_handler(
         if max_body_bytes < 0 {
           return empty_response(500, request)
         }
-        let reader = request.reader().wait()
         let input = Input::{
-          reader,
+          request,
+          reader: None,
           limit: max_body_bytes,
           count: 0,
           pending: b"",

@@ -45,14 +45,28 @@ responses release owned streams. Input remains open for lazy response readers
 duplicate fields; response Set-Cookie entries remain separate on hosts with
 the standard getSetCookie API.
 
+The host request body is locked to a reader only when the handler first reads
+it, and it is never cancelled: at EOF, when the handler closes it, or before
+the host receives a reply that does not stream, the lock is released and the
+host keeps what is left unread. wrangler dev drains a body the Worker left
+unused after the handler answers, but skips one that was cancelled or is
+still locked; with wrangler 4.126.0 (workerd 1.20260825.1) an upload still
+on its way then broke the connection, and the next request failed with
+"Network connection lost". wrangler 4.160.1 (workerd 1.20261110.1) no
+longer shows that, even for a body cancelled or read in part.
+
 Once a response body has ended, the adapter no longer listens to the request
 signal, so a host that aborts it after a successful response (Deno's legacy
 behavior) cancels nothing and logs nothing. A streamed response whose
-attributes set `@mttp.close_on_shutdown` (every `endpoint.sse_out` response)
-carries a function under `Symbol.for("gaato.mttp.closeOnShutdown")`. The
-process host shims call it with their shutdown signal; when that aborts, the
-body ends cleanly between two reads of its source, so an SSE stream ends
-after a whole event, and the source is closed once.
+attributes set `@mttp.close_on_shutdown` (every `endpoint.sse_out` and
+`sse_body_out` response) carries a function under
+`Symbol.for("gaato.mttp.closeOnShutdown")`. The process host shims call it
+with their shutdown signal; when that aborts, the body ends cleanly between
+two reads of its source, so an SSE stream ends after a whole event, and the
+source is closed once. The adapter returns the Response, and with it that
+function, only after the first output chunk; an endpoint event stream gives
+an SSE comment as that chunk, so its Response exists before the first event
+and a shutdown also ends a stream that has none yet.
 
 Use `with_env(request, value)` in the Workers entry before calling the adapter;
 the opaque environment is then available through the `env` attribute. Other

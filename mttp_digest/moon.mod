@@ -16,5 +16,5 @@ preferred_target = "wasm-gc"
 
 import {
   "gaato/mttp@0.1.0",
-  "moonbitlang/x@0.5.6",
+  "moonbitlang/x@0.5.7",
 }

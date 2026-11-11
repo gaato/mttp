@@ -74,6 +74,8 @@ pub fn[T, A0, A1, A2, A3, A4, A5, A6] object7(String, Field[T, A0], Field[T, A1]
 
 pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7] object8(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], (A0, A1, A2, A3, A4, A5, A6, A7) -> T) -> JsonCodec[T]
 
+pub fn[T] omittable(JsonCodec[T]) -> JsonCodec[T?]
+
 pub fn[T : Eq + @json.ToJson] one_of_values(Array[T]) -> Validator[T]
 
 pub fn open_string(Array[String]) -> JsonCodec[String]

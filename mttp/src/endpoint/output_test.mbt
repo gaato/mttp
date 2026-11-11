@@ -300,10 +300,11 @@ test "event streams close once after callbacks fail and custom event metadata is
       Map([]),
       @endpoint.DispatchContext::new(),
     )
-    // The library writes the codec's JSON as data, beside the meta's fields.
+    // An opening comment, then the codec's JSON as data, beside the meta's
+    // fields.
     assert_eq(
       response.body.read_all(max=1024),
-      b"event: update\nid: cursor\nretry: 100\ndata: \"a\"\n\ndata: \"b\"\n\n",
+      b":\n\nevent: update\nid: cursor\nretry: 100\ndata: \"a\"\n\ndata: \"b\"\n\n",
     )
   })
 }

@@ -3,7 +3,7 @@ name: Release
 # The library modules are released together. A tag `<module dir>-v<version>`
 # (for example `mttp-v0.2.0`) runs the release preflight; nothing here
 # publishes. Publication is a separately approved local command (see
-# scripts/release.sh).
+# scripts/release.mbtx).
 on:
   push:
     tags:
@@ -40,4 +40,4 @@ jobs:
       # Includes the resolver gate: real archives, an isolated registry and
       # consumers outside the workspace.
       - run: scripts/gates.sh full
-      - run: scripts/release.sh publish --dry-run
+      - run: moon run scripts/release.mbtx -- publish --dry-run

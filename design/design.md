@@ -641,6 +641,7 @@ pub fn[T, A] case_(tag : String, codec : JsonCodec[A], project : (T) -> A?, inje
 pub fn[T] tagged(name : String, discriminator : String, cases : Array[Case[T]]) -> JsonCodec[T]   // oneOf + discriminator.mapping
 pub fn string_enum(name : String, values : Array[String]) -> JsonCodec[String]   // any_of(..) for untagged unions
 pub fn[T] presence(codec : JsonCodec[T]) -> JsonCodec[@jsonkit.Presence[T]]       // (new) open_string(known); the jsonkit edge
+pub fn[T] omittable(codec : JsonCodec[T]) -> JsonCodec[T?]   // may be absent, not null; the child's schema, not required
 
 pub fn[T] JsonCodec::body(self : JsonCodec[T]) -> BodyCodec[T]
 pub let text_body : BodyCodec[String]               // raw_bytes; (new) form_body(max_pairs?)
@@ -699,7 +700,8 @@ pub fn[T, H] Variant::and_header(self : Variant[T], name : String, codec : @sche
 pub fn[T] one_of(variants : Array[Variant[T]]) -> Out[T, @client.Buffered]
 pub fn[T] json_out(codec : @schema.BodyCodec[T], status? : Int) -> Out[T, @client.Buffered]       // no_content, text_out, bytes_out
 pub fn stream_body_out(status? : Int) -> Out[(String?, @mttp.Body), @client.Buffered]              // content type computed per response
-pub fn[T] sse_out(codec : @schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
+pub fn[T] sse_body_out(codec : @schema.BodyCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]   // data = the codec's bytes as UTF-8 text (HTML for htmx)
+pub fn[T] sse_out(codec : @schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]           // sse_body_out(codec.body(), meta?)
 pub fn[T, H, M] Out::and_header(self : Out[T, M], name : String, codec : @schema.TextCodec[H]) -> Out[(T, H), M]   // and_status, set_cookie
 pub fn[T] EventStream::from_pull(next : async () -> T?, close : () -> Unit) -> EventStream[T]       // from_array, each, each_item, next, next_item, close
 pub fn[T] EventStream::channel(coordination~ : &@rt.Coordination, capacity~ : Int = 16) -> (EventSender[T], EventStream[T])   // push producer → pull stream; send waits when full, false after the reader closes; close / fail end it
@@ -728,6 +730,7 @@ pub(all) struct FailureContext { request : @mttp.Request; endpoint : EndpointDoc
 pub(all) struct DispatchContext { max_body_bytes : Int; max_issues : Int
   decode_failure : (FailureContext) -> @mttp.Response; unhandled : (@mttp.Request, Error) -> @mttp.Response }
 pub let route_template : @mttp.AttributeKey[String]     // set on every dispatched response
+pub let declared_headers : @mttp.AttributeKey[Array[String]]   // the encoded variant's declared header names; cors exposes them
 pub fn[S, I, E, O, P, M] Endpoint::serve(self : Endpoint[S, I, E, O, M], authenticate : async (S) -> Result[P, E],
   handle : async (P, I) -> Result[O, E]) -> ServerEndpoint
 pub fn[I, E, O, M] Endpoint::serve_public(self : Endpoint[Unit, I, E, O, M], handle : async (I) -> Result[O, E]) -> ServerEndpoint
@@ -819,7 +822,7 @@ pub fn Router::docs(self : Router) -> Array[@endpoint.EndpointDoc]
 pub impl @mttp.Backend for Router
 pub fn problem(status : Int, title : String, errors? : Json) -> @mttp.Response    // RFC 9457 problem+json
 pub fn default_decode_failure(ctx : @endpoint.FailureContext) -> @mttp.Response
-pub fn cors(allow_origins : Array[String]) -> Middleware
+pub fn cors(allow_origins : Array[String], allow_credentials~ : Bool = false, expose_headers~ : Array[String] = []) -> Middleware  // also exposes declared_headers
 // (new) hide_endpoints_with_auth : (FailureContext) -> Response?   — a decode_failure preset (404 instead of 401)
 // (new) request_id(), access_log(clock, sink)
 // (new) same_origin(allowed_origins?) — refuses unsafe methods from other sites by Sec-Fetch-Site, else Origin
@@ -1074,7 +1077,7 @@ Every policy takes `&@rt.Clock`, and where needed `&@rt.Timer`, `&@rt.Gate` and 
 ### 5.4 Streaming, SSE and WebSockets
 
 - **One direction: pull.** Bodies are pull `BodyStream`s in both directions, so the CONTRACT rules and the conformance harness stay single.
-- **Server SSE.** A handler returns an `EventStream[T]` through `sse_out`; the endpoint encodes it as a stream; the adapter writes it with backpressure; Router-as-Backend passes it through unbuffered.
+- **Server SSE.** A handler returns an `EventStream[T]` through `sse_out` (JSON data) or `sse_body_out` (any body codec's text, such as HTML for htmx); the endpoint encodes it as a stream; the adapter writes it with backpressure; Router-as-Backend passes it through unbuffered. The stream opens with an SSE comment, because every server (ours, the fetch adapter, a host's) pulls a stream's first piece before writing the head, so that a producer failing at once still gets a 500; without it an idle stream has no head, and a host cannot attach shutdown handling to it.
 - **No push bodies.** A producer-style handler bridges through a runtime queue in the application.
 - **Client SSE.** `as_sse` with a `stop` predicate for sentinels such as OpenAI's `data: [DONE]`.
 - **WebSockets** stay deferred (§0.2). When added: a 101 Response carrying the upgrade callback in an attribute, a sans-IO frame codec in gaato/mttp, `WebSocketStub` in sim, and scheme validation before any runtime call.
@@ -1210,7 +1213,7 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | `resolver_gate` | The library modules resolve and build from a scratch consumer outside moon.work; an experimental package needs the consumer's opt-in. |
 | `type_contracts` | Compile-fail fixtures from an external package: a Streaming endpoint refuses a Buffered request; `as_both` refuses streaming readers. |
 
-`scripts/*.mbtx` move to core/async's `fs` and shell APIs. A `.mbtx` script cannot set the experimental opt-in (front matter accepts `import` and `permission` only), so it runs with the experimental warning on stderr, which `scripts/gates.sh` filters. The shared `docs_audit.mbtx` was the last script on moonbitlang/async 0.22.5; it moved in every gaato repository on 2026-11-10, and the gate has no exemption left.
+`scripts/*.mbtx` move to core/async's `fs` and shell APIs. A `.mbtx` script cannot set the experimental opt-in (front matter accepts `import` and `permission` only), so it runs with the experimental warning on stderr, which `scripts/gates.sh` filters. The release helper is `scripts/release.mbtx` too (`bump`, `note`, `check`, `publish --dry-run`; it never publishes); only `gates.sh` stays bash, because it runs `moon` itself on every toolchain including nightly, filters that warning, and runs npm. The shared `docs_audit.mbtx` was the last script on moonbitlang/async 0.22.5; it moved in every gaato repository on 2026-11-10, and the gate has no exemption left.
 ## 6. sttp/tapir concept map
 
 | sttp / tapir concept | mttp home, or the reason it is omitted |
@@ -1297,7 +1300,7 @@ Each PR branches from the previous one, stays at about 5k changed lines or fewer
 | 15 | http-async `runtime` (+ VirtualClock), `conn` and socketconn, `codings` with `Decompress` and `compress` | decoder stages (5); decoded output per pull (64 KiB); codec windows; encoder output per pull (64 KiB); Accept-Encoding negotiation (16 KiB, 128 entries); VirtualClock `settle` rounds |
 | 16 | http-async `backend` (native, wasm, js), socket integration tests, `examples/get` | JS upload buffer (16 MiB); JS delivery slices (64 KiB) and empty host chunks (1024) |
 | 17 | http-async `server`, `fetch`, `hosts` with the Lambda empty-body fix (`undefined` when the event has no body); `examples/serve`, `examples/fetch` | fetch request body (1 MiB); fetch delivered chunks and empty-input budget; Lambda buffering (1 MiB / 4 MiB) |
-| 18 | `mttp_digest`, `conformance`, `benchmarks`, the coverage ledger, `release.sh check` dry runs for all four modules | Digest challenge (16 KiB) and nonce origins (16) |
+| 18 | `mttp_digest`, `conformance`, `benchmarks`, the coverage ledger, `release.mbtx check` dry runs for all four modules | Digest challenge (16 KiB) and nonce origins (16) |
 
 TEST_COVERAGE.md rows (uncovered lines with their reason) are added by each PR for its own packages; PR 18 closes the ledger with the full native coverage run.
 
@@ -1394,7 +1397,7 @@ discord 0.13 → next:
 
 **Every step below is an external operation and needs the owner's go-ahead at the time.** Nothing in §7.1 publishes.
 
-1. Publish the four modules in one train: gaato/http 0.6.0, gaato/http-async 0.6.0, gaato/mttp 0.1.0, gaato/mttp_digest 0.1.0. Before that: resolver gate green, `release.sh check` dry runs green, and the SDK and discord migrations green against the candidates as workspace members.
+1. Publish the four modules in one train: gaato/http 0.6.0, gaato/http-async 0.6.0, gaato/mttp 0.1.0, gaato/mttp_digest 0.1.0. Before that: resolver gate green, `release.mbtx check` dry runs green, and the SDK and discord migrations green against the candidates as workspace members.
 2. Publish openai, anthropic and github in the same train or immediately after (flag-day rule, §5.8).
 3. discord → discord_voice → discord-cli.
 4. kbbi, nekosama, profile-readme.

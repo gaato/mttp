@@ -181,3 +181,28 @@ test "fixed output headers project their actual constant value" {
     Some({ "type": "string", "const": "fixed" }),
   )
 }
+
+///|
+test "an omittable field is optional and not nullable in OpenAPI" {
+  let link : @schema.JsonCodec[(String, String?)] = @schema.object2(
+    "Link",
+    @schema.field("title", @schema.jstring, v => v.0),
+    @schema.field("url", @schema.omittable(@schema.jstring), v => v.1),
+    (title, url) => (title, url),
+  )
+  let ep = @endpoint.endpoint
+    .post("/links")
+    .input(@endpoint.body(link.body()))
+    .output(@endpoint.no_content())
+  assert_eq(
+    project(ep.doc()).components.schemas.get("Link"),
+    Some({
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+      },
+      "required": ["title"],
+    }),
+  )
+}

@@ -58,6 +58,14 @@ responses without credentials always carry `Access-Control-Allow-Origin: *`.
 OPTIONS responses also vary on the preflight method and headers before any
 early return, so missing headers cannot prime a different preflight result.
 
+A response to an allowed origin carries `Access-Control-Expose-Headers` with
+the names in `expose_headers` and the response headers the answering
+endpoint declares (`and_header`, `fixed_header`), so a typed client on
+another origin can read an `ETag` it expects without extra configuration.
+Repeats are dropped without regard to case, and CORS-safelisted headers such
+as `Content-Type` are left out because browsers expose them anyway. Preflight
+responses carry none: browsers read the list only from the actual response.
+
 ## Cross-site request forgery
 
 An app with forms and a cookie session should add `same_origin` and set its

@@ -127,7 +127,7 @@ test "request ownership lasts until the streamed response closes" {
     )
     assert_eq(closes.val, 0)
     assert_eq(reads.val, 0)
-    assert_eq(response.body.read_all(max=1024), b"data: 3\n\n")
+    assert_eq(response.body.read_all(max=1024), b":\n\ndata: 3\n\n")
     assert_eq(closes.val, 1)
     response.close()
     assert_eq(closes.val, 1)

@@ -96,6 +96,11 @@ async fn adapt_response(
   if input.failure is Some(error) {
     raise error
   }
+  // Only a streamed reply can still read the request body (an echo does), so
+  // any other reply lets go of it before the host has the response.
+  if stream is None {
+    input.close()
+  }
   let headers = reply.headers.remove("transfer-encoding")
   let headers = if no_body {
     headers

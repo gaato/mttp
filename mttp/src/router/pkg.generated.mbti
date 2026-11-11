@@ -11,7 +11,7 @@ import {
 // Values
 pub fn access_log(&@rt.Clock, (@mttp.RequestHead, @mttp.Response, Int64) -> Unit) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
 
-pub fn cors(Array[String], allow_credentials? : Bool) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
+pub fn cors(Array[String], allow_credentials? : Bool, expose_headers? : Array[String]) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
 
 pub fn default_decode_failure(@endpoint.FailureContext) -> @mttp.Response
 

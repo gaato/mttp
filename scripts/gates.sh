@@ -16,7 +16,7 @@
 #                                           architecture, test layout,
 #                                           bounds, interface and coverage
 #                                           audits, the manifest's own
-#                                           consistency, release.sh check
+#                                           consistency, release.mbtx check
 #   scripts/gates.sh workerd                the Workers example on real
 #                                           workerd: builds it, installs the
 #                                           wrangler its lockfile pins (npm
@@ -28,6 +28,11 @@
 #   scripts/gates.sh manifest --update      runs every package's tests on
 #                                           every target and rewrites
 #                                           scripts/test_manifest.tsv
+#
+# This launcher is bash, unlike the .mbtx scripts beside it: it runs `moon`
+# itself, on every toolchain including nightly; it filters the experimental
+# warning every .mbtx prints, which a .mbtx cannot do for its own output; and
+# it runs npm for the workerd gate.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -66,9 +71,9 @@ mbti_snapshot() {
 }
 
 static_gates() {
-  step scripts/release.sh check
   # The registry index, which the .mbtx scripts and modules resolve from.
   step moon update
+  step script scripts/release.mbtx -- check
   step moon fmt --check
   # The scripts too, except docs_audit.mbtx: it is shared verbatim with every
   # gaato MoonBit repository and changes only there.

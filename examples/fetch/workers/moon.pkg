@@ -2,10 +2,12 @@ import {
   "gaato/mttp",
   "gaato/mttp_async/fetch",
   "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/async",
 }
 
 supported_targets = "js"
 
 options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
   link: { "js": { "exports": [ "fetch_with_env" ], "format": "esm" } },
 )

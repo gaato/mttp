@@ -127,16 +127,18 @@ extern "js" fn JsRequest::reject_aborted(self : JsRequest) -> JsPromise =
 priv type Reader
 
 ///|
-extern "js" fn JsRequest::reader(self : JsRequest) -> @js_async.Promise[Reader] =
-  #| req => Promise.resolve().then(() => {
-  #| const reader = req.body?.getReader() ?? {
-  #|   read: () => Promise.resolve({done: true}),
-  #|   cancel: () => Promise.resolve(), releaseLock: () => {}
-  #| };
-  #| const state = {reader, cancelled: false};
-  #| if (req.signal.aborted) { state.cancelled = true; reader.cancel().catch(() => {}); reader.releaseLock(); }
-  #| return state;
-  #| })
+/// Locks the request body to a reader; called on the first read only (see
+/// `Input`). A body that cannot be locked reads as a failure.
+extern "js" fn JsRequest::reader(self : JsRequest) -> Reader =
+  #| req => {
+  #|   const stub = read => ({read, cancel: () => Promise.resolve(), releaseLock: () => {}});
+  #|   let reader;
+  #|   try { reader = req.body?.getReader() ?? stub(() => Promise.resolve({done: true})); }
+  #|   catch (error) { reader = stub(() => Promise.reject(error)); }
+  #|   const state = {reader, cancelled: false};
+  #|   if (req.signal.aborted) { state.cancelled = true; reader.cancel().catch(() => {}); reader.releaseLock(); }
+  #|   return state;
+  #| }
 
 ///|
 priv struct Chunk {
@@ -161,11 +163,12 @@ extern "js" fn Reader::read(
   #| }
 
 ///|
+/// Unlocks the request body without cancelling it, leaving whatever is
+/// unread to the host (see `Input`). A read cancelled while it waits has
+/// already cancelled the body in `read`; nothing else does.
 extern "js" fn Reader::close(self : Reader) -> Unit =
   #| state => {
-  #|   const reader = state.reader;
-  #|   if (!state.cancelled) { state.cancelled = true; reader.cancel().catch(() => {}); }
-  #|   try { reader.releaseLock(); } catch (_) {}
+  #|   try { state.reader.releaseLock(); } catch (_) {}
   #| }
 
 ///|

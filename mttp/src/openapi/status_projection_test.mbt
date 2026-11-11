@@ -611,7 +611,7 @@ test "dynamic SSE status projects wire schemas and closes suppressed streams" {
       assert_eq(response.headers.get("content-type"), Some("text/event-stream"))
       assert_eq(
         @driver.run_sync(() => response.body.read_all(max=100)),
-        b"data: 7\n\n",
+        b":\n\ndata: 7\n\n",
       )
       assert_eq(
         selected.content["text/event-stream"].schema,

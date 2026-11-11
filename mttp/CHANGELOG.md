@@ -37,7 +37,18 @@ never does.
   JSON as an event's `data`, so setting an `id`, event name or `retry` no
   longer means building the whole event; replace
   `to_event=v => @sse.SseEvent::{ data: ..., id: Some(x), .. }` with
-  `meta=v => SseMeta::new(id=x)`.
+  `meta=v => SseMeta::new(id=x)`; for data that is not JSON, such as HTML,
+  use `sse_body_out`.
+- An event stream from `sse_out` or `sse_body_out` opens with an SSE comment
+  line (`:` and a blank line) before its first event, so every server sends
+  the response head at once instead of when the first event exists: a
+  browser's `onopen` fires, a proxy does not time out an idle stream, and on
+  Deno, Bun and Node `shutdown()` ends a stream that has no event yet. SSE
+  parsers ignore the comment, so typed clients and `EventSource` read the same
+  events.
+- An event that an event stream cannot encode (an `id` with a line break,
+  data that is not UTF-8) ends it with that `Invalid` error instead of
+  `event source failed`, which stays the error for a failing producer.
 - `@client.read_body` moved to the root package as
   `Body::read_all(max~)`, so a server handler can read a request body within
   a limit without the client package. Its behaviour is unchanged: a body over
@@ -82,9 +93,17 @@ never does.
   returns the string, so a client reads back the same string. An error page is
   `errors(html_out(status=404))`; `html_variant` puts a page in `one_of`, so
   one URL can answer htmx with a fragment and a plain form post with a 303.
+- `sse_body_out(codec, meta?)`: an event stream whose `data` is a
+  `BodyCodec`'s encoding as UTF-8 text, decoded with the same codec on a
+  client. For htmx's SSE extension, `sse_body_out(@schema.html_body, meta=...)`
+  sends HTML fragments as they are, where `sse_out` would send each as a JSON
+  string. An encoding that is not UTF-8 ends the stream with a
+  `TransportError` of kind `Invalid`; line breaks become several `data` lines,
+  which a client joins with LF. `sse_out(codec, meta?)` is
+  `sse_body_out(codec.body(), meta?)` and writes the same events as before.
 - `EventStream::map`: a stream of converted events that keeps each event's
-  `id`, event name and `retry`, for example to turn typed events into HTML
-  rows for htmx's SSE extension.
+  `id`, event name and `retry`, for example to turn typed rows into the HTML
+  strings that `sse_body_out(@schema.html_body)` sends to htmx.
 - Router middleware `same_origin(allowed_origins?)` refuses state-changing
   requests that a browser sends from another site, by `Sec-Fetch-Site` and,
   for browsers without it, `Origin`, with no tokens or session state. Use it
@@ -112,6 +131,17 @@ never does.
   once the reader closed the stream (a client disconnected), so the producer
   can cancel its upstream call; `fail` ends the stream with an error, so a
   client does not take a failed producer's output for a complete stream.
+- `cors` takes `expose_headers` and, for an allowed origin, also exposes the
+  response headers the answering endpoint declares, which it reads from the
+  new `endpoint.declared_headers` response attribute. A browser on another
+  origin could not read a declared `ETag` before, so mttp's typed client there
+  failed with "missing header" even on success. CORS-safelisted headers are
+  left out, and preflight responses expose nothing.
+- `@schema.omittable(codec)`: an object field that may be left out but not
+  set to null. Absent decodes to `None` and `None` is omitted; null is refused
+  with the child codec's issue at the field's path, and the schema is the
+  child's, not nullable, so OpenAPI no longer shows such a field as nullable
+  the way `option` does.
 
 ## [0.1.0] - 2026-11-10
 

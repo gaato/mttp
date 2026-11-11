@@ -8,6 +8,8 @@ import {
 
 import {
   "gaato/mttp/driver",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/schema",
   "gaato/mttp/sim",
   "moonbitlang/core/encoding/utf8",
 } for "test"

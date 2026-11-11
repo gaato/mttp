@@ -43,12 +43,15 @@ test "internal stream adapters obey the shared BodyStream contract" {
       () => {
         let source = @sim.Feed::bytes(driver, [b"a", b"bc"])
         EventBody::{
-          pull: () => source.read_some(),
-          close_: () => source.close(),
+          events: EventStream::from_pull(() => source.read_some(), () => {
+            source.close()
+          }),
+          encode: bytes => bytes,
+          opened: false,
           done: false,
         }
       },
-      b"abc",
+      b":\n\nabc",
     )
   })
 }

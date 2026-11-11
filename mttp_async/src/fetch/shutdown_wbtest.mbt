@@ -283,3 +283,77 @@ async test "the process host shims' shutdown ends marked bodies and leaves other
     assert_eq(source.closes, 1)
   }
 }
+
+///|
+/// Through the process host shims, as an app serves server-sent events from
+/// Deno: fetches a stream whose producer has no event yet, then shuts down.
+/// Returns per shim "no head" when the Response did not arrive within a
+/// second, or the opening chunk read, whether the Response carries the mark,
+/// how the waiting read ended and whether whenIdle resolved.
+extern "js" fn shim_shutdown_before_event(
+  adapter : (JsRequest, JsBackground) -> JsPromise,
+) -> @js_async.Promise[String] =
+  #| async adapter => {
+  #|   const {resolve} = await import('node:path');
+  #|   const {pathToFileURL} = await import('node:url');
+  #|   const {existsSync} = await import('node:fs');
+  #|   const root = existsSync(resolve('hosts/adapters.mjs')) ? resolve('hosts') : resolve('mttp_async/hosts');
+  #|   const {deno, bun, node} = await import(pathToFileURL(resolve(root, 'adapters.mjs')).href);
+  #|   const within = (promise, ms, late) => {
+  #|     let timer;
+  #|     return Promise.race([promise, new Promise(r => { timer = setTimeout(() => r(late), ms); })])
+  #|       .finally(() => clearTimeout(timer));
+  #|   };
+  #|   const mark = Symbol.for('gaato.mttp.closeOnShutdown');
+  #|   const outcomes = [];
+  #|   for (const tracked of [deno, bun, node]) {
+  #|     const app = tracked(adapter);
+  #|     const response = await within(app.fetch(new Request('https://example.test/events')), 1000, null);
+  #|     if (response === null) {
+  #|       app.shutdown();
+  #|       outcomes.push('no head');
+  #|       continue;
+  #|     }
+  #|     const marked = typeof response[mark] === 'function' ? 'marked' : 'unmarked';
+  #|     const reader = response.body.getReader();
+  #|     const first = await reader.read();
+  #|     const opening = JSON.stringify(new TextDecoder().decode(first.value));
+  #|     const next = reader.read().then(r => r.done ? 'done' : 'more');
+  #|     app.shutdown();
+  #|     const ended = await within(next, 1000, 'timeout');
+  #|     const idle = await within(app.whenIdle().then(() => 'idle'), 1000, 'busy');
+  #|     outcomes.push(`${opening} ${marked} ${ended} ${idle}`);
+  #|   }
+  #|   return outcomes.join('|');
+  #| }
+
+///|
+async test "the process host shims' shutdown ends an event stream that has no event yet" {
+  let produced = Ref(0)
+  let closes = Ref(0)
+  let events = @endpoint.endpoint
+    .get("/events")
+    .output(@endpoint.sse_out(@schema.jint))
+    .serve_public(_ => {
+      Ok(
+        @endpoint.EventStream::from_pull(
+          () => {
+            @cond_var.Cond().wait()
+            produced.val += 1
+            None
+          },
+          () => closes.val += 1,
+        ),
+      )
+    })
+  let adapter = fetch_handler(request => {
+    events.dispatch(request, Map([]), @endpoint.DispatchContext::new())
+  })
+  assert_eq(
+    shim_shutdown_before_event(adapter).wait(),
+    "\":\\n\\n\" marked done idle|\":\\n\\n\" marked done idle|\":\\n\\n\" marked done idle",
+  )
+  // No stream gave an event, and the shutdown closed each one once.
+  assert_eq(produced.val, 0)
+  assert_eq(closes.val, 3)
+}

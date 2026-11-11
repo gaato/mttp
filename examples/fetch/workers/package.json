@@ -6,6 +6,6 @@
     "check": "node check.mjs"
   },
   "devDependencies": {
-    "wrangler": "4.126.0"
+    "wrangler": "4.160.1"
   }
 }

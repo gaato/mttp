@@ -34,6 +34,8 @@ pub fn client_ip(trust_forwarded? : Bool) -> Input[String?]
 
 pub fn[T] cookie(String, @schema.TextCodec[T]) -> Input[T]
 
+pub let declared_headers : @mttp.AttributeKey[Array[String]]
+
 pub fn empty_variant(Int32, description? : String) -> Variant[Unit]
 
 pub fn encoded_path_template(String) -> String
@@ -77,6 +79,8 @@ pub fn raw_body() -> Input[Bytes]
 pub let route_template : @mttp.AttributeKey[String]
 
 pub fn signature_header(String) -> Input[String]
+
+pub fn[T] sse_body_out(@schema.BodyCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
 
 pub fn[T] sse_out(@schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
 

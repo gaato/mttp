@@ -29,8 +29,10 @@ never does.
   beside `fetch` and `whenIdle`. It ends every in-flight response whose
   `@mttp.Response` sets `close_on_shutdown`, such as an `endpoint.sse_out`
   stream: the body ends cleanly after a whole event and is closed once, so the
-  host's own shutdown no longer waits for it. Stop with `app.shutdown()`, then
-  the host's server shutdown, then `await app.whenIdle()`.
+  host's own shutdown no longer waits for it, also for a stream that has no
+  event yet (gaato/mttp's event streams open with an SSE comment, so their
+  Response and its mark exist at once). Stop with `app.shutdown()`, then the
+  host's server shutdown, then `await app.whenIdle()`.
 - `gaato/mttp_async/files` with `static_files(root, prefix?, cache_control?,
   index?)`, a Handler that serves a directory's files to GET and HEAD: streamed
   in 64 KiB slices, `Content-Type` from the extension, a weak `ETag`,
