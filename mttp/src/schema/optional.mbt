@@ -31,6 +31,31 @@ pub fn[T] option(codec : JsonCodec[T]) -> JsonCodec[T?] {
 }
 
 ///|
+/// A value that an object may leave out but must not set to null. In an
+/// object field, a missing field decodes to None and None is omitted on
+/// encoding; null goes to the child codec, which refuses it with its usual
+/// type issue at the field's path unless it accepts null itself. The schema
+/// is the child's, not nullable, and the field is not required.
+///
+/// JSON has no missing value outside an object, so None encodes as null in
+/// arrays or alone, as with `option`, and that null does not decode back;
+/// use `option` where a value can be null.
+pub fn[T] omittable(codec : JsonCodec[T]) -> JsonCodec[T?] {
+  {
+    from_: (j, path, d) => Some(d.apply(codec, j, path)),
+    to_: v => {
+      match v {
+        None => Json::null()
+        Some(v) => (codec.to_)(v)
+      }
+    },
+    missing_: Some(() => None),
+    omit_: v => v is None,
+    schema_: codec.schema_,
+  }
+}
+
+///|
 /// Preserves the distinction between absent object fields and explicit null.
 /// Outside objects, Absent encodes as null because JSON has no missing value.
 pub fn[T] presence(codec : JsonCodec[T]) -> JsonCodec[@jsonkit.Presence[T]] {

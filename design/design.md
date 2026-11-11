@@ -641,6 +641,7 @@ pub fn[T, A] case_(tag : String, codec : JsonCodec[A], project : (T) -> A?, inje
 pub fn[T] tagged(name : String, discriminator : String, cases : Array[Case[T]]) -> JsonCodec[T]   // oneOf + discriminator.mapping
 pub fn string_enum(name : String, values : Array[String]) -> JsonCodec[String]   // any_of(..) for untagged unions
 pub fn[T] presence(codec : JsonCodec[T]) -> JsonCodec[@jsonkit.Presence[T]]       // (new) open_string(known); the jsonkit edge
+pub fn[T] omittable(codec : JsonCodec[T]) -> JsonCodec[T?]   // may be absent, not null; the child's schema, not required
 
 pub fn[T] JsonCodec::body(self : JsonCodec[T]) -> BodyCodec[T]
 pub let text_body : BodyCodec[String]               // raw_bytes; (new) form_body(max_pairs?)

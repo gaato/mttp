@@ -72,6 +72,59 @@ test "optional fields distinguish absence from explicit null" {
 }
 
 ///|
+test "omittable fields may be absent but not null" {
+  let codec : @schema.JsonCodec[(String?, Int32?)] = @schema.object2(
+    "Link",
+    @schema.field("url", @schema.omittable(@schema.jstring), v => v.0),
+    @schema.field(
+      "rank",
+      @schema.omittable(@schema.option(@schema.jint)).map(
+        v => v.unwrap_or(None),
+        v => if v is None { None } else { Some(v) },
+      ),
+      v => v.1,
+    ),
+    (url, rank) => (url, rank),
+  )
+  assert_eq(codec.from_json({}), (None, None))
+  assert_eq(
+    codec.from_json({ "url": "https://a.test" }),
+    (Some("https://a.test"), None),
+  )
+  // The child decides about null: jstring refuses it, option(jint) takes it.
+  assert_eq(codec.from_json({ "rank": null }), (None, None))
+  try {
+    let _ = codec.from_json({ "url": null })
+    fail("null accepted")
+  } catch {
+    @schema.DecodeFailure(kind=Invalid(issues), ..) =>
+      assert_eq(issues.map(i => (i.path, i.code, i.message)), [
+        ("/url", "type", "expected string"),
+      ])
+    error => raise error
+  }
+  assert_eq(codec.to_json((None, None)), Json::empty_object())
+  assert_eq(codec.to_json((Some("https://a.test"), Some(2))), {
+    "url": "https://a.test",
+    "rank": 2,
+  })
+  // The schema is the child's, not nullable, and the field is optional.
+  let schema = codec.schema().json
+  assert_eq(property(schema, "required"), Some(Json::array([])))
+  assert_eq(
+    property(schema, "properties").bind(p => property(p, "url")),
+    Some(@schema.jstring.schema().json),
+  )
+  // Outside an object None has no JSON form: it encodes as null, like
+  // option, and that null does not decode back.
+  let alone = @schema.omittable(@schema.jint)
+  assert_eq(alone.to_json(None), Json::null())
+  assert_eq(alone.to_json(Some(1)), Json::number(1))
+  assert_eq(alone.from_json(Json::number(1)), Some(1))
+  rejects(() => alone.from_json(Json::null()))
+}
+
+///|
 test "maps retain null values and collect all custom decoder paths" {
   let codec = @schema.map_of(@schema.option(@schema.jint))
   assert_eq(

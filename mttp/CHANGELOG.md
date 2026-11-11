@@ -137,6 +137,11 @@ never does.
   origin could not read a declared `ETag` before, so mttp's typed client there
   failed with "missing header" even on success. CORS-safelisted headers are
   left out, and preflight responses expose nothing.
+- `@schema.omittable(codec)`: an object field that may be left out but not
+  set to null. Absent decodes to `None` and `None` is omitted; null is refused
+  with the child codec's issue at the field's path, and the schema is the
+  child's, not nullable, so OpenAPI no longer shows such a field as nullable
+  the way `option` does.
 
 ## [0.1.0] - 2026-11-10
 
