@@ -52,7 +52,9 @@ pub struct Client {
 ///   `observer` (gets one `Attempt` per attempt) and `random` (for jitter).
 /// - `retry_budget` caps the retries of all sends at a share of recent
 ///   requests (default: `RetryBudget::new()`, 20 % plus 10 per second over
-///   10 s); a retry it refuses stops with `RetryBudgetSpent`.
+///   10 s). It is checked when a retry is decided, and a retry it refuses
+///   stops with `RetryBudgetSpent`; it is charged when the retry is sent, and
+///   a retry whose budget ran out during its wait returns the last outcome.
 pub fn Client::new(
   backend : &@mttp.Backend,
   clock : &@rt.Clock,
@@ -444,8 +446,11 @@ async fn[T, M : ResponseMode] Client::send_loop(
       Wait(ms) if !self.closed => {
         self.clock.sleep(ms)
         // Keep the outcome until the wait finishes: close must return the
-        // same reply (including a selected stream) as Stop would have.
-        if !self.closed {
+        // same reply (including a selected stream) as Stop would have. The
+        // retry budget is charged now, when the retry is sent; if it was
+        // spent during the wait, the send ends with this outcome too.
+        if !self.closed &&
+          self.retry_budget.try_withdraw(self.clock.now_unix_ms()) {
           if held is Some(value) {
             discard(value)
           }
@@ -492,7 +497,7 @@ fn Client::guard_retry(
       let ms = ms.max(0)
       if context.remaining_ms is Some(left) && ms.to_int64() >= left {
         Stop(Budget(ms))
-      } else if !self.retry_budget.try_withdraw(self.clock.now_unix_ms()) {
+      } else if !self.retry_budget.allows(self.clock.now_unix_ms()) {
         Stop(RetryBudgetSpent)
       } else {
         Wait(ms)

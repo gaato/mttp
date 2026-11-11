@@ -94,19 +94,30 @@ fn RetryBudget::deposit(self : RetryBudget, now : Int64) -> Unit {
 }
 
 ///|
-/// Takes one retry from the budget, or returns false when it is spent.
-fn RetryBudget::try_withdraw(self : RetryBudget, now : Int64) -> Bool {
+/// Whether the budget has a retry left at `now`, without taking it.
+fn RetryBudget::allows(self : RetryBudget, now : Int64) -> Bool {
   if self.unlimited {
     return true
   }
-  let index = self.slot(now)
   let (deposits, withdrawals) = self.totals(now)
   let floor = self.min_per_second.to_double() *
     self.window_ms.to_double() /
     1000.0
-  if withdrawals.to_double() >= floor + self.percent * deposits.to_double() {
+  withdrawals.to_double() < floor + self.percent * deposits.to_double()
+}
+
+///|
+/// Takes one retry from the budget at `now`, the moment the retry is sent,
+/// or returns false when it is spent. Charging at the decision instead would
+/// let a withdrawal leave the window during a long backoff, so retries that
+/// converge on one moment could exceed the cap together.
+fn RetryBudget::try_withdraw(self : RetryBudget, now : Int64) -> Bool {
+  if !self.allows(now) {
     return false
   }
-  self.withdrawals[index] += 1
+  if !self.unlimited {
+    let index = self.slot(now)
+    self.withdrawals[index] += 1
+  }
   true
 }
