@@ -642,6 +642,7 @@ pub fn[T] presence(codec : JsonCodec[T]) -> JsonCodec[@jsonkit.Presence[T]]     
 
 pub fn[T] JsonCodec::body(self : JsonCodec[T]) -> BodyCodec[T]
 pub let text_body : BodyCodec[String]               // raw_bytes; (new) form_body(max_pairs?)
+pub fn[T] form_codec(codec : JsonCodec[T]) -> BodyCodec[T]   // (new) urlencoded form for an object codec: values coerced by property type
 ```
 
 - **Named children are `$ref`s.** Combinators embed a named child through `reference` and carry its definition in `defs`, so nested types keep their names and recursive types are possible. In `wf3/rev`, Team refers to User by `$ref` and Tree's `children.items` refers to Tree (SC-01).

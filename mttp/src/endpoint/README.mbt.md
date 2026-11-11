@@ -139,6 +139,41 @@ segments are refused along with dot-only capture values, because transports
 normalize them. `media_type_token` exposes the media comparison used by body
 inputs and response matching: case-insensitive, without parameters.
 
+`body` takes any `BodyCodec`, so an HTML form posts to the same object codec
+as a JSON API through `@schema.form_codec`. Its values are validated by that
+codec, and a 400 names the same JSON pointers as the JSON endpoint would:
+
+```mbt check
+///|
+test "an HTML form and a JSON API share one codec" {
+  let note = @schema.object2(
+    "Note",
+    @schema.field("title", @schema.jstring.validate(@schema.max_length(20)), (
+      n : (String, Int32),
+    ) => n.0),
+    @schema.field("stars", @schema.jint, n => n.1),
+    (title, stars) => (title, stars),
+  )
+  let from_form = @endpoint.endpoint
+    .post("/notes")
+    .input(@endpoint.body(@schema.form_codec(note)))
+    .output(@endpoint.json_out(note.body()))
+  let server = from_form.serve_public(n => Ok(n))
+  let request = from_form.request((), ("hi", 5)).raw()
+  assert_eq(request.body, @mttp.Body::Bytes(b"title=hi&stars=5"))
+  let bad = @mttp.Request::post("/notes").body_form([
+    ("title", "hi"),
+    ("stars", "five"),
+  ])
+  @driver.run_sync(() => {
+    let ctx = @endpoint.DispatchContext::new()
+    assert_eq(server.dispatch(request, Map([]), ctx).status, 200)
+    // The problem body's issue has the path /stars.
+    assert_eq(server.dispatch(bad, Map([]), ctx).status, 400)
+  })
+}
+```
+
 `raw_body()` requires a present body without restricting its media type;
 `raw_body().optional()` accepts absence. Present zero-length bytes remain
 present. Raw security may share buffered bytes with a typed regular body.

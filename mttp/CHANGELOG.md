@@ -83,6 +83,14 @@ never does.
   requests that a browser sends from another site, by `Sec-Fetch-Site` and,
   for browsers without it, `Origin`, with no tokens or session state. Use it
   with `SameSite` cookies in apps with forms and a cookie session.
+- `@schema.form_codec(codec)` reads and writes an
+  `application/x-www-form-urlencoded` body with an object `JsonCodec`, so an
+  HTML form and a JSON API share one definition, its validation and its
+  JSON-pointer issue paths. Values are coerced by their property's schema type
+  (a checkbox's `on` is `true`; an absent required boolean is `false` and an
+  absent required array `[]`), text that does not coerce is an issue at the
+  property's pointer, and a property that is not a scalar or an array of scalars
+  is a definition problem. Use it with `@endpoint.body`.
 
 ## [0.1.0] - 2026-11-10
 

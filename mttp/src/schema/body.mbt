@@ -113,16 +113,7 @@ pub fn form_body(
 ) -> BodyCodec[Array[(String, String)]] {
   {
     media_type_: "application/x-www-form-urlencoded",
-    decode_: bytes => {
-      @form.decode(@utf8.decode_lossy(bytes, ignore_bom=true), max_pairs) catch {
-        @form.InvalidLimit => raise malformed("negative form pair limit")
-        @form.TooMany(limit) =>
-          raise DecodeFailure(
-            kind=TooLarge(limit~),
-            message="too many form pairs",
-          )
-      }
-    },
+    decode_: bytes => form_pairs(bytes, max_pairs),
     encode_: pairs => @text.encode_utf8(@form.encode(pairs)),
     schema_: Schema::of({
       "type": "object",
@@ -133,5 +124,18 @@ pub fn form_body(
         ],
       },
     }),
+  }
+}
+
+///|
+/// The ordered pairs of a urlencoded body, at most `max_pairs` of them.
+fn form_pairs(
+  bytes : Bytes,
+  max_pairs : Int32,
+) -> Array[(String, String)] raise DecodeFailure {
+  @form.decode(@utf8.decode_lossy(bytes, ignore_bom=true), max_pairs) catch {
+    @form.InvalidLimit => raise malformed("negative form pair limit")
+    @form.TooMany(limit) =>
+      raise DecodeFailure(kind=TooLarge(limit~), message="too many form pairs")
   }
 }
