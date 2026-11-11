@@ -702,6 +702,7 @@ pub fn stream_body_out(status? : Int) -> Out[(String?, @mttp.Body), @client.Buff
 pub fn[T] sse_out(codec : @schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
 pub fn[T, H, M] Out::and_header(self : Out[T, M], name : String, codec : @schema.TextCodec[H]) -> Out[(T, H), M]   // and_status, set_cookie
 pub fn[T] EventStream::from_pull(next : async () -> T?, close : () -> Unit) -> EventStream[T]       // from_array, each, each_item, next, next_item, close
+pub fn[T] EventStream::channel(coordination~ : &@rt.Coordination, capacity~ : Int = 16) -> (EventSender[T], EventStream[T])   // push producer → pull stream; send waits when full, false after the reader closes; close / fail end it
 pub(all) struct SseMeta { id : String?; event : String; retry : Int? } derive(Eq, Debug)   // SseMeta::new(id?, event?, retry?)
 pub(all) struct SseItem[T] { data : T; id : String?; event : String; retry : Int? } derive(Eq, Debug)   // SseItem::new
 pub(all) struct NoError derive(Eq, Debug)
@@ -730,6 +731,7 @@ pub let route_template : @mttp.AttributeKey[String]     // set on every dispatch
 pub fn[S, I, E, O, P, M] Endpoint::serve(self : Endpoint[S, I, E, O, M], authenticate : async (S) -> Result[P, E],
   handle : async (P, I) -> Result[O, E]) -> ServerEndpoint
 pub fn[I, E, O, M] Endpoint::serve_public(self : Endpoint[Unit, I, E, O, M], handle : async (I) -> Result[O, E]) -> ServerEndpoint
+// serve_with / serve_public_with: the handler also gets the request's @mttp.Attributes (remote_addr, background), so shared definitions stay the wire contract
 pub async fn ServerEndpoint::dispatch(self : ServerEndpoint, req : @mttp.Request, params : Map[String, String], ctx : DispatchContext) -> @mttp.Response noraise
 
 // client interpreter: relative targets, joined onto Client's base_url

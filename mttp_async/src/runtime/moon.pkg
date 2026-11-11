@@ -8,6 +8,7 @@ import {
 
 import {
   "moonbitlang/core/async/aqueue",
+  "gaato/mttp/endpoint",
   "gaato/mttp/sim",
   "moonbitlang/core/async/cond_var",
 } for "test"

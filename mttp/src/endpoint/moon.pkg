@@ -2,8 +2,10 @@ import {
   "gaato/mttp",
   "gaato/mttp/schema",
   "gaato/mttp/client",
+  "gaato/mttp/rt",
   "gaato/mttp/sse",
   "moonbitlang/core/debug",
+  "moonbitlang/core/queue",
   "moonbitlang/core/encoding/base64",
   "moonbitlang/core/encoding/utf8",
 }

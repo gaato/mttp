@@ -373,6 +373,21 @@ pub fn[S, I, E, O, P, M] Endpoint::serve(
   authenticate : async (S) -> Result[P, E],
   handle : async (P, I) -> Result[O, E],
 ) -> ServerEndpoint {
+  self.serve_with(authenticate, (principal, input, _) => {
+    handle(principal, input)
+  })
+}
+
+///|
+/// Like `serve`, and the handler also receives the attributes of the request
+/// being served, such as `@mttp.remote_addr` or `@mttp.background` set by the
+/// server adapter. These are server-only values: the endpoint definition,
+/// which a client shares, keeps only its wire inputs.
+pub fn[S, I, E, O, P, M] Endpoint::serve_with(
+  self : Endpoint[S, I, E, O, M],
+  authenticate : async (S) -> Result[P, E],
+  handle : async (P, I, @mttp.Attributes) -> Result[O, E],
+) -> ServerEndpoint {
   self.pipeline(
     (req, ctx, security) => {
       match authenticate(security) {
@@ -381,7 +396,7 @@ pub fn[S, I, E, O, P, M] Endpoint::serve(
       }
     },
     (req, ctx, principal, input) => {
-      let value = match handle(principal, input) {
+      let value = match handle(principal, input, req.attributes) {
         Ok(value) => value
         Err(error) => return respond_error(self.errors, req, error, ctx)
       }
@@ -400,5 +415,17 @@ pub fn[I, E, O, M] Endpoint::serve_public(
   self : Endpoint[Unit, I, E, O, M],
   handle : async (I) -> Result[O, E],
 ) -> ServerEndpoint {
-  self.serve(_ => Ok(()), (_, input) => handle(input))
+  self.serve_public_with((input, _) => handle(input))
+}
+
+///|
+/// Like `serve_public`, and the handler also receives the attributes of the
+/// request being served, as with `serve_with`.
+pub fn[I, E, O, M] Endpoint::serve_public_with(
+  self : Endpoint[Unit, I, E, O, M],
+  handle : async (I, @mttp.Attributes) -> Result[O, E],
+) -> ServerEndpoint {
+  self.serve_with(_ => Ok(()), (_, input, attributes) => {
+    handle(input, attributes)
+  })
 }

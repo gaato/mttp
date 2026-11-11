@@ -100,6 +100,18 @@ never does.
 - `format_http_date(unix_ms)` writes an IMF-fixdate (RFC 9110 §5.6.7) for
   `Date`, `Last-Modified`, `Expires` or a cookie's `Expires`, the counterpart of
   `parse_http_date`; times outside the years 1 to 9999 are clamped.
+- `Endpoint::serve_with` and `serve_public_with`: like `serve` and
+  `serve_public`, and the handler also receives the attributes of the request
+  being served (`@mttp.remote_addr`, the `@mttp.background` scheduler), so a
+  definition shared with clients stays the wire contract instead of gaining an
+  `attribute(...)` input that would also appear in the client's input type.
+- `EventStream::channel(coordination~, capacity~)` with `EventSender::send`,
+  `close` and `fail`: a bounded channel from a producer that pushes, such as
+  an SDK's streaming callback, to a stream that `sse_out` writes. `send`
+  waits while `capacity` values (16 by default) are queued and returns `false`
+  once the reader closed the stream (a client disconnected), so the producer
+  can cancel its upstream call; `fail` ends the stream with an error, so a
+  client does not take a failed producer's output for a complete stream.
 
 ## [0.1.0] - 2026-11-10
 

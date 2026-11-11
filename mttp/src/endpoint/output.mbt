@@ -439,7 +439,7 @@ pub extend SseItem with Eq::{equal, not_equal}
 pub extend SseItem with @debug.Debug::{to_repr}
 
 ///|
-/// Pull-only event streams (no push bodies in v0.x).
+/// Pull event streams; `channel` bridges a producer that pushes.
 pub struct EventStream[T] {
   priv pull : async () -> SseItem[T]?
   priv close_ : () -> Unit

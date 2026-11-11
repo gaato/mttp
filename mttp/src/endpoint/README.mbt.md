@@ -128,6 +128,52 @@ test "SSE event ids resume a stream" {
 }
 ```
 
+A producer that pushes, such as an SDK's streaming call with a callback,
+reaches `sse_out` through `EventStream::channel`: the callback sends each value
+and the handler returns the channel's stream. `send` waits while `capacity`
+values (16 by default) are queued, so a slow client slows the producer down,
+and it returns `false` once the stream is closed, for example when the client
+disconnects; return that to the SDK so that it cancels the upstream call. End
+the stream with `close` after the last value, or with `fail` when the producer
+failed, so the client sees an error instead of a complete stream. The channel
+waits through the `coordination` it is given: `RuntimeCoordination::new()`
+from `gaato/mttp_async/runtime` in an app, `@sim.SimCoordination` in a test.
+In a handler, run the producer with the request's `@mttp.background`
+scheduler, which `serve_with` passes (see "Server-only values" below).
+
+```mbt check
+///|
+/// A callback API: it calls `on_text` for each piece of a reply and stops
+/// early when the callback returns false.
+async fn stream_reply(on_text : async (String) -> Bool) -> Unit {
+  for piece in ["Hel", "lo", "!"] {
+    if !on_text(piece) {
+      return
+    }
+  }
+}
+
+///|
+test "a channel turns a callback API into an event stream" {
+  @driver.run_sync(() => {
+    let coordination = @sim.SimCoordination::new(@driver.current())
+    let (sender, stream) = @endpoint.EventStream::channel(coordination~)
+    // In a handler: schedule(() => { ... }) with @mttp.background.
+    let producer = @driver.spawn(() => {
+      try stream_reply(text => sender.send(text)) catch {
+        error => sender.fail(error)
+      } noraise {
+        _ => sender.close()
+      }
+    })
+    let pieces = []
+    stream.each(text => pieces.push(text))
+    assert_eq(pieces, ["Hel", "lo", "!"])
+    assert_true(producer.wait())
+  })
+}
+```
+
 `path` captures one decoded segment. `paths` captures the final `{name...}`
 tail as an array, retaining empty segments and encoded slashes. A custom
 `Input::new` supplies its own atoms, staged decoder and inverse encoder;
@@ -225,3 +271,32 @@ test "each endpoint declares only its own errors" {
   assert_eq(statuses, [404])
 }
 ```
+
+## Server-only values
+
+Keep a definition that the server and its clients share to the wire contract.
+A value the server adapter supplies, such as `@mttp.remote_addr` or the
+`@mttp.background` scheduler, is not part of it: an `attribute(...)` input in
+the shared definition would also appear in the client's input type. Serve the
+endpoint with `serve_with` or `serve_public_with` instead; their handler
+receives the attributes of the request being served beside the inputs:
+
+```mbt check
+///|
+test "a handler reads server-only values without an input" {
+  let ping = @endpoint.endpoint.get("/ping").output(@endpoint.text_out())
+  let server = ping.serve_public_with((_, attributes) => {
+    Ok(attributes.get(@mttp.remote_addr).unwrap_or("unknown"))
+  })
+  let request = ping.request((), ()).raw().attribute(@mttp.remote_addr, "peer")
+  @driver.run_sync(() => {
+    let ctx = @endpoint.DispatchContext::new()
+    let response = server.dispatch(request, Map([]), ctx)
+    assert_eq(@client.read_body(response.body, 100), b"peer")
+  })
+}
+```
+
+`attribute(key)` remains for a value that should be an input of the
+endpoint, for example one that a custom input maps or that only a server-side
+definition uses.
