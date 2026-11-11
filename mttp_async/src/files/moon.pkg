@@ -1,6 +1,7 @@
 import {
   "gaato/mttp",
   "moonbitlang/core/async/fs",
+  "moonbitlang/core/path",
 }
 
 import {
@@ -11,6 +12,7 @@ import {
   "moonbitlang/core/async/socket",
   "moonbitlang/core/async/cond_var",
   "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/path",
 } for "test"
 
 supported_targets = "native+wasm"

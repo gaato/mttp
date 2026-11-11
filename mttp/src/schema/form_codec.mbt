@@ -133,8 +133,17 @@ fn form_shape(
   }
   match m.get("type") {
     Some(String(t)) => typed_shape(t, m, defs, depth)
+    // Each alternative keeps the property's other keywords (`items` above
+    // all), so `["array", "null"]` still knows its item type.
     Some(Array(types)) =>
-      merge_shapes(types.map(t => form_shape({ "type": t }, defs, depth + 1)))
+      merge_shapes(
+        types.map(t => {
+          match t {
+            String(t) => typed_shape(t, m, defs, depth)
+            _ => Untyped
+          }
+        }),
+      )
     _ =>
       match (m.get("anyOf"), m.get("oneOf")) {
         (Some(Array(members)), _) | (_, Some(Array(members))) =>

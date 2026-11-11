@@ -86,10 +86,10 @@ gaato/mttp	gaato/mttp/rt	js	4
 gaato/mttp	gaato/mttp/rt	native	4
 gaato/mttp	gaato/mttp/rt	wasm	4
 gaato/mttp	gaato/mttp/rt	wasm-gc	4
-gaato/mttp	gaato/mttp/schema	js	41
-gaato/mttp	gaato/mttp/schema	native	41
-gaato/mttp	gaato/mttp/schema	wasm	41
-gaato/mttp	gaato/mttp/schema	wasm-gc	41
+gaato/mttp	gaato/mttp/schema	js	42
+gaato/mttp	gaato/mttp/schema	native	42
+gaato/mttp	gaato/mttp/schema	wasm	42
+gaato/mttp	gaato/mttp/schema	wasm-gc	42
 gaato/mttp	gaato/mttp/sim	js	40
 gaato/mttp	gaato/mttp/sim	native	40
 gaato/mttp	gaato/mttp/sim	wasm	40
@@ -135,8 +135,8 @@ gaato/mttp_async	gaato/mttp_async/codings	wasm	47
 gaato/mttp_async	gaato/mttp_async/conn	native	7
 gaato/mttp_async	gaato/mttp_async/conn	wasm	7
 gaato/mttp_async	gaato/mttp_async/fetch	js	31
-gaato/mttp_async	gaato/mttp_async/files	native	16
-gaato/mttp_async	gaato/mttp_async/files	wasm	16
+gaato/mttp_async	gaato/mttp_async/files	native	17
+gaato/mttp_async	gaato/mttp_async/files	wasm	17
 gaato/mttp_async	gaato/mttp_async/internal/control	native	2
 gaato/mttp_async	gaato/mttp_async/internal/control	wasm	2
 gaato/mttp_async	gaato/mttp_async/internal/socketconn	native	5

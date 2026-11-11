@@ -461,3 +461,20 @@ async fn exchange(address : String, request : String) -> String {
   tcp.write(@mttp.encode_utf8(request))
   @utf8.decode(tcp.read_all())
 }
+
+///|
+async test "a sibling directory whose name extends the root with a backslash is outside it" {
+  // On POSIX a backslash is part of a name, so `public\private` is not below
+  // `public`. Windows has no such name, so the case does not arise there.
+  guard @path.sep == '/' else { return }
+  with_tree(root => {
+    let sibling = "\{root}\\private"
+    @fs.mkdir(sibling)
+    @fs.write_text("\{sibling}/secret.txt", "sibling secret")
+    @fs.symlink(target="\{sibling}/secret.txt", "\{root}/escape")
+    let files = @files.static_files(root)
+    let response = files(@mttp.Request::get("/escape"))
+    assert_eq(response.status, 404)
+    assert_eq(body_of(response), "Not Found\n")
+  })
+}

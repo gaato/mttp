@@ -135,9 +135,9 @@ async fn serve(
 async fn open_below(root : String, names : Array[String]) -> @fs.File {
   let base = @fs.realpath(root)
   let target = @fs.realpath(below(base, "/") + names.join("/"))
-  guard target == base ||
-    target.has_prefix(below(base, "/")) ||
-    target.has_prefix(below(base, "\\")) else {
+  // Only the platform's separator ends a component: on POSIX a backslash is
+  // an ordinary character, so `/srv/public\x` is a sibling of `/srv/public`.
+  guard target == base || target.has_prefix(below(base, @path.sep.to_string())) else {
     raise NotServed
   }
   // Checked before opening, which would wait for a writer on a FIFO.

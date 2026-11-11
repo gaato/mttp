@@ -268,3 +268,33 @@ test "form codecs record definition problems for non-scalar properties" {
   ])
   assert_eq(schema.json, named.schema().json)
 }
+
+///|
+test "a nullable array keeps its item schema" {
+  let codec = form_probe({
+    "type": "object",
+    "properties": {
+      "xs": { "type": ["array", "null"], "items": { "type": "integer" } },
+    },
+  })
+  assert_eq(codec.schema().problems, [])
+  assert_eq(codec.decode(b"xs=1&xs=2"), {
+    "xs": [Json::number(1, repr="1"), Json::number(2, repr="2")],
+  })
+  let objects = form_probe({
+    "type": "object",
+    "properties": {
+      "points": { "type": ["array", "null"], "items": { "type": "object" } },
+    },
+  })
+  assert_eq(objects.schema().problems, [
+    "form_codec property points is not an array of scalars",
+  ])
+  // A malformed type list says nothing about the value, so it stays text.
+  let odd = form_probe({
+    "type": "object",
+    "properties": { "odd": { "type": [true] } },
+  })
+  assert_eq(odd.schema().problems, [])
+  assert_eq(odd.decode(b"odd=07"), { "odd": "07" })
+}
