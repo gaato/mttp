@@ -142,6 +142,21 @@ test "reads the user" {
 }
 ```
 
+Check results after `run`, not inside it. A failing `inspect` or `assert_eq`
+inside `run` reports only its error's name, `InspectError`, without the
+difference, and `moon test --update` cannot rewrite its snapshot, because
+core/async's `run_async_main` prints nothing more of the error that ends it.
+Bring the values out instead:
+
+```mbt nocheck
+///|
+test "fetches the user" {
+  let user = Ref("")
+  @mttp_async.run(async fn() { user.val = fetch_user(1) })
+  inspect(user.val, content="{\"id\":1,\"name\":\"Ada\"}")
+}
+```
+
 Running work concurrently (spawning tasks, task groups, `async test`) is
 `moonbitlang/core/async`'s job: import it and list it in the package's
 `allow-experimental-packages`. This module does not re-export it, because
