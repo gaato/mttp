@@ -133,7 +133,7 @@ gaato/mttp_async	gaato/mttp_async/codings	native	47
 gaato/mttp_async	gaato/mttp_async/codings	wasm	47
 gaato/mttp_async	gaato/mttp_async/conn	native	7
 gaato/mttp_async	gaato/mttp_async/conn	wasm	7
-gaato/mttp_async	gaato/mttp_async/fetch	js	23
+gaato/mttp_async	gaato/mttp_async/fetch	js	28
 gaato/mttp_async	gaato/mttp_async/internal/control	native	2
 gaato/mttp_async	gaato/mttp_async/internal/control	wasm	2
 gaato/mttp_async	gaato/mttp_async/internal/socketconn	native	5

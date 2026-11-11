@@ -118,5 +118,15 @@ async fn adapt_response(
     },
     () => output.close(),
     request.signal(),
+    reply.attributes.get(@mttp.close_on_shutdown) == Some(true),
+    () => output.pending.is_empty(),
+    schedule,
   ).wait()
+}
+
+///|
+/// Runs one round of the MoonBit scheduler, so that a pull cancelled by a host
+/// event ends now (see `response`).
+fn schedule() -> Unit {
+  ignore(@js_async.Promise::from_async(() => ()))
 }

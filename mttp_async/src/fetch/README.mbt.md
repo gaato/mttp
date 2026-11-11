@@ -41,6 +41,15 @@ responses release owned streams. Input remains open for lazy response readers
 duplicate fields; response Set-Cookie entries remain separate on hosts with
 the standard getSetCookie API.
 
+Once a response body has ended, the adapter no longer listens to the request
+signal, so a host that aborts it after a successful response (Deno's legacy
+behavior) cancels nothing and logs nothing. A streamed response whose
+attributes set `@mttp.close_on_shutdown` (every `endpoint.sse_out` response)
+carries a function under `Symbol.for("gaato.mttp.closeOnShutdown")`. The
+process host shims call it with their shutdown signal; when that aborts, the
+body ends cleanly between two reads of its source, so an SSE stream ends
+after a whole event, and the source is closed once.
+
 Use `with_env(request, value)` in the Workers entry before calling the adapter;
 the opaque environment is then available through the `env` attribute. Other
 hosts leave it absent. The association uses a WeakMap and does not modify the

@@ -1,6 +1,10 @@
 # Fetch host entries
 
 These small adapters accept your compiled MoonBit application functions.
+They ship inside the published module: after `moon add gaato/mttp_async`
+they are at `.mooncakes/gaato/mttp_async/hosts/adapters.mjs` and
+`.mooncakes/gaato/mttp_async/hosts/lambda.mjs`; import them from there or
+copy them next to your entry. They have no dependencies.
 They do not load a generated module asynchronously: that would postpone the
 first `waitUntil` beyond Fastly's synchronous event dispatch.
 
@@ -25,8 +29,34 @@ addEventListener('fetch', fastly(fetch));
 // Deno: const app = deno(fetch); Deno.serve(app.fetch);
 // Bun: const app = bun(fetch); Bun.serve({fetch: app.fetch});
 // Node: const app = node(fetch); pass app.fetch a Web Request in your HTTP bridge.
-// Await app.whenIdle() during orderly shutdown of either process host.
 ```
+
+The process hosts (Deno, Bun, Node) own their shutdown. `deno`, `bun` and
+`node` return `{fetch, whenIdle, shutdown}`; stop in this order:
+
+```js
+const app = deno(fetch);
+const server = Deno.serve(app.fetch);
+Deno.addSignalListener('SIGINT', async () => {
+  app.shutdown();          // end streams marked close-on-shutdown
+  await server.shutdown(); // the host stops accepting and finishes responses
+  await app.whenIdle();    // background work registered by handlers
+  Deno.exit(0);
+});
+```
+
+On Bun the middle step is `await server.stop()`; on Node, close your HTTP
+server. `shutdown()` ends the body of every in-flight response whose
+`@mttp.Response` set `@mttp.close_on_shutdown`, such as every SSE response
+from gaato/mttp's `endpoint.sse_out`: the stream ends cleanly after a whole
+event, its MoonBit body is closed once, and clients reconnect with
+`Last-Event-ID`. Without it, the host's shutdown waits for such a stream
+forever. Other responses are left to finish. The fetch adapter marks those
+responses with a function under `Symbol.for("gaato.mttp.closeOnShutdown")`;
+a bridge of your own can call it with an AbortSignal that aborts at shutdown.
+
+A host that aborts `request.signal` after a successful response (Deno's legacy
+behavior) cancels nothing: the adapter drops its listeners once the body ends.
 
 Lambda Function URLs use `lambda(fetch)` from `lambda.mjs`. It translates the
 v2 event's raw path/query, base64 body, cookies and domain into a Web Request.
@@ -45,4 +75,6 @@ The scheduling contracts come from
 and [Lambda Function URLs](https://docs.aws.amazon.com/lambda/latest/dg/urls-invocation.html).
 The process tracker retains pending work and exposes a shutdown join; it does
 not override the host's execution time limits or keep an otherwise empty event
-loop alive merely by retaining a Promise.
+loop alive merely by retaining a Promise. It keeps no state per response:
+the listener a marked response adds to its shutdown signal goes away with the
+body.

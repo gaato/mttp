@@ -30,6 +30,7 @@ extern "js" fn check_hosts() -> @js_async.Promise[Unit] =
   #|   check(vercelRegistered, 'Vercel registration');
   #|   for (const make of [deno, bun, node]) {
   #|     const app = make(fetch);
+  #|     check(['fetch', 'whenIdle', 'shutdown'].every(name => typeof app[name] === 'function'), 'process tracker shape');
   #|     await (await app.fetch(request)).body.cancel();
   #|     app.whenIdle().then(() => {settled = true;});
   #|     await Promise.resolve();

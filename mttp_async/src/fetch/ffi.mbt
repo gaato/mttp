@@ -188,6 +188,23 @@ extern "js" fn exported(promise : @js_async.Promise[WebResponse]) -> JsPromise =
   #| promise => promise
 
 ///|
+/// Builds the host Response. `signal` is the request's: it cancels the body
+/// until the body ends, and every listener on it is removed at the end, so a
+/// host that aborts it after a successful response (Deno's legacy behavior)
+/// cancels nothing.
+///
+/// When `cut` holds (the reply has `@mttp.close_on_shutdown`), the Response
+/// carries a non-enumerable function under
+/// `Symbol.for("gaato.mttp.closeOnShutdown")`. A process host shim calls it
+/// with its shutdown AbortSignal; once that aborts, the body ends cleanly at
+/// the next point where `boundary` holds (no partial source read is buffered),
+/// interrupting a pull that waits for the next read. An SSE stream thus ends
+/// after a whole event. The listener goes with the body, so a shim keeps no
+/// state per response.
+///
+/// `schedule` runs one round of the MoonBit scheduler. Aborting a pull from a
+/// host event only marks its coroutine cancelled; without a round it would
+/// wait for unrelated MoonBit work (a timer, another request) to run.
 extern "js" fn response(
   status : Int32,
   headers : FixedArray[FixedArray[String]],
@@ -195,33 +212,65 @@ extern "js" fn response(
   pull : (@js_async.AbortSignal) -> @js_async.Promise[Chunk],
   close : () -> Unit,
   signal : @js_async.AbortSignal,
+  cut : Bool,
+  boundary : () -> Bool,
+  schedule : () -> Unit,
 ) -> @js_async.Promise[WebResponse] =
-  #| (status, pairs, noBody, pull, close, signal) => Promise.resolve().then(() => {
+  #| (status, pairs, noBody, pull, close, signal, cut, boundary, schedule) => Promise.resolve().then(() => {
   #|   if (noBody) { close(); return new Response(null, {status, headers: pairs}); }
-  #|   let closed = false, controller;
-  #|   const abort = new AbortController();
+  #|   let closed = false, stopping = false, controller, turn;
+  #|   const shutdowns = [];
+  #|   // The round runs in a microtask: this may be called from MoonBit code
+  #|   // that aborts the request signal, and the scheduler is not reentrant.
+  #|   const interrupt = () => { if (turn) { turn.abort(); queueMicrotask(schedule); } };
   #|   const finish = () => {
   #|     if (closed) return;
   #|     closed = true;
   #|     signal.removeEventListener('abort', cancel);
-  #|     abort.abort();
+  #|     for (const s of shutdowns) s.removeEventListener('abort', stop);
+  #|     interrupt();
   #|     close();
   #|   };
-  #|   const cancel = () => { controller.error(new DOMException('Request aborted', 'AbortError')); finish(); };
+  #|   const cancel = () => {
+  #|     controller.error(new DOMException('Request aborted', 'AbortError'));
+  #|     finish();
+  #|   };
+  #|   const stop = () => {
+  #|     if (closed || stopping) return;
+  #|     stopping = true;
+  #|     if (!boundary()) return;
+  #|     if (turn) interrupt();
+  #|     else { controller.close(); finish(); }
+  #|   };
   #|   const body = new ReadableStream({
   #|     start(c) { controller = c; },
   #|     async pull(c) {
-  #|       try {
-  #|         const chunk = await pull(abort.signal);
-  #|         if (closed) return;
-  #|         if (chunk.done) { c.close(); finish(); }
-  #|         else c.enqueue(chunk.value);
-  #|       } catch (error) { if (!closed) { c.error(error); finish(); } }
+  #|       if (stopping && boundary()) { c.close(); finish(); return; }
+  #|       const current = turn = new AbortController();
+  #|       let chunk;
+  #|       try { chunk = await pull(current.signal); }
+  #|       catch (error) {
+  #|         turn = undefined;
+  #|         if (!closed) { if (stopping) c.close(); else c.error(error); finish(); }
+  #|         return;
+  #|       }
+  #|       turn = undefined;
+  #|       if (closed) return;
+  #|       if (chunk.done) { c.close(); finish(); }
+  #|       else c.enqueue(chunk.value);
   #|     },
   #|     cancel() { finish(); }
   #|   }, {highWaterMark: 0});
   #|   signal.addEventListener('abort', cancel, {once: true});
   #|   if (signal.aborted) cancel();
-  #|   try { return new Response(body, {status, headers: pairs}); }
+  #|   let result;
+  #|   try { result = new Response(body, {status, headers: pairs}); }
   #|   catch (error) { finish(); throw error; }
+  #|   if (cut) Object.defineProperty(result, Symbol.for('gaato.mttp.closeOnShutdown'), {value: shutdown => {
+  #|     if (closed) return;
+  #|     shutdowns.push(shutdown);
+  #|     shutdown.addEventListener('abort', stop, {once: true});
+  #|     if (shutdown.aborted) stop();
+  #|   }});
+  #|   return result;
   #| })

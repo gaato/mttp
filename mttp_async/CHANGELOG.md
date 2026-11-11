@@ -20,6 +20,12 @@ never does.
     needs (`Request`, `Response`, `Client`, `get`, `post`, `as_json` and so
     on), so `gaato/mttp_async` is the only module in its `moon.mod`.
 - `ListenError` implements `Show`.
+- The Deno, Bun and Node host shims (`hosts/adapters.mjs`) return `shutdown()`
+  beside `fetch` and `whenIdle`. It ends every in-flight response whose
+  `@mttp.Response` sets `close_on_shutdown`, such as an `endpoint.sse_out`
+  stream: the body ends cleanly after a whole event and is closed once, so the
+  host's own shutdown no longer waits for it. Stop with `app.shutdown()`, then
+  the host's server shutdown, then `await app.whenIdle()`.
 
 ### Changed
 
@@ -33,6 +39,11 @@ never does.
   streamed responses are still drained.
 - The stale `fetch/pkg.generated.js.mbti` is gone: `moon info` writes only the
   canonical (native) interface, so nothing kept the js-only file current.
+- The fetch adapter marks a streamed response with `close_on_shutdown` by a
+  function under `Symbol.for("gaato.mttp.closeOnShutdown")`, which a host shim
+  calls with its shutdown signal. A pull of a response body cancelled by a host
+  event (client disconnect, shutdown) now ends at once instead of waiting for
+  unrelated MoonBit work to run.
 
 ## Earlier versions, as gaato/http-async
 
