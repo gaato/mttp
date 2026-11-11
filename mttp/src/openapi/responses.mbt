@@ -51,7 +51,7 @@ fn add_response(
   headers : Map[String, @apispec.HeaderObject],
 ) -> Unit {
   let existing = responses.get(key)
-  let previous = existing.unwrap_or(@apispec.ResponseObject::new(description))
+  let previous = existing.unwrap_or(@apispec.ResponseObject::new(description~))
   let content = previous.content.copy()
   if media is Some(media) {
     let schema = schema.unwrap_or({})

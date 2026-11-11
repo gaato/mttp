@@ -786,8 +786,8 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
   )
   let mttp_pkg = (block : String) => {
     pkg(
-      "mttp/src/client",
-      "import {\n  \"gaato/mttp/h1client\",\n}\{block}\noptions(\"allow-experimental-packages\": [\"gaato/mttp/h1client\"])\n",
+      "mttp_digest/src",
+      "import {\n  \"gaato/mttp/driver\",\n}\{block}\noptions(\"allow-experimental-packages\": [\"gaato/mttp/driver\"])\n",
     )
   }
   accepts("a test-only experimental import in its tests", [

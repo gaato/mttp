@@ -14,10 +14,5 @@ import {
 } for "test"
 
 options(
-  experimental: true,
-  "allow-experimental-packages": [
-    "gaato/mttp/endpoint",
-    "gaato/mttp/router",
-    "gaato/mttp/driver",
-  ],
+  "allow-experimental-packages": [ "gaato/mttp/driver" ],
 )

@@ -8,11 +8,9 @@ exchange under a deadline. `Client` implements `@mttp.Backend`, so a policy
 layer (retries, redirects, cookies, content decoding) wraps it without
 knowing it.
 
-> **Experimental.** The engine's settings and its reporting may still
-> change; an importer lists it in
-> `options("allow-experimental-packages": ["gaato/mttp/h1client"])`.
-> [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) wires it
-> to sockets, TLS and an event loop; most applications use that instead.
+> [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) wires
+> this engine to sockets, TLS and an event loop; most applications use that
+> instead.
 
 ## Sending a request
 

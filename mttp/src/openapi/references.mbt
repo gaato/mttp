@@ -30,6 +30,9 @@ pub fn check_references(spec : @apispec.OpenApi) -> Array[String] {
       return walker.problems
     }
   }
+  if !walker.content(spec.components.media_types) {
+    return walker.problems
+  }
   for items in [spec.paths, spec.webhooks, spec.components.path_items] {
     for _, item in items {
       if !walker.path_item(item) {
@@ -123,6 +126,7 @@ fn ReferenceWalker::content(
 ) -> Bool {
   for _, media in content {
     if !self.optional(media.schema) ||
+      !self.optional(media.item_schema) ||
       !self.optional(media.extensions.get(item_schema_extension)) {
       return false
     }
@@ -174,7 +178,11 @@ fn ReferenceWalker::path_item(
       return false
     }
   }
-  for _, operation in item.operations {
+  for
+    operation in [
+      ..item.operations.values(),
+      ..item.additional_operations.values(),
+    ] {
     for parameter in operation.parameters {
       if !self.parameter(parameter) {
         return false

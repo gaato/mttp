@@ -23,18 +23,23 @@ test "traversal exhaustion propagates from every modeled schema position" {
   }
   let parameter = @apispec.Parameter::new("p", "query", schema=deep)
   let header = @apispec.HeaderObject::new(schema=deep)
-  let response = @apispec.ResponseObject::new("reply", content~)
+  let response = @apispec.ResponseObject::new(description="reply", content~)
   let body = @apispec.RequestBody::new(content)
   let info = @apispec.Info::new("Test", "1")
   for
     components in [
       @apispec.Components::new(responses={ "R": response }),
       @apispec.Components::new(responses={
-        "R": @apispec.ResponseObject::new("reply", headers={ "x": header }),
+        "R": @apispec.ResponseObject::new(description="reply", headers={
+          "x": header,
+        }),
       }),
       @apispec.Components::new(parameters={ "P": parameter }),
       @apispec.Components::new(request_bodies={ "B": body }),
       @apispec.Components::new(headers={ "H": header }),
+      @apispec.Components::new(media_types={
+        "M": @apispec.MediaTypeObject::new(item_schema=deep),
+      }),
     ] {
     assert_eq(
       @openapi.check_references(@apispec.OpenApi::new(info, components~)),
@@ -45,13 +50,13 @@ test "traversal exhaustion propagates from every modeled schema position" {
     item in [
       @apispec.PathItem::new(parameters=[parameter]),
       @apispec.PathItem::new(operations={
-        "get": @apispec.Operation::new({}, parameters=[parameter]),
+        "get": @apispec.Operation::new(responses={}, parameters=[parameter]),
       }),
       @apispec.PathItem::new(operations={
-        "post": @apispec.Operation::new({}, request_body=body),
+        "post": @apispec.Operation::new(responses={}, request_body=body),
       }),
       @apispec.PathItem::new(operations={
-        "get": @apispec.Operation::new({ "200": response }),
+        "get": @apispec.Operation::new(responses={ "200": response }),
       }),
     ] {
     assert_eq(
@@ -104,12 +109,12 @@ test "references in component media parameters headers webhooks and path items a
   }
   let parameter = @apispec.Parameter::new("p", "query", schema=bad, content~)
   let header = @apispec.HeaderObject::new(schema=bad, content~)
-  let response = @apispec.ResponseObject::new("reply", content~, headers={
+  let response = @apispec.ResponseObject::new(description="reply", content~, headers={
     "x": header,
   })
   let body = @apispec.RequestBody::new(content)
   let operation = @apispec.Operation::new(
-    { "200": response },
+    responses={ "200": response },
     parameters=[parameter],
     request_body=body,
   )
@@ -133,9 +138,9 @@ test "references in component media parameters headers webhooks and path items a
     "/": @apispec.PathItem::new(
       parameters=[@apispec.Parameter::new("p", "query")],
       operations={
-        "get": @apispec.Operation::new({
+        "get": @apispec.Operation::new(responses={
           "200": @apispec.ResponseObject::new(
-            "ok",
+            description="ok",
             headers={ "x": @apispec.HeaderObject::new() },
             content={ "text/plain": @apispec.MediaTypeObject::new() },
           ),
@@ -144,4 +149,26 @@ test "references in component media parameters headers webhooks and path items a
     ),
   })
   assert_eq(@openapi.check_references(empty), [])
+}
+
+///|
+test "references in OpenAPI 3.2's item schemas, media types and additional operations are checked" {
+  let bad : Json = { "$ref": "#/missing" }
+  let streamed = {
+    "text/event-stream": @apispec.MediaTypeObject::new(item_schema=bad),
+  }
+  let copy = @apispec.Operation::new(responses={
+    "200": @apispec.ResponseObject::new(content=streamed),
+  })
+  let spec = @apispec.OpenApi::new(
+    @apispec.Info::new("Test", "1"),
+    paths={
+      "/": @apispec.PathItem::new(additional_operations={ "COPY": copy }),
+    },
+    components=@apispec.Components::new(media_types={
+      "Events": @apispec.MediaTypeObject::new(item_schema=bad),
+    }),
+  )
+  // One in the component media type, one under the COPY operation.
+  assert_eq(@openapi.check_references(spec).length(), 2)
 }

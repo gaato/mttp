@@ -57,8 +57,8 @@
 #   cannot acknowledge core/async: it runs, with the same warning on stderr.
 #   scripts/gates.sh drops exactly that warning from script output.
 dir	name	kind	targets	module_deps	package_imports	experimental	release
-mttp	gaato/mttp	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core,!moonbitlang/core/async,!moonbitlang/core/compress	gaato/mttp/driver,gaato/mttp/endpoint,gaato/mttp/endpoint/testkit,gaato/mttp/router,gaato/mttp/apispec,gaato/mttp/openapi,test:gaato/mttp/h1client,test:gaato/mttp/h1server	yes
-mttp_async	gaato/mttp_async	runtime	native,wasm,js	gaato/mttp,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/mttp,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/mttp/h1client,gaato/mttp/h1server,gaato/mttp/driver	yes
+mttp	gaato/mttp	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core,!moonbitlang/core/async,!moonbitlang/core/compress	gaato/mttp/driver	yes
+mttp_async	gaato/mttp_async	runtime	native,wasm,js	gaato/mttp,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/mttp,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/mttp/driver	yes
 mttp_digest	gaato/mttp_digest	four-target	wasm-gc,wasm,js,native	gaato/mttp,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/mttp,moonbitlang/x	test:gaato/mttp/driver	yes
 conformance	gaato/mttp-conformance	four-target	wasm-gc,wasm,js,native	gaato/mttp	moonbitlang/core,!moonbitlang/core/async,gaato/mttp	-	no
 examples/get	gaato/mttp-example-get	example	native,wasm	gaato/mttp,gaato/mttp_async	*	*	no

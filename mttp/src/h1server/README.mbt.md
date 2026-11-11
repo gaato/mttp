@@ -6,11 +6,9 @@ An HTTP/1.1 server connection engine over the `gaato/http/rt` ports.
 through the bounded `gaato/http/h1` codec. Head and body operations have
 deadlines; a handler deadline is optional.
 
-> **Experimental.** The engine's settings and its reporting may still
-> change; an importer lists it in
-> `options("allow-experimental-packages": ["gaato/mttp/h1server"])`.
-> [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) wires it
-> to sockets, TLS and an event loop; most applications use that instead.
+> [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) wires
+> this engine to sockets, TLS and an event loop; most applications use that
+> instead.
 
 ## Serving a connection
 
