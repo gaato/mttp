@@ -184,7 +184,7 @@ pub(all) struct Operation {
 }
 pub fn Operation::equal(Self, Self) -> Bool
 pub fn Operation::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn Operation::new(Map[String, ResponseObject], operation_id? : String, summary? : String, description? : String, tags? : Array[String], deprecated? : Bool, parameters? : Array[Parameter], request_body? : RequestBody, security? : Array[Map[String, Array[String]]], servers? : Array[Server], external_docs? : ExternalDocs, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Operation::new(responses? : Map[String, ResponseObject], operation_id? : String, summary? : String, description? : String, tags? : Array[String], deprecated? : Bool, parameters? : Array[Parameter], request_body? : RequestBody, security? : Array[Map[String, Array[String]]], servers? : Array[Server], external_docs? : ExternalDocs, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn Operation::not_equal(Self, Self) -> Bool
 pub fn Operation::to_json(Self) -> @json.Json
 pub fn Operation::to_repr(Self) -> @debug.Repr
@@ -255,7 +255,7 @@ pub impl @json.ToJson for RequestBody
 
 #derive(Eq, @debug.Debug)
 pub(all) struct ResponseObject {
-  description : String
+  description : String?
   headers : Map[String, HeaderObject]
   content : Map[String, MediaTypeObject]
   summary : String?
@@ -264,7 +264,7 @@ pub(all) struct ResponseObject {
 }
 pub fn ResponseObject::equal(Self, Self) -> Bool
 pub fn ResponseObject::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
-pub fn ResponseObject::new(String, headers? : Map[String, HeaderObject], content? : Map[String, MediaTypeObject], summary? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn ResponseObject::new(description? : String, headers? : Map[String, HeaderObject], content? : Map[String, MediaTypeObject], summary? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn ResponseObject::not_equal(Self, Self) -> Bool
 pub fn ResponseObject::to_json(Self) -> @json.Json
 pub fn ResponseObject::to_repr(Self) -> @debug.Repr

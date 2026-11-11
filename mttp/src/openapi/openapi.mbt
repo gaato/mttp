@@ -232,7 +232,7 @@ pub fn to_openapi(
     }
     merge_wildcard_content(responses)
     let operation = @apispec.Operation::new(
-      responses,
+      responses~,
       operation_id?=doc.info.operation_id,
       summary?=doc.info.summary,
       description?=doc.info.description,

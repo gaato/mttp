@@ -203,7 +203,8 @@ fn records() -> Array[(String, Array[Field])] {
     (
       "ResponseObject",
       [
-        required("description", "String"),
+        // Required in 3.1, optional in 3.2; the 3.1 projection always sets it.
+        optional("description", "String"),
         default("headers", "Map[String, HeaderObject]", "{}"),
         default("content", "Map[String, MediaTypeObject]", "{}"),
         // 3.2
@@ -221,7 +222,8 @@ fn records() -> Array[(String, Array[Field])] {
     (
       "Operation",
       [
-        required("responses", "Map[String, ResponseObject]"),
+        // Optional since 3.1.
+        default("responses", "Map[String, ResponseObject]", "{}"),
         optional("operation_id", "String", wire="operationId"),
         optional("summary", "String"),
         optional("description", "String"),

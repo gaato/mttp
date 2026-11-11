@@ -15,6 +15,7 @@ never does.
   `VariantDoc` gains `item_schema` (experimental `endpoint` package).
 - gaato/http is now part of gaato/mttp. Its vocabulary (`Request`, `Response`, `Body`, `Backend` and the rest) is the root package, `@mttp`, and `h1`, `rt`, `sim`, `driver`, `h1client` and `h1server` are `gaato/mttp/...`. Replace `gaato/http` with `gaato/mttp` in moon.mod and moon.pkg, and `@http.` with `@mttp.` in code. gaato/mttp no longer depends on any module.
 - The endpoint layer (`endpoint`, `endpoint/testkit`, `router`, `apispec`, `openapi`) and the connection engines (`h1client`, `h1server`) are no longer experimental: importers drop them from `allow-experimental-packages`. Only `driver` stays experimental, because it relies on the compiler's `%async` intrinsics.
+- `apispec` accepts what OpenAPI allows: an operation without `responses` (optional since 3.1) and, for 3.2, a response without `description`. `Operation::new` takes `responses~` (default empty) and `ResponseObject::new` takes `description?`; the 3.1 documents `openapi` emits still always describe each response.
 
 ### Added
 

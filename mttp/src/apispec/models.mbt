@@ -1180,7 +1180,7 @@ fn is_response_object_field(key : String) -> Bool {
 /// `unmodeled`, and `x-*` members in `extensions`.
 #derive(Eq, Debug)
 pub(all) struct ResponseObject {
-  description : String
+  description : String?
   headers : Map[String, HeaderObject]
   content : Map[String, MediaTypeObject]
   summary : String?
@@ -1191,7 +1191,7 @@ pub(all) struct ResponseObject {
 ///|
 /// Creates ResponseObject data with defaults for optional fields.
 pub fn ResponseObject::new(
-  description : String,
+  description? : String,
   headers~ : Map[String, HeaderObject] = {},
   content~ : Map[String, MediaTypeObject] = {},
   summary? : String,
@@ -1213,7 +1213,9 @@ pub fn ResponseObject::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for ResponseObject with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  obj["description"] = Json(self.description)
+  if self.description is Some(value) {
+    obj["description"] = Json(value)
+  }
   if !self.headers.is_empty() {
     obj["headers"] = Json(self.headers)
   }
@@ -1233,7 +1235,7 @@ pub impl ToJson for ResponseObject with fn to_json(self) {
 pub impl @json.FromJson for ResponseObject with fn from_json(value, path) {
   let obj = expect_object(value, path)
   {
-    description: field(obj, "description", path),
+    description: optional_field(obj, "description", path),
     headers: field(obj, "headers", path, default={}),
     content: field(obj, "content", path, default={}),
     summary: optional_field(obj, "summary", path),
@@ -1387,7 +1389,7 @@ pub(all) struct Operation {
 ///|
 /// Creates Operation data with defaults for optional fields.
 pub fn Operation::new(
-  responses : Map[String, ResponseObject],
+  responses~ : Map[String, ResponseObject] = {},
   operation_id? : String,
   summary? : String,
   description? : String,
@@ -1423,7 +1425,9 @@ pub fn Operation::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for Operation with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  obj["responses"] = Json(self.responses)
+  if !self.responses.is_empty() {
+    obj["responses"] = Json(self.responses)
+  }
   if self.operation_id is Some(value) {
     obj["operationId"] = Json(value)
   }
@@ -1464,7 +1468,7 @@ pub impl ToJson for Operation with fn to_json(self) {
 pub impl @json.FromJson for Operation with fn from_json(value, path) {
   let obj = expect_object(value, path)
   {
-    responses: field(obj, "responses", path),
+    responses: field(obj, "responses", path, default={}),
     operation_id: optional_field(obj, "operationId", path),
     summary: optional_field(obj, "summary", path),
     description: optional_field(obj, "description", path),

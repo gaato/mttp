@@ -12,7 +12,7 @@ test "OpenAPI data codecs preserve optional fields and extensions at every level
     extensions=extension,
   )
   let response = @apispec.ResponseObject::new(
-    "Success",
+    description="Success",
     headers={ "x-count": header },
     content={ "text/plain": media },
     extensions=extension,
@@ -34,7 +34,7 @@ test "OpenAPI data codecs preserve optional fields and extensions at every level
     extensions=extension,
   )
   let operation = @apispec.Operation::new(
-    { "200": response },
+    responses={ "200": response },
     operation_id="example",
     summary="summary",
     description="description",
@@ -149,8 +149,8 @@ test "minimal documents receive defaults and malformed required fields fail" {
 
 ///|
 test "fields at their empty default are omitted and decode back to it" {
-  let operation = @apispec.Operation::new({
-    "204": @apispec.ResponseObject::new("No content"),
+  let operation = @apispec.Operation::new(responses={
+    "204": @apispec.ResponseObject::new(description="No content"),
   })
   assert_eq(Json(operation), {
     "responses": { "204": { "description": "No content" } },
@@ -160,7 +160,7 @@ test "fields at their empty default are omitted and decode back to it" {
   assert_eq(decoded.security, None)
   // `security: []` removes inherited requirements, so it is kept.
   let public = @apispec.Operation::new(
-    { "204": @apispec.ResponseObject::new("No content") },
+    responses={ "204": @apispec.ResponseObject::new(description="No content") },
     security=[],
   )
   assert_eq(Json(public), {
@@ -254,7 +254,9 @@ test "decoding errors name the JSON pointer of the bad member" {
     (
       {
         "info": { "title": "T", "version": "1" },
-        "paths": { "/a": { "get": { "responses": { "200": {} } } } },
+        "paths": {
+          "/a": { "get": { "responses": { "200": { "description": 1 } } } },
+        },
       },
       "/paths/~1a/get/responses/200/description",
     ),
@@ -482,13 +484,13 @@ test "every record keeps an unmodeled member through encoding and decoding" {
   )
   let parameter = @apispec.Parameter::new("q", "query", unmodeled=other)
   let response = @apispec.ResponseObject::new(
-    "ok",
+    description="ok",
     headers={ "h": header },
     unmodeled=other,
   )
   let body = @apispec.RequestBody::new({ "text/plain": media }, unmodeled=other)
   let operation = @apispec.Operation::new(
-    { "200": response },
+    responses={ "200": response },
     request_body=body,
     external_docs=docs,
     unmodeled=other,
@@ -548,10 +550,13 @@ test "OpenAPI 3.2 fields are typed and round-trip" {
     "paths": {
       "/search": {
         "query": { "responses": { "200": { "description": "found" } } },
+        // 3.1 and 3.2 allow an operation without responses.
+        "trace": {},
         "additionalOperations": {
           "COPY": {
             "responses": {
-              "201": { "description": "copied", "summary": "Copy" },
+              // 3.2 makes a response's description optional.
+              "201": { "summary": "Copy" },
             },
           },
         },
@@ -602,6 +607,11 @@ test "OpenAPI 3.2 fields are typed and round-trip" {
   assert_true(old.deprecated)
   assert_true(old.oauth2_metadata_url is Some(_))
   // Nothing typed lands in unmodeled, and encoding gives the document back.
+  assert_eq(
+    search.additional_operations["COPY"].responses["201"].description,
+    None,
+  )
+  assert_eq(search.operations["trace"].responses, {})
   assert_eq(search.unmodeled, {})
   assert_eq(spec.to_json(), doc)
 }
