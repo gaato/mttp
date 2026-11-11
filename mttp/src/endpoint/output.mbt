@@ -535,6 +535,32 @@ pub fn[T] EventStream::close(self : EventStream[T]) -> Unit {
 }
 
 ///|
+/// A stream of `f` applied to each event, keeping each event's `id`, event
+/// name and `retry`. The new stream owns this one: closing it, or reaching
+/// its end, closes this one. Read only the new stream.
+pub fn[T, U] EventStream::map(
+  self : EventStream[T],
+  f : (T) -> U,
+) -> EventStream[U] {
+  {
+    pull: () => {
+      self
+      .next_item()
+      .map(item => {
+        SseItem::new(
+          f(item.data),
+          id?=item.id,
+          event=item.event,
+          retry?=item.retry,
+        )
+      })
+    },
+    close_: () => self.close(),
+    closed: false,
+  }
+}
+
+///|
 /// The encoded side: a pull BodyStream over the event stream, written by the
 /// adapter with backpressure and passed through Router-as-Backend unbuffered.
 priv struct EventBody {

@@ -71,10 +71,14 @@ never does.
 - `Router::must`: `Router::new` for definitions known to be right, such as a
   top-level `let` in an app or a JavaScript entry, where an error cannot be
   raised; a definition problem aborts with the problems.
-- `schema.html_body` and `endpoint.html_out`: an HTML page as
-  `text/html; charset=utf-8`. The handler renders the page and returns the
-  string, so a client reads back the same string; an error page is
-  `errors(html_out(status=404))`.
+- `schema.html_body`, `endpoint.html_out` and `endpoint.html_variant`: an
+  HTML page as `text/html; charset=utf-8`. The handler renders the page and
+  returns the string, so a client reads back the same string. An error page is
+  `errors(html_out(status=404))`; `html_variant` puts a page in `one_of`, so
+  one URL can answer htmx with a fragment and a plain form post with a 303.
+- `EventStream::map`: a stream of converted events that keeps each event's
+  `id`, event name and `retry`, for example to turn typed events into HTML
+  rows for htmx's SSE extension.
 
 ## [0.1.0] - 2026-11-10
 

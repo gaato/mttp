@@ -36,3 +36,52 @@ test "HTML pages round-trip as text/html and are documented as such" {
   assert_eq(doc.errors[0].status, 404)
   assert_eq(doc.errors[0].media_type, Some("text/html; charset=utf-8"))
 }
+
+///|
+#derive(Eq, Debug)
+priv enum Reply {
+  Page(String)
+  Redirect
+}
+
+///|
+test "html_variant lets one URL answer with a page or a redirect" {
+  let create = @endpoint.endpoint
+    .post("/links")
+    .input(@endpoint.header("hx-request", @schema.string).optional())
+    .output(
+      @endpoint.one_of([
+        @endpoint.html_variant(200).contramap(
+          reply => {
+            guard reply is Page(html) else { None }
+            Some(html)
+          },
+          html => Page(html),
+        ),
+        @endpoint.empty_variant(303).contramap(
+          reply => if reply is Redirect { Some(()) } else { None },
+          _ => Redirect,
+        ),
+      ]),
+    )
+  let server = create.serve_public(hx => {
+    Ok(if hx is Some(_) { Page("<tr>new</tr>") } else { Redirect })
+  })
+  let client = @client.Client::new(
+    @client.from_handler(req => {
+      server.dispatch(req, {}, @endpoint.DispatchContext::new())
+    }),
+    @sim.FakeClock::new(),
+  )
+  defer client.close()
+  @driver.run_sync(() => {
+    assert_eq(
+      create.call(client, (), Some("true")),
+      Ok(Ok(Page("<tr>new</tr>"))),
+    )
+    assert_eq(create.call(client, (), None), Ok(Ok(Redirect)))
+  })
+  let doc = create.doc()
+  assert_eq(doc.outputs.map(o => o.status), [200, 303])
+  assert_eq(doc.outputs[0].media_type, Some("text/html; charset=utf-8"))
+}

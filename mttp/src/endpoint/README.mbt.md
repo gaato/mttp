@@ -28,7 +28,9 @@ test "endpoint definition and client encoding" {
 `text_out`, `bytes_out` and `html_out` cover plain text, opaque bytes and
 HTML pages. `html_out` takes the rendered page as a `String`: render it in the
 handler with any template engine, so a client reads back the same string.
-`json_out(codec)` takes any body codec.
+`html_variant` puts a page in `one_of` beside other responses, for example a
+fragment for htmx (decided by an `HX-Request` header input) and a 303 for a
+plain form post. `json_out(codec)` takes any body codec.
 
 Security inputs are decoded and authenticated before regular input failures
 are returned. Head decoding does not read the body. Buffered inputs are bounded
@@ -78,6 +80,8 @@ on. A stream closes itself at the end, on failure and on cancellation; to stop
 earlier, call `close` (a stream borrowed by `call_with` also closes when the
 callback returns). Values a handler returns from `from_pull` or `from_array`
 carry no fields of their own: on the server, `meta` decides them.
+`map` converts each event and keeps its fields; the mapped stream owns the
+original, so read and close only the mapped one.
 
 ```mbt check
 ///|
