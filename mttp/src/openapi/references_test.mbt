@@ -37,6 +37,9 @@ test "traversal exhaustion propagates from every modeled schema position" {
       @apispec.Components::new(parameters={ "P": parameter }),
       @apispec.Components::new(request_bodies={ "B": body }),
       @apispec.Components::new(headers={ "H": header }),
+      @apispec.Components::new(media_types={
+        "M": @apispec.MediaTypeObject::new(item_schema=deep),
+      }),
     ] {
     assert_eq(
       @openapi.check_references(@apispec.OpenApi::new(info, components~)),
