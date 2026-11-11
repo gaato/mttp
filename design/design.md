@@ -699,7 +699,8 @@ pub fn[T, H] Variant::and_header(self : Variant[T], name : String, codec : @sche
 pub fn[T] one_of(variants : Array[Variant[T]]) -> Out[T, @client.Buffered]
 pub fn[T] json_out(codec : @schema.BodyCodec[T], status? : Int) -> Out[T, @client.Buffered]       // no_content, text_out, bytes_out
 pub fn stream_body_out(status? : Int) -> Out[(String?, @mttp.Body), @client.Buffered]              // content type computed per response
-pub fn[T] sse_out(codec : @schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
+pub fn[T] sse_body_out(codec : @schema.BodyCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]   // data = the codec's bytes as UTF-8 text (HTML for htmx)
+pub fn[T] sse_out(codec : @schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]           // sse_body_out(codec.body(), meta?)
 pub fn[T, H, M] Out::and_header(self : Out[T, M], name : String, codec : @schema.TextCodec[H]) -> Out[(T, H), M]   // and_status, set_cookie
 pub fn[T] EventStream::from_pull(next : async () -> T?, close : () -> Unit) -> EventStream[T]       // from_array, each, each_item, next, next_item, close
 pub fn[T] EventStream::channel(coordination~ : &@rt.Coordination, capacity~ : Int = 16) -> (EventSender[T], EventStream[T])   // push producer → pull stream; send waits when full, false after the reader closes; close / fail end it
@@ -1074,7 +1075,7 @@ Every policy takes `&@rt.Clock`, and where needed `&@rt.Timer`, `&@rt.Gate` and 
 ### 5.4 Streaming, SSE and WebSockets
 
 - **One direction: pull.** Bodies are pull `BodyStream`s in both directions, so the CONTRACT rules and the conformance harness stay single.
-- **Server SSE.** A handler returns an `EventStream[T]` through `sse_out`; the endpoint encodes it as a stream; the adapter writes it with backpressure; Router-as-Backend passes it through unbuffered.
+- **Server SSE.** A handler returns an `EventStream[T]` through `sse_out` (JSON data) or `sse_body_out` (any body codec's text, such as HTML for htmx); the endpoint encodes it as a stream; the adapter writes it with backpressure; Router-as-Backend passes it through unbuffered.
 - **No push bodies.** A producer-style handler bridges through a runtime queue in the application.
 - **Client SSE.** `as_sse` with a `stop` predicate for sentinels such as OpenAI's `data: [DONE]`.
 - **WebSockets** stay deferred (§0.2). When added: a 101 Response carrying the upgrade callback in an attribute, a sans-IO frame codec in gaato/mttp, `WebSocketStub` in sim, and scheme validation before any runtime call.

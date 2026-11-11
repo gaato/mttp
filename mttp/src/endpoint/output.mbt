@@ -563,19 +563,19 @@ pub fn[T, U] EventStream::map(
 ///|
 /// The encoded side: a pull BodyStream over the event stream, written by the
 /// adapter with backpressure and passed through Router-as-Backend unbuffered.
-priv struct EventBody {
-  pull : async () -> Bytes?
-  close_ : () -> Unit
+priv struct EventBody[T] {
+  events : EventStream[T]
+  encode : (T) -> Bytes raise @mttp.TransportError
   mut done : Bool
 }
 
 ///|
-impl @mttp.BodyStream for EventBody with fn read_some(self) {
+impl[T] @mttp.BodyStream for EventBody[T] with fn read_some(self) {
   if self.done {
     return None
   }
   errdefer @mttp.BodyStream::close(self)
-  let next = (self.pull)() catch {
+  let next = self.events.next() catch {
     _ =>
       raise @mttp.TransportError(
         kind=Protocol,
@@ -584,20 +584,20 @@ impl @mttp.BodyStream for EventBody with fn read_some(self) {
       )
   }
   match next {
-    Some(b) => Some(b)
+    Some(value) => Some((self.encode)(value))
     None => {
       self.done = true
-      (self.close_)()
+      self.events.close()
       None
     }
   }
 }
 
 ///|
-impl @mttp.BodyStream for EventBody with fn close(self) {
+impl[T] @mttp.BodyStream for EventBody[T] with fn close(self) {
   if !self.done {
     self.done = true
-    (self.close_)()
+    self.events.close()
   }
 }
 
@@ -605,16 +605,61 @@ impl @mttp.BodyStream for EventBody with fn close(self) {
 /// Streams events whose `data` is the codec's JSON. `meta` gives each value
 /// its `id`, event name and `retry`; without it each event has data only. A
 /// client reads the fields back with `EventStream::next_item` or `each_item`.
+/// This is `sse_body_out(codec.body(), meta?)`; for data that is
+/// not JSON, such as HTML for htmx, use `sse_body_out`.
 pub fn[T] sse_out(
   codec : @schema.JsonCodec[T],
+  meta? : (T) -> SseMeta,
+) -> Out[EventStream[T], @client.Streaming] {
+  sse_body_out(codec.body(), meta?)
+}
+
+///|
+/// Streams events whose `data` is the body codec's encoding of each value,
+/// read as UTF-8 text; a client decodes `data` with the same codec. `meta`
+/// gives each value its `id`, event name and `retry`, as for `sse_out`. An
+/// encoding that is not UTF-8 ends the stream with a `TransportError` of kind
+/// `Invalid`, since an event's data is text. Text with line breaks is sent as
+/// several `data` lines, which a client joins with LF, so a CR or CRLF arrives
+/// as LF.
+///
+/// For htmx's SSE extension, stream HTML fragments with `@schema.html_body`;
+/// `EventStream::map` turns a stream of rows into one of HTML strings:
+///
+/// ```mbt check
+/// test {
+///   let rows = @endpoint.endpoint
+///     .get("/rows")
+///     .output(
+///       @endpoint.sse_body_out(@schema.html_body, meta=_ => {
+///         @endpoint.SseMeta::new(event="row")
+///       }),
+///     )
+///   let server = rows.serve_public(_ => {
+///     let ids = @endpoint.EventStream::from_array([1, 2])
+///     Ok(ids.map(id => "<tr id=\"row-\{id}\">\n<td>\{id}</td>\n</tr>"))
+///   })
+///   @driver.run_sync(() => {
+///     let response = server.dispatch(
+///       @mttp.Request::get("/rows"),
+///       Map([]),
+///       @endpoint.DispatchContext::new(),
+///     )
+///     let text = @utf8.decode(response.body.read_all(max=1024))
+///     assert_true(text.has_prefix("event: row\ndata: <tr id=\"row-1\">\n"))
+///   })
+/// }
+/// ```
+pub fn[T] sse_body_out(
+  codec : @schema.BodyCodec[T],
   meta? : (T) -> SseMeta,
 ) -> Out[EventStream[T], @client.Streaming] {
   let defs = Map([])
   let problems = []
   let data_schema = codec.schema().reference(defs, problems~)
   // One parsed event, in the shape OpenAPI 3.2 gives text/event-stream items:
-  // every field is a string except retry, and the JSON payload is described
-  // as the content of the data string.
+  // every field is a string except retry, and the codec's payload is
+  // described as the content of the data string.
   let event_schema : @schema.Schema = {
     name: None,
     defs,
@@ -626,13 +671,35 @@ pub fn[T] sse_out(
         "event": { "type": "string" },
         "data": {
           "type": "string",
-          "contentMediaType": "application/json",
+          "contentMediaType": codec.media_type(),
           "contentSchema": data_schema,
         },
         "id": { "type": "string" },
         "retry": { "type": "integer", "minimum": 0 },
       },
     },
+  }
+  // An event's data is text, so bytes that are not UTF-8 cannot be sent
+  // unchanged; the stream fails rather than replace them.
+  let encode = (value : T) => {
+    let data = @utf8.decode(codec.encode(value)) catch {
+      _ =>
+        raise @mttp.TransportError(
+          kind=Invalid,
+          phase=Write,
+          detail="SSE data is not UTF-8",
+        )
+    }
+    let fields = match meta {
+      Some(mapper) => mapper(value)
+      None => SseMeta::new()
+    }
+    @sse.encode(@sse.SseEvent::{
+      event: fields.event,
+      data,
+      id: fields.id,
+      retry: fields.retry,
+    })
   }
   let variant : Variant[EventStream[T]] = {
     status: 200,
@@ -648,26 +715,8 @@ pub fn[T] sse_out(
     attributes: @mttp.Attributes::empty().put(@mttp.close_on_shutdown, true),
     encode: es => {
       let body : &@mttp.BodyStream = EventBody::{
-        pull: () => {
-          match es.next() {
-            None => None
-            Some(value) => {
-              let fields = match meta {
-                Some(mapper) => mapper(value)
-                None => SseMeta::new()
-              }
-              Some(
-                @sse.encode(@sse.SseEvent::{
-                  event: fields.event,
-                  data: codec.to_json(value).stringify(),
-                  id: fields.id,
-                  retry: fields.retry,
-                }),
-              )
-            }
-          }
-        },
-        close_: () => es.close(),
+        events: es,
+        encode,
         done: false,
       }
       (
@@ -683,10 +732,10 @@ pub fn[T] sse_out(
           match reader.next_event() {
             None => None
             Some(event) => {
-              let data = codec.body().decode(@mttp.encode_utf8(event.data)) catch {
-                  failure =>
-                    raise DecodeError(h, message=failure.message(), body=b"")
-                }
+              let data = codec.decode(@mttp.encode_utf8(event.data)) catch {
+                failure =>
+                  raise DecodeError(h, message=failure.message(), body=b"")
+              }
               // The parser names an unnamed event `message`; items use the
               // `""` that SseMeta writes for one, so meta round-trips.
               let name = if event.event == "message" { "" } else { event.event }

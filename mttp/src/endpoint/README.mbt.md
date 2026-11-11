@@ -83,6 +83,41 @@ carry no fields of their own: on the server, `meta` decides them.
 `map` converts each event and keeps its fields; the mapped stream owns the
 original, so read and close only the mapped one.
 
+`sse_body_out` takes a `BodyCodec` instead, and sends each value's encoding as
+the event's text; `sse_out(codec)` is `sse_body_out(codec.body())`. For htmx's
+SSE extension, send HTML fragments with `@schema.html_body` and turn typed
+rows into HTML with `map`. A fragment's line breaks become several `data`
+lines that the client joins back (a CR or CRLF arrives as LF); an encoding
+that is not UTF-8 ends the stream with a `TransportError`.
+
+```mbt check
+///|
+test "htmx rows as HTML events" {
+  let rows = @endpoint.endpoint
+    .get("/rows")
+    .output(
+      @endpoint.sse_body_out(@schema.html_body, meta=_ => {
+        @endpoint.SseMeta::new(event="row")
+      }),
+    )
+  let server = rows.serve_public(_ => {
+    let ids = @endpoint.EventStream::from_array([7])
+    Ok(ids.map(id => "<tr id=\"row-\{id}\">\n  <td>\{id}</td>\n</tr>"))
+  })
+  @driver.run_sync(() => {
+    let response = server.dispatch(
+      @mttp.Request::get("/rows"),
+      Map([]),
+      @endpoint.DispatchContext::new(),
+    )
+    assert_eq(
+      response.body.read_all(max=1024),
+      b"event: row\ndata: <tr id=\"row-7\">\ndata:   <td>7</td>\ndata: </tr>\n\n",
+    )
+  })
+}
+```
+
 ```mbt check
 ///|
 test "SSE event ids resume a stream" {

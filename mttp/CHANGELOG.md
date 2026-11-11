@@ -37,7 +37,11 @@ never does.
   JSON as an event's `data`, so setting an `id`, event name or `retry` no
   longer means building the whole event; replace
   `to_event=v => @sse.SseEvent::{ data: ..., id: Some(x), .. }` with
-  `meta=v => SseMeta::new(id=x)`.
+  `meta=v => SseMeta::new(id=x)`; for data that is not JSON, such as HTML,
+  use `sse_body_out`.
+- An event that an event stream cannot encode (an `id` with a line break,
+  data that is not UTF-8) ends it with that `Invalid` error instead of
+  `event source failed`, which stays the error for a failing producer.
 - `@client.read_body` moved to the root package as
   `Body::read_all(max~)`, so a server handler can read a request body within
   a limit without the client package. Its behaviour is unchanged: a body over
@@ -82,9 +86,17 @@ never does.
   returns the string, so a client reads back the same string. An error page is
   `errors(html_out(status=404))`; `html_variant` puts a page in `one_of`, so
   one URL can answer htmx with a fragment and a plain form post with a 303.
+- `sse_body_out(codec, meta?)`: an event stream whose `data` is a
+  `BodyCodec`'s encoding as UTF-8 text, decoded with the same codec on a
+  client. For htmx's SSE extension, `sse_body_out(@schema.html_body, meta=...)`
+  sends HTML fragments as they are, where `sse_out` would send each as a JSON
+  string. An encoding that is not UTF-8 ends the stream with a
+  `TransportError` of kind `Invalid`; line breaks become several `data` lines,
+  which a client joins with LF. `sse_out(codec, meta?)` is
+  `sse_body_out(codec.body(), meta?)` and writes the same events as before.
 - `EventStream::map`: a stream of converted events that keeps each event's
-  `id`, event name and `retry`, for example to turn typed events into HTML
-  rows for htmx's SSE extension.
+  `id`, event name and `retry`, for example to turn typed rows into the HTML
+  strings that `sse_body_out(@schema.html_body)` sends to htmx.
 - Router middleware `same_origin(allowed_origins?)` refuses state-changing
   requests that a browser sends from another site, by `Sec-Fetch-Site` and,
   for browsers without it, `Origin`, with no tokens or session state. Use it

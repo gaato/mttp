@@ -78,6 +78,8 @@ pub let route_template : @mttp.AttributeKey[String]
 
 pub fn signature_header(String) -> Input[String]
 
+pub fn[T] sse_body_out(@schema.BodyCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
+
 pub fn[T] sse_out(@schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
 
 pub fn stream_body(media_type? : String) -> Input[&@mttp.BodyStream]
