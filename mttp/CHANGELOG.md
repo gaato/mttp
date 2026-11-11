@@ -79,6 +79,10 @@ never does.
 - `EventStream::map`: a stream of converted events that keeps each event's
   `id`, event name and `retry`, for example to turn typed events into HTML
   rows for htmx's SSE extension.
+- Router middleware `same_origin(allowed_origins?)` refuses state-changing
+  requests that a browser sends from another site, by `Sec-Fetch-Site` and,
+  for browsers without it, `Origin`, with no tokens or session state. Use it
+  with `SameSite` cookies in apps with forms and a cookie session.
 
 ## [0.1.0] - 2026-11-10
 

@@ -21,6 +21,8 @@ pub fn problem(Int32, String, errors? : @json.Json) -> @mttp.Response
 
 pub fn request_id(generate? : () -> String) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
 
+pub fn same_origin(allowed_origins? : Array[String]) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
+
 // Errors
 
 // Types and methods

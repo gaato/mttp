@@ -817,6 +817,7 @@ pub fn default_decode_failure(ctx : @endpoint.FailureContext) -> @mttp.Response
 pub fn cors(allow_origins : Array[String]) -> Middleware
 // (new) hide_endpoints_with_auth : (FailureContext) -> Response?   — a decode_failure preset (404 instead of 401)
 // (new) request_id(), access_log(clock, sink)
+// (new) same_origin(allowed_origins?) — refuses unsafe methods from other sites by Sec-Fetch-Site, else Origin
 ```
 
 The pipeline. Credentials are checked first, a deliberate deviation from tapir (P-04, **[needs-user-input]**).

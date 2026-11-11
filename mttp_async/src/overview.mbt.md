@@ -81,9 +81,12 @@ shutdown:
 
 For typed endpoints with request validation and an OpenAPI document, define
 them with `gaato/mttp`'s `endpoint` and `router` packages (add `gaato/mttp`
-to the app as well) and serve `router.handler()`. On JavaScript hosts,
-`gaato/mttp_async/fetch` turns the same handler into a `fetch` export for
-Cloudflare Workers, Deno, Bun, Node, Fastly, Vercel and AWS Lambda.
+to the app as well) and serve `router.handler()`. An app with forms and a
+cookie session adds the router's `same_origin` middleware, which refuses
+state-changing requests from other sites, and sets its cookies `SameSite`.
+On JavaScript hosts, `gaato/mttp_async/fetch` turns the same handler into a
+`fetch` export for Cloudflare Workers, Deno, Bun, Node, Fastly, Vercel and AWS
+Lambda.
 
 ## Tests and concurrency
 
