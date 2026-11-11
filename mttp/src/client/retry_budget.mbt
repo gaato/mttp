@@ -48,7 +48,10 @@ pub fn RetryBudget::new(
     },
     min_per_second: min_per_second.max(0),
     window_ms: window,
-    slot_ms: window / retry_budget_slots.to_int64(),
+    // Rounded up, so that ten slots cover the whole window and the ring of
+    // eleven covers it plus the slot only partly inside it.
+    slot_ms: (window + retry_budget_slots.to_int64() - 1L) /
+    retry_budget_slots.to_int64(),
     starts: FixedArray::make(retry_budget_ring, -1L),
     deposits: FixedArray::make(retry_budget_ring, 0),
     withdrawals: FixedArray::make(retry_budget_ring, 0),

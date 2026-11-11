@@ -239,3 +239,32 @@ test "a withdrawal counts until its whole slot leaves the window" {
   })
   assert_eq(calls.val, 5)
 }
+
+///|
+test "a window that ten does not divide still counts every retry in it" {
+  let calls = Ref(0)
+  let clock = @sim.FakeClock::new()
+  let client = @client.Client::new(
+    unavailable(calls),
+    clock,
+    retry=@client.RetryPolicy::conservative().with_max_retries(1),
+    // Nineteen retries per 19 ms window, in slots of 2 ms (rounded up).
+    retry_budget=@client.RetryBudget::new(
+      percent=0.0,
+      min_per_second=1000,
+      window_ms=19,
+    ),
+  )
+  @driver.run_sync(() => {
+    for _ in 0..<19 {
+      ignore(client.send(@client.get("/"), decide_retry=(_, _) => Wait(0)))
+    }
+  })
+  assert_eq(calls.val, 38)
+  // 11 ms later the nineteen retries are still inside the window.
+  clock.advance(11)
+  @driver.run_sync(() => {
+    ignore(client.send(@client.get("/"), decide_retry=(_, _) => Wait(0)))
+  })
+  assert_eq(calls.val, 39)
+}
