@@ -128,6 +128,15 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
    into a TransportError.
 8. **Wrappers** keep rules 1–7 and pass SendOptions through unchanged unless
    they document otherwise.
+9. **Unknown timings.** `BodyTiming` is `#non_exhaustive`. A backend that
+   meets a variant it does not implement refuses the send before any I/O with
+   `TransportError(Invalid, Pool)`, as in rule 1, rather than guessing its
+   meaning.
+
+A backend written outside this repository, for example over another HTTP
+engine, passes `@sim.check_backend_contract(make_backend)` from
+`gaato/mttp/sim`, which exercises these rules (including rule 6's phase) on
+the target it runs on.
 
 `mttp_async/backend.AsyncBackend::new` accepts optional `rt.Clock` and
 `rt.Timer` ports on every target. The defaults are `AsyncClock` and
