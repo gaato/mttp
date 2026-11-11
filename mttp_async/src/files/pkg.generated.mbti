@@ -1,0 +1,17 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_async/files"
+
+import {
+  "gaato/mttp",
+}
+
+// Values
+pub fn static_files(String, prefix? : String, cache_control? : String, index? : String) -> async (@mttp.Request) -> @mttp.Response noraise
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

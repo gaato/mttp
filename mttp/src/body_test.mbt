@@ -181,3 +181,44 @@ test "request validation refuses a stream declaring a negative length" {
   .validate()
   assert_eq(fine.closes, 0)
 }
+
+///|
+test "read_all enforces its bound for every body variant and closes streams" {
+  let source = feed([b"ab"])
+  let whole = @mttp.Body::Stream(@mttp.StreamBody::new(source))
+  assert_eq(@driver.run_sync(() => whole.read_all(max=2)), b"ab")
+  assert_eq(source.closes, 1)
+  assert_eq(@driver.run_sync(() => @mttp.Body::Empty.read_all(max=0)), b"")
+  let unread = feed([b"never read"])
+  for
+    body in [
+      @mttp.Body::Empty,
+      Bytes(b""),
+      Stream(@mttp.StreamBody::new(unread)),
+    ] {
+    let rejected = try {
+      let _ = @driver.run_sync(() => body.read_all(max=-1))
+      false
+    } catch {
+      @mttp.TransportError(kind=Invalid, phase=Body, ..) => true
+      error => raise error
+    }
+    assert_true(rejected)
+  }
+  assert_eq(unread.reads, 0)
+  assert_eq(unread.closes, 1)
+  let crossing = feed([b"a", b"b"])
+  for
+    body in [@mttp.Body::Bytes(b"ab"), Stream(@mttp.StreamBody::new(crossing))] {
+    let rejected = try {
+      let _ = @driver.run_sync(() => body.read_all(max=1))
+      false
+    } catch {
+      @mttp.TransportError(kind=TooLarge(limit=1), phase=Body, ..) => true
+      error => raise error
+    }
+    assert_true(rejected)
+    assert_false(body is Stream(_) && body.is_replayable())
+  }
+  assert_eq(crossing.closes, 1)
+}

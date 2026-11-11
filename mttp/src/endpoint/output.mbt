@@ -439,7 +439,7 @@ pub extend SseItem with Eq::{equal, not_equal}
 pub extend SseItem with @debug.Debug::{to_repr}
 
 ///|
-/// Pull-only event streams (no push bodies in v0.x).
+/// Pull event streams; `channel` bridges a producer that pushes.
 pub struct EventStream[T] {
   priv pull : async () -> SseItem[T]?
   priv close_ : () -> Unit
@@ -531,6 +531,32 @@ pub fn[T] EventStream::close(self : EventStream[T]) -> Unit {
   if !self.closed {
     self.closed = true
     (self.close_)()
+  }
+}
+
+///|
+/// A stream of `f` applied to each event, keeping each event's `id`, event
+/// name and `retry`. The new stream owns this one: closing it, or reaching
+/// its end, closes this one. Read only the new stream.
+pub fn[T, U] EventStream::map(
+  self : EventStream[T],
+  f : (T) -> U,
+) -> EventStream[U] {
+  {
+    pull: () => {
+      self
+      .next_item()
+      .map(item => {
+        SseItem::new(
+          f(item.data),
+          id?=item.id,
+          event=item.event,
+          retry?=item.retry,
+        )
+      })
+    },
+    close_: () => self.close(),
+    closed: false,
   }
 }
 

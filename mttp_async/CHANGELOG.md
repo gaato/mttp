@@ -19,7 +19,29 @@ never does.
   - The root package re-exports the vocabulary and the client API an app
     needs (`Request`, `Response`, `Client`, `get`, `post`, `as_json` and so
     on), so `gaato/mttp_async` is the only module in its `moon.mod`.
+  - `backend()`, `clock()` and `timer()` supply the same I/O to a library
+    that builds its own Client, such as an API SDK, which keeps its own base
+    URL, authentication and retry defaults.
+  - `coordination()` supplies the event loop's signals to the parts of
+    `gaato/mttp` that wait without I/O, such as `EventStream::channel`.
 - `ListenError` implements `Show`.
+- The Deno, Bun and Node host shims (`hosts/adapters.mjs`) return `shutdown()`
+  beside `fetch` and `whenIdle`. It ends every in-flight response whose
+  `@mttp.Response` sets `close_on_shutdown`, such as an `endpoint.sse_out`
+  stream: the body ends cleanly after a whole event and is closed once, so the
+  host's own shutdown no longer waits for it. Stop with `app.shutdown()`, then
+  the host's server shutdown, then `await app.whenIdle()`.
+- `gaato/mttp_async/files` with `static_files(root, prefix?, cache_control?,
+  index?)`, a Handler that serves a directory's files to GET and HEAD: streamed
+  in 64 KiB slices, `Content-Type` from the extension, a weak `ETag`,
+  `Last-Modified`, `Cache-Control` and 304 on a matching `If-None-Match`.
+  Segments starting with `.` (dot segments and hidden files such as `.env`),
+  empty segments, backslashes and NUL are refused raw or encoded, and the file's
+  real path must lie below the root's, so a symlink pointing outside is a 404.
+  No directory listings and no ranges.
+- `fetch.env_string(env, key)` reads a string binding of a host environment,
+  such as a Workers `vars` entry or secret, without hand-written FFI. It is
+  `None` when the binding is absent or not a string, and never raises.
 
 ### Changed
 
@@ -31,6 +53,34 @@ never does.
   with `close_on_shutdown` set, such as every `endpoint.sse_out` response: the
   stream ends when the shutdown starts, and its clients reconnect. Other
   streamed responses are still drained.
+- The stale `fetch/pkg.generated.js.mbti` is gone: `moon info` writes only the
+  canonical (native) interface, so nothing kept the js-only file current.
+- The fetch adapter marks a streamed response with `close_on_shutdown` by a
+  function under `Symbol.for("gaato.mttp.closeOnShutdown")`, which a host shim
+  calls with its shutdown signal. A pull of a response body cancelled by a host
+  event (client disconnect, shutdown) now ends at once instead of waiting for
+  unrelated MoonBit work to run.
+- A client disconnecting while a fetch response body streams now ends the
+  body quietly: its source is closed once and the stream is closed instead of
+  errored with `AbortError`, which Deno logged twice per disconnected SSE
+  client. A disconnect before the response head still rejects the response
+  Promise.
+- `server.serve` binds with `SO_REUSEADDR`, as Go and Node do, so a server
+  restarted right after it stopped (by systemd, for example) no longer fails
+  to bind while the old connections are in TIME-WAIT. Two running servers
+  still cannot share a port.
+- `ListenError::Bind` and `Accept` keep the cause in `detail`: a bind failure
+  names the address and the system's reason (such as `Address already in
+  use`), and an address that does not parse says so. They used to say only
+  `could not bind server address` and `listener accept failed`.
+- The Workers host shim takes a loader, `workers(() => import('./app.js'))`,
+  instead of `fetch_with_env`, and imports the app inside the first request.
+  The README's static import did not start on workerd: evaluating a compiled
+  MoonBit module draws its hash seed from `crypto.getRandomValues`, which
+  Workers refuses in global scope. All requests share one import; a failed
+  import rejects each request with an Error naming it. The other shims keep
+  the static import, which Fastly needs for its synchronous `waitUntil`.
+  `scripts/gates.sh full` and CI now run a Workers app on workerd itself.
 
 ## Earlier versions, as gaato/http-async
 

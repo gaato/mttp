@@ -21,6 +21,8 @@ pub fn problem(Int32, String, errors? : @json.Json) -> @mttp.Response
 
 pub fn request_id(generate? : () -> String) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
 
+pub fn same_origin(allowed_origins? : Array[String]) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
+
 // Errors
 
 // Types and methods
@@ -31,6 +33,7 @@ pub fn Router::close(Self) -> Unit
 pub async fn Router::dispatch(Self, @mttp.Request) -> @mttp.Response noraise
 pub fn Router::docs(Self) -> Array[@endpoint.EndpointDoc]
 pub fn Router::handler(Self) -> async (@mttp.Request) -> @mttp.Response noraise
+pub fn Router::must(Array[@endpoint.ServerEndpoint], options? : ServerOptions, adapter_max_body_bytes? : Int32, clock? : &@rt.Clock, timer? : &@rt.Timer) -> Self
 pub fn Router::new(Array[@endpoint.ServerEndpoint], options? : ServerOptions, adapter_max_body_bytes? : Int32, clock? : &@rt.Clock, timer? : &@rt.Timer) -> Self raise @endpoint.DefinitionError
 pub async fn Router::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
 pub impl @mttp.Backend for Router

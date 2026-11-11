@@ -42,3 +42,25 @@ async test "parent cancellation awaits both coordination children" {
     assert_false(completed.val)
   })
 }
+
+///|
+async test "an event channel waits on runtime signals" {
+  let (sender, stream) = @endpoint.EventStream::channel(
+    coordination=@runtime.RuntimeCoordination::new(),
+    capacity=1,
+  )
+  let results = []
+  @async.with_task_group(group => {
+    group.spawn_bg(() => {
+      for i in 1..<=3 {
+        results.push(sender.send(i))
+      }
+    })
+    assert_eq(stream.next(), Some(1))
+    @async.pause()
+    // The second value is queued and the third send waits for room.
+    assert_eq(results, [true, true])
+    stream.close()
+  })
+  assert_eq(results, [true, true, false])
+}

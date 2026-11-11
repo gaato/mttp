@@ -188,7 +188,7 @@ test "authentication errors are ordinary declared values before the handler runs
       @endpoint.DispatchContext::new(),
     )
     assert_eq(response.status, 401)
-    assert_eq(@client.read_body(response.body, 1024), b"denied")
+    assert_eq(response.body.read_all(max=1024), b"denied")
     assert_false(called.val)
   })
   let errors = @endpoint.one_of([

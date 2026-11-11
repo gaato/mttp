@@ -10,6 +10,23 @@ pub struct Router {
 }
 
 ///|
+/// `Router::new` for definitions that are known to be right, such as a
+/// top-level `let` in an application or a JavaScript entry, where an error
+/// cannot be raised: a definition problem is a programming error, so this
+/// aborts with the problems (as `DefinitionError` prints them) instead.
+pub fn Router::must(
+  endpoints : Array[@endpoint.ServerEndpoint],
+  options~ : ServerOptions = ServerOptions::default(),
+  adapter_max_body_bytes? : Int32,
+  clock? : &@rt.Clock,
+  timer? : &@rt.Timer,
+) -> Router {
+  Router::new(endpoints, options~, adapter_max_body_bytes?, clock?, timer?) catch {
+    error => abort("\{error}")
+  }
+}
+
+///|
 /// Checks definitions before accepting traffic. Routes and middleware arrays
 /// are copied so subsequent caller mutations cannot change dispatch.
 pub fn Router::new(

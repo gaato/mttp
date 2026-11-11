@@ -61,41 +61,6 @@ impl @rt.Timer for InvalidTimer with fn within(_, _, _) {
 }
 
 ///|
-test "byte readers enforce bounds for all body variants" {
-  let d = @driver.Driver::new()
-  let source = @sim.Feed::bytes(d, [b"ab"])
-  assert_eq(
-    d.run(() => @client.read_body(Stream(@mttp.StreamBody::new(source)), 2)),
-    b"ab",
-  )
-  assert_eq(source.closes(), 1)
-  assert_eq(d.run(() => @client.read_body(Empty, 0)), b"")
-  for
-    body in [
-      @mttp.Body::Empty,
-      Bytes(b""),
-      Stream(@mttp.StreamBody::new(@sim.Feed::bytes(d, []))),
-    ] {
-    let rejected = try {
-      let _ = d.run(() => @client.read_body(body, -1))
-      false
-    } catch {
-      @mttp.TransportError(kind=Invalid, ..) => true
-      error => raise error
-    }
-    assert_true(rejected)
-  }
-  let rejected = try {
-    let _ = d.run(() => @client.read_body(Bytes(b"ab"), 1))
-    false
-  } catch {
-    @mttp.TransportError(kind=TooLarge(limit=1), ..) => true
-    error => raise error
-  }
-  assert_true(rejected)
-}
-
-///|
 test "streaming readers adapt memory bodies with sticky EOF" {
   let clock = @sim.FakeClock::new()
   for body in [@mttp.Body::Empty, Bytes(b""), Bytes(b"data")] {

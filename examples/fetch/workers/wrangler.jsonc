@@ -1,0 +1,11 @@
+{
+  "name": "mttp-workers-example",
+  "main": "entry.js",
+  "compatibility_date": "2026-07-14",
+  // GREETING is a string binding; LIMITS is a JSON one, which env_string
+  // reports as absent.
+  "vars": {
+    "GREETING": "hello from vars",
+    "LIMITS": { "n": 3 }
+  }
+}

@@ -38,6 +38,12 @@ never does.
   longer means building the whole event; replace
   `to_event=v => @sse.SseEvent::{ data: ..., id: Some(x), .. }` with
   `meta=v => SseMeta::new(id=x)`.
+- `@client.read_body` moved to the root package as
+  `Body::read_all(max~)`, so a server handler can read a request body within
+  a limit without the client package. Its behaviour is unchanged: a body over
+  the limit raises `TooLarge`, a negative limit `Invalid`, and a stream is
+  closed in every case. Replace `@client.read_body(body, limit)` with
+  `body.read_all(max=limit)`.
 
 ### Added
 
@@ -68,6 +74,44 @@ never does.
   also while its producer waits (asking `stopping` every 250 ms then): it
   closes the body, ends a chunked body with its last chunk and closes the
   connection. `endpoint.sse_out` sets it on the responses it builds.
+- `Router::must`: `Router::new` for definitions known to be right, such as a
+  top-level `let` in an app or a JavaScript entry, where an error cannot be
+  raised; a definition problem aborts with the problems.
+- `schema.html_body`, `endpoint.html_out` and `endpoint.html_variant`: an
+  HTML page as `text/html; charset=utf-8`. The handler renders the page and
+  returns the string, so a client reads back the same string. An error page is
+  `errors(html_out(status=404))`; `html_variant` puts a page in `one_of`, so
+  one URL can answer htmx with a fragment and a plain form post with a 303.
+- `EventStream::map`: a stream of converted events that keeps each event's
+  `id`, event name and `retry`, for example to turn typed events into HTML
+  rows for htmx's SSE extension.
+- Router middleware `same_origin(allowed_origins?)` refuses state-changing
+  requests that a browser sends from another site, by `Sec-Fetch-Site` and,
+  for browsers without it, `Origin`, with no tokens or session state. Use it
+  with `SameSite` cookies in apps with forms and a cookie session.
+- `@schema.form_codec(codec)` reads and writes an
+  `application/x-www-form-urlencoded` body with an object `JsonCodec`, so an
+  HTML form and a JSON API share one definition, its validation and its
+  JSON-pointer issue paths. Values are coerced by their property's schema type
+  (a checkbox's `on` is `true`; an absent required boolean is `false` and an
+  absent required array `[]`), text that does not coerce is an issue at the
+  property's pointer, and a property that is not a scalar or an array of scalars
+  is a definition problem. Use it with `@endpoint.body`.
+- `format_http_date(unix_ms)` writes an IMF-fixdate (RFC 9110 §5.6.7) for
+  `Date`, `Last-Modified`, `Expires` or a cookie's `Expires`, the counterpart of
+  `parse_http_date`; times outside the years 1 to 9999 are clamped.
+- `Endpoint::serve_with` and `serve_public_with`: like `serve` and
+  `serve_public`, and the handler also receives the attributes of the request
+  being served (`@mttp.remote_addr`, the `@mttp.background` scheduler), so a
+  definition shared with clients stays the wire contract instead of gaining an
+  `attribute(...)` input that would also appear in the client's input type.
+- `EventStream::channel(coordination~, capacity~)` with `EventSender::send`,
+  `close` and `fail`: a bounded channel from a producer that pushes, such as
+  an SDK's streaming callback, to a stream that `sse_out` writes. `send`
+  waits while `capacity` values (16 by default) are queued and returns `false`
+  once the reader closed the stream (a client disconnected), so the producer
+  can cancel its upstream call; `fail` ends the stream with an error, so a
+  client does not take a failed producer's output for a complete stream.
 
 ## [0.1.0] - 2026-11-10
 

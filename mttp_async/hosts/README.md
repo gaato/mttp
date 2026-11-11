@@ -1,22 +1,29 @@
 # Fetch host entries
 
 These small adapters accept your compiled MoonBit application functions.
-They do not load a generated module asynchronously: that would postpone the
-first `waitUntil` beyond Fastly's synchronous event dispatch.
+They ship inside the published module: after `moon add gaato/mttp_async`
+they are at `.mooncakes/gaato/mttp_async/hosts/adapters.mjs` and
+`.mooncakes/gaato/mttp_async/hosts/lambda.mjs`; import them from there or
+copy them next to your entry. They have no dependencies.
 
 Export a `fetch(req, background)` function which calls your stored
-`fetch_handler(handler)` closure. For Workers also export
-`fetch_with_env(req, background, env)` which first calls
-`@fetch.with_env(req, env)` and then invokes that closure.
+`fetch_handler(handler)` closure. For Workers export
+`fetch_with_env(req, background, env)` instead, which first calls
+`@fetch.with_env(req, env)` and then invokes that closure; read a string
+binding in the handler with `@fetch.env_string(env, "NAME")`.
 
 ```js
-import { fetch, fetch_with_env } from './app.js';
-import { workers, fastly, vercel, deno, bun, node } from './adapters.mjs';
+// Cloudflare Workers module entry: give workers() a loader, not the function.
+import { workers } from './adapters.mjs';
+export default workers(() => import('./app.js'));
+```
 
-// Cloudflare Workers module entry:
-export default workers(fetch_with_env);
+```js
+// Fastly, Vercel, Deno, Bun and Node: import the app statically.
+import { fetch } from './app.js';
+import { fastly, vercel, deno, bun, node } from './adapters.mjs';
 
-// Fastly event entry (use in its own entry module):
+// Fastly event entry:
 addEventListener('fetch', fastly(fetch));
 
 // Vercel entry: import { waitUntil } from '@vercel/functions', then export:
@@ -25,8 +32,60 @@ addEventListener('fetch', fastly(fetch));
 // Deno: const app = deno(fetch); Deno.serve(app.fetch);
 // Bun: const app = bun(fetch); Bun.serve({fetch: app.fetch});
 // Node: const app = node(fetch); pass app.fetch a Web Request in your HTTP bridge.
-// Await app.whenIdle() during orderly shutdown of either process host.
 ```
+
+Workers is the one host that imports the app lazily. Evaluating a compiled
+MoonBit module draws its hash seed from `crypto.getRandomValues`
+(moonbitlang/core's `builtin/hasher.mbt`), and Workers refuses to generate
+random values in global scope: a static import fails at startup with
+"Disallowed operation called within global scope". `workers(load)` calls
+`load` inside the first request, shares that one import between all
+requests, and passes each request to the module's `fetch_with_env`; Workers
+accepts `waitUntil` at any point while the request runs. If the import fails,
+every request rejects with an Error that names the failure and keeps it as
+`cause`; the import is not retried, because a module that threw while
+evaluating throws again.
+[examples/fetch/workers](https://github.com/gaato/mttp/tree/main/examples/fetch/workers)
+is a complete Workers app, which the repository's gates run on workerd.
+
+The other hosts keep the static import. Fastly must call `waitUntil` and
+`respondWith` synchronously while it dispatches the event, so the app cannot
+be imported later. Fastly allows random values at startup, but its
+JavaScript SDK initialises the module while building (Wizer), so the hash
+seed is fixed per build. Vercel's Node runtime, Deno, Bun, Node and Lambda allow random values
+at startup, and a lazy import would only delay each process's first request
+and its background registration.
+
+The process hosts (Deno, Bun, Node) own their shutdown. `deno`, `bun` and
+`node` return `{fetch, whenIdle, shutdown}`; stop in this order:
+
+```js
+const app = deno(fetch);
+const server = Deno.serve(app.fetch);
+Deno.addSignalListener('SIGINT', async () => {
+  app.shutdown();          // end streams marked close-on-shutdown
+  await server.shutdown(); // the host stops accepting and finishes responses
+  await app.whenIdle();    // background work registered by handlers
+  Deno.exit(0);
+});
+```
+
+On Bun the middle step is `await server.stop()`; on Node, close your HTTP
+server. `shutdown()` ends the body of every in-flight response whose
+`@mttp.Response` set `@mttp.close_on_shutdown`, such as every SSE response
+from gaato/mttp's `endpoint.sse_out`: the stream ends cleanly after a whole
+event, its MoonBit body is closed once, and clients reconnect with
+`Last-Event-ID`. Without it, the host's shutdown waits for such a stream
+forever. Other responses are left to finish. The fetch adapter marks those
+responses with a function under `Symbol.for("gaato.mttp.closeOnShutdown")`;
+a bridge of your own can call it with an AbortSignal that aborts at shutdown.
+
+A client that disconnects while a body streams ends it quietly: the adapter
+closes its source once and closes the stream instead of failing it, so Deno,
+Bun and Node log nothing. A disconnect before the response head still rejects
+the response Promise, which Deno logs as `AbortError`. A host that aborts
+`request.signal` after a successful response (Deno's legacy behavior) cancels
+nothing: the adapter drops its listeners once the body ends.
 
 Lambda Function URLs use `lambda(fetch)` from `lambda.mjs`. It translates the
 v2 event's raw path/query, base64 body, cookies and domain into a Web Request.
@@ -45,4 +104,6 @@ The scheduling contracts come from
 and [Lambda Function URLs](https://docs.aws.amazon.com/lambda/latest/dg/urls-invocation.html).
 The process tracker retains pending work and exposes a shutdown join; it does
 not override the host's execution time limits or keep an otherwise empty event
-loop alive merely by retaining a Promise.
+loop alive merely by retaining a Promise. It keeps no state per response:
+the listener a marked response adds to its shutdown signal goes away with the
+body.

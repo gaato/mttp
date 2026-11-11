@@ -55,8 +55,6 @@ pub fn post(String) -> RequestPlan[Result[String, ResponseFailure], Buffered]
 
 pub let rate_limit_bucket : @mttp.AttributeKey[String]
 
-pub async fn read_body(@mttp.Body, Int32) -> Bytes raise @mttp.TransportError
-
 pub let redirect_history : @mttp.AttributeKey[Array[RedirectHop]]
 
 pub let redirect_limit : @mttp.AttributeKey[Int32]

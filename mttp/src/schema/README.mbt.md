@@ -40,6 +40,43 @@ Text codecs for numbers accept decimal syntax only: `int` and `int64` refuse
 scalar string or a repeated string array for each form name, so OpenAPI form
 serialization can describe duplicate values without losing that contract.
 
+`form_codec` reads an HTML form into an object codec, so a form and a JSON API
+share one definition, its validation and its JSON-pointer issue paths. Each
+value is coerced by its property's schema type: decimal text for `integer`
+and `number`; `true`, `false` or a checkbox's `on` for `boolean`; repeated
+names for an array of scalars. Text that does not coerce, or a single-valued
+name given twice, is an issue at that property's pointer. Browsers leave out
+unchecked boxes and empty checkbox groups and cannot send `false` or `[]`, so
+an absent required boolean is `false` and an absent required array `[]`;
+absent optional properties stay absent, and a blank optional number is
+absent. Names the schema does not list stay strings. A property that is an
+object, an array of objects or a mix of types is a definition problem in the
+schema's `problems`. Decoding reads at most 256 pairs, as `form_body` does.
+
+```mbt check
+///|
+test {
+  let contact = @schema.object3(
+    "Contact",
+    @schema.field("email", @schema.jstring, (c : (String, Int32, Bool)) => c.0),
+    @schema.field("age", @schema.jint, c => c.1),
+    @schema.field("subscribe", @schema.jbool, c => c.2),
+    (email, age, subscribe) => (email, age, subscribe),
+  )
+  let form = @schema.form_codec(contact)
+  assert_eq(
+    form.decode(b"email=a%40b.c&age=30&subscribe=on"),
+    ("a@b.c", 30, true),
+  )
+  // An unchecked box is not sent.
+  assert_eq(form.decode(b"email=a%40b.c&age=30"), ("a@b.c", 30, false))
+  assert_eq(
+    form.encode(("a@b.c", 30, true)),
+    b"email=a%40b.c&age=30&subscribe=true",
+  )
+}
+```
+
 `pattern` implements a bounded subset of ECMA Unicode pattern syntax without
 flags, including group repetition. Its schema contains the original source.
 It refuses unsupported syntax when built, including lookarounds,

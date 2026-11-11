@@ -2,6 +2,7 @@ import {
   "gaato/mttp",
   "gaato/mttp/client",
   "gaato/mttp/h1client",
+  "gaato/mttp/rt",
   "gaato/mttp_async/backend",
   "gaato/mttp_async/runtime",
   "gaato/mttp_async/trust",
@@ -9,6 +10,7 @@ import {
 }
 
 import {
+  "gaato/mttp/endpoint",
   "gaato/mttp_async/server",
   "moonbitlang/core/async/cond_var",
   "moonbitlang/core/encoding/utf8",

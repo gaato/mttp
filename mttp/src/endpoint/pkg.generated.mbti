@@ -4,6 +4,7 @@ package "gaato/mttp/endpoint"
 import {
   "gaato/mttp",
   "gaato/mttp/client",
+  "gaato/mttp/rt",
   "gaato/mttp/schema",
   "moonbitlang/core/debug",
 }
@@ -42,6 +43,10 @@ pub let endpoint : Endpoint[Unit, Unit, NoError, Unit, @client.Buffered]
 pub fn[T] header(String, @schema.TextCodec[T]) -> Input[T]
 
 pub fn headers() -> Input[@mttp.Headers]
+
+pub fn html_out(status? : Int32) -> Out[String, @client.Buffered]
+
+pub fn html_variant(Int32, description? : String) -> Variant[String]
 
 pub fn[T] json_out(@schema.BodyCodec[T], status? : Int32) -> Out[T, @client.Buffered]
 
@@ -177,6 +182,8 @@ pub fn[S, I, E, O] Endpoint::request(Self[S, I, E, O, @client.Buffered], S, I) -
 pub fn[I, E, O, S2, M] Endpoint::security(Self[Unit, I, E, O, M], Input[S2]) -> Self[S2, I, E, O, M]
 pub fn[S, I, E, O, P, M] Endpoint::serve(Self[S, I, E, O, M], async (S) -> Result[P, E], async (P, I) -> Result[O, E]) -> ServerEndpoint
 pub fn[I, E, O, M] Endpoint::serve_public(Self[Unit, I, E, O, M], async (I) -> Result[O, E]) -> ServerEndpoint
+pub fn[I, E, O, M] Endpoint::serve_public_with(Self[Unit, I, E, O, M], async (I, @mttp.Attributes) -> Result[O, E]) -> ServerEndpoint
+pub fn[S, I, E, O, P, M] Endpoint::serve_with(Self[S, I, E, O, M], async (S) -> Result[P, E], async (P, I, @mttp.Attributes) -> Result[O, E]) -> ServerEndpoint
 pub fn[S, I, E, O, R, M] Endpoint::stream_request(Self[S, I, E, O, M], S, I, async (O) -> R) -> @client.RequestPlan[Result[Result[R, E], @client.ResponseFailure], @client.Streaming] raise @client.InvalidRequest
 pub fn[S, I, E, O, M] Endpoint::summary(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
 pub fn[S, I, E, O, M] Endpoint::tag(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
@@ -196,14 +203,23 @@ pub struct EndpointDoc {
 }
 pub fn EndpointDoc::problems(Self) -> Array[String]
 
+pub struct EventSender[T] {
+  // private fields
+}
+pub fn[T] EventSender::close(Self[T]) -> Unit
+pub fn[T] EventSender::fail(Self[T], Error) -> Unit
+pub async fn[T] EventSender::send(Self[T], T) -> Bool noraise
+
 pub struct EventStream[T] {
   // private fields
 }
+pub fn[T] EventStream::channel(coordination~ : &@rt.Coordination, capacity? : Int32) -> (EventSender[T], Self[T])
 pub fn[T] EventStream::close(Self[T]) -> Unit
 pub async fn[T] EventStream::each(Self[T], async (T) -> Unit) -> Unit
 pub async fn[T] EventStream::each_item(Self[T], async (SseItem[T]) -> Unit) -> Unit
 pub fn[T] EventStream::from_array(Array[T]) -> Self[T]
 pub fn[T] EventStream::from_pull(async () -> T?, () -> Unit) -> Self[T]
+pub fn[T, U] EventStream::map(Self[T], (T) -> U) -> Self[U]
 pub async fn[T] EventStream::next(Self[T]) -> T?
 pub async fn[T] EventStream::next_item(Self[T]) -> SseItem[T]?
 

@@ -7,6 +7,9 @@ async fn empty_response(status : Int32, request : JsRequest) -> WebResponse {
     _ => @js_async.Promise::from_async(() => { done: true, value: b"", }),
     () => (),
     request.signal(),
+    false,
+    () => true,
+    () => (),
   ).wait()
 }
 

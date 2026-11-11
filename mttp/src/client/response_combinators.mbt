@@ -29,7 +29,7 @@ pub fn[A, B] as_both(
           let bytes = if a.excerpt && b.excerpt {
             error_excerpt(body)
           } else {
-            read_body(body, limit)
+            body.read_all(max=limit)
           }
           let first = (a.read)(head, Bytes(bytes), limit)
           let second = (b.read)(head, Bytes(bytes), limit)

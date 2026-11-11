@@ -302,7 +302,7 @@ test "event streams close once after callbacks fail and custom event metadata is
     )
     // The library writes the codec's JSON as data, beside the meta's fields.
     assert_eq(
-      @client.read_body(response.body, 1024),
+      response.body.read_all(max=1024),
       b"event: update\nid: cursor\nretry: 100\ndata: \"a\"\n\ndata: \"b\"\n\n",
     )
   })

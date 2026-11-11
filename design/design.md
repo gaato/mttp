@@ -59,7 +59,7 @@ Decided by the owner on 2026-11-11 after a review from first principles. Where �
   - An endpoint core without the client (as tapir-core is without sttp's client): the client interpreter uses the endpoint's private internals, so separating it would freeze them as a public API and turn `ep.request(...)` into a function; it saves only one package's compile for server-only users, and the family has one client while tapir has several.
   - Reporting core/async/http's head bound and CL+TE handling: core's own review tracks both as P0-2 with reproductions.
   - Re-exporting core/async's concurrency API (tasks, task groups) from gaato/mttp_async so that apps need no opt-in for it: that would name runtime types in mttp_async's public API (principle 9). The README shows `run` in plain tests and says where concurrency comes from.
-- **Trial before the first release** (2026-11-11): a short-link service built on these modules found that `@schema.pattern` raised (now it records a definition problem instead, so endpoints can be top-level values), that error types lacked `Show`, that typed SSE dropped event ids and names and could not stop early, and that endless streams held up shutdown; all were fixed before 0.2.0, together with the full RFC 9110 reason-phrase table and the documentation gaps it found.
+- **Trial before the first release** (2026-11-11): a short-link service built on these modules found that `@schema.pattern` raised (now it records a definition problem instead, so endpoints can be top-level values), that error types lacked `Show`, that typed SSE dropped event ids and names and could not stop early, and that endless streams held up shutdown; all were fixed before 0.2.0, together with the full RFC 9110 reason-phrase table and the documentation gaps it found. A second and third round served the same definitions from Deno and from a Rabbita admin page: `Router::must` lets a router be a top-level value, the process-host shims gained `shutdown()` so SSE ends at shutdown there too, aborts after a completed response are ignored, and the README of gaato/mttp says how to use it on another runtime (a framework still on the registry `moonbitlang/async` cannot share a program with core/async; publishing an adapter for that runtime was declined, because the runtime is being replaced and this repository forbids depending on it). A fourth round served Discord interactions on workerd: the Workers entry the hosts README showed did not start, because evaluating a compiled MoonBit module draws its hash seed from `crypto.getRandomValues` and Workers refuses that in global scope (moonbitlang/core#2901, open). The Workers shim now imports the app inside the first request, `scripts/gates.sh full` runs a Workers app on workerd, and `@fetch.env_string` reads a string binding without hand-written FFI. A minimal js bundle measured about 650 KB raw (90 KB gzipped) for the client, mostly the client itself, core's number formatting and JSON parsing; with no size target and no obvious waste, nothing was changed.
 - **Waiting on outside facts**: OpenAPI 3.2 output (code generators and Redoc cannot read 3.2 yet); WebSockets (core/async's websocket lacks bounds and masking checks, X-06); HTTP/2 (core/tls has no ALPN). Backends on other runtimes (moonbitstack's moonfetch would bring HTTP/2 and 3) wait for those libraries to move off moonbitlang/async 0.22, which cannot share a program with core/async.
 
 
@@ -179,6 +179,7 @@ Every package that imports core/async lists the exact core/async packages it use
 | `trust` | native, wasm, js | `Trust { System; Insecure; PemFile(String) }`, shared by socket dialers and the cross-target backend constructor; ignored by JS fetch | moved from the root (formerly from `conn`) |
 | `conn` | native, wasm | `TcpDialer`: `Tcp::connect_to_host`, then `Tls::client(ConnIo(&Conn), host~, trust~)`, so TLS also runs inside a CONNECT tunnel. Trust comes from the `trust` package; no core type is exposed. `internal/socketconn` adapts a Tcp/Tls to `&@rt.Conn` | `mttp-net/conn`, `mttp-net/internal/socketconn` (rewritten) |
 | `server` | native, wasm | Listener: TcpServer accepts and hands each connection to `@h1server.serve_conn`. Bind and accept failures are `ListenError` | `mttp-net/server` (rewritten; tests kept) |
+| `files` | native, wasm | `static_files(root, prefix?, cache_control?, index?)`: a Handler serving a directory's regular files over core/async's `fs`, streamed in 64 KiB slices; segments starting with `.` (dot segments, hidden files) refused and real paths kept below the root's | new after the 2026-11-11 trial |
 | `backend` | native, wasm, js | One type, `AsyncBackend`: on native/wasm the h1client engine + TcpDialer + Decompress; on js `fetch` over core's js_async. `impl @mttp.Backend` | `mttp-net/backend` |
 | `codings` | native, wasm, js | Bounded ContentDecoder/ContentEncoder, coding plans, negotiation; **new** `Decompress` (Backend wrapper) and `compress` (Handler wrapper) | `mttp-net/codings` |
 | `fetch` | js | Host-neutral `fetch_handler(handler)(req, background)` | `mttp-net/fetch` |
@@ -355,6 +356,7 @@ pub fn StreamBody::new(s : &BodyStream, length? : Int64) -> StreamBody // take (
 pub(all) enum Body { Empty; Bytes(Bytes); Stream(StreamBody) }        // Eq (Stream by identity), Debug
 pub fn Body::is_replayable(self : Body) -> Bool
 pub async fn read_bounded(s : &BodyStream, limit : Int) -> Bytes raise TransportError
+pub async fn Body::read_all(self : Body, max~ : Int) -> Bytes raise TransportError  // TooLarge(limit=max); takes and closes a stream
 
 pub fn[T] AttributeKey::new(name : String) -> AttributeKey[T]          // Attributes::empty, put, get
 pub let remote_addr : AttributeKey[String]                            // set by server adapters
@@ -642,6 +644,7 @@ pub fn[T] presence(codec : JsonCodec[T]) -> JsonCodec[@jsonkit.Presence[T]]     
 
 pub fn[T] JsonCodec::body(self : JsonCodec[T]) -> BodyCodec[T]
 pub let text_body : BodyCodec[String]               // raw_bytes; (new) form_body(max_pairs?)
+pub fn[T] form_codec(codec : JsonCodec[T]) -> BodyCodec[T]   // (new) urlencoded form for an object codec: values coerced by property type
 ```
 
 - **Named children are `$ref`s.** Combinators embed a named child through `reference` and carry its definition in `defs`, so nested types keep their names and recursive types are possible. In `wf3/rev`, Team refers to User by `$ref` and Tree's `children.items` refers to Tree (SC-01).
@@ -699,6 +702,7 @@ pub fn stream_body_out(status? : Int) -> Out[(String?, @mttp.Body), @client.Buff
 pub fn[T] sse_out(codec : @schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
 pub fn[T, H, M] Out::and_header(self : Out[T, M], name : String, codec : @schema.TextCodec[H]) -> Out[(T, H), M]   // and_status, set_cookie
 pub fn[T] EventStream::from_pull(next : async () -> T?, close : () -> Unit) -> EventStream[T]       // from_array, each, each_item, next, next_item, close
+pub fn[T] EventStream::channel(coordination~ : &@rt.Coordination, capacity~ : Int = 16) -> (EventSender[T], EventStream[T])   // push producer → pull stream; send waits when full, false after the reader closes; close / fail end it
 pub(all) struct SseMeta { id : String?; event : String; retry : Int? } derive(Eq, Debug)   // SseMeta::new(id?, event?, retry?)
 pub(all) struct SseItem[T] { data : T; id : String?; event : String; retry : Int? } derive(Eq, Debug)   // SseItem::new
 pub(all) struct NoError derive(Eq, Debug)
@@ -727,6 +731,7 @@ pub let route_template : @mttp.AttributeKey[String]     // set on every dispatch
 pub fn[S, I, E, O, P, M] Endpoint::serve(self : Endpoint[S, I, E, O, M], authenticate : async (S) -> Result[P, E],
   handle : async (P, I) -> Result[O, E]) -> ServerEndpoint
 pub fn[I, E, O, M] Endpoint::serve_public(self : Endpoint[Unit, I, E, O, M], handle : async (I) -> Result[O, E]) -> ServerEndpoint
+// serve_with / serve_public_with: the handler also gets the request's @mttp.Attributes (remote_addr, background), so shared definitions stay the wire contract
 pub async fn ServerEndpoint::dispatch(self : ServerEndpoint, req : @mttp.Request, params : Map[String, String], ctx : DispatchContext) -> @mttp.Response noraise
 
 // client interpreter: relative targets, joined onto Client's base_url
@@ -817,6 +822,7 @@ pub fn default_decode_failure(ctx : @endpoint.FailureContext) -> @mttp.Response
 pub fn cors(allow_origins : Array[String]) -> Middleware
 // (new) hide_endpoints_with_auth : (FailureContext) -> Response?   — a decode_failure preset (404 instead of 401)
 // (new) request_id(), access_log(clock, sink)
+// (new) same_origin(allowed_origins?) — refuses unsafe methods from other sites by Sec-Fetch-Site, else Origin
 ```
 
 The pipeline. Credentials are checked first, a deliberate deviation from tapir (P-04, **[needs-user-input]**).
@@ -924,12 +930,14 @@ pub fn TcpDialer::new(trust? : @http_async.Trust) -> TcpDialer // impl @rt.Diale
 // server (native, wasm)
 pub(all) suberror ListenError {                              // frozen at release
   Config(@h1server.ServerConfigError)                        // limits refused before binding or on_listen
-  Bind(detail~ : String)
-  Accept(detail~ : String)
+  Bind(detail~ : String)                                     // names the address and keeps the system's reason
+  Accept(detail~ : String)                                   // keeps the runtime's reason
 } derive(Debug)
 pub async fn serve(handler : @mttp.Handler, addr~ : String, on_listen? : (String) -> Unit,
   limits? : @h1server.ServerLimits, on_error? : (@mttp.TransportError) -> Unit) -> Unit raise ListenError
 // TcpServer accepts; each connection goes to @h1server.serve_conn with scheme~="http"
+// TcpServer binds with reuse_addr=true (SO_REUSEADDR, as Go and Node): a restart binds while the old
+// connections are in TIME-WAIT. core/async ignores it on Windows, where it would allow port takeover.
 
 // backend (native, wasm, js)
 pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust~ : @http_async.Trust = System,

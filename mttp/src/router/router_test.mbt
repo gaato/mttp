@@ -184,3 +184,30 @@ test "authentication failures are opaque with a challenge" {
     )
   })
 }
+
+///|
+/// A router built in a top-level definition, as an application or a
+/// JavaScript entry writes it.
+let must_router : @router.Router = @router.Router::must([
+  @endpoint.endpoint
+  .get("/ping")
+  .output(@endpoint.text_out())
+  .serve_public(_ => Ok("pong")),
+])
+
+///|
+test "Router::must builds a checked router in a top-level definition" {
+  @driver.run_sync(() => {
+    let response = must_router.dispatch(@mttp.Request::get("/ping"))
+    assert_eq(response.status, 200)
+  })
+}
+
+///|
+test "panic Router::must aborts on a definition problem" {
+  let duplicate = @endpoint.endpoint
+    .get("/twice")
+    .output(@endpoint.text_out())
+    .serve_public(_ => Ok("x"))
+  ignore(@router.Router::must([duplicate, duplicate]))
+}

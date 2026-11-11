@@ -86,46 +86,8 @@ pub fn[T] ResponsePlan::new(
       streaming: false,
       prepare: None,
       excerpt: false,
-      read: (head, body, limit) => decode(head, read_body(body, limit)),
+      read: (head, body, limit) => decode(head, body.read_all(max=limit)),
     },
-  }
-}
-
-///|
-/// Buffers a body within the supplied byte limit and closes its stream.
-pub async fn read_body(
-  body : @mttp.Body,
-  limit : Int32,
-) -> Bytes raise @mttp.TransportError {
-  if limit < 0 {
-    if body is Stream(stream) {
-      stream.close()
-    }
-    raise @mttp.TransportError(
-      kind=Invalid,
-      phase=Body,
-      detail="negative body limit",
-    )
-  }
-  match body {
-    Empty => b""
-    Bytes(bytes) =>
-      if bytes.length() > limit {
-        raise @mttp.TransportError(
-          kind=TooLarge(limit~),
-          phase=Body,
-          detail="body exceeds limit",
-        )
-      } else {
-        bytes
-      }
-    Stream(stream) => @mttp.read_bounded(stream.take(), limit)
-    @mttp.Body::.. =>
-      raise @mttp.TransportError(
-        kind=Invalid,
-        phase=Body,
-        detail="unsupported body kind",
-      )
   }
 }
 
@@ -195,7 +157,7 @@ pub fn as_bytes() -> ResponseAs[Result[Bytes, ResponseFailure]] {
           streaming: false,
           prepare: None,
           excerpt: false,
-          read: (_, body, limit) => Ok(read_body(body, limit)),
+          read: (_, body, limit) => Ok(body.read_all(max=limit)),
         }
       }
     },
@@ -451,7 +413,7 @@ pub fn[A, T] ResponsePlan::prepared_stream(
       excerpt: false,
       read: (_, _, _) => abort("prepared reader must be prepared first"),
       prepare: Some((head, body, limit) => {
-        match decode(head, read_body(body, limit)) {
+        match decode(head, body.read_all(max=limit)) {
           Err(value) =>
             {
               streaming: false,

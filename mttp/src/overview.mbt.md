@@ -47,6 +47,16 @@ tells whether resending a non-idempotent request is safe.
 runtime implements `Backend` itself, or only the ports in `rt` and reuses the
 `h1client` engine.
 
+### On another runtime
+
+`gaato/mttp_async` is the backend for `moonbitlang/core/async`. A program on
+another runtime uses this module directly: implement `Backend` over that
+runtime's HTTP client (in a browser, `fetch`) and the `rt` ports the client
+needs (`Clock`, and `Timer` for deadlines), then pass them to `Client::new`.
+The client, typed endpoints and server-sent events work unchanged. This is
+also how to use it inside an app whose framework still runs on the registry
+`moonbitlang/async`, which cannot share a program with `moonbitlang/core/async`.
+
 ## A client in a library
 
 A library takes a `Client` and leaves the backend to its caller. In a test,
@@ -90,6 +100,10 @@ test "a library call against a test backend" {
 limits are opt-in here (`retry=`, `timeout_ms=`, `limiter=`), while
 `gaato/mttp_async`'s `client()` turns them on for apps.
 
+Every failure prints as a readable message: `"\{error}"` on a
+`TransportError`, or `failure.to_string()` on a `ResponseFailure`, summarises
+it (status, phase, cause) for logs and UIs.
+
 ## Typed endpoints
 
 One definition gives a client call, a server handler behind a router and an
@@ -132,7 +146,7 @@ clients reconnect; the endpoint layer's `sse_out` sets it.
 
 | Package | What it holds |
 |---|---|
-| `gaato/mttp` | The vocabulary: methods, headers, URLs, requests, responses and bodies, `Backend` and `SendOptions`, `TransportError`, URL, form and HTTP-date helpers |
+| `gaato/mttp` | The vocabulary: methods, headers, URLs, requests, responses and bodies, `Backend` and `SendOptions`, `TransportError`, URL, form and HTTP-date (parse and format) helpers |
 | `gaato/mttp/client` | Request and response plans with Result-valued readers, the `Client` loop (defaults, admission, deadlines, decoded-body limits, retries and the `RetryBudget`), `FollowRedirects`, `Paginator`, Retry-After and `Link` helpers |
 | `gaato/mttp/client/retry` | Retry rules and decisions as data |
 | `gaato/mttp/client/ratelimit` | Bounded window state, pacing, global quotas and header-driven admission |

@@ -58,6 +58,55 @@ responses without credentials always carry `Access-Control-Allow-Origin: *`.
 OPTIONS responses also vary on the preflight method and headers before any
 early return, so missing headers cannot prime a different preflight result.
 
+## Cross-site request forgery
+
+An app with forms and a cookie session should add `same_origin` and set its
+session cookie `SameSite=Lax` (or `Strict`). The middleware follows OWASP's
+Fetch Metadata and Origin verification, with no tokens or session state.
+GET, HEAD, OPTIONS and TRACE pass untouched, so keep them free of side
+effects. Any other method is refused with a 403 problem+json, before its
+handler runs, when the browser marks it as coming from elsewhere:
+
+| `Sec-Fetch-Site` | `Origin` | Result |
+|---|---|---|
+| `same-origin` or `none` | any | allowed |
+| `same-site`, `cross-site`, repeated or unknown | in `allowed_origins` | allowed |
+| `same-site`, `cross-site`, repeated or unknown | anything else or absent | 403 |
+| absent | absent (curl, SDKs and other non-browser clients) | allowed |
+| absent | the request's own origin, or in `allowed_origins` | allowed |
+| absent | anything else, `null` or repeated | 403 |
+
+The request's own origin is the scheme, host and port of the absolute request
+URL that `h1server` (its `scheme` and the `Host` field) and `fetch` build;
+a relative URL has none. Behind a proxy that terminates TLS that URL says
+`http`, so list the public `https` origin in `allowed_origins` for browsers
+that predate `Sec-Fetch-Site`. List other origins, such as a separate
+front-end, the same way, exactly as browsers send them; `null` never matches.
+
+```mbt check
+///|
+test "same-origin protection" {
+  let post = @endpoint.endpoint.post("/notes").serve_public(_ => Ok(()))
+  let router = @router.Router::new([post], options={
+    ..@router.ServerOptions::default(),
+    middleware: [@router.same_origin()],
+  })
+  @driver.run_sync(() => {
+    let form = @mttp.Request::post("https://notes.example/notes")
+    let forged = form.header("sec-fetch-site", "cross-site")
+    assert_eq(router.dispatch(forged).status, 403)
+    let own = form.header("sec-fetch-site", "same-origin")
+    assert_eq(router.dispatch(own).status, 200)
+  })
+  router.close()
+}
+```
+
+This protects against requests a browser sends from another site with the
+user's cookies. It does not authenticate anything: a non-browser client can
+send any header, and script injected into the app itself (XSS) runs as the
+same origin.
+
 Middleware owns resources it creates until it calls `next` with them. Each
 handler boundary then owns its incoming request body, including a replacement
 body supplied upstream. Buffered responses, short-circuits and cancellation

@@ -60,10 +60,13 @@ The listener adapter is exercised over real loopback sockets on native and
 wasm, including shutdown, streaming responses, admission, deadlines and
 background cleanup. Its immutable internal lifecycle has the same snapshot
 tests on both targets. The JS-only fetch adapter and host shims run under
-Node, outside this native line-coverage measurement; their 23 tests include
+Node, outside this native line-coverage measurement; their 31 tests include
 the 1 MiB/4 MiB boundaries, cancellation, caught input failures during response
-prefetch across every host shim, and the compiled export smoke test. The
-listener's matching post-prefetch behavior also has a real socket regression.
+prefetch across every host shim, shutdown of close-on-shutdown streams through
+the process host shims, the Workers shim's one lazy import, `env_string` on odd
+environments, and the compiled export smoke test. Node allows what Workers
+refuses, so `scripts/gates.sh workerd` (part of `full`) also runs the Workers
+example on workerd and checks its replies and logs. The listener's matching post-prefetch behavior also has a real socket regression.
 
 The consumer lifecycle regressions in `mttp/src/client/close_test.mbt` cover
 observer closure and closure during backoff, the last reply/error/selected
@@ -129,6 +132,7 @@ uncovered-line budget is needed for these additions.
 | mttp_async/src/runtime/coordination.mbt | 3 | Defensive Task::wait rethrow and non-TransportError mapping: primary/monitor raise only TransportError, primary errors are recorded before wait returns, and explicit child cancellation has its own arm. |
 | mttp_async/src/server/response.mbt | 1 | Defensive read-after-close guard of the private response lease: the engine's acquired StreamBody reader already returns EOF without delegating after closure. |
 | mttp_async/src/server/serve.mbt | 9 | Defensive shutdown handoff and failure arms: stop after capacity wakeup or during accept/register/spawn handoff, accept failure after stop, configuration refused after the same immutable limits were validated before bind, independently cancelled acceptor while Running, worker errors suppressed during cancellation cleanup, and unexpected server-task errors. Stop normally cancels and joins the acceptor as a signal; real accept failure, full-cap shutdown, late accepted socket actions and jobs started during expiry cleanup have dedicated tests. |
+| mttp_async/src/files/files.mbt | 7 | Defensive arms. The read-after-close guard of the private file body: the StreamBody reader every caller gets already ends after close without delegating. I/O failure arms on an already opened regular file: `fstat` for size and modification time failing (a 500), the file no longer being regular between the kind check and the open, and a read failing mid-body (closed, then a `Network` error in phase Body). A test cannot make the kernel fail those on a file it just opened, nor swap the path between two calls deterministically; refusals before the open and a file that shrinks mid-body are tested. |
 | mttp_async/src/runtime/timer.mbt | 1 | Defensive ordinary-error fallback of the generic timeout helper. Clock::sleep and Timer's callback are noraise, so current children cannot raise an Error; cancellation propagates independently. |
 | mttp/src/driver/driver.mbt | 1 | Defensive arm: a task suspended by something other than its Driver. No async runtime is linked, so nothing else can suspend it. |
 | mttp/src/h1client/client.mbt | 1 | Forward-compatibility arm of the `#non_exhaustive` `BodyTiming` match: every timing the module defines has its own arm. |
@@ -143,7 +147,7 @@ uncovered-line budget is needed for these additions.
 | mttp/src/multipart/multipart.mbt | 1 | Forward-compatible Body arm: a future body representation cannot be constructed in this release and is refused as an unsupported part. |
 | mttp/src/multipart/stream_body.mbt | 1 | Defensive closed-stream guard: the `StreamBody` wrapping the multipart stream returns EOF once closed, before delegating again, so this branch cannot be reached through the public body API. |
 | mttp/src/client/client.mbt | 1 | Defensive arm: `guard_retry` refuses a future `Decision` constructor, which cannot be built in this release, as `Stop(NotRetryable)`. |
-| mttp/src/client/response_as.mbt | 3 | Forward-compatible Body arms in buffering and in the diagnostic excerpt: a future body representation cannot be built in this release and is refused as `Invalid` rather than read as empty. The prepared reader's placeholder abort is unreachable because Client always replaces it by its preparation result before reading. |
+| mttp/src/client/response_as.mbt | 2 | Forward-compatible Body arm in the diagnostic excerpt: a future body representation cannot be built in this release and is refused as `Invalid` rather than read as empty (buffering is `Body::read_all` in the root package, which matches every arm). The prepared reader's placeholder abort is unreachable because Client always replaces it by its preparation result before reading. |
 | mttp/src/client/curl.mbt | 1 | Forward-compatible Body arm: a future body representation is omitted from the diagnostic without being read; every current variant has a test. |
 | mttp/src/schema/collection.mbt | 1 | Encoding precondition: encoding through a recursive codec inside its own construction body aborts, as the codec it delegates to does not exist yet; decoding there is a tested `Malformed`. |
 | mttp/src/schema/decoder.mbt | 1 | Saturation of the default step budget for an input of more than 8 388 607 JSON values, which keeps 256 steps per value from overflowing `Int`; reaching it needs a tree of that size in memory. |
@@ -154,5 +158,5 @@ uncovered-line budget is needed for these additions.
 | mttp/src/endpoint/input.mbt | 3 | BodyValue alternatives in raw_body, stream_body and buffered body finishers: dispatch supplies the representation their staged metadata requested, so the other alternatives cannot reach these built-in finishers. External custom finishers and the absence checks are covered. |
 | mttp/src/endpoint/output.mbt | 4 | A deterministic partial projection that matched cannot become None during status selection or encoding. Buffered decoding cannot select a stream-only variant because request requires Buffered, and current public body/header codecs cannot raise unknown decoder exceptions. |
 | mttp/src/endpoint/server.mbt | 3 | Forward-compatible Body arm in streaming input: a future body constructor cannot be built in this release and is rejected as Malformed rather than passed to a handler. All three current body representations are covered. |
-| mttp/src/router/router.mbt | 1 | Forward-compatible Seg arm: endpoint parsing currently constructs only Lit, Cap and Rest, all covered by routing tests. A future segment kind is refused rather than routed. |
+| mttp/src/router/router.mbt | 2 | Forward-compatible Seg arm: endpoint parsing currently constructs only Lit, Cap and Rest, all covered by routing tests. A future segment kind is refused rather than routed. The abort in `Router::must` runs only in its `panic` test, which records no coverage. |
 | mttp/src/openapi/openapi.mbt | 3 | Forward-compatible AuthScheme arm: every current authentication kind, including Signature as a parameter, is covered. Future authentication kinds are refused; they cannot be constructed in this release. Path rendering now belongs to endpoint and covers every current segment kind. |

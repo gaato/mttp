@@ -25,6 +25,13 @@ test "endpoint definition and client encoding" {
 }
 ```
 
+`text_out`, `bytes_out` and `html_out` cover plain text, opaque bytes and
+HTML pages. `html_out` takes the rendered page as a `String`: render it in the
+handler with any template engine, so a client reads back the same string.
+`html_variant` puts a page in `one_of` beside other responses, for example a
+fragment for htmx (decided by an `HX-Request` header input) and a 303 for a
+plain form post. `json_out(codec)` takes any body codec.
+
 Security inputs are decoded and authenticated before regular input failures
 are returned. Head decoding does not read the body. Buffered inputs are bounded
 by the router limit (1 MiB by default); streamed inputs count bytes while the
@@ -73,6 +80,8 @@ on. A stream closes itself at the end, on failure and on cancellation; to stop
 earlier, call `close` (a stream borrowed by `call_with` also closes when the
 callback returns). Values a handler returns from `from_pull` or `from_array`
 carry no fields of their own: on the server, `meta` decides them.
+`map` converts each event and keeps its fields; the mapped stream owns the
+original, so read and close only the mapped one.
 
 ```mbt check
 ///|
@@ -119,6 +128,52 @@ test "SSE event ids resume a stream" {
 }
 ```
 
+A producer that pushes, such as an SDK's streaming call with a callback,
+reaches `sse_out` through `EventStream::channel`: the callback sends each value
+and the handler returns the channel's stream. `send` waits while `capacity`
+values (16 by default) are queued, so a slow client slows the producer down,
+and it returns `false` once the stream is closed, for example when the client
+disconnects; return that to the SDK so that it cancels the upstream call. End
+the stream with `close` after the last value, or with `fail` when the producer
+failed, so the client sees an error instead of a complete stream. The channel
+waits through the `coordination` it is given: `@mttp_async.coordination()` in
+an app, `@sim.SimCoordination` in a test.
+In a handler, run the producer with the request's `@mttp.background`
+scheduler, which `serve_with` passes (see "Server-only values" below).
+
+```mbt check
+///|
+/// A callback API: it calls `on_text` for each piece of a reply and stops
+/// early when the callback returns false.
+async fn stream_reply(on_text : async (String) -> Bool) -> Unit {
+  for piece in ["Hel", "lo", "!"] {
+    if !on_text(piece) {
+      return
+    }
+  }
+}
+
+///|
+test "a channel turns a callback API into an event stream" {
+  @driver.run_sync(() => {
+    let coordination = @sim.SimCoordination::new(@driver.current())
+    let (sender, stream) = @endpoint.EventStream::channel(coordination~)
+    // In a handler: schedule(() => { ... }) with @mttp.background.
+    let producer = @driver.spawn(() => {
+      try stream_reply(text => sender.send(text)) catch {
+        error => sender.fail(error)
+      } noraise {
+        _ => sender.close()
+      }
+    })
+    let pieces = []
+    stream.each(text => pieces.push(text))
+    assert_eq(pieces, ["Hel", "lo", "!"])
+    assert_true(producer.wait())
+  })
+}
+```
+
 `path` captures one decoded segment. `paths` captures the final `{name...}`
 tail as an array, retaining empty segments and encoded slashes. A custom
 `Input::new` supplies its own atoms, staged decoder and inverse encoder;
@@ -129,6 +184,41 @@ requests, retaining capture placeholders for documentation. Dot-only literal
 segments are refused along with dot-only capture values, because transports
 normalize them. `media_type_token` exposes the media comparison used by body
 inputs and response matching: case-insensitive, without parameters.
+
+`body` takes any `BodyCodec`, so an HTML form posts to the same object codec
+as a JSON API through `@schema.form_codec`. Its values are validated by that
+codec, and a 400 names the same JSON pointers as the JSON endpoint would:
+
+```mbt check
+///|
+test "an HTML form and a JSON API share one codec" {
+  let note = @schema.object2(
+    "Note",
+    @schema.field("title", @schema.jstring.validate(@schema.max_length(20)), (
+      n : (String, Int32),
+    ) => n.0),
+    @schema.field("stars", @schema.jint, n => n.1),
+    (title, stars) => (title, stars),
+  )
+  let from_form = @endpoint.endpoint
+    .post("/notes")
+    .input(@endpoint.body(@schema.form_codec(note)))
+    .output(@endpoint.json_out(note.body()))
+  let server = from_form.serve_public(n => Ok(n))
+  let request = from_form.request((), ("hi", 5)).raw()
+  assert_eq(request.body, @mttp.Body::Bytes(b"title=hi&stars=5"))
+  let bad = @mttp.Request::post("/notes").body_form([
+    ("title", "hi"),
+    ("stars", "five"),
+  ])
+  @driver.run_sync(() => {
+    let ctx = @endpoint.DispatchContext::new()
+    assert_eq(server.dispatch(request, Map([]), ctx).status, 200)
+    // The problem body's issue has the path /stars.
+    assert_eq(server.dispatch(bad, Map([]), ctx).status, 400)
+  })
+}
+```
 
 `raw_body()` requires a present body without restricting its media type;
 `raw_body().optional()` accepts absence. Present zero-length bytes remain
@@ -181,3 +271,32 @@ test "each endpoint declares only its own errors" {
   assert_eq(statuses, [404])
 }
 ```
+
+## Server-only values
+
+Keep a definition that the server and its clients share to the wire contract.
+A value the server adapter supplies, such as `@mttp.remote_addr` or the
+`@mttp.background` scheduler, is not part of it: an `attribute(...)` input in
+the shared definition would also appear in the client's input type. Serve the
+endpoint with `serve_with` or `serve_public_with` instead; their handler
+receives the attributes of the request being served beside the inputs:
+
+```mbt check
+///|
+test "a handler reads server-only values without an input" {
+  let ping = @endpoint.endpoint.get("/ping").output(@endpoint.text_out())
+  let server = ping.serve_public_with((_, attributes) => {
+    Ok(attributes.get(@mttp.remote_addr).unwrap_or("unknown"))
+  })
+  let request = ping.request((), ()).raw().attribute(@mttp.remote_addr, "peer")
+  @driver.run_sync(() => {
+    let ctx = @endpoint.DispatchContext::new()
+    let response = server.dispatch(request, Map([]), ctx)
+    assert_eq(response.body.read_all(max=100), b"peer")
+  })
+}
+```
+
+`attribute(key)` remains for a value that should be an input of the
+endpoint, for example one that a custom input maps or that only a server-side
+definition uses.

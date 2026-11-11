@@ -69,6 +69,25 @@ readable messages.
 | Body size | Buffered bodies up to 64 MiB after decoding | `max_body_bytes=` |
 | TLS | The system's roots | `trust=PemFile(..)` |
 
+## With an API SDK
+
+An SDK built on `gaato/mttp` (such as `gaato/openai` or `gaato/anthropic`)
+creates its own Client with the provider's base URL, authentication and retry
+rules. Give it the I/O with `backend()`, `clock()` and `timer()`; the timer
+lets it enforce its deadlines:
+
+```mbt nocheck
+///|
+let claude = @anthropic.Anthropic::new(
+  api_key~,
+  @mttp_async.backend(),
+  @mttp_async.clock(),
+  timer=@mttp_async.timer(),
+)
+```
+
+The app's `moon.mod` lists the SDK and `gaato/mttp_async`.
+
 ## Serve
 
 `gaato/mttp_async/server` serves any `async (Request) -> Response` handler on
@@ -79,11 +98,37 @@ shutdown:
 @server.serve(request => @mttp_async.Response::new(200), addr="127.0.0.1:8080")
 ```
 
+A request body arrives as a stream. `Body::read_all(max~)` reads it into
+memory and refuses more than `max` bytes:
+
+```mbt check
+///|
+/// Echoes a request body of up to 64 KiB; a larger one gets 413.
+pub async fn echo(
+  request : @mttp_async.Request,
+) -> @mttp_async.Response noraise {
+  let body = request.body.read_all(max=65536) catch {
+    TransportError(kind=TooLarge(..), ..) =>
+      return @mttp_async.Response::new(413)
+    _ => return @mttp_async.Response::new(400)
+  }
+  @mttp_async.Response::new(200, body=Bytes(body))
+}
+```
+
+The server binds with `SO_REUSEADDR`, as Go's and Node's servers do, so a
+restarted process can listen again while the old one's connections wait out
+TIME-WAIT. It does not let two running servers share a port.
+
 For typed endpoints with request validation and an OpenAPI document, define
 them with `gaato/mttp`'s `endpoint` and `router` packages (add `gaato/mttp`
-to the app as well) and serve `router.handler()`. On JavaScript hosts,
-`gaato/mttp_async/fetch` turns the same handler into a `fetch` export for
-Cloudflare Workers, Deno, Bun, Node, Fastly, Vercel and AWS Lambda.
+to the app as well) and serve `router.handler()`. An app with forms and a
+cookie session adds the router's `same_origin` middleware, which refuses
+state-changing requests from other sites, and sets its cookies `SameSite`.
+On JavaScript hosts, `gaato/mttp_async/fetch` turns the same handler into a
+`fetch` export for Cloudflare Workers, Deno, Bun, Node, Fastly, Vercel and AWS
+Lambda. `gaato/mttp_async/files` serves a directory's files, such as
+stylesheets and scripts, as one more handler, alone or behind a Router's 404s.
 
 ## Tests and concurrency
 
@@ -112,9 +157,10 @@ runtime here; use `gaato/mttp` there and provide its runtime ports.
 
 | Package | Targets | Purpose |
 |---|---|---|
-| `gaato/mttp_async` | native, wasm, js | `run`, `client()`, and re-exports of the types and client functions an app uses |
+| `gaato/mttp_async` | native, wasm, js | `run`, `client()`, `backend()`, `clock()`, `timer()`, and re-exports of the types and client functions an app uses |
 | `backend` | native, wasm, js | `AsyncBackend`: the HTTP/1.1 engine over TCP and TLS with decompression; the host's `fetch` on js |
 | `server` | native, wasm | `serve`: bounded listener, graceful shutdown, background work |
+| `files` | native, wasm | `static_files`: a directory's files for GET and HEAD, streamed, with ETag revalidation and paths kept inside the directory |
 | `fetch`, `hosts` | js | `fetch_handler` and the host shims |
 | `runtime` | native, wasm, js | Clocks, timers, an admission gate and coordination for `gaato/mttp`'s runtime ports |
 | `codings` | native, wasm, js | Bounded content codecs, `Decompress` for clients and `compress` for handlers |

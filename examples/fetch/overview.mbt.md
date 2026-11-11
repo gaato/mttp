@@ -14,3 +14,21 @@ Pass the exported functions to the shims in `mttp_async/hosts` for the selected 
 The fetch package's Node tests import the built artifact and check the actual
 exports and Web Request roundtrip. Build this module before running those
 tests directly; the full gate builds the examples automatically.
+
+## Cloudflare Workers
+
+`workers/` is a Workers app: a Map built at module level, a JSON reply with a
+`vars` binding read by `@fetch.env_string`, and a note stored by background
+work that `waitUntil` keeps alive. `entry.js` hands the shim a loader,
+`workers(() => import(...))`, because evaluating the compiled module draws a
+random hash seed, which Workers refuses in global scope. Run it on workerd
+with the wrangler that `package-lock.json` pins:
+
+```sh
+scripts/gates.sh workerd
+```
+
+That builds the module, runs `npm ci` in `workers/` and then `check.mjs`,
+which starts `wrangler dev`, checks the replies and fails on any error or
+warning wrangler or workerd logs. `scripts/gates.sh full` and CI run it too.
+For a deployment, run `npx wrangler deploy` in `workers/` after the build.

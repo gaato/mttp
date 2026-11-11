@@ -67,7 +67,7 @@ test "middleware transfers taken response streams into lazy wrappers" {
     @driver.run_sync(() => {
       let response = router.dispatch(@mttp.Request::get("/"))
       assert_eq(closes.val, if next_again { 1 } else { 0 })
-      assert_eq(@client.read_body(response.body, 32), b"body")
+      assert_eq(response.body.read_all(max=32), b"body")
       response.close()
       assert_eq(closes.val, if next_again { 2 } else { 1 })
     })
@@ -109,7 +109,7 @@ test "middleware response read failures close both response and original request
       body: tracked(input),
     })
     let failed = try {
-      ignore(@client.read_body(response.body, 32))
+      ignore(response.body.read_all(max=32))
       false
     } catch {
       _ => true
@@ -137,7 +137,7 @@ test "middleware keeps lazy request echoes alive and closes replaced responses" 
       body: tracked(closes),
     })
     assert_eq(closes.val, 0)
-    assert_eq(@client.read_body(response.body, 32), b"body")
+    assert_eq(response.body.read_all(max=32), b"body")
     response.close()
     assert_eq(closes.val, 1)
   })

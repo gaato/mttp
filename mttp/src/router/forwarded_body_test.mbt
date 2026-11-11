@@ -105,9 +105,9 @@ test "lazy replacement request echoes remain live through EOF close and read fai
       })
       assert_eq(forwarded.val, 0)
       if finish == "eof" {
-        assert_eq(@client.read_body(response.body, 10), b"body")
+        assert_eq(response.body.read_all(max=10), b"body")
       } else if finish == "failure" {
-        try ignore(@client.read_body(response.body, 10)) catch {
+        try ignore(response.body.read_all(max=10)) catch {
           @mttp.TransportError(_) => ()
         } noraise {
           _ => fail("expected read failure")
@@ -134,7 +134,7 @@ test "custom streamed rejections retain a forwarded request until the response c
   @driver.run_sync(() => {
     let response = router.dispatch(@mttp.Request::post("/missing"))
     assert_eq(closes.val, 0)
-    assert_eq(@client.read_body(response.body, 10), b"body")
+    assert_eq(response.body.read_all(max=10), b"body")
     assert_eq(closes.val, 1)
   })
 }

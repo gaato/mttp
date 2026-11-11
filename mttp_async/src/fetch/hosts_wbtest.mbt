@@ -17,10 +17,10 @@ extern "js" fn check_hosts() -> @js_async.Promise[Unit] =
   #|     return Promise.resolve(new Response('ok'));
   #|   };
   #|   const events = [], env = {binding: 'yes'};
-  #|   const worker = workers(fetch);
+  #|   const worker = workers(() => ({fetch_with_env: fetch}));
   #|   const response = worker.fetch(request, env, {waitUntil(p) { events.push('wait'); check(p === background, 'worker aggregate identity'); }});
-  #|   check(events.join() === 'wait' && envSeen === env, 'worker synchronous registration/environment');
   #|   check(await (await response).text() === 'ok', 'worker response');
+  #|   check(events.join() === 'wait' && envSeen === env, 'worker registration/environment');
   #|   events.length = 0;
   #|   fastly(fetch)({request, waitUntil(p) {events.push('wait'); check(p === background, 'fastly aggregate');},
   #|     respondWith(p) {events.push('respond'); p.then(r => r.body.cancel());}});
@@ -30,6 +30,7 @@ extern "js" fn check_hosts() -> @js_async.Promise[Unit] =
   #|   check(vercelRegistered, 'Vercel registration');
   #|   for (const make of [deno, bun, node]) {
   #|     const app = make(fetch);
+  #|     check(['fetch', 'whenIdle', 'shutdown'].every(name => typeof app[name] === 'function'), 'process tracker shape');
   #|     await (await app.fetch(request)).body.cancel();
   #|     app.whenIdle().then(() => {settled = true;});
   #|     await Promise.resolve();
@@ -162,7 +163,7 @@ extern "js" fn check_prefetch_hosts(
   #|       const response = await promise;
   #|       if (response.status !== expected || await response.text() !== '') throw new Error('shim lost prefetch input failure');
   #|     };
-  #|     await check(workers((req, bg, _env) => adapter(req, bg)).fetch(request(), {}, {waitUntil: register}));
+  #|     await check(workers(() => ({fetch_with_env: (req, bg, _env) => adapter(req, bg)})).fetch(request(), {}, {waitUntil: register}));
   #|     let result;
   #|     fastly(adapter)({request: request(), waitUntil: register, respondWith(p) { result = p; }});
   #|     await check(result);
@@ -205,4 +206,60 @@ async test "all host shims preserve caught prefetch input failures" {
       assert_eq(source.closes, 1)
     }
   }
+}
+
+///|
+extern "js" fn check_workers_loader() -> @js_async.Promise[Unit] =
+  #| async () => {
+  #|   const {resolve} = await import('node:path');
+  #|   const {pathToFileURL} = await import('node:url');
+  #|   const {existsSync} = await import('node:fs');
+  #|   const root = existsSync(resolve('hosts/adapters.mjs')) ? resolve('hosts') : resolve('mttp_async/hosts');
+  #|   const {workers} = await import(pathToFileURL(resolve(root, 'adapters.mjs')).href);
+  #|   const check = (condition, message) => { if (!condition) throw new Error(message); };
+  #|   const request = () => new Request('https://example.test/');
+  #|   let loads = 0, release;
+  #|   const gate = new Promise(resolve => { release = resolve; });
+  #|   const registered = [];
+  #|   const app = {fetch_with_env(req, schedule, env) {
+  #|     const background = Promise.resolve(env.id);
+  #|     schedule(background);
+  #|     return Promise.resolve(new Response(String(env.id)));
+  #|   }};
+  #|   const worker = workers(() => { ++loads; return gate.then(() => app); });
+  #|   check(loads === 0, 'workers imported the application before a request');
+  #|   const context = id => ({waitUntil(p) { registered.push(id); }});
+  #|   const first = worker.fetch(request(), {id: 1}, context(1));
+  #|   const second = worker.fetch(request(), {id: 2}, context(2));
+  #|   await Promise.resolve();
+  #|   check(loads === 1, 'concurrent requests share one import');
+  #|   check(registered.length === 0, 'registered before the application was loaded');
+  #|   release();
+  #|   check(await (await first).text() === '1' && await (await second).text() === '2', 'lazy worker responses');
+  #|   check(registered.join() === '1,2', 'each request registers its background once');
+  #|   await (await worker.fetch(request(), {id: 3}, context(3))).text();
+  #|   check(loads === 1 && registered.join() === '1,2,3', 'later requests reuse the import');
+  #|   const failure = new Error('boom');
+  #|   let failedLoads = 0;
+  #|   const broken = workers(() => { ++failedLoads; return Promise.reject(failure); });
+  #|   for (let i = 0; i < 2; ++i) {
+  #|     let error;
+  #|     try { await broken.fetch(request(), {}, context(0)); } catch (e) { error = e; }
+  #|     check(error instanceof Error && error.cause === failure && error.message.includes('importing the application failed') && error.message.includes('boom'), 'import failure is named, with its cause');
+  #|   }
+  #|   check(failedLoads === 1, 'a failed import is not retried');
+  #|   let thrown;
+  #|   try { await workers(() => { throw failure; }).fetch(request(), {}, context(0)); } catch (e) { thrown = e; }
+  #|   check(thrown?.cause === failure, 'a loader that throws rejects the request');
+  #|   let missing;
+  #|   try { await workers(() => ({fetch: app.fetch_with_env})).fetch(request(), {}, context(0)); } catch (e) { missing = e; }
+  #|   check(missing instanceof TypeError && missing.message.includes('fetch_with_env'), 'missing export');
+  #|   let eager;
+  #|   try { workers(app); } catch (e) { eager = e; }
+  #|   check(eager instanceof TypeError, 'a module instead of a loader is refused when the entry is built');
+  #| }
+
+///|
+async test "the Workers shim imports the application inside the first request, once" {
+  check_workers_loader().wait()
 }

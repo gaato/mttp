@@ -5,6 +5,7 @@ import {
   "gaato/mttp",
   "gaato/mttp/client",
   "gaato/mttp/h1client",
+  "gaato/mttp/rt",
   "gaato/mttp/sse",
   "gaato/mttp_async/trust",
   "moonbitlang/core/json",
@@ -23,7 +24,13 @@ pub fn as_sse(async (@sse.SseEvent) -> Unit, max_event_bytes? : Int32, stop? : (
 
 pub fn as_string() -> @client.ResponsePlan[Result[String, @client.ResponseFailure], @client.Buffered]
 
+pub fn backend(redirect? : @client.RedirectConfig, trust? : @trust.Trust, config? : @h1client.ClientConfig) -> &@mttp.Backend
+
 pub fn client(base_url? : String, headers? : @mttp.Headers, timeout_ms? : Int32, total_ms? : Int32, max_body_bytes? : Int32, retry? : @client.RetryPolicy, retry_budget? : @client.RetryBudget, redirect? : @client.RedirectConfig, limiter? : &@client.RateLimiter, trust? : @trust.Trust, config? : @h1client.ClientConfig) -> @client.Client
+
+pub fn clock() -> &@rt.Clock
+
+pub fn coordination() -> &@rt.Coordination
 
 pub fn get(String) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
 
@@ -32,6 +39,8 @@ pub fn post(String) -> @client.RequestPlan[Result[String, @client.ResponseFailur
 pub fn request(@mttp.Request) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
 
 pub fn run(async () -> Unit) -> Unit
+
+pub fn timer() -> &@rt.Timer
 
 // Errors
 

@@ -463,7 +463,7 @@ test "dynamic media and streamed bodies overlay explicit statuses without bodyle
         assert_eq(source.reads(), 0)
       } else {
         assert_eq(
-          @driver.run_sync(() => @client.read_body(response.body, 100)),
+          @driver.run_sync(() => response.body.read_all(max=100)),
           b"payload",
         )
         assert_eq(
@@ -610,7 +610,7 @@ test "dynamic SSE status projects wire schemas and closes suppressed streams" {
     } else {
       assert_eq(response.headers.get("content-type"), Some("text/event-stream"))
       assert_eq(
-        @driver.run_sync(() => @client.read_body(response.body, 100)),
+        @driver.run_sync(() => response.body.read_all(max=100)),
         b"data: 7\n\n",
       )
       assert_eq(

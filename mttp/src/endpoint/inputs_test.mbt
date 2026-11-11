@@ -331,6 +331,6 @@ test "custom staged encoders can supply captures query pairs and body bytes" {
     let stream = @sim.Feed::bytes(driver, [b"body"])
     let endpoint = @endpoint.endpoint.post("/").input(@endpoint.stream_body())
     let request = endpoint.request((), stream).raw()
-    assert_eq(@client.read_body(request.body, 10), b"body")
+    assert_eq(request.body.read_all(max=10), b"body")
   })
 }

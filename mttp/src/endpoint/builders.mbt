@@ -59,6 +59,24 @@ pub fn text_out(status~ : Int32 = 200) -> Out[String, @client.Buffered] {
 }
 
 ///|
+/// A rendered HTML page (`text/html; charset=utf-8`). Render the page in the
+/// handler with any template engine and return the string; a client reads it
+/// back as the same string. For an error page, pass it to `errors` with its
+/// status, as in `html_out(status=404)`; for several statuses, use
+/// `html_variant` in `one_of`.
+pub fn html_out(status~ : Int32 = 200) -> Out[String, @client.Buffered] {
+  json_out(@schema.html_body, status~)
+}
+
+///|
+/// An HTML page as one variant of `one_of`, for an endpoint that answers
+/// with a page or with something else, such as a page for htmx and a 303
+/// redirect without it, or an error page per status.
+pub fn html_variant(status : Int32, description? : String) -> Variant[String] {
+  json_variant(status, @schema.html_body, description?)
+}
+
+///|
 /// An opaque application/octet-stream response.
 pub fn bytes_out(status~ : Int32 = 200) -> Out[Bytes, @client.Buffered] {
   json_out(@schema.raw_bytes, status~)

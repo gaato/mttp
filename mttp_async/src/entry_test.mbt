@@ -83,3 +83,54 @@ async test "client() follows a redirect and turns retries off on request" {
     },
   )
 }
+
+///|
+async test "backend(), clock() and timer() give a hand-built Client a total deadline" {
+  with_local_server(
+    request => {
+      if request.url.has_suffix("/slow") {
+        @async.sleep(2000)
+      }
+      @mttp.Response::new(200, body=Bytes(b"ok"))
+    },
+    address => {
+      let api = @client.Client::new(
+        @mttp_async.backend(),
+        @mttp_async.clock(),
+        timer=@mttp_async.timer(),
+        base_url="http://\{address}",
+        total_ms=200,
+        retry=@client.RetryPolicy::none(),
+      )
+      defer api.close()
+      let fast = api.send(@mttp_async.get("/fast"))
+      assert_eq(fast.body, Ok("ok"))
+      let kind = try {
+        ignore(api.send(@mttp_async.get("/slow")))
+        None
+      } catch {
+        @mttp.TransportError(kind~, ..) => Some(kind)
+        _ => None
+      }
+      assert_true(kind is Some(Timeout(..)))
+    },
+  )
+}
+
+///|
+async test "coordination() lets an EventStream channel wait on the event loop" {
+  let (sender, stream) = @endpoint.EventStream::channel(
+    coordination=@mttp_async.coordination(),
+    capacity=1,
+  )
+  @async.with_task_group(group => {
+    group.spawn_bg(() => {
+      assert_true(sender.send(1))
+      assert_true(sender.send(2))
+      sender.close()
+    })
+    assert_eq(stream.next(), Some(1))
+    assert_eq(stream.next(), Some(2))
+    assert_eq(stream.next(), None)
+  })
+}

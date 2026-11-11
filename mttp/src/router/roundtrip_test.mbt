@@ -257,3 +257,129 @@ test "dynamic response status media type and separate cookies round trip" {
   assert_eq(doc.header_schemas["set-cookie"].json, { "type": "string" })
   client.close()
 }
+
+///|
+/// A push-style upstream, like an SDK's streaming call: it calls `on_token`
+/// for each token and stops early when the callback returns false.
+async fn push_tokens(
+  on_token : async (Int32) -> Bool,
+  stopped : Ref[String],
+  fail_after? : Int32,
+) -> Unit {
+  for i = 1; ; i = i + 1 {
+    if fail_after is Some(n) && i > n {
+      raise Failure("upstream failed")
+    }
+    if !on_token(i) {
+      stopped.val = "cancelled after \{i}"
+      return
+    }
+  }
+}
+
+///|
+test "a channel bridges a push producer to SSE and a client's early stop reaches it" {
+  let ep = @endpoint.endpoint
+    .get("/tokens")
+    .output(@endpoint.sse_out(@schema.jint))
+  let stopped = Ref("running")
+  let router = @router.Router::new([
+    ep.serve_public_with((_, attributes) => {
+      let coordination = @sim.SimCoordination::new(@driver.current())
+      let (sender, stream) = @endpoint.EventStream::channel(
+        coordination~,
+        capacity=1,
+      )
+      guard attributes.get(@mttp.background) is Some(schedule) else {
+        return Ok(@endpoint.EventStream::from_array([]))
+      }
+      schedule(() => {
+        try push_tokens(token => sender.send(token), stopped) catch {
+          error => sender.fail(error)
+        } noraise {
+          _ => sender.close()
+        }
+      })
+      Ok(stream)
+    }),
+  ])
+  @driver.run_sync(() => {
+    let driver = @driver.current()
+    let tasks = []
+    let backend = @client.from_handler(request => {
+      // What a server adapter sets: a scheduler for work beyond the handler.
+      router.dispatch(
+        request.attribute(@mttp.background, work => {
+          tasks.push(driver.spawn(work))
+        }),
+      )
+    })
+    let client = @client.Client::new(backend, @sim.FakeClock::new())
+    let read = ep
+      .call_with(client, (), (), tokens => {
+        let read = [tokens.next().unwrap(), tokens.next().unwrap()]
+        // The producer fills the channel and waits for room.
+        @driver.pause()
+        assert_true(tasks[0].is_parked())
+        assert_eq(stopped.val, "running")
+        read
+      })
+      .unwrap()
+      .unwrap()
+    assert_eq(read, [1, 2])
+    for task in tasks {
+      assert_true(task.wait())
+    }
+    // The producer's send returned false once the client stopped reading.
+    assert_true(stopped.val.has_prefix("cancelled after "))
+    client.close()
+  })
+}
+
+///|
+test "a producer failure through a channel reaches the SSE client as an error" {
+  let ep = @endpoint.endpoint
+    .get("/tokens")
+    .output(@endpoint.sse_out(@schema.jint))
+  let stopped = Ref("running")
+  let router = @router.Router::new([
+    ep.serve_public(_ => {
+      let driver = @driver.current()
+      let coordination = @sim.SimCoordination::new(driver)
+      let (sender, stream) = @endpoint.EventStream::channel(coordination~)
+      ignore(
+        driver.spawn(() => {
+          try
+            push_tokens(token => sender.send(token), stopped, fail_after=2)
+          catch {
+            error => sender.fail(error)
+          } noraise {
+            _ => sender.close()
+          }
+        }),
+      )
+      Ok(stream)
+    }),
+  ])
+  let client = @client.Client::new(router, @sim.FakeClock::new())
+  @driver.run_sync(() => {
+    let read = []
+    let outcome = try {
+      ep
+      .call_with(client, (), (), tokens => tokens.each(n => read.push(n)))
+      .unwrap()
+      .unwrap()
+      "finished"
+    } catch {
+      error => error.to_string()
+    }
+    inspect(
+      outcome,
+      content=(
+        #|Protocol during Body: event source failed
+      ),
+    )
+    assert_eq(read, [1, 2])
+  })
+  client.close()
+}
