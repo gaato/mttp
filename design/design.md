@@ -729,6 +729,7 @@ pub(all) struct FailureContext { request : @mttp.Request; endpoint : EndpointDoc
 pub(all) struct DispatchContext { max_body_bytes : Int; max_issues : Int
   decode_failure : (FailureContext) -> @mttp.Response; unhandled : (@mttp.Request, Error) -> @mttp.Response }
 pub let route_template : @mttp.AttributeKey[String]     // set on every dispatched response
+pub let declared_headers : @mttp.AttributeKey[Array[String]]   // the encoded variant's declared header names; cors exposes them
 pub fn[S, I, E, O, P, M] Endpoint::serve(self : Endpoint[S, I, E, O, M], authenticate : async (S) -> Result[P, E],
   handle : async (P, I) -> Result[O, E]) -> ServerEndpoint
 pub fn[I, E, O, M] Endpoint::serve_public(self : Endpoint[Unit, I, E, O, M], handle : async (I) -> Result[O, E]) -> ServerEndpoint
@@ -820,7 +821,7 @@ pub fn Router::docs(self : Router) -> Array[@endpoint.EndpointDoc]
 pub impl @mttp.Backend for Router
 pub fn problem(status : Int, title : String, errors? : Json) -> @mttp.Response    // RFC 9457 problem+json
 pub fn default_decode_failure(ctx : @endpoint.FailureContext) -> @mttp.Response
-pub fn cors(allow_origins : Array[String]) -> Middleware
+pub fn cors(allow_origins : Array[String], allow_credentials~ : Bool = false, expose_headers~ : Array[String] = []) -> Middleware  // also exposes declared_headers
 // (new) hide_endpoints_with_auth : (FailureContext) -> Response?   — a decode_failure preset (404 instead of 401)
 // (new) request_id(), access_log(clock, sink)
 // (new) same_origin(allowed_origins?) — refuses unsafe methods from other sites by Sec-Fetch-Site, else Origin

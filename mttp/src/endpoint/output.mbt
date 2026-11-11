@@ -285,6 +285,15 @@ pub fn[T, M] Out::docs(self : Out[T, M]) -> Array[VariantDoc] {
 }
 
 ///|
+/// Set on a response by the endpoint that encoded it: the names of the
+/// response headers its chosen variant declares (`and_header`,
+/// `fixed_header`), in declaration order. `@router.cors` exposes them to
+/// other origins, so a typed client there can read them.
+pub let declared_headers : @mttp.AttributeKey[Array[String]] = @mttp.AttributeKey::new(
+  "declared_headers",
+)
+
+///|
 fn[T, M] Out::encode(self : Out[T, M], v : T) -> @mttp.Response? {
   for variant in self.variants {
     if (variant.matches)(v) {
@@ -302,7 +311,12 @@ fn[T, M] Out::encode(self : Out[T, M], v : T) -> @mttp.Response? {
       } else {
         @mttp.Response::new(status, headers~, body~)
       }
-      return Some({ ..response, attributes: variant.attributes, })
+      let attributes = if variant.headers.is_empty() {
+        variant.attributes
+      } else {
+        variant.attributes.put(declared_headers, variant.headers.copy())
+      }
+      return Some({ ..response, attributes, })
     }
   }
   None

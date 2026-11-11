@@ -131,6 +131,12 @@ never does.
   once the reader closed the stream (a client disconnected), so the producer
   can cancel its upstream call; `fail` ends the stream with an error, so a
   client does not take a failed producer's output for a complete stream.
+- `cors` takes `expose_headers` and, for an allowed origin, also exposes the
+  response headers the answering endpoint declares, which it reads from the
+  new `endpoint.declared_headers` response attribute. A browser on another
+  origin could not read a declared `ETag` before, so mttp's typed client there
+  failed with "missing header" even on success. CORS-safelisted headers are
+  left out, and preflight responses expose nothing.
 
 ## [0.1.0] - 2026-11-10
 

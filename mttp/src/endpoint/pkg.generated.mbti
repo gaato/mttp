@@ -34,6 +34,8 @@ pub fn client_ip(trust_forwarded? : Bool) -> Input[String?]
 
 pub fn[T] cookie(String, @schema.TextCodec[T]) -> Input[T]
 
+pub let declared_headers : @mttp.AttributeKey[Array[String]]
+
 pub fn empty_variant(Int32, description? : String) -> Variant[Unit]
 
 pub fn encoded_path_template(String) -> String
