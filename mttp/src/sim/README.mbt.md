@@ -1,7 +1,7 @@
-# gaato/http/sim
+# gaato/mttp/sim
 
-In-memory implementations of the `gaato/http/rt` ports, on the deterministic
-driver (`gaato/http/driver`), and the contract checks that every
+In-memory implementations of the `gaato/mttp/rt` ports, on the deterministic
+driver (`gaato/mttp/driver`), and the contract checks that every
 implementation of the ports passes. With them, code written against the ports
 (the connection engines, the mttp client, an SDK) is tested with plain `test`
 blocks on wasm-gc, wasm, js and native, without sockets or an event loop.

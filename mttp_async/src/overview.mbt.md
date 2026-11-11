@@ -1,71 +1,101 @@
 # gaato/mttp_async
 
-Runtime adapters for [`gaato/http`](https://mooncakes.io/docs/gaato/http) on
-`moonbitlang/core/async`: TCP and TLS connections, a client backend, a server
-listener, content codings (gzip, deflate, br, zstd) and a fetch backend for
-JavaScript hosts. The runtime adapters are implemented: `runtime`, `codings`
-and `backend` build on native, wasm and js; `conn` and `server` on native and
-wasm; `fetch` and the host shims on js. The examples cover a bounded GET,
-a keep-alive HTTP/1 listener and real exported fetch functions.
+HTTP for MoonBit apps that need more than the standard library's client: an
+API client with retries under a budget, deadlines, redirects, decompression
+and typed failures, plus an HTTP/1.1 server, on `moonbitlang/core/async` for
+native, wasm and js. It is the one module an app adds.
 
-| Package | Targets | Purpose |
-|---|---|---|
-| root | native, wasm, js | Portable `Trust` policy for socket dialers and backends |
-| `backend` | native, wasm, js | `AsyncBackend`: HTTP/1 + Decompress on sockets; host fetch on JS |
-| `runtime`, `codings` | native, wasm, js | Runtime ports and content-coding wrappers |
-| `conn` | native, wasm | TCP and TLS over the portable connection trait |
-| `server` | native, wasm | Bounded TCP listener, graceful shutdown and background ownership |
-| `fetch`, `hosts` | js | Streaming Web Request handlers; Workers, Fastly, Vercel, Node, Deno, Bun and Lambda shims |
-
-`gaato/mttp_async/backend.AsyncBackend::new()` performs one request at a
-time per call and returns a response owned by the caller. Native/wasm use
-the HTTP/1 engine with automatic decoding unless the request supplies its
-own `Accept-Encoding`. With no config, proxies come from the process
-environment; an explicit `ClientConfig` supplies the complete configuration.
-On JS only its `max_body_bytes` applies: fetch controls proxies, connection
-pooling, header limits, trust and content decoding. Socket `Trust` lives in
-this root package so the constructor is identical across targets.
-Optional `clock` and `timer` ports drive socket pool expiry and phase timers,
-and fetch upload/head/body deadlines. The defaults are `AsyncClock` and a
-`ClockTimer` on the chosen clock; passing only `clock` controls both.
-
-`gaato/mttp_async/runtime` supplies clocks, timers, a FIFO admission gate and
-structured coordination through the portable `gaato/http/rt` traits. Its
-`VirtualClock` lets runtime tests advance deadlines manually.
-`gaato/mttp_async/conn` dials TCP and upgrades any portable connection to
-TLS, including CONNECT tunnels. `gaato/mttp_async/codings` provides bounded
-codecs, `Decompress` for backends and `compress` for handlers. Neither the
-connection engines nor these adapters follow redirects or retry requests.
-
-`gaato/mttp_async/server.serve(handler, addr~)` accepts at most 256 connections
-by default and drains active responses and background jobs on cancellation.
-`ListenError` distinguishes configuration, bind and accept failures; connection
-failures reach `on_error` as `http.TransportError`. Supply
-`codings.compress(handler)` when serving compressed content.
-`gaato/mttp_async/fetch.fetch_handler(handler)` adapts Web Request/Response
-with a 1 MiB request ceiling, 64 KiB delivered chunks, abort cancellation and
-synchronous aggregate background registration. The host shims in `hosts/`
-adapt the platform's environment and background lifetime; Lambda buffers
-bounded output and preserves absent bodies as `Body::Empty`.
-
-Wasm here means wasm1 under moonrun. wasm-gc applications use `gaato/http`
-and provide their own runtime ports; this module does not build on wasm-gc.
-Applications importing both HTTP roots should give
-`moonbitlang/core/async/http` an explicit alias such as `@corehttp` to avoid
-colliding with the `@http` alias of `gaato/http`.
-
-`moonbitlang/core/async` is an experimental part of the standard library. A
-package that imports it lists it in its `moon.pkg`:
-
-```
-options("allow-experimental-packages": ["moonbitlang/core/async"])
-```
+Writing a library, such as an SDK for some API? Depend on
+[`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) instead: it has the same
+types and client without any I/O, so it builds on every target and the app
+chooses how requests are sent.
 
 ## Install
 
 ```sh
 moon add gaato/mttp_async
 ```
+
+## Call an API
+
+```mbt check
+///|
+/// Fetches a user and prints it, or the status that stopped it.
+pub async fn print_user(id : Int32) -> Unit {
+  let api = @mttp_async.client(base_url="https://api.example.com")
+  defer api.close()
+  let reply = api.send(
+    @mttp_async.get("/users/\{id}").response(@mttp_async.as_json_value()),
+  )
+  match reply.body {
+    Ok(user) => println(user.stringify())
+    Err(_) => println("HTTP \{reply.status}")
+  }
+}
+```
+
+Start it from `fn main` with `run`; the app imports neither
+`moonbitlang/core/async` nor its experimental opt-in:
+
+```mbt nocheck
+///|
+fn main {
+  @mttp_async.run(async fn() { print_user(1) })
+}
+```
+
+`get`, `post` and `request` build a request; `as_json`, `as_json_value`,
+`as_string`, `as_bytes`, `as_lines` and `as_sse` say how to read the reply.
+An HTTP failure, such as a 404 or a body that does not decode, is a value in
+`reply.body`; a network failure is raised as a `TransportError` that says in
+which phase it happened and whether the request was sent.
+
+## What `client()` does by default
+
+| | Default | Change it with |
+|---|---|---|
+| Retries | Up to two, for idempotent requests on 408, 409, 429, 5xx and network failures, and for any request that was never sent; `Retry-After` is honoured, backoff is exponential with jitter | `retry=RetryPolicy::none()` or another policy |
+| Retry budget | Retries stay within 20 % of the requests of the last 10 s, plus 10 per second, so a failing server is not flooded | `retry_budget=RetryBudget::new(..)` or `RetryBudget::unlimited()` |
+| Deadlines | 30 s per attempt, 120 s for the whole call, retries included | `timeout_ms=`, `total_ms=` |
+| Redirects | Up to 10 hops, never from HTTPS to HTTP, credentials dropped across origins | `redirect=`, or `.follow_redirects(false)` on a request |
+| Decompression | gzip, deflate, br and zstd | per request, by setting `Accept-Encoding` |
+| Body size | Buffered bodies up to 64 MiB after decoding | `max_body_bytes=` |
+| TLS | The system's roots | `trust=PemFile(..)` |
+
+## Serve
+
+`gaato/mttp_async/server` serves any `async (Request) -> Response` handler on
+native and wasm, with bounded connections, headers and bodies and a graceful
+shutdown:
+
+```mbt nocheck
+@server.serve(request => @mttp_async.Response::new(200), addr="127.0.0.1:8080")
+```
+
+For typed endpoints with request validation and an OpenAPI document, define
+them with `gaato/mttp`'s `endpoint` and `router` packages (add `gaato/mttp`
+to the app as well) and serve `router.handler()`. On JavaScript hosts,
+`gaato/mttp_async/fetch` turns the same handler into a `fetch` export for
+Cloudflare Workers, Deno, Bun, Node, Fastly, Vercel and AWS Lambda.
+
+## Targets
+
+native, wasm (under moonrun) and js. On js the client uses the host's `fetch`,
+which decides proxies, pooling and decompression itself. wasm-gc has no
+runtime here; use `gaato/mttp` there and provide its runtime ports.
+
+## Packages
+
+| Package | Targets | Purpose |
+|---|---|---|
+| `gaato/mttp_async` | native, wasm, js | `run`, `client()`, and re-exports of the types and client functions an app uses |
+| `backend` | native, wasm, js | `AsyncBackend`: the HTTP/1.1 engine over TCP and TLS with decompression; the host's `fetch` on js |
+| `server` | native, wasm | `serve`: bounded listener, graceful shutdown, background work |
+| `fetch`, `hosts` | js | `fetch_handler` and the host shims |
+| `runtime` | native, wasm, js | Clocks, timers, an admission gate and coordination for `gaato/mttp`'s runtime ports |
+| `codings` | native, wasm, js | Bounded content codecs, `Decompress` for clients and `compress` for handlers |
+| `conn` | native, wasm | TCP and TLS dialing, including CONNECT tunnels |
+| `trust` | native, wasm, js | `Trust`: which TLS roots a socket backend accepts |
 
 ## License
 

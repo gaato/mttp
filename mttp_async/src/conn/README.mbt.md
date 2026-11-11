@@ -1,6 +1,6 @@
 # TCP and TLS connections
 
-`TcpDialer` implements `gaato/http/rt.Dialer` on core/async for native and
+`TcpDialer` implements `gaato/mttp/rt.Dialer` on core/async for native and
 wasm1 under moonrun. It connects with TCP and can upgrade **any** `&Conn` to
 TLS, including a connection handed off by an HTTP CONNECT tunnel. Each TLS
 bridge owns its binary reader/writer controllers so nested connections do

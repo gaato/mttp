@@ -1,9 +1,9 @@
-# gaato/http/h1client
+# gaato/mttp/h1client
 
-An HTTP/1.1 client connection engine over the `gaato/http/rt` ports. It
+An HTTP/1.1 client connection engine over the `gaato/mttp/rt` ports. It
 keeps a pool of connections per origin, admits at most the configured number
 of active exchanges, reads every response head, chunk-size line and trailer
-section through the bounded `gaato/http/h1` codec, and puts each phase of an
+section through the bounded `gaato/mttp/h1` codec, and puts each phase of an
 exchange under a deadline. `Client` implements `@mttp.Backend`, so a policy
 layer (retries, redirects, cookies, content decoding) wraps it without
 knowing it.
@@ -15,7 +15,7 @@ knowing it.
 ## Sending a request
 
 The engine needs the ports only: a `Dialer`, a `Clock`, a `Timer` and a
-`Coordination`. Here the in-memory doubles of `gaato/http/sim` stand in for
+`Coordination`. Here the in-memory doubles of `gaato/mttp/sim` stand in for
 a network, so the example runs on every target:
 
 ```mbt check

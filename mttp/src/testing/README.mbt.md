@@ -1,7 +1,7 @@
 # gaato/mttp/testing
 
 Test doubles for code built on `gaato/mttp/client`. They import only
-`gaato/http` and the client, so an SDK's tests do not compile the endpoint
+`gaato/mttp` and the client, so an SDK's tests do not compile the endpoint
 layer.
 
 - `BackendStub` is a strict `@mttp.Backend`: `expect` queues one-shot answers
@@ -15,9 +15,9 @@ layer.
   error's phase decides whether a retry may resend; `fail_after` fails a
   body stream after a byte offset.
 
-The contract checks of `gaato/http/sim` (`check_backend_contract` and the
+The contract checks of `gaato/mttp/sim` (`check_backend_contract` and the
 rest) apply to these doubles as to any backend, and the deterministic
-scheduler of `gaato/http/driver` runs the async code on every target.
+scheduler of `gaato/mttp/driver` runs the async code on every target.
 
 ```mbt check
 ///|

@@ -1,13 +1,13 @@
 # gaato/mttp_digest
 
-Origin-scoped HTTP Digest authentication for `gaato/http` backends and the
-`gaato/mttp` client. Keeping it in a separate module makes the
+Origin-scoped HTTP Digest authentication for `gaato/mttp` backends and its
+client. Keeping it in a separate module makes the
 `moonbitlang/x` crypto dependency optional for other clients.
 
 ## Install
 
 ```sh
-moon add gaato/http gaato/mttp gaato/mttp_digest
+moon add gaato/mttp gaato/mttp_digest
 ```
 
 ## Usage

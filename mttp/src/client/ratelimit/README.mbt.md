@@ -1,7 +1,7 @@
 # gaato/mttp/client/ratelimit
 
 `WindowLimiter` implements the client's `RateLimiter` on an injected
-`gaato/http/rt.Clock`. Give it a response-header parser and pass it to
+`gaato/mttp/rt.Clock`. Give it a response-header parser and pass it to
 `Client::new(limiter=...)`. The client chooses the bucket from the
 `rate_limit_bucket` request attribute, or `"default"`, and reads
 `global_exempt` separately.

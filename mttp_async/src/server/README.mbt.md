@@ -1,7 +1,7 @@
 # HTTP/1 listener
 
 `serve(handler, addr~)` binds TCP on native or wasm1 under moonrun and hands
-accepted sockets to `gaato/http/h1server.serve_conn`. `on_listen` receives
+accepted sockets to `gaato/mttp/h1server.serve_conn`. `on_listen` receives
 the actual bound address, including an ephemeral port chosen for `:0`.
 Requests carry an absolute URL, `http.remote_addr` and `http.background`.
 TLS termination belongs to the deployment; use `codings.compress(handler)`

@@ -1,9 +1,9 @@
-# gaato/http/h1server
+# gaato/mttp/h1server
 
-An HTTP/1.1 server connection engine over the `gaato/http/rt` ports.
+An HTTP/1.1 server connection engine over the `gaato/mttp/rt` ports.
 `serve_conn` serves the requests of one accepted connection with an
 `@mttp.Handler`. Every head, chunk-size line and trailer section is read
-through the bounded `gaato/http/h1` codec. Head and body operations have
+through the bounded `gaato/mttp/h1` codec. Head and body operations have
 deadlines; a handler deadline is optional.
 
 > [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) wires
@@ -13,7 +13,7 @@ deadlines; a handler deadline is optional.
 ## Serving a connection
 
 The engine needs a connection and the ports only. Here the in-memory doubles
-of `gaato/http/sim` stand in for a socket, so the example runs on every
+of `gaato/mttp/sim` stand in for a socket, so the example runs on every
 target:
 
 ```mbt check

@@ -1,14 +1,14 @@
 # Contracts
 
-What code on either side of the `gaato/http` traits may rely on, and what the
+What code on either side of the `gaato/mttp` traits may rely on, and what the
 sans-IO parsers guarantee. A backend, a runtime adapter, a test double or a
 wrapper that keeps these rules can be used with every engine and client in the
 family; a consumer written against them needs nothing more.
 
-The traits live in two packages of `gaato/http`: the root (`Backend`,
+The traits live in two packages of `gaato/mttp`: the root (`Backend`,
 `BodyStream`, `SendOptions`) and `rt` (Clock, Timer, Gate, Conn, Dialer,
-Signal, Coordination). The doubles are in `gaato/http/sim`, the deterministic
-scheduler in `gaato/http/driver`, and the runtime implementations in
+Signal, Coordination). The doubles are in `gaato/mttp/sim`, the deterministic
+scheduler in `gaato/mttp/driver`, and the runtime implementations in
 `gaato/mttp_async`. The policy rules at the end (client attempts) belong to
 `gaato/mttp/client`.
 
@@ -168,7 +168,7 @@ on compressed wire bytes.
 
 ## Driver and cancellation
 
-`gaato/http/driver` runs async code without a runtime, on virtual time, on
+`gaato/mttp/driver` runs async code without a runtime, on virtual time, on
 all four targets. Its cancellation semantics match core/async's:
 
 1. **Cancellation is a signal, not an `Error`.** It is delivered by the
@@ -207,7 +207,7 @@ decision. The Client still requires a body factory before automatically
 resending a stream.
 
 Admission, pool metadata, peer EOF/failure and listener lifecycle transitions
-(`gaato/http/internal/control`) return new persistent states and effect
+(`gaato/mttp/internal/control`) return new persistent states and effect
 descriptions. Old snapshots remain valid. Connections, tasks, waiters and
 notifications belong to the engines and adapters and are absent from those
 states. The engines commit each new state before performing its
@@ -265,7 +265,7 @@ mutable; they are owned by a single exchange or reader.
 | SSE (`gaato/mttp/sse`) | Every byte split, CR/LF/CRLF, split UTF-8, bounded retained fields, sticky finish |
 | Multipart boundary scanner (`gaato/mttp/multipart`) | Matches across chunk boundaries without emitting a colliding delimiter |
 
-## HTTP/1 codec (`gaato/http/h1`)
+## HTTP/1 codec (`gaato/mttp/h1`)
 
 The codec follows the message syntax and framing of RFC 9112
 (https://www.rfc-editor.org/rfc/rfc9112.html), with strict CRLF and a
