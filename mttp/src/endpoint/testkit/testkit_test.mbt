@@ -82,25 +82,25 @@ test "endpoint stub matching rejects wrong methods paths and malformed URLs" {
   @driver.run_sync(() => {
     for
       request in [
-        @http.Request::post("/exact/id"),
-        @http.Request::get("http://["),
-        @http.Request::get("/exact"),
-        @http.Request::get("/other/id"),
-        @http.Request::get("/prefix"),
+        @mttp.Request::post("/exact/id"),
+        @mttp.Request::get("http://["),
+        @mttp.Request::get("/exact"),
+        @mttp.Request::get("/other/id"),
+        @mttp.Request::get("/prefix"),
       ] {
       let failed = try {
-        ignore(stub.send(request, @http.SendOptions::default()))
+        ignore(stub.send(request, @mttp.SendOptions::default()))
         false
       } catch {
-        @http.TransportError(kind=Protocol, ..) => true
+        @mttp.TransportError(kind=Protocol, ..) => true
         _ => false
       }
       assert_true(failed)
     }
     assert_eq(
       stub.send(
-        @http.Request::get("/prefix/files/a/b"),
-        @http.SendOptions::default(),
+        @mttp.Request::get("/prefix/files/a/b"),
+        @mttp.SendOptions::default(),
       ).status,
       200,
     )

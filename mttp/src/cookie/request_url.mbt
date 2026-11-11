@@ -1,6 +1,6 @@
 ///|
 /// The parts of a request URL the cookie algorithms read, taken from
-/// `@http.Url` so that hosts, ports and paths are read as the rest of the
+/// `@mttp.Url` so that hosts, ports and paths are read as the rest of the
 /// stack reads them.
 priv struct RequestUrl {
   /// Lowercase scheme, without `:`.
@@ -15,9 +15,9 @@ priv struct RequestUrl {
 ///|
 /// Reads an absolute URL with a non-empty host, or returns `None`: a relative
 /// reference, one without an authority, an empty host, or anything
-/// `@http.Url::parse` refuses (a non-ASCII host among them).
+/// `@mttp.Url::parse` refuses (a non-ASCII host among them).
 fn parse_request_url(text : String) -> RequestUrl? {
-  let url = @http.Url::parse(text) catch { _ => return None }
+  let url = @mttp.Url::parse(text) catch { _ => return None }
   guard url.scheme is Some(scheme) && url.host is Some(host) && !host.is_empty() else {
     return None
   }

@@ -70,13 +70,13 @@ extern "js" fn MockFetch::started(self : MockFetch) -> @js_async.Promise[Unit] =
   #| state => state.started
 
 ///|
-async fn js_body(response : @http.Response) -> Bytes {
+async fn js_body(response : @mttp.Response) -> Bytes {
   defer response.close()
   match response.body {
     Empty => b""
     Bytes(bytes) => bytes
-    Stream(cell) => @http.read_bounded(cell.take(), 20 * 1024 * 1024)
-    @http.Body::.. => fail("unsupported test body")
+    Stream(cell) => @mttp.read_bounded(cell.take(), 20 * 1024 * 1024)
+    @mttp.Body::.. => fail("unsupported test body")
   }
 }
 
@@ -113,7 +113,7 @@ async test "JS injected clock and timer drive fetch head and body idle deadlines
         group.spawn_bg(() => {
           try {
             let response = backend.send(
-              @http.Request::get("http://example.test/"),
+              @mttp.Request::get("http://example.test/"),
               {
                 timeout_ms: if streaming {
                   None
@@ -129,7 +129,7 @@ async test "JS injected clock and timer drive fetch head and body idle deadlines
             )
             ignore(js_body(response))
           } catch {
-            @http.TransportError(kind=Timeout(ms=60), phase~, ..) =>
+            @mttp.TransportError(kind=Timeout(ms=60), phase~, ..) =>
               assert_eq(phase, if streaming { Body } else { Unknown })
             error => raise error
           } noraise {
@@ -161,10 +161,10 @@ async test "JS fetch keeps redirects manual strips proxy credentials and normali
   let backend = @backend.AsyncBackend::new()
   defer backend.close()
   let response = backend.send(
-    @http.Request::get("http://example.test/p?q=1#fragment").header(
+    @mttp.Request::get("http://example.test/p?q=1#fragment").header(
       "proxy-authorization", "secret",
     ),
-    @http.SendOptions::default(),
+    @mttp.SendOptions::default(),
   )
   assert_eq(response.status, 302)
   assert_eq(response.headers.get("location"), Some("/next"))
@@ -184,10 +184,10 @@ async test "JS fetch omits implicit browser credentials" {
   defer backend.close()
   backend
   .send(
-    @http.Request::get("https://example.test/").header(
+    @mttp.Request::get("https://example.test/").header(
       "authorization", "Bearer explicit",
     ),
-    @http.SendOptions::default(),
+    @mttp.SendOptions::default(),
   )
   .close()
   assert_eq(mock.option("credentials"), "omit")
@@ -201,8 +201,8 @@ async test "JS delivery slices are at most 64 KiB and EOF and close are sticky" 
   let backend = @backend.AsyncBackend::new()
   defer backend.close()
   let response = backend.send(
-    @http.Request::get("http://example.test/"),
-    @http.SendOptions::default(),
+    @mttp.Request::get("http://example.test/"),
+    @mttp.SendOptions::default(),
   )
   guard response.body is Stream(cell) else { fail("expected stream") }
   let stream = cell.take()
@@ -231,7 +231,7 @@ async test "JS Exchange caps and engine ceilings refuse the crossing host chunk"
       max_body_bytes: ceiling,
     })
     defer backend.close()
-    let response = backend.send(@http.Request::get("http://example.test/"), {
+    let response = backend.send(@mttp.Request::get("http://example.test/"), {
       timeout_ms: None,
       body: if streaming {
         Stream(idle_ms=None)
@@ -242,7 +242,7 @@ async test "JS Exchange caps and engine ceilings refuse the crossing host chunk"
     guard response.body is Stream(cell) else { fail("expected stream") }
     let stream = cell.take()
     try stream.read_some() catch {
-      @http.TransportError(kind=TooLarge(limit=69999), phase=Body, ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=69999), phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("crossing host chunk was exposed")
@@ -272,7 +272,7 @@ async test "JS Stream has no per request length cap and ignores socket configura
   defer backend.close()
   assert_eq(
     js_body(
-      backend.send(@http.Request::get("http://example.test/"), {
+      backend.send(@mttp.Request::get("http://example.test/"), {
         timeout_ms: None,
         body: Stream(idle_ms=None),
       }),
@@ -291,12 +291,12 @@ async test "JS network opaque and 1024 empty host chunk failures abort" {
     try
       js_body(
         backend.send(
-          @http.Request::get("http://example.test/"),
-          @http.SendOptions::default(),
+          @mttp.Request::get("http://example.test/"),
+          @mttp.SendOptions::default(),
         ),
       )
     catch {
-      @http.TransportError(kind~, phase~, ..) => {
+      @mttp.TransportError(kind~, phase~, ..) => {
         assert_eq(kind, if mode == "fail" { Network } else { Protocol })
         assert_eq(phase, if mode == "empty" { Body } else { Unknown })
       }
@@ -313,8 +313,8 @@ async test "JS network opaque and 1024 empty host chunk failures abort" {
   assert_eq(
     js_body(
       backend.send(
-        @http.Request::get("http://example.test/"),
-        @http.SendOptions::default(),
+        @mttp.Request::get("http://example.test/"),
+        @mttp.SendOptions::default(),
       ),
     ),
     b"x",
@@ -329,22 +329,22 @@ async test "JS length validation accepts padded lengths and checks buffered unkn
   defer backend.close()
   backend
   .send(
-    @http.Request::post("http://example.test/")
+    @mttp.Request::post("http://example.test/")
     .body_text("abc")
     .header("content-length", "003"),
-    @http.SendOptions::default(),
+    @mttp.SendOptions::default(),
   )
   .close()
   let source = Zeros::{ total: 3, produced: 0, closes: 0, }
   try
     backend.send(
-      @http.Request::post("http://example.test/")
+      @mttp.Request::post("http://example.test/")
       .body_stream(source)
       .header("content-length", "4"),
-      @http.SendOptions::default(),
+      @mttp.SendOptions::default(),
     )
   catch {
-    @http.TransportError(kind=Invalid, phase=Pool, ..) => ()
+    @mttp.TransportError(kind=Invalid, phase=Pool, ..) => ()
     error => raise error
   } noraise {
     _ => fail("buffered length mismatch accepted")
@@ -361,22 +361,22 @@ async test "JS invalid URLs methods framing and GET bodies fail before fetch" {
   defer backend.close()
   for
     request in [
-      @http.Request::get("/relative"),
-      @http.Request::get("ftp://example.test/"),
-      @http.Request::get("http://user:pass@example.test/"),
-      @http.Request::new(Connect, "http://example.test/"),
-      @http.Request::new(Other("TRACE"), "http://example.test/"),
-      @http.Request::get("http://example.test/").body_text("x"),
-      @http.Request::get("http://example.test/").header("x-value", "字"),
-      @http.Request::post("http://example.test/")
+      @mttp.Request::get("/relative"),
+      @mttp.Request::get("ftp://example.test/"),
+      @mttp.Request::get("http://user:pass@example.test/"),
+      @mttp.Request::new(Connect, "http://example.test/"),
+      @mttp.Request::new(Other("TRACE"), "http://example.test/"),
+      @mttp.Request::get("http://example.test/").body_text("x"),
+      @mttp.Request::get("http://example.test/").header("x-value", "字"),
+      @mttp.Request::post("http://example.test/")
       .body_text("abc")
       .header("content-length", "2"),
-      @http.Request::post("http://example.test/")
+      @mttp.Request::post("http://example.test/")
       .header("content-length", "0")
       .header("transfer-encoding", "chunked"),
     ] {
-    try backend.send(request, @http.SendOptions::default()) catch {
-      @http.TransportError(kind=Invalid, phase=Pool, ..) => ()
+    try backend.send(request, @mttp.SendOptions::default()) catch {
+      @mttp.TransportError(kind=Invalid, phase=Pool, ..) => ()
       error => raise error
     } noraise {
       _ => fail("invalid request sent")
@@ -389,11 +389,11 @@ async test "JS invalid URLs methods framing and GET bodies fail before fetch" {
   defer invalid.close()
   try
     invalid.send(
-      @http.Request::get("http://example.test/"),
-      @http.SendOptions::default(),
+      @mttp.Request::get("http://example.test/"),
+      @mttp.SendOptions::default(),
     )
   catch {
-    @http.TransportError(kind=Invalid, phase=Pool, ..) => ()
+    @mttp.TransportError(kind=Invalid, phase=Pool, ..) => ()
     error => raise error
   } noraise {
     _ => fail("negative ceiling accepted")
@@ -409,7 +409,7 @@ priv struct Zeros {
 }
 
 ///|
-impl @http.BodyStream for Zeros with fn read_some(self) {
+impl @mttp.BodyStream for Zeros with fn read_some(self) {
   let n = (self.total - self.produced).min(1024 * 1024)
   if n == 0 {
     return None
@@ -419,7 +419,7 @@ impl @http.BodyStream for Zeros with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for Zeros with fn close(self) {
+impl @mttp.BodyStream for Zeros with fn close(self) {
   self.closes += 1
 }
 
@@ -433,13 +433,13 @@ async test "JS upload buffering accepts exactly 16 MiB and refuses overflow" {
     let backend = @backend.AsyncBackend::new()
     defer backend.close()
     let source = Zeros::{ total, produced: 0, closes: 0, }
-    let request = @http.Request::post("http://example.test/").body_stream(
+    let request = @mttp.Request::post("http://example.test/").body_stream(
       source,
       length?=if declared { Some(total.to_int64()) } else { None },
     )
     if total > limit {
-      try backend.send(request, @http.SendOptions::default()) catch {
-        @http.TransportError(kind=TooLarge(limit=actual), phase=Write, ..) =>
+      try backend.send(request, @mttp.SendOptions::default()) catch {
+        @mttp.TransportError(kind=TooLarge(limit=actual), phase=Write, ..) =>
           assert_eq(actual, limit)
         error => raise error
       } noraise {
@@ -448,7 +448,7 @@ async test "JS upload buffering accepts exactly 16 MiB and refuses overflow" {
       assert_eq(mock.stats()[0], 0)
     } else {
       assert_eq(
-        js_body(backend.send(request, @http.SendOptions::default())),
+        js_body(backend.send(request, @mttp.SendOptions::default())),
         b"",
       )
       assert_eq(mock.stats()[3], limit)
@@ -462,13 +462,13 @@ async test "JS upload buffering accepts exactly 16 MiB and refuses overflow" {
   defer backend.close()
   try
     backend.send(
-      @http.Request::post("http://example.test/").body_bytes(
+      @mttp.Request::post("http://example.test/").body_bytes(
         Bytes::make(limit + 1, 0),
       ),
-      @http.SendOptions::default(),
+      @mttp.SendOptions::default(),
     )
   catch {
-    @http.TransportError(kind=TooLarge(limit=actual), phase=Write, ..) =>
+    @mttp.TransportError(kind=TooLarge(limit=actual), phase=Write, ..) =>
       assert_eq(actual, limit)
     error => raise error
   } noraise {
@@ -492,8 +492,8 @@ async test "JS attempt timeout and parent cancellation abort pending fetch uncha
           cleaned.val = true
         }
         try
-          backend.send(@http.Request::get("http://example.test/"), {
-            ..@http.SendOptions::default(),
+          backend.send(@mttp.Request::get("http://example.test/"), {
+            ..@mttp.SendOptions::default(),
             timeout_ms: if timeout {
               Some(30)
             } else {
@@ -501,7 +501,7 @@ async test "JS attempt timeout and parent cancellation abort pending fetch uncha
             },
           })
         catch {
-          @http.TransportError(kind=Timeout(ms=30), phase=Unknown, ..) =>
+          @mttp.TransportError(kind=Timeout(ms=30), phase=Unknown, ..) =>
             caught.val = true
           error => raise error
         } noraise {
@@ -521,8 +521,8 @@ async test "JS attempt timeout and parent cancellation abort pending fetch uncha
     mock.mode("head")
     backend
     .send(
-      @http.Request::get("http://example.test/"),
-      @http.SendOptions::default(),
+      @mttp.Request::get("http://example.test/"),
+      @mttp.SendOptions::default(),
     )
     .close()
   }
@@ -535,7 +535,7 @@ async test "JS Exchange body and Stream idle deadlines cancel readers" {
     defer mock.restore()
     let backend = @backend.AsyncBackend::new()
     defer backend.close()
-    let response = backend.send(@http.Request::get("http://example.test/"), {
+    let response = backend.send(@mttp.Request::get("http://example.test/"), {
       timeout_ms: if streaming {
         Some(1000)
       } else {
@@ -548,7 +548,7 @@ async test "JS Exchange body and Stream idle deadlines cancel readers" {
       },
     })
     try js_body(response) catch {
-      @http.TransportError(kind=Timeout(ms=30), phase=Body, ..) => ()
+      @mttp.TransportError(kind=Timeout(ms=30), phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("stalled body completed")
@@ -566,8 +566,8 @@ async test "JS early close and cancelled reads close once without swallowing can
     let backend = @backend.AsyncBackend::new()
     defer backend.close()
     let response = backend.send(
-      @http.Request::get("http://example.test/"),
-      @http.SendOptions::default(),
+      @mttp.Request::get("http://example.test/"),
+      @mttp.SendOptions::default(),
     )
     if cancel {
       let caught = Ref(false)
@@ -601,7 +601,7 @@ async test "JS Stream ends the attempt deadline at the head" {
   defer mock.restore()
   let backend = @backend.AsyncBackend::new()
   defer backend.close()
-  let response = backend.send(@http.Request::get("http://example.test/"), {
+  let response = backend.send(@mttp.Request::get("http://example.test/"), {
     timeout_ms: Some(100),
     body: Stream(idle_ms=None),
   })
@@ -661,15 +661,15 @@ async test "Node fetch integration decodes gzip echoes uploads and preserves red
     let backend = @backend.AsyncBackend::new()
     defer backend.close()
     let response = backend.send(
-      @http.Request::get(server.url() + "/redirect"),
-      @http.SendOptions::default(),
+      @mttp.Request::get(server.url() + "/redirect"),
+      @mttp.SendOptions::default(),
     )
     assert_eq(response.status, 302)
     assert_eq(server.requests(), 1)
     assert_eq(js_body(response), b"")
     let response = backend.send(
-      @http.Request::get(server.url() + "/gzip"),
-      @http.SendOptions::default(),
+      @mttp.Request::get(server.url() + "/gzip"),
+      @mttp.SendOptions::default(),
     )
     assert_eq(response.headers.get_all("set-cookie"), ["a=1", "b=2"])
     assert_eq(js_body(response), b"decoded")
@@ -677,18 +677,18 @@ async test "Node fetch integration decodes gzip echoes uploads and preserves red
     assert_eq(
       js_body(
         backend.send(
-          @http.Request::post(server.url() + "/echo").body_bytes(payload),
-          @http.SendOptions::default(),
+          @mttp.Request::post(server.url() + "/echo").body_bytes(payload),
+          @mttp.SendOptions::default(),
         ),
       ),
       payload,
     )
-    let response = backend.send(@http.Request::get(server.url() + "/slow"), {
+    let response = backend.send(@mttp.Request::get(server.url() + "/slow"), {
       timeout_ms: None,
       body: Stream(idle_ms=Some(30)),
     })
     try js_body(response) catch {
-      @http.TransportError(kind=Timeout(ms=30), phase=Body, ..) => ()
+      @mttp.TransportError(kind=Timeout(ms=30), phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("stalled Node response succeeded")
@@ -696,8 +696,8 @@ async test "Node fetch integration decodes gzip echoes uploads and preserves red
     assert_eq(
       js_body(
         backend.send(
-          @http.Request::get(server.url() + "/gzip"),
-          @http.SendOptions::default(),
+          @mttp.Request::get(server.url() + "/gzip"),
+          @mttp.SendOptions::default(),
         ),
       ),
       b"decoded",

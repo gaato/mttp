@@ -1,0 +1,51 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/rt"
+
+import {
+  "gaato/mttp",
+}
+
+// Values
+pub fn default_random() -> Double
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+pub(open) trait Clock {
+  async fn sleep(Self, Int32) -> Unit noraise
+  fn now_unix_ms(Self) -> Int64
+}
+
+pub(open) trait Conn {
+  async fn read(Self, max_len~ : Int32) -> Bytes? raise @mttp.TransportError
+  async fn write(Self, Bytes) -> Unit raise @mttp.TransportError
+  fn close(Self) -> Unit
+}
+
+pub(open) trait Coordination {
+  fn signal(Self) -> &Signal
+  async fn supervise(Self, primary~ : async () -> Unit raise @mttp.TransportError, monitor~ : async () -> Unit raise @mttp.TransportError) -> Unit raise @mttp.TransportError
+}
+
+pub(open) trait Dialer {
+  async fn connect(Self, host~ : String, port~ : Int32) -> &Conn raise @mttp.TransportError
+  async fn start_tls(Self, &Conn, host~ : String) -> &Conn raise @mttp.TransportError
+}
+
+pub(open) trait Gate {
+  async fn acquire(Self) -> Unit noraise
+  fn release(Self) -> Unit
+}
+
+pub(open) trait Signal {
+  async fn wait(Self) -> Unit noraise
+  fn notify(Self) -> Unit
+}
+
+pub(open) trait Timer {
+  async fn within(Self, Int32, async () -> Unit noraise) -> Bool noraise
+}

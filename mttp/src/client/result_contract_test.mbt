@@ -1,11 +1,11 @@
 ///|
 test "fluent request bodies and authorization reach the shared executor" {
   @driver.run_sync(() => {
-    let wire = Ref(@http.Request::get("/unset"))
+    let wire = Ref(@mttp.Request::get("/unset"))
     let client = @client.Client::new(
       @client.from_fn((request, _) => {
         wire.val = request
-        @http.Response::new(200, body=request.body)
+        @mttp.Response::new(200, body=request.body)
       }),
       @sim.FakeClock::new(),
     )
@@ -16,7 +16,7 @@ test "fluent request bodies and authorization reach the shared executor" {
       .body_bytes(b"bytes")
       .response(@client.as_bytes())
     assert_eq(request.send(client).body, Ok(b"bytes"))
-    assert_eq(wire.val.meth, @http.Post)
+    assert_eq(wire.val.meth, @mttp.Post)
     assert_eq(wire.val.headers.get("authorization"), Some("Bearer token"))
     assert_eq(wire.val.headers.get("x-test"), Some("yes"))
     assert_eq(request.body_json({ "n": 1 }).send(client).body, Ok(b"{\"n\":1}"))
@@ -26,7 +26,7 @@ test "fluent request bodies and authorization reach the shared executor" {
 ///|
 test "rejected readers retain bounded values without invoking consumers" {
   @driver.run_sync(() => {
-    let response = Ref(@http.Response::new(503, body=Bytes(b"busy")))
+    let response = Ref(@mttp.Response::new(503, body=Bytes(b"busy")))
     let client = @client.Client::new(
       @client.from_fn((_, _) => response.val),
       @sim.FakeClock::new(),
@@ -60,7 +60,7 @@ test "rejected readers retain bounded values without invoking consumers" {
       .response(@client.as_both(@client.as_bytes(), @client.as_string()))
       .send(client).body
     assert_true(pair is (Err(_), Err(_)))
-    response.val = @http.Response::new(
+    response.val = @mttp.Response::new(
       200,
       body=Bytes(Bytes::make(2 * 1048576, b'x')),
     )
@@ -84,7 +84,7 @@ test "typed retry can inspect an HTTP 200 value without changing HTTP observatio
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
       calls.val += 1
-      @http.Response::new(
+      @mttp.Response::new(
         200,
         body=Bytes(if calls.val == 1 { b"retry" } else { b"done" }),
       )
@@ -118,7 +118,7 @@ test "custom retry cannot exceed the configured count even on success" {
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
       calls.val += 1
-      @http.Response::new(200, body=Bytes(b"last"))
+      @mttp.Response::new(200, body=Bytes(b"last"))
     }),
     @sim.SimClock::new(d),
     retry=@client.RetryPolicy::none().with_max_retries(2),
@@ -143,7 +143,7 @@ test "unknown decoder errors preserve identity and are never offered for retry" 
   let decisions = Ref(0)
   let releases = Ref(0)
   let client = @client.Client::new(
-    @client.from_fn((_, _) => @http.Response::new(200)),
+    @client.from_fn((_, _) => @mttp.Response::new(200)),
     clock,
     retry=@client.RetryPolicy::conservative(),
     observer=_ => releases.val += 1,
@@ -174,7 +174,7 @@ test "configured total deadline requires Timer before admission or body creation
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
       calls.val += 1
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     }),
     @sim.FakeClock::new(),
     total_ms=100,
@@ -207,9 +207,9 @@ test "head selection retains a buffered rejection before stream handoff" {
     @client.from_fn((_, _) => {
       calls.val += 1
       if calls.val == 1 {
-        @http.Response::new(503, body=Bytes(b"busy"))
+        @mttp.Response::new(503, body=Bytes(b"busy"))
       } else {
-        @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+        @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
       }
     }),
     @sim.SimClock::new(d),

@@ -1,7 +1,7 @@
 ///|
 fn status_error(
   status : Int32,
-  headers~ : @http.Headers = @http.Headers::empty(),
+  headers~ : @mttp.Headers = @mttp.Headers::empty(),
 ) -> @client.AttemptOutcome {
   @client.AttemptOutcome::Response(status~, headers~)
 }
@@ -9,7 +9,7 @@ fn status_error(
 ///|
 fn rate_limited(
   retry_after_ms : Int32?,
-  headers~ : @http.Headers = @http.Headers::empty(),
+  headers~ : @mttp.Headers = @mttp.Headers::empty(),
 ) -> @client.AttemptOutcome {
   status_error(
     429,
@@ -21,7 +21,7 @@ fn rate_limited(
 }
 
 ///|
-fn transport_error(error : @http.TransportError) -> @client.AttemptOutcome {
+fn transport_error(error : @mttp.TransportError) -> @client.AttemptOutcome {
   @client.AttemptOutcome::Failure(error)
 }
 
@@ -113,9 +113,9 @@ test "RetryPolicy presets are the documented rules" {
 /// an idempotency key, at the first failure with random 0.0 (backoff 400 ms).
 test "conservative decides every attempt error variant by method" {
   let policy = @client.RetryPolicy::conservative()
-  let get = @http.Request::get("/")
-  let post = @http.Request::post("/")
-  let keyed_post = post.attribute(@http.replay_safe, true)
+  let get = @mttp.Request::get("/")
+  let post = @mttp.Request::post("/")
+  let keyed_post = post.attribute(@mttp.replay_safe, true)
   let wait : @client.Decision = Wait(400)
   let not_retryable : @client.Decision = Stop(NotRetryable)
   let refused : @client.Decision = Stop(MethodNotAllowed)
@@ -125,21 +125,21 @@ test "conservative decides every attempt error variant by method" {
     // A failure that proves nothing was sent is retried for any method.
     (
       transport_error(
-        @http.TransportError(kind=Connect, phase=Dial, detail="offline"),
+        @mttp.TransportError(kind=Connect, phase=Dial, detail="offline"),
       ),
       wait,
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Pool, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Pool, detail="timeout"),
       ),
       wait,
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Dial, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Dial, detail="timeout"),
       ),
       wait,
       wait,
@@ -147,28 +147,28 @@ test "conservative decides every attempt error variant by method" {
     // One after sending only for an idempotent request.
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Write, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Write, detail="timeout"),
       ),
       wait,
       refused,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Head, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Head, detail="timeout"),
       ),
       wait,
       refused,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Body, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Body, detail="timeout"),
       ),
       wait,
       refused,
     ),
     (
       transport_error(
-        @http.TransportError(
+        @mttp.TransportError(
           kind=Timeout(ms=1),
           phase=Unknown,
           detail="timeout",
@@ -179,31 +179,31 @@ test "conservative decides every attempt error variant by method" {
     ),
     (
       transport_error(
-        @http.TransportError(kind=Network, phase=Write, detail=""),
+        @mttp.TransportError(kind=Network, phase=Write, detail=""),
       ),
       wait,
       refused,
     ),
     (
-      transport_error(@http.TransportError(kind=Network, phase=Head, detail="")),
+      transport_error(@mttp.TransportError(kind=Network, phase=Head, detail="")),
       wait,
       refused,
     ),
     (
-      transport_error(@http.TransportError(kind=Network, phase=Body, detail="")),
+      transport_error(@mttp.TransportError(kind=Network, phase=Body, detail="")),
       wait,
       refused,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Network, phase=Unknown, detail=""),
+        @mttp.TransportError(kind=Network, phase=Unknown, detail=""),
       ),
       wait,
       refused,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Protocol, phase=Head, detail="bad"),
+        @mttp.TransportError(kind=Protocol, phase=Head, detail="bad"),
       ),
       not_retryable,
       not_retryable,
@@ -211,49 +211,49 @@ test "conservative decides every attempt error variant by method" {
     // A proxy's refusal when its status is in a rule, for any method.
     (
       transport_error(
-        @http.TransportError(kind=Proxy(status=502), phase=Dial, detail=""),
+        @mttp.TransportError(kind=Proxy(status=502), phase=Dial, detail=""),
       ),
       wait,
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Proxy(status=503), phase=Dial, detail=""),
+        @mttp.TransportError(kind=Proxy(status=503), phase=Dial, detail=""),
       ),
       wait,
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Proxy(status=504), phase=Dial, detail=""),
+        @mttp.TransportError(kind=Proxy(status=504), phase=Dial, detail=""),
       ),
       wait,
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Proxy(status=500), phase=Dial, detail=""),
+        @mttp.TransportError(kind=Proxy(status=500), phase=Dial, detail=""),
       ),
       wait,
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Proxy(status=429), phase=Dial, detail=""),
+        @mttp.TransportError(kind=Proxy(status=429), phase=Dial, detail=""),
       ),
       wait,
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Proxy(status=407), phase=Dial, detail=""),
+        @mttp.TransportError(kind=Proxy(status=407), phase=Dial, detail=""),
       ),
       not_retryable,
       not_retryable,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Proxy(status=403), phase=Dial, detail=""),
+        @mttp.TransportError(kind=Proxy(status=403), phase=Dial, detail=""),
       ),
       not_retryable,
       not_retryable,
@@ -297,7 +297,7 @@ test "conservative decides every attempt error variant by method" {
   assert_eq(
     widened.decide(
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Head, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Head, detail="timeout"),
       ),
       @client.RetryContext::capture(post, random=0.0),
     ),
@@ -322,43 +322,43 @@ test "stainless decides every attempt error variant for any method" {
   let cases : Array[(@client.AttemptOutcome, @client.Decision)] = [
     (
       transport_error(
-        @http.TransportError(kind=Connect, phase=Dial, detail="offline"),
+        @mttp.TransportError(kind=Connect, phase=Dial, detail="offline"),
       ),
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Pool, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Pool, detail="timeout"),
       ),
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Dial, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Dial, detail="timeout"),
       ),
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Write, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Write, detail="timeout"),
       ),
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Head, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Head, detail="timeout"),
       ),
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Timeout(ms=1), phase=Body, detail="timeout"),
+        @mttp.TransportError(kind=Timeout(ms=1), phase=Body, detail="timeout"),
       ),
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(
+        @mttp.TransportError(
           kind=Timeout(ms=1),
           phase=Unknown,
           detail="timeout",
@@ -368,31 +368,31 @@ test "stainless decides every attempt error variant for any method" {
     ),
     (
       transport_error(
-        @http.TransportError(kind=Network, phase=Write, detail=""),
+        @mttp.TransportError(kind=Network, phase=Write, detail=""),
       ),
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Network, phase=Unknown, detail=""),
+        @mttp.TransportError(kind=Network, phase=Unknown, detail=""),
       ),
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Protocol, phase=Head, detail="bad"),
+        @mttp.TransportError(kind=Protocol, phase=Head, detail="bad"),
       ),
       not_retryable,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Proxy(status=502), phase=Dial, detail=""),
+        @mttp.TransportError(kind=Proxy(status=502), phase=Dial, detail=""),
       ),
       wait,
     ),
     (
       transport_error(
-        @http.TransportError(kind=Proxy(status=407), phase=Dial, detail=""),
+        @mttp.TransportError(kind=Proxy(status=407), phase=Dial, detail=""),
       ),
       not_retryable,
     ),
@@ -410,7 +410,7 @@ test "stainless decides every attempt error variant for any method" {
   ]
   for i, case in cases {
     let (error, expected) = case
-    for request in [@http.Request::get("/"), @http.Request::post("/")] {
+    for request in [@mttp.Request::get("/"), @mttp.Request::post("/")] {
       assert_eq(
         policy.decide(error, @client.RetryContext::capture(request, random=0.0)),
         expected,
@@ -419,9 +419,9 @@ test "stainless decides every attempt error variant for any method" {
     }
   }
   // x-should-retry overrides the status rules both ways.
-  let post = @http.Request::post("/")
-  let yes = @http.Headers::of([("x-should-retry", "true")])
-  let no = @http.Headers::of([("x-should-retry", "false")])
+  let post = @mttp.Request::post("/")
+  let yes = @mttp.Headers::of([("x-should-retry", "true")])
+  let no = @mttp.Headers::of([("x-should-retry", "false")])
   let context = @client.RetryContext::capture(post, random=0.0)
   assert_eq(policy.decide(status_error(400, headers=yes), context), wait)
   assert_eq(
@@ -442,7 +442,7 @@ test "stainless decides every attempt error variant for any method" {
 
 ///|
 test "server delays: sources, caps, zero and HTTP dates" {
-  let request = @http.Request::get("/")
+  let request = @mttp.Request::get("/")
   let context = @client.RetryContext::capture(request, random=0.0)
   let policy = @client.RetryPolicy::from_rule({
     ..@client.RetryPolicy::conservative().rule,
@@ -457,15 +457,15 @@ test "server delays: sources, caps, zero and HTTP dates" {
     (rate_limited(Some(1500)), Wait(1500)),
     (rate_limited(Some(1501)), Stop(RetryAfterTooLong(1501))),
     (
-      status_error(503, headers=@http.Headers::of([("retry-after", "1.5")])),
+      status_error(503, headers=@mttp.Headers::of([("retry-after", "1.5")])),
       Wait(1500),
     ),
     (
-      status_error(503, headers=@http.Headers::of([("retry-after-ms", "1501")])),
+      status_error(503, headers=@mttp.Headers::of([("retry-after-ms", "1501")])),
       Stop(RetryAfterTooLong(1501)),
     ),
     (
-      status_error(503, headers=@http.Headers::of([("retry-after", "bad")])),
+      status_error(503, headers=@mttp.Headers::of([("retry-after", "bad")])),
       Wait(400),
     ),
   ]
@@ -475,7 +475,7 @@ test "server delays: sources, caps, zero and HTTP dates" {
   // An HTTP date needs the context's clock: before 0.7.0 a Status ignored it.
   let dated = status_error(
     503,
-    headers=@http.Headers::of([("retry-after", "Thu, 01 Jan 1970 00:00:02 GMT")]),
+    headers=@mttp.Headers::of([("retry-after", "Thu, 01 Jan 1970 00:00:02 GMT")]),
   )
   assert_eq(
     @client.RetryPolicy::conservative().decide(
@@ -503,7 +503,7 @@ test "server delays: sources, caps, zero and HTTP dates" {
 
 ///|
 test "the context's remaining time and replayability stop a retry" {
-  let get = @http.Request::get("/")
+  let get = @mttp.Request::get("/")
   let policy = @client.RetryPolicy::conservative()
   let error = status_error(503)
   assert_eq(

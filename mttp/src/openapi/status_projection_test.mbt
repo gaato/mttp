@@ -9,7 +9,7 @@ test "dynamic text 404 is included in the explicit framework response" {
   )
   assert_eq(response.status, 404)
   assert_eq(response.headers.get("content-type"), Some("text/plain"))
-  assert_eq(response.body, @http.Body::Bytes(b"missing"))
+  assert_eq(response.body, @mttp.Body::Bytes(b"missing"))
   let spec = project(ep.doc())
   let selected = spec.paths["/dynamic-404"].operations["get"].responses["404"]
   assert_true(selected.content.contains("text/plain"))
@@ -130,7 +130,7 @@ fn schema_alternatives(schema : Json) -> Array[Json] {
 ///|
 fn assert_status_projection(
   selected : @apispec.ResponseObject?,
-  observed : Array[(@http.Response, Json?)],
+  observed : Array[(@mttp.Response, Json?)],
   status : Int32,
 ) -> Unit raise {
   if observed.is_empty() {
@@ -144,7 +144,7 @@ fn assert_status_projection(
   for (response, schema) in observed {
     assert_eq(response.status, status)
     if status == 204 || status == 304 {
-      assert_eq(response.body, @http.Body::Empty)
+      assert_eq(response.body, @mttp.Body::Empty)
     } else if schema is Some(schema) {
       let media = response.headers.get("content-type").unwrap()
       let alternatives = expected.get(media).unwrap_or([])
@@ -153,7 +153,7 @@ fn assert_status_projection(
       }
       expected[media] = alternatives
     } else {
-      assert_eq(response.body, @http.Body::Empty)
+      assert_eq(response.body, @mttp.Body::Empty)
     }
   }
   assert_eq(selected.content.length(), expected.length())
@@ -286,7 +286,7 @@ test "status matrix selects exact fixed dynamic declared and framework represent
         assert_eq(op.responses.contains("default"), dynamic)
         @driver.run_sync(() => {
           for status in 200..<600 {
-            let observed : Array[(@http.Response, Json?)] = []
+            let observed : Array[(@mttp.Response, Json?)] = []
             for role in 0..<4 {
               if enabled(role) &&
                 (role % 2 == 1 || fixed_codes.contains(status)) {
@@ -308,7 +308,7 @@ test "status matrix selects exact fixed dynamic declared and framework represent
                   if status != 204 && status != 304 {
                     assert_eq(
                       reply.body,
-                      @http.Body::Bytes(
+                      @mttp.Body::Bytes(
                         match role {
                           0 | 3 => b"20"
                           1 => b"reply"
@@ -340,7 +340,7 @@ test "status matrix selects exact fixed dynamic declared and framework represent
                   }
                 404 => { ..request, url: "/unknown", }
                 405 => { ..request, meth: Get, }
-                413 => { ..request, body: @http.Body::Bytes(b"1234"), }
+                413 => { ..request, body: @mttp.Body::Bytes(b"1234"), }
                 415 =>
                   {
                     ..request,
@@ -416,7 +416,7 @@ test "dynamic empty responses stay bodyless at explicit and default statuses" {
       ep.request((), ()).raw(),
     )
     assert_eq(response.status, status)
-    assert_eq(response.body, @http.Body::Empty)
+    assert_eq(response.body, @mttp.Body::Empty)
     assert_eq(response.headers.get("x-empty"), Some("yes"))
     let selected = match op.responses.get(status.to_string()) {
       Some(response) => response
@@ -439,9 +439,9 @@ test "dynamic media and streamed bodies overlay explicit statuses without bodyle
         .post("/wild-status")
         .output(@endpoint.stream_body_out().and_status())
       let body = if streamed {
-        @http.Body::Stream(@http.StreamBody::new(source))
+        @mttp.Body::Stream(@mttp.StreamBody::new(source))
       } else {
-        @http.Body::Bytes(b"payload")
+        @mttp.Body::Bytes(b"payload")
       }
       let response = dispatch(
         ep.serve_public(_ => Ok(((Some("application/custom"), body), status))),
@@ -458,7 +458,7 @@ test "dynamic media and streamed bodies overlay explicit statuses without bodyle
         None => op.responses["default"]
       }
       if status == 204 || status == 304 {
-        assert_eq(response.body, @http.Body::Empty)
+        assert_eq(response.body, @mttp.Body::Empty)
         assert_eq(selected.content.length(), 0)
         assert_eq(source.reads(), 0)
       } else {
@@ -529,7 +529,7 @@ test "dynamic media schemas survive more specific representations at each status
     )
     assert_eq(response.status, status)
     assert_eq(response.headers.get("content-type"), Some(media))
-    assert_eq(response.body, @http.Body::Bytes(b"\"opaque\""))
+    assert_eq(response.body, @mttp.Body::Bytes(b"\"opaque\""))
     // OpenAPI chooses this exact media entry over */*. Both encoders can
     // produce it, so this entry must describe both schemas, too.
     let selected = op.responses[status.to_string()].content[media]
@@ -564,7 +564,7 @@ test "dynamic declared-error media retains identical fixed media schemas" {
     ep.request((), ()).raw(),
   )
   assert_eq(response.status, 201)
-  assert_eq(response.body, @http.Body::Bytes(b"error"))
+  assert_eq(response.body, @mttp.Body::Bytes(b"error"))
   let content = project(ep.doc()).paths["/wild-error"].operations["post"].responses["201"].content
   assert_eq(content.length(), 2)
   assert_eq(
@@ -596,7 +596,7 @@ test "dynamic SSE status projects wire schemas and closes suppressed streams" {
     )
     let response = dispatch(
       ep.serve_public(_ => Ok((events, status))),
-      @http.Request::new(Post, "/sse-status"),
+      @mttp.Request::new(Post, "/sse-status"),
     )
     assert_eq(response.status, status)
     let selected = match op.responses.get(status.to_string()) {
@@ -604,7 +604,7 @@ test "dynamic SSE status projects wire schemas and closes suppressed streams" {
       None => op.responses["default"]
     }
     if status == 204 || status == 304 {
-      assert_eq(response.body, @http.Body::Empty)
+      assert_eq(response.body, @mttp.Body::Empty)
       assert_eq(selected.content.length(), 0)
       assert_false(sent.val)
     } else {

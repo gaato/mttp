@@ -14,14 +14,14 @@ test "router paths admit 64 segments and refuse 65 including empty segments" {
     rest.serve_public(_ => Ok(())),
   ])
   @driver.run_sync(() => {
-    assert_eq(router.dispatch(@http.Request::get(path)).status, 200)
-    assert_eq(router.dispatch(@http.Request::get(path + "/a")).status, 404)
+    assert_eq(router.dispatch(@mttp.Request::get(path)).status, 200)
+    assert_eq(router.dispatch(@mttp.Request::get(path + "/a")).status, 404)
     assert_eq(
-      router.dispatch(@http.Request::get("http://in-process" + "/".repeat(64))).status,
+      router.dispatch(@mttp.Request::get("http://in-process" + "/".repeat(64))).status,
       200,
     )
     assert_eq(
-      router.dispatch(@http.Request::get("http://in-process" + "/".repeat(65))).status,
+      router.dispatch(@mttp.Request::get("http://in-process" + "/".repeat(65))).status,
       404,
     )
   })
@@ -55,7 +55,7 @@ test "known adapter body ceilings are advisory and actual upstream caps still wi
   let feed = @sim.Feed::new(driver, [
     Chunk(b"abc"),
     Fail(
-      @http.TransportError(
+      @mttp.TransportError(
         kind=TooLarge(limit=3),
         phase=Body,
         detail="adapter ceiling",
@@ -63,7 +63,7 @@ test "known adapter body ceilings are advisory and actual upstream caps still wi
     ),
   ])
   driver.run(() => {
-    let response = router.dispatch(@http.Request::post("/").body_stream(feed))
+    let response = router.dispatch(@mttp.Request::post("/").body_stream(feed))
     assert_eq(response.status, 413)
     assert_eq(response.headers.get("connection"), Some("close"))
   })

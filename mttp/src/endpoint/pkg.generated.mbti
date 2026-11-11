@@ -2,7 +2,7 @@
 package "gaato/mttp/endpoint"
 
 import {
-  "gaato/http",
+  "gaato/mttp",
   "gaato/mttp/client",
   "gaato/mttp/schema",
   "gaato/mttp/sse",
@@ -16,7 +16,7 @@ pub fn api_key_header(String, scheme_name? : String) -> Input[String]
 
 pub fn api_key_query(String, scheme_name? : String) -> Input[String]
 
-pub fn[T] attribute(@http.AttributeKey[T]) -> Input[T?]
+pub fn[T] attribute(@mttp.AttributeKey[T]) -> Input[T?]
 
 pub fn basic(scheme_name? : String) -> Input[(String, String)]
 
@@ -42,7 +42,7 @@ pub let endpoint : Endpoint[Unit, Unit, NoError, Unit, @client.Buffered]
 
 pub fn[T] header(String, @schema.TextCodec[T]) -> Input[T]
 
-pub fn headers() -> Input[@http.Headers]
+pub fn headers() -> Input[@mttp.Headers]
 
 pub fn[T] json_out(@schema.BodyCodec[T], status? : Int32) -> Out[T, @client.Buffered]
 
@@ -70,15 +70,15 @@ pub fn query_params() -> Input[Array[(String, String)]]
 
 pub fn raw_body() -> Input[Bytes]
 
-pub let route_template : @http.AttributeKey[String]
+pub let route_template : @mttp.AttributeKey[String]
 
 pub fn signature_header(String) -> Input[String]
 
 pub fn[T] sse_out(@schema.JsonCodec[T], to_event? : (T) -> @sse.SseEvent) -> Out[EventStream[T], @client.Streaming]
 
-pub fn stream_body(media_type? : String) -> Input[&@http.BodyStream]
+pub fn stream_body(media_type? : String) -> Input[&@mttp.BodyStream]
 
-pub fn stream_body_out(status? : Int32) -> Out[(String?, @http.Body), @client.Buffered]
+pub fn stream_body_out(status? : Int32) -> Out[(String?, @mttp.Body), @client.Buffered]
 
 pub fn text_out(status? : Int32) -> Out[String, @client.Buffered]
 
@@ -124,7 +124,7 @@ pub fn AuthScheme::to_repr(Self) -> @debug.Repr
 pub(all) enum BodyValue {
   NoBody
   Buffered(Bytes)
-  Streamed(&@http.BodyStream)
+  Streamed(&@mttp.BodyStream)
 }
 
 #derive(Eq, @debug.Debug)
@@ -141,10 +141,10 @@ pub fn DefinitionProblem::to_repr(Self) -> @debug.Repr
 pub(all) struct DispatchContext {
   max_body_bytes : Int32
   max_issues : Int32
-  decode_failure : (FailureContext) -> @http.Response
-  unhandled : (@http.Request, Error) -> @http.Response
+  decode_failure : (FailureContext) -> @mttp.Response
+  unhandled : (@mttp.Request, Error) -> @mttp.Response
 }
-pub fn DispatchContext::new(max_body_bytes? : Int32, max_issues? : Int32, decode_failure? : (FailureContext) -> @http.Response, unhandled? : (@http.Request, Error) -> @http.Response) -> Self
+pub fn DispatchContext::new(max_body_bytes? : Int32, max_issues? : Int32, decode_failure? : (FailureContext) -> @mttp.Response, unhandled? : (@mttp.Request, Error) -> @mttp.Response) -> Self
 
 pub struct Endpoint[S, I, E, O, M] {
   // private fields
@@ -167,7 +167,7 @@ pub fn[S, I, E, O, M] Endpoint::patch(Self[S, I, E, O, M], String) -> Self[S, I,
 pub fn[S, I, E, O, M] Endpoint::path(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
 pub fn[S, I, E, O, M] Endpoint::post(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
 pub fn[S, I, E, O, M] Endpoint::put(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
-pub fn[S, I, E, O, M] Endpoint::rate_limit_bucket(Self[S, I, E, O, M], (@http.Request) -> String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::rate_limit_bucket(Self[S, I, E, O, M], (@mttp.Request) -> String) -> Self[S, I, E, O, M]
 pub fn[S, I, E, O] Endpoint::request(Self[S, I, E, O, @client.Buffered], S, I) -> @client.RequestPlan[Result[Result[O, E], @client.ResponseFailure], @client.Buffered] raise @client.InvalidRequest
 pub fn[I, E, O, S2, M] Endpoint::security(Self[Unit, I, E, O, M], Input[S2]) -> Self[S2, I, E, O, M]
 pub fn[S, I, E, O, P, M] Endpoint::serve(Self[S, I, E, O, M], async (S) -> Result[P, E], async (P, I) -> Result[O, E]) -> ServerEndpoint
@@ -175,10 +175,10 @@ pub fn[I, E, O, M] Endpoint::serve_public(Self[Unit, I, E, O, M], async (I) -> R
 pub fn[S, I, E, O, R, M] Endpoint::stream_request(Self[S, I, E, O, M], S, I, async (O) -> R) -> @client.RequestPlan[Result[Result[R, E], @client.ResponseFailure], @client.Streaming] raise @client.InvalidRequest
 pub fn[S, I, E, O, M] Endpoint::summary(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
 pub fn[S, I, E, O, M] Endpoint::tag(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
-pub fn[S, I, E, O, M] Endpoint::with_method(Self[S, I, E, O, M], @http.Method, String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::with_method(Self[S, I, E, O, M], @mttp.Method, String) -> Self[S, I, E, O, M]
 
 pub struct EndpointDoc {
-  meth : @http.Method?
+  meth : @mttp.Method?
   template : String
   segments : Array[Seg]
   security : Array[Atom]
@@ -200,12 +200,12 @@ pub fn[T] EventStream::from_array(Array[T]) -> Self[T]
 pub fn[T] EventStream::from_pull(async () -> T?, () -> Unit) -> Self[T]
 
 pub(all) struct FailureContext {
-  request : @http.Request
+  request : @mttp.Request
   endpoint : EndpointDoc
   failures : Array[InputFailure]
   stage : FailureStage
 }
-pub fn FailureContext::new(@http.Request, EndpointDoc, Array[InputFailure], FailureStage) -> Self
+pub fn FailureContext::new(@mttp.Request, EndpointDoc, Array[InputFailure], FailureStage) -> Self
 
 #non_exhaustive
 #derive(Eq, @debug.Debug)
@@ -219,11 +219,11 @@ pub fn FailureStage::not_equal(Self, Self) -> Bool
 pub fn FailureStage::to_repr(Self) -> @debug.Repr
 
 pub struct Head {
-  request : @http.Request
+  request : @mttp.Request
   captures : Map[String, String]
   query : Array[(String, String)]
 }
-pub fn Head::new(@http.Request, captures? : Map[String, String], query? : Array[(String, String)]) -> Self
+pub fn Head::new(@mttp.Request, captures? : Map[String, String], query? : Array[(String, String)]) -> Self
 
 pub(all) struct Info {
   operation_id : String?
@@ -290,7 +290,7 @@ pub struct RequestSink {
   // private fields
 }
 pub fn RequestSink::add_query(Self, String, String) -> Unit
-pub fn RequestSink::set_body(Self, @http.Body) -> Unit
+pub fn RequestSink::set_body(Self, @mttp.Body) -> Unit
 pub fn RequestSink::set_capture(Self, String, String) -> Unit
 pub fn RequestSink::set_header(Self, String, String) -> Unit
 
@@ -308,7 +308,7 @@ pub fn Seg::to_repr(Self) -> @debug.Repr
 pub struct ServerEndpoint {
   // private fields
 }
-pub async fn ServerEndpoint::dispatch(Self, @http.Request, Map[String, String], DispatchContext) -> @http.Response noraise
+pub async fn ServerEndpoint::dispatch(Self, @mttp.Request, Map[String, String], DispatchContext) -> @mttp.Response noraise
 pub fn ServerEndpoint::doc(Self) -> EndpointDoc
 
 pub struct Staged[T] {

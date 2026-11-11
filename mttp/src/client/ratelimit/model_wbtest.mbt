@@ -261,7 +261,7 @@ test "delivery permutations follow admission sequence with relative and absolute
             let headers = if parsed {
               alias_quota("\{left}", "\{reset}")
             } else {
-              @http.Headers::empty()
+              @mttp.Headers::empty()
             }
             let headers = if i == 1 {
               headers.set("retry-after", "1")
@@ -332,11 +332,11 @@ test "alias joins preserve independent constraints for every pair of state shape
                 limiter.release(
                   block,
                   status=429,
-                  headers=@http.Headers::of([("retry-after-ms", "\{ms}")]),
+                  headers=@mttp.Headers::of([("retry-after-ms", "\{ms}")]),
                 )
                 model.release(block, None, Some(ms), None, 0L)
               } else {
-                limiter.release(block, status=0, headers=@http.Headers::empty())
+                limiter.release(block, status=0, headers=@mttp.Headers::empty())
               }
               if shape != 1 {
                 limiter.release(
@@ -352,14 +352,14 @@ test "alias joins preserve independent constraints for every pair of state shape
                   0L,
                 )
               } else {
-                limiter.release(quota, status=0, headers=@http.Headers::empty())
+                limiter.release(quota, status=0, headers=@mttp.Headers::empty())
               }
             }
             model.check(limiter, clock, "before shape join")
             limiter.release(
               naming,
               status=200,
-              headers=@http.Headers::of([("key", "shared")]),
+              headers=@mttp.Headers::of([("key", "shared")]),
             )
             model.release(naming, None, None, Some("shared"), 0L)
             let context = "source=\{source} destination=\{destination} left=\{left} sweep=\{sweep}"
@@ -388,7 +388,7 @@ test "alias joins preserve independent constraints for every pair of state shape
             model.expire(clock.now_unix_ms())
             model.consume(next)
             model.check(limiter, clock, context + ": admitted")
-            limiter.release(next, status=0, headers=@http.Headers::empty())
+            limiter.release(next, status=0, headers=@mttp.Headers::empty())
             assert_eq(limiter.admissions.length(), 0)
           }
         }
@@ -412,13 +412,13 @@ test "quota expiry preserves a separately merged longer Retry-After block" {
       limiter.release(
         block,
         status=429,
-        headers=@http.Headers::of([("retry-after", "60")]),
+        headers=@mttp.Headers::of([("retry-after", "60")]),
       )
       model.release(block, None, Some(60000), None, 0L)
       limiter.release(
         naming,
         status=200,
-        headers=@http.Headers::of([("key", "shared")]),
+        headers=@mttp.Headers::of([("key", "shared")]),
       )
       model.release(naming, None, None, Some("shared"), 0L)
       model.check(limiter, clock, "independent quota before expiry")
@@ -429,7 +429,7 @@ test "quota expiry preserves a separately merged longer Retry-After block" {
       model.check(limiter, clock, "independent block after quota expiry")
       let next = limiter.acquire("a", global_exempt=false)
       assert_eq(clock.slept(), [59000])
-      limiter.release(next, status=0, headers=@http.Headers::empty())
+      limiter.release(next, status=0, headers=@mttp.Headers::empty())
     }
   })
 }
@@ -485,7 +485,7 @@ test "random admission identities aliases resets and duplicate releases match th
           let headers = if parsed {
             alias_quota("\{left}", "\{reset / 1000L}")
           } else {
-            @http.Headers::empty()
+            @mttp.Headers::empty()
           }
           let headers = if retry is Some(ms) {
             headers.set("retry-after-ms", "\{ms}")
@@ -528,7 +528,7 @@ test "random admission identities aliases resets and duplicate releases match th
         assert_eq(limiter.admissions.length(), pending.length())
       }
       for token in pending {
-        limiter.release(token, status=0, headers=@http.Headers::empty())
+        limiter.release(token, status=0, headers=@mttp.Headers::empty())
       }
       assert_eq(limiter.admissions.length(), 0)
     }

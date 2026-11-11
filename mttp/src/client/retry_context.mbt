@@ -1,7 +1,7 @@
 ///|
 /// Inputs to a retry decision. Attempt zero is the initial exchange.
 pub(all) struct RetryContext {
-  request : @http.RequestHead
+  request : @mttp.RequestHead
   idempotent : Bool
   bucket : String
   attempt : Int32
@@ -15,7 +15,7 @@ pub(all) struct RetryContext {
 ///|
 /// Creates a context, with midpoint jitter and no deadline by default.
 pub fn RetryContext::new(
-  request : @http.RequestHead,
+  request : @mttp.RequestHead,
   idempotent~ : Bool,
   replayable~ : Bool,
   attempt~ : Int32 = 0,
@@ -42,7 +42,7 @@ pub fn RetryContext::new(
 /// Captures live request facts at the boundary before invoking a policy.
 /// Later acquisition or closure of the body cannot change this snapshot.
 pub fn RetryContext::capture(
-  request : @http.Request,
+  request : @mttp.Request,
   attempt~ : Int32 = 0,
   bucket~ : String = "default",
   random~ : Double = 0.5,
@@ -52,7 +52,7 @@ pub fn RetryContext::capture(
 ) -> RetryContext {
   RetryContext::new(
     request.head(),
-    idempotent=@http.is_idempotent(request),
+    idempotent=@mttp.is_idempotent(request),
     replayable=replayable.unwrap_or_else(() => request.body.is_replayable()),
     attempt~,
     bucket~,
@@ -68,9 +68,9 @@ pub(all) enum AttemptResult[T] {
   /// A complete buffered value with actual response metadata.
   Buffered(Reply[T])
   /// A selected stream consumer that has not started.
-  StreamReady(@http.ResponseHead)
+  StreamReady(@mttp.ResponseHead)
   /// A raised transport failure, distinct from response error values.
-  TransportFailure(@http.TransportError)
+  TransportFailure(@mttp.TransportError)
 }
 
 ///|

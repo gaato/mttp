@@ -35,8 +35,8 @@
 ///       zero_means_backoff: false,
 ///     },
 ///   }
-///   let post = @http.Request::post("/messages")
-///   let headers = @http.Headers::of([("Retry-After", "3")])
+///   let post = @mttp.Request::post("/messages")
+///   let headers = @mttp.Headers::of([("Retry-After", "3")])
 ///   let limited = @retry.Response(status=429, headers~)
 ///   assert_eq(
 ///     rule.decide(
@@ -66,7 +66,7 @@
 pub fn RetryRule::decide(
   self : RetryRule,
   outcome : AttemptOutcome,
-  request : @http.RequestHead,
+  request : @mttp.RequestHead,
   attempt~ : Int32,
   random~ : Double,
   now_unix_ms? : Int64,
@@ -109,7 +109,7 @@ pub fn RetryRule::decide(
 fn RetryRule::refusal(
   self : RetryRule,
   outcome : AttemptOutcome,
-  request : @http.RequestHead,
+  request : @mttp.RequestHead,
   idempotent : Bool,
 ) -> StopReason? {
   match outcome {
@@ -167,7 +167,7 @@ fn RetryRule::status_rule(self : RetryRule, status : Int32) -> StatusRule? {
 // None when `methods` allows the request, else `MethodNotAllowed`.
 fn permit(
   methods : Methods,
-  request : @http.RequestHead,
+  request : @mttp.RequestHead,
   idempotent : Bool,
 ) -> StopReason? {
   let allowed = match methods {

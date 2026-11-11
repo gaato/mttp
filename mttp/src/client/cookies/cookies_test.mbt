@@ -9,22 +9,22 @@ test "redirect wrapper stores cookies before following each hop" {
           seen.push(request.headers.get("cookie"))
           match seen.length() {
             1 =>
-              @http.Response::new(
+              @mttp.Response::new(
                 302,
-                headers=@http.Headers::of([
+                headers=@mttp.Headers::of([
                   ("location", "/b"),
                   ("set-cookie", "sid=one; Path=/"),
                 ]),
               )
             2 =>
-              @http.Response::new(
+              @mttp.Response::new(
                 302,
-                headers=@http.Headers::of([
+                headers=@mttp.Headers::of([
                   ("location", "https://other.example/"),
                   ("set-cookie", "sid=two; Path=/"),
                 ]),
               )
-            _ => @http.Response::new(200)
+            _ => @mttp.Response::new(200)
           }
         }),
         jar,
@@ -33,8 +33,8 @@ test "redirect wrapper stores cookies before following each hop" {
     defer backend.close()
     backend
     .send(
-      @http.Request::get("https://h.example/a"),
-      @http.SendOptions::default(),
+      @mttp.Request::get("https://h.example/a"),
+      @mttp.SendOptions::default(),
     )
     .close()
     assert_eq(seen, [None, Some("sid=one"), None])
@@ -47,7 +47,7 @@ test "cookie backend implements the shared backend contract" {
   @driver.run_sync(() => {
     @sim.check_backend_contract(() => {
       @cookies.Cookies::new(
-        @client.from_fn((_, _) => @http.Response::new(200)),
+        @client.from_fn((_, _) => @mttp.Response::new(200)),
         @cookie.CookieJar::new(@sim.FakeClock::new()),
       )
     })
@@ -66,20 +66,20 @@ test "cookies store response heads and attach by URL without changing explicit h
         (request, options) => {
           seen.push((request.url, request.headers.get("cookie")))
           seen_options.push(options)
-          @http.Response::new(
+          @mttp.Response::new(
             200,
-            headers=@http.Headers::of([("set-cookie", "sid=1; Path=/; Secure")]),
+            headers=@mttp.Headers::of([("set-cookie", "sid=1; Path=/; Secure")]),
           )
         },
         on_close=() => closes.val += 1,
       ),
       jar,
     )
-    let options = { ..@http.SendOptions::default(), timeout_ms: Some(3), }
-    let request = @http.Request::get("https://a.example/one")
+    let options = { ..@mttp.SendOptions::default(), timeout_ms: Some(3), }
+    let request = @mttp.Request::get("https://a.example/one")
     backend.send(request, options).close()
-    backend.send(@http.Request::get("https://a.example/two"), options).close()
-    backend.send(@http.Request::get("https://b.example/"), options).close()
+    backend.send(@mttp.Request::get("https://a.example/two"), options).close()
+    backend.send(@mttp.Request::get("https://b.example/"), options).close()
     backend.send(request.header("cookie", "caller=2"), options).close()
     assert_eq(seen, [
       ("https://a.example/one", None),
@@ -93,7 +93,7 @@ test "cookies store response heads and attach by URL without changing explicit h
     backend.close()
     assert_eq(closes.val, 1)
     try backend.send(request, options) catch {
-      @http.TransportError(kind=Closed, ..) => ()
+      @mttp.TransportError(kind=Closed, ..) => ()
       _ => fail("wrong closed error")
     } noraise {
       _ => fail("accepted after close")
@@ -109,18 +109,18 @@ test "failed and invalid requests do not store cookies or reach the inner backen
     let backend = @cookies.Cookies::new(
       @client.from_fn((_, _) => {
         calls.val += 1
-        raise @http.TransportError(kind=Network, phase=Head, detail="fixture")
+        raise @mttp.TransportError(kind=Network, phase=Head, detail="fixture")
       }),
       jar,
     )
     defer backend.close()
     try
       backend.send(
-        @http.Request::get("https://a.example/"),
-        @http.SendOptions::default(),
+        @mttp.Request::get("https://a.example/"),
+        @mttp.SendOptions::default(),
       )
     catch {
-      @http.TransportError(kind=Network, ..) => ()
+      @mttp.TransportError(kind=Network, ..) => ()
       _ => fail("wrong transport error")
     } noraise {
       _ => fail("expected failure")
@@ -128,11 +128,11 @@ test "failed and invalid requests do not store cookies or reach the inner backen
     assert_eq(jar.length(), 0)
     try
       backend.send(
-        @http.Request::get("https://a.example/").header("bad name", "x"),
-        @http.SendOptions::default(),
+        @mttp.Request::get("https://a.example/").header("bad name", "x"),
+        @mttp.SendOptions::default(),
       )
     catch {
-      @http.TransportError(kind=Invalid, ..) => ()
+      @mttp.TransportError(kind=Invalid, ..) => ()
       _ => fail("wrong validation error")
     } noraise {
       _ => fail("expected validation")

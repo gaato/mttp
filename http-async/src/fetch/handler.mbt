@@ -16,7 +16,7 @@ async fn empty_response(status : Int32, request : JsRequest) -> WebResponse {
 /// attribute outlives response completion; register it before the handler returns.
 /// Request bodies default to a 1 MiB ceiling and are delivered in 64 KiB pieces.
 pub fn fetch_handler(
-  handler : @http.Handler,
+  handler : @mttp.Handler,
   max_body_bytes~ : Int32 = 1048576,
 ) -> (JsRequest, JsBackground) -> JsPromise {
   (request, register) => {
@@ -48,7 +48,7 @@ pub fn fetch_handler(
         }
         let mut transferred = false
         defer (if !transferred { input.close() })
-        let mut headers = @http.Headers::empty()
+        let mut headers = @mttp.Headers::empty()
         for pair in request.headers() {
           headers = headers.add(pair[0], pair[1])
         }
@@ -71,24 +71,24 @@ pub fn fetch_handler(
             background.add(@js_async.Promise::from_async(work))
           }
         }
-        let attributes = @http.Attributes::empty().put(
-          @http.background, schedule,
+        let attributes = @mttp.Attributes::empty().put(
+          @mttp.background, schedule,
         )
         let attributes = if environments.has(request) {
           attributes.put(env, environments.get(request))
         } else {
           attributes
         }
-        let model = @http.Request::{
-          ..@http.Request::new(
-            @http.Method::parse(request.verb()),
+        let model = @mttp.Request::{
+          ..@mttp.Request::new(
+            @mttp.Method::parse(request.verb()),
             request.url(),
           ),
           headers,
           attributes,
           body: if has_body {
             Stream(
-              @http.StreamBody::new(
+              @mttp.StreamBody::new(
                 input,
                 length?=match framing {
                   Length(n) => Some(n)
@@ -108,7 +108,7 @@ pub fn fetch_handler(
         if input.failure is Some(error) {
           reply.close()
           return empty_response(
-            if error is @http.TransportError(kind=TooLarge(..), ..) {
+            if error is @mttp.TransportError(kind=TooLarge(..), ..) {
               413
             } else {
               400
@@ -120,7 +120,7 @@ pub fn fetch_handler(
           _ =>
             return empty_response(
               match input.failure {
-                Some(@http.TransportError(kind=TooLarge(..), ..)) => 413
+                Some(@mttp.TransportError(kind=TooLarge(..), ..)) => 413
                 Some(_) => 400
                 None => 500
               },

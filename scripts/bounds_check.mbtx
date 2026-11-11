@@ -11,7 +11,7 @@ import {
 // Every row's last cell ("Tests") names the tests that check its bound, as a
 // backticked file path followed by the quoted names of that file's tests:
 //
-//   `mttp/src/sse/parser_test.mbt`: "first test", "second test"; `http/src/h1/head_wbtest.mbt`: "third"
+//   `mttp/src/sse/parser_test.mbt`: "first test", "second test"; `mttp/src/h1/head_wbtest.mbt`: "third"
 //
 // File paths are relative to the directory that holds the ledger: the
 // repository root, whose RESOURCE_BOUNDS.md covers every module.

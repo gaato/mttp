@@ -54,8 +54,8 @@ test "rest captures preserve encoded slashes empty segments and empty tails" {
       assert_eq(ep.call(client, (), parts).unwrap().unwrap(), parts)
     }
     assert_eq(
-      router.dispatch(@http.Request::get("/files/special")).body,
-      @http.Bytes(b"specific"),
+      router.dispatch(@mttp.Request::get("/files/special")).body,
+      @mttp.Bytes(b"specific"),
     )
   })
   client.close()

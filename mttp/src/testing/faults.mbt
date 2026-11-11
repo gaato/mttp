@@ -4,10 +4,10 @@
 /// Negative counts inject no failures. The supplied error determines the
 /// failure phase, allowing unsent and possibly-sent retry cases.
 pub fn fail_sends(
-  inner : &@http.Backend,
-  error : @http.TransportError,
+  inner : &@mttp.Backend,
+  error : @mttp.TransportError,
   times~ : Int32 = 1,
-) -> &@http.Backend {
+) -> &@mttp.Backend {
   let remaining = Ref(times.max(0))
   @client.from_fn(
     (request, options) => {
@@ -23,29 +23,29 @@ pub fn fail_sends(
 
 ///|
 priv struct FaultStream {
-  source : &@http.BodyStream
-  error : @http.TransportError
+  source : &@mttp.BodyStream
+  error : @mttp.TransportError
   mut remaining : Int32
   mut closed : Bool
 }
 
 ///|
-impl @http.BodyStream for FaultStream with fn read_some(self) {
+impl @mttp.BodyStream for FaultStream with fn read_some(self) {
   if self.closed {
     return None
   }
-  errdefer @http.BodyStream::close(self)
+  errdefer @mttp.BodyStream::close(self)
   if self.remaining == 0 {
     raise self.error
   }
   match self.source.read_some() {
     None => {
-      @http.BodyStream::close(self)
+      @mttp.BodyStream::close(self)
       None
     }
     Some(chunk) => {
       if chunk.is_empty() {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=Protocol,
           phase=Body,
           detail="empty source chunk",
@@ -59,7 +59,7 @@ impl @http.BodyStream for FaultStream with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for FaultStream with fn close(self) {
+impl @mttp.BodyStream for FaultStream with fn close(self) {
   if !self.closed {
     self.closed = true
     self.source.close()
@@ -72,13 +72,13 @@ impl @http.BodyStream for FaultStream with fn close(self) {
 /// EOF or source error wins. The wrapper owns and closes the source on EOF,
 /// failure, cancellation and explicit close, with sticky EOF afterwards.
 pub fn fail_after(
-  source : &@http.BodyStream,
+  source : &@mttp.BodyStream,
   after_bytes : Int32,
-  error : @http.TransportError,
-) -> &@http.BodyStream raise @http.TransportError {
+  error : @mttp.TransportError,
+) -> &@mttp.BodyStream raise @mttp.TransportError {
   if after_bytes < 0 {
     source.close()
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Body,
       detail="negative fault offset",

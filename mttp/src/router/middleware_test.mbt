@@ -33,20 +33,20 @@ test "request IDs preserve single values and access logs include route metadata"
   @driver.run_sync(() => {
     for
       (headers, expected) in [
-        (@http.Headers::empty(), "generated"),
-        (@http.Headers::of([("x-request-id", "caller")]), "caller"),
-        (@http.Headers::of([("x-request-id", "")]), "generated"),
+        (@mttp.Headers::empty(), "generated"),
+        (@mttp.Headers::of([("x-request-id", "caller")]), "caller"),
+        (@mttp.Headers::of([("x-request-id", "")]), "generated"),
         (
-          @http.Headers::of([("x-request-id", "a"), ("x-request-id", "b")]),
+          @mttp.Headers::of([("x-request-id", "a"), ("x-request-id", "b")]),
           "generated",
         ),
       ] {
       let response = router.dispatch({
-        ..@http.Request::get("/logged"),
+        ..@mttp.Request::get("/logged"),
         headers,
       })
       assert_eq(response.headers.get("x-request-id"), Some(expected))
-      assert_eq(response.body, @http.Body::Bytes(@http.encode_utf8(expected)))
+      assert_eq(response.body, @mttp.Body::Bytes(@mttp.encode_utf8(expected)))
       assert_eq(log.last(), Some((expected, 200, Some("/logged"), 7L)))
     }
   })
@@ -57,7 +57,7 @@ test "request IDs preserve single values and access logs include route metadata"
   })
   @driver.run_sync(() => {
     assert_true(
-      random.dispatch(@http.Request::get("/")).headers
+      random.dispatch(@mttp.Request::get("/")).headers
       .get("x-request-id")
       .unwrap()
       .length() >
@@ -85,12 +85,12 @@ test "authentication hiding applies only to failed authentication inputs" {
     },
   )
   @driver.run_sync(() => {
-    let hidden = router.dispatch(@http.Request::get("/private"))
+    let hidden = router.dispatch(@mttp.Request::get("/private"))
     assert_eq(hidden.status, 404)
     assert_eq(hidden.headers.get("www-authenticate"), None)
-    assert_eq(router.dispatch(@http.Request::get("/query")).status, 400)
+    assert_eq(router.dispatch(@mttp.Request::get("/query")).status, 400)
     assert_eq(
-      router.dispatch(@http.Request::get("/private").bearer("ok")).status,
+      router.dispatch(@mttp.Request::get("/private").bearer("ok")).status,
       200,
     )
   })
@@ -114,17 +114,17 @@ test "HEAD explicit routes and early failures always omit and close bodies" {
     @endpoint.endpoint.options("/").serve_public(_ => Ok(())),
   ])
   @driver.run_sync(() => {
-    assert_eq(router.dispatch(@http.Request::options("/")).status, 200)
-    let response = router.dispatch(@http.Request::new(Head, "/"))
-    assert_eq(response.body, @http.Body::Empty)
+    assert_eq(router.dispatch(@mttp.Request::options("/")).status, 200)
+    let response = router.dispatch(@mttp.Request::new(Head, "/"))
+    assert_eq(response.body, @mttp.Body::Empty)
     assert_eq(calls.val, 1)
-    let response = router.dispatch(@http.Request::new(Head, "/bad path"))
+    let response = router.dispatch(@mttp.Request::new(Head, "/bad path"))
     assert_eq(response.status, 400)
-    assert_eq(response.body, @http.Body::Empty)
+    assert_eq(response.body, @mttp.Body::Empty)
     router.close()
-    let response = router.dispatch(@http.Request::new(Head, "/"))
+    let response = router.dispatch(@mttp.Request::new(Head, "/"))
     assert_eq(response.status, 503)
-    assert_eq(response.body, @http.Body::Empty)
+    assert_eq(response.body, @mttp.Body::Empty)
   })
 }
 
@@ -135,7 +135,7 @@ test "default decode failures retain nested validation paths and issue codes" {
     .input(@endpoint.body(@schema.array(@schema.jint).body()))
   let router = @router.Router::new([ep.serve_public(_ => Ok(()))])
   @driver.run_sync(() => {
-    let response = router.dispatch(@http.Request::post("/").body_json(["bad"]))
+    let response = router.dispatch(@mttp.Request::post("/").body_json(["bad"]))
     assert_eq(response.status, 400)
     guard response.body is Bytes(bytes) else { fail("missing problem") }
     assert_true(

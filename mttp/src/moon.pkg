@@ -1,5 +1,19 @@
 import {
-  "gaato/http",
+  "gaato/mttp/internal/text",
+  "gaato/mttp/internal/form",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/percent",
+  "moonbitlang/core/encoding/base64",
+}
+
+import {
+  "gaato/mttp/driver",
   "gaato/mttp/multipart",
   "gaato/mttp/sse",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/random",
 } for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/mttp/driver" ],
+)

@@ -2,17 +2,17 @@
 package "gaato/mttp/multipart"
 
 import {
-  "gaato/http",
+  "gaato/mttp",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",
 }
 
 // Values
-pub fn body(@http.Request, Array[Part], boundary~ : String) -> @http.Request raise MultipartError
+pub fn body(@mttp.Request, Array[Part], boundary~ : String) -> @mttp.Request raise MultipartError
 
 pub fn encode(Array[Part], String) -> (String, Bytes) raise MultipartError
 
-pub fn encode_body(Array[Part], String) -> (String, @http.Body) raise MultipartError
+pub fn encode_body(Array[Part], String) -> (String, @mttp.Body) raise MultipartError
 
 pub fn encode_segments(Array[Part], String) -> (String, Array[Bytes]) raise MultipartError
 
@@ -38,11 +38,11 @@ pub(all) struct Part {
   name : String
   filename : String?
   content_type : String?
-  body : @http.Body
+  body : @mttp.Body
 }
 pub fn Part::equal(Self, Self) -> Bool
 pub fn Part::file(String, String, String, Bytes) -> Self
-pub fn Part::file_stream(String, String, String, &@http.BodyStream, length? : Int64) -> Self
+pub fn Part::file_stream(String, String, String, &@mttp.BodyStream, length? : Int64) -> Self
 pub fn Part::json(String, @json.Json) -> Self
 pub fn Part::not_equal(Self, Self) -> Bool
 pub fn Part::text(String, String) -> Self

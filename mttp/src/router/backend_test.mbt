@@ -13,14 +13,14 @@ test "readers return EOF after closing their response or retained request contai
       .get("/")
       .output(@endpoint.stream_body_out())
       .serve_public(_ => {
-        Ok((None, @http.Body::Stream(@http.StreamBody::new(source))))
+        Ok((None, @mttp.Body::Stream(@mttp.StreamBody::new(source))))
       })
     let router = @router.Router::new([ep])
     driver.run(() => {
       let response = if backend {
-        router.send(@http.Request::get("/"), @http.SendOptions::default())
+        router.send(@mttp.Request::get("/"), @mttp.SendOptions::default())
       } else {
-        router.dispatch(@http.Request::get("/"))
+        router.dispatch(@mttp.Request::get("/"))
       }
       guard response.body is Stream(body) else { fail("no stream") }
       let reader = body.take()
@@ -30,16 +30,16 @@ test "readers return EOF after closing their response or retained request contai
       assert_eq(source.reads(), 0)
     })
   }
-  let retained : Ref[&@http.BodyStream?] = Ref(None)
+  let retained : Ref[&@mttp.BodyStream?] = Ref(None)
   let middleware : @router.Middleware = (request, _) => {
     if request.body is Stream(body) {
       retained.val = Some(
         body.take() catch {
-          _ => return @http.Response::new(500)
+          _ => return @mttp.Response::new(500)
         },
       )
     }
-    @http.Response::new(204)
+    @mttp.Response::new(204)
   }
   let router = @router.Router::new([], options={
     ..@router.ServerOptions::default(),
@@ -49,8 +49,8 @@ test "readers return EOF after closing their response or retained request contai
   driver.run(() => {
     assert_eq(
       router.send(
-        @http.Request::post("/").body_stream(feed),
-        @http.SendOptions::default(),
+        @mttp.Request::post("/").body_stream(feed),
+        @mttp.SendOptions::default(),
       ).status,
       204,
     )
@@ -76,26 +76,26 @@ test "backend preflights streamed uploads before entering handlers" {
   let feed = @sim.Feed::bytes(driver, [b"a", b"bc"])
   driver.run(() => {
     let response = router.send(
-      @http.Request::post("/echo").body_stream(feed, length=3L),
-      @http.SendOptions::default(),
+      @mttp.Request::post("/echo").body_stream(feed, length=3L),
+      @mttp.SendOptions::default(),
     )
-    assert_eq(response.body, @http.Body::Bytes(b"abc"))
+    assert_eq(response.body, @mttp.Body::Bytes(b"abc"))
     assert_eq(called.val, 1)
     for length in [None, Some(0L)] {
       let bad = @sim.Feed::new(driver, [
         Fail(
-          @http.TransportError(kind=Network, phase=Pool, detail="before head"),
+          @mttp.TransportError(kind=Network, phase=Pool, detail="before head"),
         ),
       ])
       try
         ignore(
           router.send(
-            @http.Request::post("/echo").body_stream(bad, length?),
-            @http.SendOptions::default(),
+            @mttp.Request::post("/echo").body_stream(bad, length?),
+            @mttp.SendOptions::default(),
           ),
         )
       catch {
-        @http.TransportError(kind=Network, ..) => ()
+        @mttp.TransportError(kind=Network, ..) => ()
         error => raise error
       } noraise {
         _ => fail("failing upload dispatched")
@@ -105,20 +105,20 @@ test "backend preflights streamed uploads before entering handlers" {
     let empty = @sim.Feed::bytes(driver, [])
     assert_eq(
       router.send(
-        @http.Request::post("/echo").body_stream(empty, length=0L),
-        @http.SendOptions::default(),
+        @mttp.Request::post("/echo").body_stream(empty, length=0L),
+        @mttp.SendOptions::default(),
       ).body,
-      @http.Body::Bytes(b""),
+      @mttp.Body::Bytes(b""),
     )
     assert_eq(called.val, 2)
     let later = @sim.Feed::new(driver, [
       Chunk(b"x"),
-      Fail(@http.TransportError(kind=Network, phase=Body, detail="after first")),
+      Fail(@mttp.TransportError(kind=Network, phase=Body, detail="after first")),
     ])
     assert_eq(
       router.send(
-        @http.Request::post("/echo").body_stream(later),
-        @http.SendOptions::default(),
+        @mttp.Request::post("/echo").body_stream(later),
+        @mttp.SendOptions::default(),
       ).status,
       400,
     )
@@ -141,17 +141,17 @@ test "backend response limits admit exact bytes and refuse crossing stream chunk
     .get("/stream")
     .output(@endpoint.stream_body_out())
     .serve_public(_ => {
-      Ok((None, @http.Body::Stream(@http.StreamBody::new(output))))
+      Ok((None, @mttp.Body::Stream(@mttp.StreamBody::new(output))))
     }),
     @endpoint.endpoint.get("/empty").serve_public(_ => Ok(())),
   ])
   driver.run(() => {
     let options = {
-      ..@http.SendOptions::default(),
+      ..@mttp.SendOptions::default(),
       body: Exchange(max_bytes=3),
     }
     assert_eq(
-      router.send(@http.Request::get("/empty"), {
+      router.send(@mttp.Request::get("/empty"), {
         ..options,
         body: Exchange(max_bytes=0),
       }).status,
@@ -159,41 +159,41 @@ test "backend response limits admit exact bytes and refuse crossing stream chunk
     )
     try
       ignore(
-        router.send(@http.Request::get("/bytes"), {
+        router.send(@mttp.Request::get("/bytes"), {
           ..options,
           body: Exchange(max_bytes=0),
         }),
       )
     catch {
-      @http.TransportError(kind=TooLarge(limit=0), ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=0), ..) => ()
       error => raise error
     } noraise {
       _ => fail("zero cap ignored")
     }
     assert_eq(
-      router.send(@http.Request::get("/bytes"), options).body,
-      @http.Body::Bytes(b"abc"),
+      router.send(@mttp.Request::get("/bytes"), options).body,
+      @mttp.Body::Bytes(b"abc"),
     )
     try
       ignore(
-        router.send(@http.Request::get("/bytes"), {
+        router.send(@mttp.Request::get("/bytes"), {
           ..options,
           body: Exchange(max_bytes=2),
         }),
       )
     catch {
-      @http.TransportError(kind=TooLarge(limit=2), phase=Body, ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=2), phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("byte cap ignored")
     }
-    let response = router.send(@http.Request::get("/stream"), options)
+    let response = router.send(@mttp.Request::get("/stream"), options)
     assert_eq(output.reads(), 0)
     guard response.body is Stream(body) else { fail("no stream") }
     let reader = body.take()
     assert_eq(reader.read_some(), Some(b"abc"))
     try ignore(reader.read_some()) catch {
-      @http.TransportError(kind=TooLarge(limit=3), phase=Body, ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=3), phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("crossing chunk exposed")
@@ -202,7 +202,7 @@ test "backend response limits admit exact bytes and refuse crossing stream chunk
     response.close()
     assert_eq(output.closes(), 1)
     assert_eq(
-      router.send(@http.Request::get("/bytes"), {
+      router.send(@mttp.Request::get("/bytes"), {
         ..options,
         body: Stream(idle_ms=None),
       }).status,
@@ -227,43 +227,43 @@ test "timed router sends require ports and enforce head exchange and idle deadli
     .get("/stream")
     .output(@endpoint.stream_body_out())
     .serve_public(_ => {
-      Ok((None, @http.Body::Stream(@http.StreamBody::new(feed))))
+      Ok((None, @mttp.Body::Stream(@mttp.StreamBody::new(feed))))
     })
   let router = @router.Router::new([head, stream], clock~, timer~)
   let no_timer = @router.Router::new([])
   driver.run(() => {
-    let options = { ..@http.SendOptions::default(), timeout_ms: Some(5), }
+    let options = { ..@mttp.SendOptions::default(), timeout_ms: Some(5), }
     let invalid = @sim.Feed::new(driver, [
       Fail(
-        @http.TransportError(kind=Network, phase=Body, detail="timed preflight"),
+        @mttp.TransportError(kind=Network, phase=Body, detail="timed preflight"),
       ),
     ])
     try
       ignore(
-        router.send(@http.Request::post("/head").body_stream(invalid), options),
+        router.send(@mttp.Request::post("/head").body_stream(invalid), options),
       )
     catch {
-      @http.TransportError(kind=Network, ..) => ()
+      @mttp.TransportError(kind=Network, ..) => ()
       error => raise error
     } noraise {
       _ => fail("timed source error replaced")
     }
     assert_eq(invalid.closes(), 1)
-    try ignore(no_timer.send(@http.Request::get("/"), options)) catch {
-      @http.TransportError(kind=Invalid, phase=Pool, ..) => ()
+    try ignore(no_timer.send(@mttp.Request::get("/"), options)) catch {
+      @mttp.TransportError(kind=Invalid, phase=Pool, ..) => ()
       error => raise error
     } noraise {
       _ => fail("missing timing ports accepted")
     }
-    try ignore(router.send(@http.Request::get("/head"), options)) catch {
-      @http.TransportError(kind=Timeout(ms=5), phase=Head, ..) => ()
+    try ignore(router.send(@mttp.Request::get("/head"), options)) catch {
+      @mttp.TransportError(kind=Timeout(ms=5), phase=Head, ..) => ()
       error => raise error
     } noraise {
       _ => fail("head deadline ignored")
     }
-    let response = router.send(@http.Request::get("/stream"), options)
+    let response = router.send(@mttp.Request::get("/stream"), options)
     try ignore(@client.read_body(response.body, 100)) catch {
-      @http.TransportError(kind=Timeout(ms=5), phase=Body, ..) => ()
+      @mttp.TransportError(kind=Timeout(ms=5), phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("exchange deadline ignored")
@@ -281,10 +281,10 @@ test "timed router sends require ports and enforce head exchange and idle deadli
       .get("/")
       .output(@endpoint.stream_body_out())
       .serve_public(_ => {
-        Ok((None, @http.Body::Stream(@http.StreamBody::new(fast))))
+        Ok((None, @mttp.Body::Stream(@mttp.StreamBody::new(fast))))
       })
     let streaming = @router.Router::new([ep], clock~, timer~)
-    let response = streaming.send(@http.Request::get("/"), {
+    let response = streaming.send(@mttp.Request::get("/"), {
       ..options,
       body: Stream(idle_ms=Some(5)),
     })
@@ -295,15 +295,15 @@ test "timed router sends require ports and enforce head exchange and idle deadli
       .get("/")
       .output(@endpoint.stream_body_out())
       .serve_public(_ => {
-        Ok((None, @http.Body::Stream(@http.StreamBody::new(slow))))
+        Ok((None, @mttp.Body::Stream(@mttp.StreamBody::new(slow))))
       })
     let streaming = @router.Router::new([ep], clock~, timer~)
-    let response = streaming.send(@http.Request::get("/"), {
+    let response = streaming.send(@mttp.Request::get("/"), {
       ..options,
       body: Stream(idle_ms=Some(3)),
     })
     try ignore(@client.read_body(response.body, 100)) catch {
-      @http.TransportError(kind=Timeout(ms=3), phase=Body, ..) => ()
+      @mttp.TransportError(kind=Timeout(ms=3), phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("idle deadline ignored")
@@ -323,12 +323,12 @@ test "exchange budget includes elapsed head time and caller pauses before readin
     .output(@endpoint.stream_body_out())
     .serve_public(_ => {
       driver.sleep(2)
-      Ok((None, @http.Body::Stream(@http.StreamBody::new(feed))))
+      Ok((None, @mttp.Body::Stream(@mttp.StreamBody::new(feed))))
     })
   let router = @router.Router::new([ep], clock~, timer~)
   driver.run(() => {
-    let response = router.send(@http.Request::get("/"), {
-      ..@http.SendOptions::default(),
+    let response = router.send(@mttp.Request::get("/"), {
+      ..@mttp.SendOptions::default(),
       timeout_ms: Some(8),
     })
     guard response.body is Stream(body) else { fail("no body") }
@@ -336,7 +336,7 @@ test "exchange budget includes elapsed head time and caller pauses before readin
     assert_eq(reader.read_some(), Some(b"x"))
     driver.sleep(4)
     try ignore(reader.read_some()) catch {
-      @http.TransportError(kind=Timeout(ms=0), phase=Body, ..) => ()
+      @mttp.TransportError(kind=Timeout(ms=0), phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("expired budget ignored")
@@ -354,8 +354,8 @@ test "backend cancellation unwinds a prefetched request and a pending response r
     let task = driver.spawn(() => {
       ignore(
         router.send(
-          @http.Request::post("/").body_stream(feed),
-          @http.SendOptions::default(),
+          @mttp.Request::post("/").body_stream(feed),
+          @mttp.SendOptions::default(),
         ),
       )
     })
@@ -368,12 +368,12 @@ test "backend cancellation unwinds a prefetched request and a pending response r
       .get("/")
       .output(@endpoint.stream_body_out())
       .serve_public(_ => {
-        Ok((None, @http.Body::Stream(@http.StreamBody::new(source))))
+        Ok((None, @mttp.Body::Stream(@mttp.StreamBody::new(source))))
       })
     let router = @router.Router::new([ep])
     let response = router.send(
-      @http.Request::get("/"),
-      @http.SendOptions::default(),
+      @mttp.Request::get("/"),
+      @mttp.SendOptions::default(),
     )
     let task = driver.spawn(() => ignore(@client.read_body(response.body, 100)))
     driver.pause()

@@ -9,7 +9,7 @@ create a JavaScript export.
 ///|
 #cfg(target="js")
 test "a fetch adapter can be assembled without a host runtime call" {
-  let adapter = @fetch.fetch_handler(_ => @http.Response::new(204))
+  let adapter = @fetch.fetch_handler(_ => @mttp.Response::new(204))
   ignore(adapter)
 }
 ```

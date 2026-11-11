@@ -1,6 +1,6 @@
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/rt",
   "gaato/mttp/client/retry",
   "gaato/mttp/sse",
   "moonbitlang/core/debug",
@@ -9,14 +9,14 @@ import {
 }
 
 import {
-  "gaato/http/driver",
-  "gaato/http/sim",
+  "gaato/mttp/driver",
+  "gaato/mttp/sim",
 } for "test"
 
 import {
-  "gaato/http/driver",
+  "gaato/mttp/driver",
 } for "wbtest"
 
 options(
-  "allow-experimental-packages": [ "gaato/http/driver" ],
+  "allow-experimental-packages": [ "gaato/mttp/driver" ],
 )

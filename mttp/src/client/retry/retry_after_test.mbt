@@ -34,7 +34,7 @@ test "decimal seconds validate completely and saturate without rounding" {
 
 ///|
 test "header precedence units duplicates and ASCII case" {
-  let mut headers = @http.Headers::empty()
+  let mut headers = @mttp.Headers::empty()
   assert_eq(@retry.retry_after_ms(headers), None)
   headers = headers.set("ReTrY-AfTeR", "1.25")
   assert_eq(@retry.retry_after_ms(headers), Some(1250))

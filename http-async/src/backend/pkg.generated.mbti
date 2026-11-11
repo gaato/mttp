@@ -2,10 +2,10 @@
 package "gaato/http-async/backend"
 
 import {
-  "gaato/http",
   "gaato/http-async",
-  "gaato/http/h1client",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/h1client",
+  "gaato/mttp/rt",
 }
 
 // Values
@@ -19,8 +19,8 @@ pub struct AsyncBackend {
 pub fn AsyncBackend::close(Self) -> Unit
 pub fn AsyncBackend::idle_connections(Self) -> Int32
 pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust? : @http-async.Trust, clock? : &@rt.Clock, timer? : &@rt.Timer) -> Self
-pub async fn AsyncBackend::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
-pub impl @http.Backend for AsyncBackend
+pub async fn AsyncBackend::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
+pub impl @mttp.Backend for AsyncBackend
 
 // Type aliases
 

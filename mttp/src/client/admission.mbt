@@ -4,7 +4,7 @@
 /// decoding failures. Implementations ignore repeated releases of a token.
 pub(open) trait RateLimiter {
   async fn acquire(Self, String, global_exempt~ : Bool) -> Admission
-  async fn release(Self, Admission, status~ : Int32, headers~ : @http.Headers) -> Unit
+  async fn release(Self, Admission, status~ : Int32, headers~ : @mttp.Headers) -> Unit
 }
 
 ///|
@@ -55,7 +55,7 @@ pub extend NoLimiter with RateLimiter::{acquire, release}
 pub impl RateLimiter for NoLimiter with fn acquire(self, bucket, global_exempt~) {
   let _ = global_exempt
   if self.sequence == 9223372036854775807L {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Pool,
       detail="admission sequence exhausted",
@@ -75,13 +75,13 @@ pub impl RateLimiter for NoLimiter with fn release(_, _, status~, headers~) {
 /// A settled attempt, reported after releasing admission. Attempt zero is
 /// the initial send; status zero means no response head arrived.
 pub(all) struct Attempt {
-  request : @http.RequestHead
+  request : @mttp.RequestHead
   /// Explicit caller annotations for observations, separate from the pure head.
-  attributes : @http.Attributes
+  attributes : @mttp.Attributes
   bucket : String
   attempt : Int32
   status : Int32
-  headers : @http.Headers
+  headers : @mttp.Headers
   duration_ms : Int64
   error : Error?
   decision : @retry.Decision?

@@ -43,7 +43,7 @@ priv struct Entry {
 /// test {
 ///   let jar = @cookie.CookieJar::new(@sim.FakeClock::new())
 ///   jar.store(
-///     @http.Headers::of([("Set-Cookie", "sid=1; Path=/; Secure")]),
+///     @mttp.Headers::of([("Set-Cookie", "sid=1; Path=/; Secure")]),
 ///     "https://example.com/login",
 ///   )
 ///   assert_eq(jar.header_for("https://example.com/"), Some("sid=1"))
@@ -94,7 +94,7 @@ pub fn CookieJar::new(
 /// host, are skipped.
 pub fn CookieJar::store(
   self : CookieJar,
-  headers : @http.Headers,
+  headers : @mttp.Headers,
   request_url : String,
 ) -> Unit {
   guard parse_request_url(request_url) is Some(url) else { return }

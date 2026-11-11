@@ -9,14 +9,14 @@ test "each middleware boundary closes replacement bodies on buffered short circu
   let replace_second : @router.Middleware = (req, next) => {
     next({ ..req, body: tracked(second), })
   }
-  let reject : @router.Middleware = (_, _) => @http.Response::new(403)
+  let reject : @router.Middleware = (_, _) => @mttp.Response::new(403)
   let router = @router.Router::new([], options={
     ..@router.ServerOptions::default(),
     middleware: [replace_first, replace_second, reject],
   })
   @driver.run_sync(() => {
     assert_eq(
-      router.dispatch({ ..@http.Request::post("/"), body: tracked(original), }).status,
+      router.dispatch({ ..@mttp.Request::post("/"), body: tracked(original), }).status,
       403,
     )
   })
@@ -37,7 +37,7 @@ test "cancelling a short circuit closes every forwarded replacement body" {
   let wait : @router.Middleware = (_, _) => {
     entered.val = true
     driver.sleep(10000)
-    @http.Response::new(403)
+    @mttp.Response::new(403)
   }
   let router = @router.Router::new([], options={
     ..@router.ServerOptions::default(),
@@ -46,7 +46,7 @@ test "cancelling a short circuit closes every forwarded replacement body" {
   driver.run(() => {
     let task = driver.spawn(() => {
       ignore(
-        router.dispatch({ ..@http.Request::post("/"), body: tracked(original), }),
+        router.dispatch({ ..@mttp.Request::post("/"), body: tracked(original), }),
       )
     })
     driver.pause()
@@ -65,13 +65,13 @@ test "repeated next calls close every short circuited replacement body" {
     ignore(next({ ..req, body: tracked(closes), }))
     next({ ..req, body: tracked(closes), })
   }
-  let reject : @router.Middleware = (_, _) => @http.Response::new(204)
+  let reject : @router.Middleware = (_, _) => @mttp.Response::new(204)
   let router = @router.Router::new([], options={
     ..@router.ServerOptions::default(),
     middleware: [replace, reject],
   })
   @driver.run_sync(() => {
-    assert_eq(router.dispatch(@http.Request::post("/")).status, 204)
+    assert_eq(router.dispatch(@mttp.Request::post("/")).status, 204)
   })
   assert_eq(closes.val, 2)
 }
@@ -86,12 +86,12 @@ test "lazy replacement request echoes remain live through EOF close and read fai
     }
     let echo : @router.Middleware = (req, _) => {
       if finish == "failure" {
-        @http.Response::new(
+        @mttp.Response::new(
           200,
-          body=Stream(@http.StreamBody::new(Failing::{ closes: Ref(0), })),
+          body=Stream(@mttp.StreamBody::new(Failing::{ closes: Ref(0), })),
         )
       } else {
-        @http.Response::new(200, body=req.body)
+        @mttp.Response::new(200, body=req.body)
       }
     }
     let router = @router.Router::new([], options={
@@ -100,7 +100,7 @@ test "lazy replacement request echoes remain live through EOF close and read fai
     })
     @driver.run_sync(() => {
       let response = router.dispatch({
-        ..@http.Request::post("/"),
+        ..@mttp.Request::post("/"),
         body: tracked(original),
       })
       assert_eq(forwarded.val, 0)
@@ -108,7 +108,7 @@ test "lazy replacement request echoes remain live through EOF close and read fai
         assert_eq(@client.read_body(response.body, 10), b"body")
       } else if finish == "failure" {
         try ignore(@client.read_body(response.body, 10)) catch {
-          @http.TransportError(_) => ()
+          @mttp.TransportError(_) => ()
         } noraise {
           _ => fail("expected read failure")
         }
@@ -129,10 +129,10 @@ test "custom streamed rejections retain a forwarded request until the response c
   let router = @router.Router::new([], options={
     ..@router.ServerOptions::default(),
     middleware: [replace],
-    reject: (req, _) => @http.Response::new(404, body=req.body),
+    reject: (req, _) => @mttp.Response::new(404, body=req.body),
   })
   @driver.run_sync(() => {
-    let response = router.dispatch(@http.Request::post("/missing"))
+    let response = router.dispatch(@mttp.Request::post("/missing"))
     assert_eq(closes.val, 0)
     assert_eq(@client.read_body(response.body, 10), b"body")
     assert_eq(closes.val, 1)

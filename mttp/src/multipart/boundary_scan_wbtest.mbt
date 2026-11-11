@@ -1,7 +1,7 @@
 ///|
 /// Whether scanning `chunks` in turn finds `CRLF--boundary`.
 fn scan_chunks(boundary : String, chunks : Array[Bytes]) -> Bool {
-  let scan = BoundaryScan::new(@http.encode_utf8("\r\n--" + boundary))
+  let scan = BoundaryScan::new(@mttp.encode_utf8("\r\n--" + boundary))
   let mut found = false
   for chunk in chunks {
     found = scan.feed(chunk) || found
@@ -47,8 +47,8 @@ fn random_chunks(rand : @core_random.Rand, body : Bytes) -> Array[Bytes] {
 ///|
 test "BoundaryScan agrees with body_collides however the body is chunked" {
   let boundary = "ab-ab"
-  let delimiter = @http.encode_utf8("--" + boundary)
-  let embedded = @http.encode_utf8("\r\n--" + boundary)
+  let delimiter = @mttp.encode_utf8("--" + boundary)
+  let embedded = @mttp.encode_utf8("\r\n--" + boundary)
   // Bytes the delimiter is made of, so near misses are common.
   let alphabet = b"\r\n-ab"
   for seed in 0..<4 {

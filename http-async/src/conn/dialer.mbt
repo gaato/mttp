@@ -16,8 +16,8 @@ pub fn TcpDialer::new(trust~ : @http_async.Trust = System) -> TcpDialer {
 pub extend TcpDialer with @rt.Dialer::{connect, start_tls}
 
 ///|
-fn dial_error(error : Error) -> @http.TransportError {
-  @http.TransportError(kind=Connect, phase=Dial, detail=error.to_string())
+fn dial_error(error : Error) -> @mttp.TransportError {
+  @mttp.TransportError(kind=Connect, phase=Dial, detail=error.to_string())
 }
 
 ///|
@@ -41,7 +41,7 @@ pub impl @rt.Dialer for TcpDialer with fn start_tls(self, inner, host~) {
       Insecure => NoVerification
       PemFile(path) => CustomPemFile(path)
       @http_async.Trust::.. =>
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=Invalid,
           phase=Dial,
           detail="unsupported TLS trust policy",

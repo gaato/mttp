@@ -1,13 +1,12 @@
 name: Release
 
-# The four modules are released together. A tag `<module dir>-v<version>`
-# (for example `http-v0.6.0`) runs the release preflight; nothing here
+# The library modules are released together. A tag `<module dir>-v<version>`
+# (for example `mttp-v0.2.0`) runs the release preflight; nothing here
 # publishes. Publication is a separately approved local command (see
 # scripts/release.sh).
 on:
   push:
     tags:
-      - 'http-v*'
       - 'http-async-v*'
       - 'mttp-v*'
       - 'mttp_digest-v*'

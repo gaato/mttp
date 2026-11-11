@@ -2,8 +2,8 @@
 package "gaato/http-async/runtime"
 
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/rt",
 }
 
 // Values
@@ -33,7 +33,7 @@ pub struct RuntimeCoordination {
 }
 pub fn RuntimeCoordination::new() -> Self
 pub fn RuntimeCoordination::signal(Self) -> &@rt.Signal
-pub async fn RuntimeCoordination::supervise(Self, primary~ : async () -> Unit raise @http.TransportError, monitor~ : async () -> Unit raise @http.TransportError) -> Unit raise @http.TransportError
+pub async fn RuntimeCoordination::supervise(Self, primary~ : async () -> Unit raise @mttp.TransportError, monitor~ : async () -> Unit raise @mttp.TransportError) -> Unit raise @mttp.TransportError
 pub impl @rt.Coordination for RuntimeCoordination
 
 pub struct SemaphoreGate {

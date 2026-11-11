@@ -22,7 +22,7 @@ pub fn paths(name : String) -> Input[Array[String]] {
       let parts = []
       for segment in raw[1:].split("/") {
         parts.push(
-          @http.percent_decode(segment.to_owned()) catch {
+          @mttp.percent_decode(segment.to_owned()) catch {
             _ => raise fail(a, mismatch("rest path"))
           },
         )
@@ -33,7 +33,7 @@ pub fn paths(name : String) -> Input[Array[String]] {
       let builder = StringBuilder()
       for part in parts {
         builder.write_char('/')
-        builder.write_string(@http.percent_encode(part))
+        builder.write_string(@mttp.percent_encode(part))
       }
       sink.captures[name] = builder.to_string()
     },
@@ -93,7 +93,7 @@ pub fn query_params() -> Input[Array[(String, String)]] {
 
 ///|
 /// Reads all headers with their original order and duplicates.
-pub fn headers() -> Input[@http.Headers] {
+pub fn headers() -> Input[@mttp.Headers] {
   {
     atoms: [],
     decode: head => ready(head.request.headers),
@@ -231,7 +231,7 @@ pub fn basic(scheme_name~ : String = "basic") -> Input[(String, String)] {
       sink.headers = sink.headers.add(
         "authorization",
         "Basic " +
-        @base64.encode(@http.encode_utf8(credentials.0 + ":" + credentials.1)),
+        @base64.encode(@mttp.encode_utf8(credentials.0 + ":" + credentials.1)),
       )
     },
   }
@@ -263,7 +263,7 @@ pub fn client_ip(trust_forwarded~ : Bool = false) -> Input[String?] {
           }
         }
       }
-      ready(head.request.attributes.get(@http.remote_addr))
+      ready(head.request.attributes.get(@mttp.remote_addr))
     },
     encode: (_, _) => (),
   }

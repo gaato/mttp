@@ -186,7 +186,7 @@ fn bounded_outcome(
     ignore(parser.finish())
     (data, None)
   } catch {
-    @http.TransportError(kind=TooLarge(..), detail=message, ..) =>
+    @mttp.TransportError(kind=TooLarge(..), detail=message, ..) =>
       (data, Some(message))
     _ => (data, Some("unexpected error"))
   }
@@ -340,7 +340,7 @@ test "an overflow after events in the same chunk raises on the next call" {
   let next_feed = @sse.SseParser::new(max_event_bytes=4)
   assert_eq(next_feed.feed(b"data\n\ndata: a"), [event("")])
   try next_feed.feed(b"") catch {
-    @http.TransportError(kind=TooLarge(..), ..) => ()
+    @mttp.TransportError(kind=TooLarge(..), ..) => ()
     _ => fail("expected TooLarge")
   } noraise {
     _ => fail("the next feed must raise")
@@ -350,7 +350,7 @@ test "an overflow after events in the same chunk raises on the next call" {
   let at_finish = @sse.SseParser::new(max_event_bytes=4)
   assert_eq(at_finish.feed(b"data\n\ndata: a"), [event("")])
   try at_finish.finish() catch {
-    @http.TransportError(kind=TooLarge(..), ..) => ()
+    @mttp.TransportError(kind=TooLarge(..), ..) => ()
     _ => fail("expected TooLarge")
   } noraise {
     _ => fail("finish must raise an overflow at the end of the stream")
@@ -378,7 +378,7 @@ test "the default bound is 16 MiB" {
       }
       None
     } catch {
-      @http.TransportError(kind=TooLarge(..), detail=message, ..) =>
+      @mttp.TransportError(kind=TooLarge(..), detail=message, ..) =>
         Some(message)
       _ => Some("unexpected error")
     }

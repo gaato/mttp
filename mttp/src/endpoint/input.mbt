@@ -45,7 +45,7 @@ pub struct Atom {
 pub(all) enum BodyValue {
   NoBody
   Buffered(Bytes)
-  Streamed(&@http.BodyStream)
+  Streamed(&@mttp.BodyStream)
 }
 
 ///|
@@ -64,7 +64,7 @@ pub(all) suberror InputErrors {
 ///|
 /// What an input sees of a request before its body is read.
 pub struct Head {
-  request : @http.Request
+  request : @mttp.Request
   captures : Map[String, String]
   query : Array[(String, String)]
 }
@@ -74,8 +74,8 @@ pub struct Head {
 pub struct RequestSink {
   priv captures : Map[String, String]
   priv query : Array[(String, String)]
-  priv mut headers : @http.Headers
-  priv mut body : @http.Body
+  priv mut headers : @mttp.Headers
+  priv mut body : @mttp.Body
 }
 
 ///|
@@ -83,7 +83,7 @@ fn RequestSink::new() -> RequestSink {
   {
     captures: Map([]),
     query: [],
-    headers: @http.Headers::empty(),
+    headers: @mttp.Headers::empty(),
     body: Empty,
   }
 }
@@ -123,7 +123,7 @@ pub fn[T] Input::new(
 ///|
 /// Server-only: reads a typed request attribute set by an adapter or a
 /// middleware (remote_addr, request id). No docs, a no-op on encode.
-pub fn[T] attribute(key : @http.AttributeKey[T]) -> Input[T?] {
+pub fn[T] attribute(key : @mttp.AttributeKey[T]) -> Input[T?] {
   {
     atoms: [],
     decode: head => ready(head.request.attributes.get(key)),
@@ -276,7 +276,7 @@ pub fn raw_body() -> Input[Bytes] {
 /// the client transfers the supplied reader exactly once.
 pub fn stream_body(
   media_type~ : String = "application/octet-stream",
-) -> Input[&@http.BodyStream] {
+) -> Input[&@mttp.BodyStream] {
   let a = atom(
     Body(media_type~, streamed=true),
     "body",
@@ -307,7 +307,7 @@ pub fn stream_body(
     },
     encode: (reader, sink) => {
       sink.headers = sink.headers.set("content-type", media_type)
-      sink.body = Stream(@http.StreamBody::new(reader))
+      sink.body = Stream(@mttp.StreamBody::new(reader))
     },
   }
 }

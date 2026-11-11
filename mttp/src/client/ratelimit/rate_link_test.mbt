@@ -5,7 +5,7 @@ test "rate_limit_headers parses relative and absolute decimal seconds" {
     reset_after_seconds="x-reset-after",
     reset_unix_seconds="x-reset",
   )
-  let mut headers = @http.Headers::of([
+  let mut headers = @mttp.Headers::of([
     ("X-Remaining", " 2 "),
     ("X-Reset-After", "1.2349"),
     ("X-Reset", "99.5"),
@@ -32,7 +32,7 @@ test "rate_limit_headers parses relative and absolute decimal seconds" {
   )
   assert_eq(
     absolute(
-      @http.Headers::of([("remaining", "0"), ("reset", "123.4567")]),
+      @mttp.Headers::of([("remaining", "0"), ("reset", "123.4567")]),
       999L,
     ),
     Some({ remaining: 0, reset_at_unix_ms: 123456L, }),
@@ -50,15 +50,15 @@ test "rate header parsers reject missing resets empty counts and incomplete deci
     reset_unix_seconds="reset",
   )
   for parse in [relative, absolute] {
-    assert_eq(parse(@http.Headers::of([("remaining", "1")]), 0L), None)
+    assert_eq(parse(@mttp.Headers::of([("remaining", "1")]), 0L), None)
     for value in ["", ".", ".1", "1."] {
       assert_eq(
-        parse(@http.Headers::of([("remaining", "1"), ("reset", value)]), 0L),
+        parse(@mttp.Headers::of([("remaining", "1"), ("reset", value)]), 0L),
         None,
       )
     }
     assert_eq(
-      parse(@http.Headers::of([("remaining", " "), ("reset", "1")]), 0L),
+      parse(@mttp.Headers::of([("remaining", " "), ("reset", "1")]), 0L),
       None,
     )
   }

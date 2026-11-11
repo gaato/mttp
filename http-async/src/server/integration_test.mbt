@@ -1,9 +1,9 @@
 ///|
 async fn with_server(
-  handler : @http.Handler,
+  handler : @mttp.Handler,
   run : async (String) -> Unit,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
-  on_error~ : (@http.TransportError) -> Unit = _ => (),
+  on_error~ : (@mttp.TransportError) -> Unit = _ => (),
 ) -> Unit {
   @async.with_timeout(5000, () => {
     @async.with_task_group(group => {
@@ -55,7 +55,7 @@ async test "configuration is rejected before binding or calling on_listen" {
     ] {
     let called = Ref(false)
     try
-      @server.serve(_ => @http.Response::new(200), addr="invalid", limits~, on_listen=_ => {
+      @server.serve(_ => @mttp.Response::new(200), addr="invalid", limits~, on_listen=_ => {
         called.val = true
       })
     catch {
@@ -67,7 +67,7 @@ async test "configuration is rejected before binding or calling on_listen" {
     assert_false(called.val)
   }
   for invalid in ["invalid", "127.0.0.1:99999"] {
-    try @server.serve(_ => @http.Response::new(200), addr=invalid) catch {
+    try @server.serve(_ => @mttp.Response::new(200), addr=invalid) catch {
       @server.Bind(..) => ()
       error => raise error
     } noraise {
@@ -77,7 +77,7 @@ async test "configuration is rejected before binding or calling on_listen" {
   let occupied = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
   defer occupied.close()
   try
-    @server.serve(_ => @http.Response::new(200), addr=occupied.addr.to_string())
+    @server.serve(_ => @mttp.Response::new(200), addr=occupied.addr.to_string())
   catch {
     @server.Bind(..) => ()
     error => raise error
@@ -94,13 +94,13 @@ async test "bound address peer metadata and repeated keep alive requests roundtr
       calls.val += 1
       assert_true(
         request.attributes
-        .get(@http.remote_addr)
+        .get(@mttp.remote_addr)
         .unwrap()
         .has_prefix("127.0.0.1:"),
       ) catch {
         _ => abort("peer address missing")
       }
-      @http.Response::new(200, body=Bytes(@http.encode_utf8(request.url)))
+      @mttp.Response::new(200, body=Bytes(@mttp.encode_utf8(request.url)))
     },
     address => {
       assert_false(address.has_suffix(":0"))
@@ -108,12 +108,12 @@ async test "bound address peer metadata and repeated keep alive requests roundtr
       defer tcp.close()
       for i in 0..<3 {
         tcp.write(
-          @http.encode_utf8("GET /\{i} HTTP/1.1\r\nHost: example.test\r\n\r\n"),
+          @mttp.encode_utf8("GET /\{i} HTTP/1.1\r\nHost: example.test\r\n\r\n"),
         )
         let head = @utf8.decode(tcp.read_until(b"\r\n\r\n").unwrap())
         assert_true(head.has_prefix("HTTP/1.1 200"))
         assert_false(head.to_lower().contains("connection: close"))
-        let expected = @http.encode_utf8("http://example.test/\{i}")
+        let expected = @mttp.encode_utf8("http://example.test/\{i}")
         assert_eq(tcp.read_exactly(expected.length()), expected)
       }
       assert_eq(calls.val, 3)
@@ -127,7 +127,7 @@ async test "32 slow header connections expire and release admission slots" {
   with_server(
     _ => {
       handled.val += 1
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     },
     address => {
       @async.with_task_group(group => {
@@ -172,11 +172,11 @@ async test "concurrent background jobs report failures and remain owned after th
   let started = Ref(0)
   let release = Ref(false)
   let cleaned = Ref(0)
-  let errors : Array[@http.TransportError] = []
+  let errors : Array[@mttp.TransportError] = []
   let wake = @cond_var.Cond()
   with_server(
     request => {
-      let schedule = request.attributes.get(@http.background).unwrap()
+      let schedule = request.attributes.get(@mttp.background).unwrap()
       for job in 0..<2 {
         schedule(() => {
           defer {
@@ -190,7 +190,7 @@ async test "concurrent background jobs report failures and remain owned after th
           if job == 0 {
             raise Failure("private application detail")
           } else {
-            raise @http.TransportError(
+            raise @mttp.TransportError(
               kind=Timeout(ms=7),
               phase=Body,
               detail="original",
@@ -198,7 +198,7 @@ async test "concurrent background jobs report failures and remain owned after th
           }
         })
       }
-      @http.Response::new(204)
+      @mttp.Response::new(204)
     },
     address => {
       assert_true(
@@ -219,14 +219,14 @@ async test "concurrent background jobs report failures and remain owned after th
       assert_true(
         errors
         .iter()
-        .any(error => error is @http.TransportError(phase=Unknown, ..)),
+        .any(error => error is @mttp.TransportError(phase=Unknown, ..)),
       )
       assert_true(
         errors
         .iter()
         .any(error => {
           error
-          is @http.TransportError(
+          is @mttp.TransportError(
             kind=Timeout(ms=7),
             phase=Body,
             detail="original"
@@ -251,7 +251,7 @@ async test "shutdown waits for background completion and ignores scheduling afte
   let wake = @cond_var.Cond()
   controllable(
     request => {
-      schedule.val = request.attributes.get(@http.background)
+      schedule.val = request.attributes.get(@mttp.background)
       schedule.val.unwrap()(() => {
         started.val = true
         wake.broadcast()
@@ -260,7 +260,7 @@ async test "shutdown waits for background completion and ignores scheduling afte
         }
         finished.val = true
       })
-      @http.Response::new(204)
+      @mttp.Response::new(204)
     },
     { ..@h1server.ServerLimits::default(), drain_ms: 1000, },
     (address, server) => {
@@ -288,7 +288,7 @@ async test "shutdown waits for background completion and ignores scheduling afte
 ///|
 async test "shutdown closes an idle keep alive connection without waiting for its head deadline" {
   controllable(
-    _ => @http.Response::new(204),
+    _ => @mttp.Response::new(204),
     {
       ..@h1server.ServerLimits::default(),
       drain_ms: 10000,
@@ -314,7 +314,7 @@ async test "shutdown closes an idle keep alive connection without waiting for it
 ///|
 async test "shutdown cancels admission waiting behind a full connection cap" {
   controllable(
-    _ => @http.Response::new(204),
+    _ => @mttp.Response::new(204),
     {
       ..@h1server.ServerLimits::default(),
       max_connections: 1,
@@ -347,7 +347,7 @@ async test "background work scheduled during expiry cleanup is cancelled and joi
   let wake = @cond_var.Cond()
   controllable(
     request => {
-      let schedule = request.attributes.get(@http.background).unwrap()
+      let schedule = request.attributes.get(@mttp.background).unwrap()
       schedule(() => {
         defer schedule(() => {
           defer {
@@ -360,7 +360,7 @@ async test "background work scheduled during expiry cleanup is cancelled and joi
         wake.broadcast()
         @cond_var.Cond().wait()
       })
-      @http.Response::new(204)
+      @mttp.Response::new(204)
     },
     { ..@h1server.ServerLimits::default(), drain_ms: 0, },
     (address, server) => {

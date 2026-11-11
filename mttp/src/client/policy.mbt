@@ -77,7 +77,7 @@ pub extend RetryPolicy with @debug.Debug::{to_repr}
 
 ///|
 /// An opt-in conservative policy: two retries; 429 and 408, 409, 500, 502, 503 and 504 only for an idempotent request
-/// (`@http.is_idempotent`, using the method or explicit replay_safe); a failure
+/// (`@mttp.is_idempotent`, using the method or explicit replay_safe); a failure
 /// that proves nothing was sent (`TransportError::is_unsent`) for any method,
 /// and a proxy's refusal only when its status is one of those; a timeout or
 /// network failure after sending only for an idempotent request.

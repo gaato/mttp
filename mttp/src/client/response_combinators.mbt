@@ -4,7 +4,7 @@
 pub fn as_form(
   max_pairs~ : Int32 = 256,
 ) -> ResponseAs[Result[Array[(String, String)], ResponseFailure]] {
-  as_string().map_ok(text => @http.form_urldecode(text, max_pairs~))
+  as_string().map_ok(text => @mttp.form_urldecode(text, max_pairs~))
 }
 
 ///|
@@ -52,7 +52,7 @@ pub fn as_lines(
 ) -> StreamResponseAs[Result[Unit, ResponseFailure]] {
   as_stream((_, stream) => {
     if max_line_bytes < 0 {
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Invalid,
         phase=Body,
         detail="negative line limit",
@@ -60,9 +60,9 @@ pub fn as_lines(
     }
     let line = Buffer()
     let mut pending_cr = false
-    fn append(byte : Byte) -> Unit raise @http.TransportError {
+    fn append(byte : Byte) -> Unit raise @mttp.TransportError {
       if line.length() >= max_line_bytes {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=TooLarge(limit=max_line_bytes),
           phase=Body,
           detail="line exceeds limit",

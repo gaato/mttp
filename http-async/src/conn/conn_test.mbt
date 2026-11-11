@@ -59,7 +59,7 @@ async test "dial refusal is Connect Dial and closed socket errors remain typed" 
   let port = server.addr.port()
   server.close()
   try @conn.TcpDialer::new().connect(host="127.0.0.1", port~) catch {
-    @http.TransportError(kind=Connect, phase=Dial, ..) => ()
+    @mttp.TransportError(kind=Connect, phase=Dial, ..) => ()
     error => raise error
   } noraise {
     _ => fail("closed listener accepted a connection")
@@ -195,7 +195,7 @@ async test "TLS verification failure leaves tunnel owned by caller" {
           let _ = peer.read()
         })
         try @conn.TcpDialer::new(trust~).start_tls(tunnel, host~) catch {
-          @http.TransportError(kind=Connect, phase=Dial, ..) => ()
+          @mttp.TransportError(kind=Connect, phase=Dial, ..) => ()
           error => raise error
         } noraise {
           _ => fail("certificate verification did not fail")

@@ -14,7 +14,7 @@ pub fn parse_retry_after(value : String, now_unix_ms? : Int64) -> Int32? {
     return Some(ms)
   }
   guard now_unix_ms is Some(now) else { return None }
-  guard @http.parse_http_date(value, now_unix_ms=now) is Some(date) else {
+  guard @mttp.parse_http_date(value, now_unix_ms=now) is Some(date) else {
     return None
   }
   if date <= now {
@@ -31,7 +31,7 @@ pub fn parse_retry_after(value : String, now_unix_ms? : Int64) -> Int32? {
 ///|
 /// Prefers the first retry-after-ms value; falls back to retry-after when that
 /// header is absent or unparseable, as the official OpenAI SDKs do.
-pub fn retry_after_ms(headers : @http.Headers, now_unix_ms? : Int64) -> Int32? {
+pub fn retry_after_ms(headers : @mttp.Headers, now_unix_ms? : Int64) -> Int32? {
   if headers.get("retry-after-ms") is Some(value) &&
     decimal_ms(value.trim().to_owned(), 1) is Some(ms) {
     return Some(ms)

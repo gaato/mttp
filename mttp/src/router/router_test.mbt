@@ -37,21 +37,21 @@ test "literal routes win without falling through and HEAD OPTIONS are automatic"
   let literal = @endpoint.endpoint.post("/items/new").serve_public(_ => Ok(()))
   let router = @router.Router::new([dynamic, literal])
   @driver.run_sync(() => {
-    assert_eq(router.dispatch(@http.Request::get("/items/new")).status, 405)
-    let response = router.dispatch(@http.Request::get("/items/abc"))
-    assert_eq(response.body, @http.Bytes(b"abc"))
+    assert_eq(router.dispatch(@mttp.Request::get("/items/new")).status, 405)
+    let response = router.dispatch(@mttp.Request::get("/items/abc"))
+    assert_eq(response.body, @mttp.Bytes(b"abc"))
     assert_eq(
       response.attributes.get(@endpoint.route_template),
       Some("/items/{id}"),
     )
-    let response = router.dispatch(@http.Request::new(Head, "/items/abc"))
+    let response = router.dispatch(@mttp.Request::new(Head, "/items/abc"))
     assert_eq(response.status, 200)
-    assert_eq(response.body, @http.Empty)
-    let response = router.dispatch(@http.Request::new(Options, "/items/abc"))
+    assert_eq(response.body, @mttp.Empty)
+    let response = router.dispatch(@mttp.Request::new(Options, "/items/abc"))
     assert_eq(response.status, 204)
     assert_eq(response.headers.get("allow"), Some("GET, HEAD, OPTIONS"))
-    assert_eq(router.dispatch(@http.Request::get("/unknown")).status, 404)
-    assert_eq(router.dispatch(@http.Request::get("/bad path")).status, 400)
+    assert_eq(router.dispatch(@mttp.Request::get("/unknown")).status, 404)
+    assert_eq(router.dispatch(@mttp.Request::get("/bad path")).status, 400)
   })
 }
 
@@ -99,24 +99,24 @@ test "router backend strips local attributes and enforces closed state" {
   let router = @router.Router::new([
     @endpoint.endpoint
     .get("/ip")
-    .input(@endpoint.attribute(@http.remote_addr))
+    .input(@endpoint.attribute(@mttp.remote_addr))
     .output(@endpoint.json_out(@schema.text_body))
     .serve_public(address => Ok(address.unwrap_or("missing"))),
   ])
   @driver.run_sync(() => {
-    let request = @http.Request::get("/ip").attribute(
-      @http.remote_addr, "caller",
+    let request = @mttp.Request::get("/ip").attribute(
+      @mttp.remote_addr, "caller",
     )
-    let response = router.send(request, @http.SendOptions::default())
-    assert_eq(response.body, @http.Bytes(b"in-process"))
+    let response = router.send(request, @mttp.SendOptions::default())
+    assert_eq(response.body, @mttp.Bytes(b"in-process"))
     assert_eq(response.attributes.get(@endpoint.route_template), None)
     router.close()
     router.close()
     let refused = try {
-      ignore(router.send(request, @http.SendOptions::default()))
+      ignore(router.send(request, @mttp.SendOptions::default()))
       false
     } catch {
-      @http.TransportError(kind=Closed, ..) => true
+      @mttp.TransportError(kind=Closed, ..) => true
       _ => false
     }
     assert_true(refused)
@@ -140,13 +140,13 @@ test "exact paths outrank empty rests regardless of route registration order" {
     assert_eq(router.docs().length(), 2)
     @driver.run_sync(() => {
       assert_eq(
-        router.dispatch(@http.Request::get("/a")).body,
-        @http.Bytes(b"exact"),
+        router.dispatch(@mttp.Request::get("/a")).body,
+        @mttp.Bytes(b"exact"),
       )
-      assert_eq(router.dispatch(@http.Request::get("/")).status, 404)
+      assert_eq(router.dispatch(@mttp.Request::get("/")).status, 404)
       assert_eq(
-        router.dispatch(@http.Request::get("/a/b")).body,
-        @http.Bytes(b"rest"),
+        router.dispatch(@mttp.Request::get("/a/b")).body,
+        @mttp.Bytes(b"rest"),
       )
     })
   }
@@ -162,7 +162,7 @@ test "middleware forwarded requests are validated before route decoding" {
     middleware: [middleware],
   })
   @driver.run_sync(() => {
-    assert_eq(router.dispatch(@http.Request::get("/")).status, 400)
+    assert_eq(router.dispatch(@mttp.Request::get("/")).status, 400)
   })
 }
 
@@ -175,7 +175,7 @@ test "authentication failures are opaque with a challenge" {
     .serve(_ => Ok(()), (_, _) => Ok(())),
   ])
   @driver.run_sync(() => {
-    let response = router.dispatch(@http.Request::get("/private"))
+    let response = router.dispatch(@mttp.Request::get("/private"))
     assert_eq(response.status, 401)
     assert_eq(response.headers.get("www-authenticate"), Some("Bearer"))
     assert_eq(

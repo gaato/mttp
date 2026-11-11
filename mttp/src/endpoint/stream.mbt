@@ -11,7 +11,7 @@ fn BufferedStream::new(bytes : Bytes) -> BufferedStream {
 }
 
 ///|
-impl @http.BodyStream for BufferedStream with fn read_some(self) {
+impl @mttp.BodyStream for BufferedStream with fn read_some(self) {
   if self.closed || self.offset == self.bytes.length() {
     return None
   }
@@ -22,32 +22,32 @@ impl @http.BodyStream for BufferedStream with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for BufferedStream with fn close(self) {
+impl @mttp.BodyStream for BufferedStream with fn close(self) {
   self.closed = true
 }
 
 ///|
 priv struct ResponseOwner {
-  reader : &@http.BodyStream
-  request : @http.Body
+  reader : &@mttp.BodyStream
+  request : @mttp.Body
   mut closed : Bool
 }
 
 ///|
-impl @http.BodyStream for ResponseOwner with fn read_some(self) {
+impl @mttp.BodyStream for ResponseOwner with fn read_some(self) {
   if self.closed {
     return None
   }
-  errdefer @http.BodyStream::close(self)
+  errdefer @mttp.BodyStream::close(self)
   let chunk = self.reader.read_some()
   if chunk is None {
-    @http.BodyStream::close(self)
+    @mttp.BodyStream::close(self)
   }
   chunk
 }
 
 ///|
-impl @http.BodyStream for ResponseOwner with fn close(self) {
+impl @mttp.BodyStream for ResponseOwner with fn close(self) {
   if !self.closed {
     self.closed = true
     self.reader.close()
@@ -57,7 +57,7 @@ impl @http.BodyStream for ResponseOwner with fn close(self) {
 
 ///|
 priv struct LimitedInput {
-  reader : &@http.BodyStream
+  reader : &@mttp.BodyStream
   limit : Int32
   mut count : Int64
   failure : Ref[@schema.DecodeFailure?]
@@ -65,14 +65,14 @@ priv struct LimitedInput {
 }
 
 ///|
-impl @http.BodyStream for LimitedInput with fn read_some(self) {
+impl @mttp.BodyStream for LimitedInput with fn read_some(self) {
   if self.closed {
     return None
   }
-  errdefer @http.BodyStream::close(self)
+  errdefer @mttp.BodyStream::close(self)
   let chunk = self.reader.read_some() catch {
-    @http.TransportError(..) as error => {
-      let @http.TransportError(kind~, ..) = error
+    @mttp.TransportError(..) as error => {
+      let @mttp.TransportError(kind~, ..) = error
       self.failure.val = Some(
         @schema.DecodeFailure(
           kind=match kind {
@@ -93,7 +93,7 @@ impl @http.BodyStream for LimitedInput with fn read_some(self) {
           message="request body exceeds limit",
         ),
       )
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=TooLarge(limit=self.limit),
         phase=Body,
         detail="request body exceeds limit",
@@ -101,13 +101,13 @@ impl @http.BodyStream for LimitedInput with fn read_some(self) {
     }
     self.count += bytes.length().to_int64()
   } else {
-    @http.BodyStream::close(self)
+    @mttp.BodyStream::close(self)
   }
   chunk
 }
 
 ///|
-impl @http.BodyStream for LimitedInput with fn close(self) {
+impl @mttp.BodyStream for LimitedInput with fn close(self) {
   if !self.closed {
     self.closed = true
     self.reader.close()
@@ -119,7 +119,7 @@ impl @http.BodyStream for LimitedInput with fn close(self) {
 /// builder the client uses its default bucket, independently of operation_id.
 pub fn[S, I, E, O, M] Endpoint::rate_limit_bucket(
   self : Endpoint[S, I, E, O, M],
-  f : (@http.Request) -> String,
+  f : (@mttp.Request) -> String,
 ) -> Endpoint[S, I, E, O, M] {
   { ..self, bucket: Some(f), }
 }

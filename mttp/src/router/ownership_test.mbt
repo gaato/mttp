@@ -6,7 +6,7 @@ priv struct Tracked {
 }
 
 ///|
-impl @http.BodyStream for Tracked with fn read_some(self) {
+impl @mttp.BodyStream for Tracked with fn read_some(self) {
   if self.closed || self.sent {
     return None
   }
@@ -15,7 +15,7 @@ impl @http.BodyStream for Tracked with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for Tracked with fn close(self) {
+impl @mttp.BodyStream for Tracked with fn close(self) {
   if !self.closed {
     self.closed = true
     self.closes.val += 1
@@ -23,24 +23,24 @@ impl @http.BodyStream for Tracked with fn close(self) {
 }
 
 ///|
-fn tracked(closes : Ref[Int32]) -> @http.Body {
-  @http.Stream(
-    @http.StreamBody::new(Tracked::{ closes, closed: false, sent: false, }),
+fn tracked(closes : Ref[Int32]) -> @mttp.Body {
+  @mttp.Stream(
+    @mttp.StreamBody::new(Tracked::{ closes, closed: false, sent: false, }),
   )
 }
 
 ///|
 priv struct Wrapped {
-  reader : &@http.BodyStream
+  reader : &@mttp.BodyStream
 }
 
 ///|
-impl @http.BodyStream for Wrapped with fn read_some(self) {
+impl @mttp.BodyStream for Wrapped with fn read_some(self) {
   self.reader.read_some()
 }
 
 ///|
-impl @http.BodyStream for Wrapped with fn close(self) {
+impl @mttp.BodyStream for Wrapped with fn close(self) {
   self.reader.close()
 }
 
@@ -49,23 +49,23 @@ test "middleware transfers taken response streams into lazy wrappers" {
   for next_again in [false, true] {
     let closes = Ref(0)
     let inner : @router.Middleware = (_, _) => {
-      @http.Response::new(200, body=tracked(closes))
+      @mttp.Response::new(200, body=tracked(closes))
     }
     let outer : @router.Middleware = (request, next) => {
       let response = next(request)
       guard response.body is Stream(stream) else { return response }
-      let reader = stream.take() catch { _ => return @http.Response::new(500) }
+      let reader = stream.take() catch { _ => return @mttp.Response::new(500) }
       if next_again {
         ignore(next(request))
       }
-      { ..response, body: Stream(@http.StreamBody::new(Wrapped::{ reader, })), }
+      { ..response, body: Stream(@mttp.StreamBody::new(Wrapped::{ reader, })), }
     }
     let router = @router.Router::new([], options={
       ..@router.ServerOptions::default(),
       middleware: [outer, inner],
     })
     @driver.run_sync(() => {
-      let response = router.dispatch(@http.Request::get("/"))
+      let response = router.dispatch(@mttp.Request::get("/"))
       assert_eq(closes.val, if next_again { 1 } else { 0 })
       assert_eq(@client.read_body(response.body, 32), b"body")
       response.close()
@@ -80,12 +80,12 @@ priv struct Failing {
 }
 
 ///|
-impl @http.BodyStream for Failing with fn read_some(_) {
-  raise @http.TransportError(kind=Network, phase=Body, detail="producer failed")
+impl @mttp.BodyStream for Failing with fn read_some(_) {
+  raise @mttp.TransportError(kind=Network, phase=Body, detail="producer failed")
 }
 
 ///|
-impl @http.BodyStream for Failing with fn close(self) {
+impl @mttp.BodyStream for Failing with fn close(self) {
   self.closes.val += 1
 }
 
@@ -94,9 +94,9 @@ test "middleware response read failures close both response and original request
   let input = Ref(0)
   let output = Ref(0)
   let middleware : @router.Middleware = (_, _) => {
-    @http.Response::new(
+    @mttp.Response::new(
       200,
-      body=Stream(@http.StreamBody::new(Failing::{ closes: output, })),
+      body=Stream(@mttp.StreamBody::new(Failing::{ closes: output, })),
     )
   }
   let router = @router.Router::new([], options={
@@ -105,7 +105,7 @@ test "middleware response read failures close both response and original request
   })
   @driver.run_sync(() => {
     let response = router.dispatch({
-      ..@http.Request::post("/"),
+      ..@mttp.Request::post("/"),
       body: tracked(input),
     })
     let failed = try {
@@ -125,7 +125,7 @@ test "middleware response read failures close both response and original request
 test "middleware keeps lazy request echoes alive and closes replaced responses" {
   let closes = Ref(0)
   let echo : @router.Middleware = (request, _) => {
-    @http.Response::new(200, body=request.body)
+    @mttp.Response::new(200, body=request.body)
   }
   let router = @router.Router::new([], options={
     ..@router.ServerOptions::default(),
@@ -133,7 +133,7 @@ test "middleware keeps lazy request echoes alive and closes replaced responses" 
   })
   @driver.run_sync(() => {
     let response = router.handler()({
-      ..@http.Request::post("/"),
+      ..@mttp.Request::post("/"),
       body: tracked(closes),
     })
     assert_eq(closes.val, 0)
@@ -143,17 +143,17 @@ test "middleware keeps lazy request echoes alive and closes replaced responses" 
   })
   let outer : @router.Middleware = (request, next) => {
     ignore(next(request))
-    @http.Response::new(204)
+    @mttp.Response::new(204)
   }
   let inner : @router.Middleware = (_, _) => {
-    @http.Response::new(200, body=tracked(closes))
+    @mttp.Response::new(200, body=tracked(closes))
   }
   let router = @router.Router::new([], options={
     ..@router.ServerOptions::default(),
     middleware: [outer, inner],
   })
   @driver.run_sync(() => {
-    assert_eq(router.dispatch(@http.Request::get("/")).status, 204)
+    assert_eq(router.dispatch(@mttp.Request::get("/")).status, 204)
   })
   assert_eq(closes.val, 2)
 }
@@ -163,7 +163,7 @@ test "cancelling middleware closes a response obtained from next" {
   let driver = @driver.Driver::new(auto_advance=false)
   let closes = Ref(0)
   let inner : @router.Middleware = (_, _) => {
-    @http.Response::new(200, body=tracked(closes))
+    @mttp.Response::new(200, body=tracked(closes))
   }
   let entered = Ref(false)
   let outer : @router.Middleware = (request, next) => {
@@ -178,7 +178,7 @@ test "cancelling middleware closes a response obtained from next" {
   })
   driver.run(() => {
     let task = driver.spawn(() => {
-      ignore(router.dispatch(@http.Request::get("/")))
+      ignore(router.dispatch(@mttp.Request::get("/")))
     })
     driver.pause()
     assert_true(entered.val)
@@ -194,12 +194,12 @@ test "router rejection and closed state close an unread request body" {
   let router = @router.Router::new([])
   @driver.run_sync(() => {
     assert_eq(
-      router.dispatch({ ..@http.Request::get("/"), body: tracked(closes), }).status,
+      router.dispatch({ ..@mttp.Request::get("/"), body: tracked(closes), }).status,
       404,
     )
     router.close()
     assert_eq(
-      router.dispatch({ ..@http.Request::get("/"), body: tracked(closes), }).status,
+      router.dispatch({ ..@mttp.Request::get("/"), body: tracked(closes), }).status,
       503,
     )
   })
@@ -210,7 +210,7 @@ test "router rejection and closed state close an unread request body" {
 test "calling middleware next again closes the previous streamed result" {
   let closes = Ref(0)
   let inner : @router.Middleware = (_, _) => {
-    @http.Response::new(200, body=tracked(closes))
+    @mttp.Response::new(200, body=tracked(closes))
   }
   let outer : @router.Middleware = (request, next) => {
     ignore(next(request))
@@ -221,7 +221,7 @@ test "calling middleware next again closes the previous streamed result" {
     middleware: [outer, inner],
   })
   @driver.run_sync(() => {
-    let response = router.dispatch(@http.Request::get("/"))
+    let response = router.dispatch(@mttp.Request::get("/"))
     assert_eq(closes.val, 1)
     response.close()
     assert_eq(closes.val, 2)
@@ -234,16 +234,16 @@ test "middleware cannot return an already consumed response stream" {
   let middleware : @router.Middleware = (_, _) => {
     let body = tracked(closes)
     if body is Stream(stream) {
-      ignore(stream.take() catch { _ => return @http.Response::new(500) })
+      ignore(stream.take() catch { _ => return @mttp.Response::new(500) })
     }
-    @http.Response::new(200, body~)
+    @mttp.Response::new(200, body~)
   }
   let router = @router.Router::new([], options={
     ..@router.ServerOptions::default(),
     middleware: [middleware],
   })
   @driver.run_sync(() => {
-    assert_eq(router.dispatch(@http.Request::get("/")).status, 500)
+    assert_eq(router.dispatch(@mttp.Request::get("/")).status, 500)
   })
   assert_eq(closes.val, 1)
 }

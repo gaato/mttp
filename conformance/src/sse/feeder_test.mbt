@@ -18,7 +18,7 @@ fn render(events : Array[@events.SseEvent]) -> Array[String] {
 ///|
 fn failed(error : Error) -> @harness.Failed {
   match error {
-    @http.TransportError(kind=TooLarge(..), ..) => Failed("TooLarge")
+    @mttp.TransportError(kind=TooLarge(..), ..) => Failed("TooLarge")
     _ => Failed("unexpected")
   }
 }

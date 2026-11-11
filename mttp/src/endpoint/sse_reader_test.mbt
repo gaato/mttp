@@ -9,10 +9,10 @@ test "endpoint SSE overflow behind a delivered event raises before another read"
   ])
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(
+      @mttp.Response::new(
         200,
-        headers=@http.Headers::of([("content-type", "text/event-stream")]),
-        body=Stream(@http.StreamBody::new(source)),
+        headers=@mttp.Headers::of([("content-type", "text/event-stream")]),
+        body=Stream(@mttp.StreamBody::new(source)),
       )
     }),
     @sim.SimClock::new(d),
@@ -30,7 +30,7 @@ test "endpoint SSE overflow behind a delivered event raises before another read"
     )
     None
   } catch {
-    @http.TransportError(kind~, phase~, ..) => Some((kind, phase))
+    @mttp.TransportError(kind~, phase~, ..) => Some((kind, phase))
     error => raise error
   }
   assert_eq(failure, Some((TooLarge(limit~), Body)))

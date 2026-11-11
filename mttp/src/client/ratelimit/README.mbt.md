@@ -103,7 +103,7 @@ test "parse a conventional quota head" {
   )
   assert_eq(
     parse(
-      @http.Headers::of([
+      @mttp.Headers::of([
         ("X-RateLimit-Remaining", "2"),
         ("X-RateLimit-Reset-After", "1.5"),
       ]),

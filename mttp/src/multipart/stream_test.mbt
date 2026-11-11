@@ -1,7 +1,7 @@
 ///|
 fn error_label(error : Error) -> String {
   match error {
-    @http.TransportError(kind~, phase~, detail~) =>
+    @mttp.TransportError(kind~, phase~, detail~) =>
       "\{@debug.to_string(kind)}/\{@debug.to_string(phase)}: \{detail}"
     _ => @debug.to_string(error)
   }
@@ -21,20 +21,20 @@ fn parts_of(chunks : Array[Bytes]) -> Parts {
 }
 
 ///|
-impl @http.BodyStream for Parts with fn read_some(self) {
+impl @mttp.BodyStream for Parts with fn read_some(self) {
   guard self.chunks.get(self.next) is Some(chunk) else { return None }
   self.next += 1
   Some(chunk)
 }
 
 ///|
-impl @http.BodyStream for Parts with fn close(self) {
+impl @mttp.BodyStream for Parts with fn close(self) {
   self.closed = true
 }
 
 ///|
 /// Reads a request body to its end, or the failure, as a label.
-async fn read_body(body : @http.Body) -> Result[Bytes, String] {
+async fn read_body(body : @mttp.Body) -> Result[Bytes, String] {
   match body {
     Empty => Ok(b"")
     Bytes(bytes) => Ok(bytes)
@@ -50,7 +50,7 @@ async fn read_body(body : @http.Body) -> Result[Bytes, String] {
       } catch {
         error => Err(error_label(error))
       }
-    @http.Body::.. => Err("unsupported body kind")
+    @mttp.Body::.. => Err("unsupported body kind")
   }
 }
 
@@ -226,7 +226,7 @@ test "a part another sender took fails the first read, before any framing" {
     guard body is Stream(multipart) else { fail("expected a stream body") }
     let reader = multipart.take()
     let outcome = try reader.read_some() catch {
-      @http.TransportError(kind=Protocol | Invalid | Unreplayable, ..) =>
+      @mttp.TransportError(kind=Protocol | Invalid | Unreplayable, ..) =>
         "Protocol"
       error => "unexpected \{Repr(error)}"
     } noraise {
@@ -257,7 +257,7 @@ test "a part with a negative length fails the first read and declares no length"
     assert_eq(multipart.length(), None)
     let reader = multipart.take()
     let outcome = try reader.read_some() catch {
-      @http.TransportError(kind=Protocol | Invalid | Unreplayable, ..) =>
+      @mttp.TransportError(kind=Protocol | Invalid | Unreplayable, ..) =>
         "Protocol"
       error => "unexpected \{Repr(error)}"
     } noraise {
@@ -331,7 +331,7 @@ test "a failed part take closes the parts after it too" {
     guard body is Stream(multipart) else { fail("expected a stream body") }
     let reader = multipart.take()
     let failed = try reader.read_some() catch {
-      @http.TransportError(kind=Protocol | Invalid | Unreplayable, ..) => true
+      @mttp.TransportError(kind=Protocol | Invalid | Unreplayable, ..) => true
       _ => false
     } noraise {
       _ => false
@@ -351,11 +351,11 @@ struct Failing {
 }
 
 ///|
-impl @http.BodyStream for Failing with fn read_some(self) {
-  match @http.BodyStream::read_some(self.inner) {
+impl @mttp.BodyStream for Failing with fn read_some(self) {
+  match @mttp.BodyStream::read_some(self.inner) {
     Some(chunk) => Some(chunk)
     None =>
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Network,
         phase=Body,
         detail="source failed",
@@ -364,8 +364,8 @@ impl @http.BodyStream for Failing with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for Failing with fn close(self) {
-  @http.BodyStream::close(self.inner)
+impl @mttp.BodyStream for Failing with fn close(self) {
+  @mttp.BodyStream::close(self.inner)
 }
 
 ///|
@@ -398,7 +398,7 @@ test "a refused or failed part ends the body before the caller closes it" {
         }
         "ended"
       } catch {
-        @http.TransportError(kind~, ..) => @debug.to_string(kind)
+        @mttp.TransportError(kind~, ..) => @debug.to_string(kind)
       }
       let label = if failing { "failing source" } else { "collision" }
       assert_eq(

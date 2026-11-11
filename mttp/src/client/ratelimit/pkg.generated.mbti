@@ -2,14 +2,14 @@
 package "gaato/mttp/client/ratelimit"
 
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
   "gaato/mttp/client",
+  "gaato/mttp/rt",
   "moonbitlang/core/debug",
 }
 
 // Values
-pub fn rate_limit_headers(remaining~ : String, reset_after_seconds? : String, reset_unix_seconds? : String) -> (@http.Headers, Int64) -> RateLimitState?
+pub fn rate_limit_headers(remaining~ : String, reset_after_seconds? : String, reset_unix_seconds? : String) -> (@mttp.Headers, Int64) -> RateLimitState?
 
 // Errors
 
@@ -57,8 +57,8 @@ pub struct WindowLimiter {
   // private fields
 }
 pub async fn WindowLimiter::acquire(Self, String, global_exempt~ : Bool) -> @client.Admission
-pub fn WindowLimiter::new(&@rt.Clock, (@http.Headers, Int64) -> RateLimitState?, gate? : () -> &@rt.Gate, pace? : (String) -> Pace, server_key? : (String, @http.Headers) -> String?, scope? : (Int32, @http.Headers) -> LimitScope, global? : GlobalWindow, global_block? : (@http.Headers) -> Bool, default_retry_after_ms? : Int32) -> Self
-pub async fn WindowLimiter::release(Self, @client.Admission, status~ : Int32, headers~ : @http.Headers) -> Unit
+pub fn WindowLimiter::new(&@rt.Clock, (@mttp.Headers, Int64) -> RateLimitState?, gate? : () -> &@rt.Gate, pace? : (String) -> Pace, server_key? : (String, @mttp.Headers) -> String?, scope? : (Int32, @mttp.Headers) -> LimitScope, global? : GlobalWindow, global_block? : (@mttp.Headers) -> Bool, default_retry_after_ms? : Int32) -> Self
+pub async fn WindowLimiter::release(Self, @client.Admission, status~ : Int32, headers~ : @mttp.Headers) -> Unit
 pub fn WindowLimiter::state(Self, String) -> RateLimitState?
 pub impl @client.RateLimiter for WindowLimiter
 

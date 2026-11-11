@@ -59,7 +59,7 @@ let max_entries : Int32 = 4096
 /// Unknown when recording a response, since that request was already sent.
 pub struct WindowLimiter {
   priv clock : &@rt.Clock
-  priv parse : (@http.Headers, Int64) -> RateLimitState?
+  priv parse : (@mttp.Headers, Int64) -> RateLimitState?
   priv states : Map[String, RecordedState]
   priv admissions : Map[Int64, Admissions]
   priv mut sequence : Int64
@@ -68,10 +68,10 @@ pub struct WindowLimiter {
   priv gate : (() -> &@rt.Gate)?
   priv gates : Map[String, BucketGate]
   priv pace : (String) -> Pace
-  priv server_key : ((String, @http.Headers) -> String?)?
+  priv server_key : ((String, @mttp.Headers) -> String?)?
   priv aliases : Map[String, Alias]
   priv next_admit_at : Map[String, Int64]
-  priv scope : (Int32, @http.Headers) -> LimitScope
+  priv scope : (Int32, @mttp.Headers) -> LimitScope
   priv global : GlobalWindow?
   priv default_retry_after_ms : Int32?
   priv mut global_window_start : Int64?
@@ -112,13 +112,13 @@ pub struct WindowLimiter {
 /// sleeps twice. Wall time is used only to interpret and report server dates.
 pub fn WindowLimiter::new(
   clock : &@rt.Clock,
-  parse : (@http.Headers, Int64) -> RateLimitState?,
+  parse : (@mttp.Headers, Int64) -> RateLimitState?,
   gate? : () -> &@rt.Gate,
   pace? : (String) -> Pace,
-  server_key? : (String, @http.Headers) -> String?,
-  scope? : (Int32, @http.Headers) -> LimitScope,
+  server_key? : (String, @mttp.Headers) -> String?,
+  scope? : (Int32, @mttp.Headers) -> LimitScope,
   global? : GlobalWindow,
-  global_block? : (@http.Headers) -> Bool,
+  global_block? : (@mttp.Headers) -> Bool,
   default_retry_after_ms? : Int32,
 ) -> WindowLimiter {
   let now = clock.now_unix_ms()
@@ -183,10 +183,10 @@ async fn WindowLimiter::sleep(self : WindowLimiter, ms : Int32) -> Unit {
 fn[T] room(
   map : Map[String, T],
   key : String,
-  phase~ : @http.Phase = Pool,
-) -> Unit raise @http.TransportError {
+  phase~ : @mttp.Phase = Pool,
+) -> Unit raise @mttp.TransportError {
   if !map.contains(key) && map.length() >= max_entries {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=TooLarge(limit=max_entries),
       phase~,
       detail="rate-limit map capacity exceeded",
@@ -254,7 +254,7 @@ fn WindowLimiter::join_gate(
   self : WindowLimiter,
   group : String,
   make : () -> &@rt.Gate,
-) -> BucketGate raise @http.TransportError {
+) -> BucketGate raise @mttp.TransportError {
   let entry = match self.gates.get(group) {
     Some(entry) => entry
     None => {

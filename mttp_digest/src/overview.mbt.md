@@ -15,7 +15,7 @@ moon add gaato/http gaato/mttp gaato/mttp_digest
 ```mbt check
 ///|
 test {
-  let inner = @client.from_fn((_, _) => @http.Response::new(200))
+  let inner = @client.from_fn((_, _) => @mttp.Response::new(200))
   let backend = @mttp_digest.DigestScheme::new(
     inner,
     "user",
@@ -25,8 +25,8 @@ test {
   )
   @driver.run_sync(() => {
     let response = backend.send(
-      @http.Request::get("https://api.example.test/"),
-      @http.SendOptions::default(),
+      @mttp.Request::get("https://api.example.test/"),
+      @mttp.SendOptions::default(),
     )
     assert_eq(response.status, 200)
     response.close()

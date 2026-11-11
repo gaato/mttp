@@ -2,24 +2,24 @@
 package "gaato/mttp/router"
 
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
   "gaato/mttp/endpoint",
+  "gaato/mttp/rt",
   "moonbitlang/core/json",
 }
 
 // Values
-pub fn access_log(&@rt.Clock, (@http.RequestHead, @http.Response, Int64) -> Unit) -> async (@http.Request, async (@http.Request) -> @http.Response noraise) -> @http.Response noraise
+pub fn access_log(&@rt.Clock, (@mttp.RequestHead, @mttp.Response, Int64) -> Unit) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
 
-pub fn cors(Array[String], allow_credentials? : Bool) -> async (@http.Request, async (@http.Request) -> @http.Response noraise) -> @http.Response noraise
+pub fn cors(Array[String], allow_credentials? : Bool) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
 
-pub fn default_decode_failure(@endpoint.FailureContext) -> @http.Response
+pub fn default_decode_failure(@endpoint.FailureContext) -> @mttp.Response
 
-pub fn hide_endpoints_with_auth(@endpoint.FailureContext) -> @http.Response?
+pub fn hide_endpoints_with_auth(@endpoint.FailureContext) -> @mttp.Response?
 
-pub fn problem(Int32, String, errors? : @json.Json) -> @http.Response
+pub fn problem(Int32, String, errors? : @json.Json) -> @mttp.Response
 
-pub fn request_id(generate? : () -> String) -> async (@http.Request, async (@http.Request) -> @http.Response noraise) -> @http.Response noraise
+pub fn request_id(generate? : () -> String) -> async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
 
 // Errors
 
@@ -28,26 +28,26 @@ pub struct Router {
   // private fields
 }
 pub fn Router::close(Self) -> Unit
-pub async fn Router::dispatch(Self, @http.Request) -> @http.Response noraise
+pub async fn Router::dispatch(Self, @mttp.Request) -> @mttp.Response noraise
 pub fn Router::docs(Self) -> Array[@endpoint.EndpointDoc]
-pub fn Router::handler(Self) -> async (@http.Request) -> @http.Response noraise
+pub fn Router::handler(Self) -> async (@mttp.Request) -> @mttp.Response noraise
 pub fn Router::new(Array[@endpoint.ServerEndpoint], options? : ServerOptions, adapter_max_body_bytes? : Int32, clock? : &@rt.Clock, timer? : &@rt.Timer) -> Self raise @endpoint.DefinitionError
-pub async fn Router::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
-pub impl @http.Backend for Router
+pub async fn Router::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
+pub impl @mttp.Backend for Router
 
 pub(all) struct ServerOptions {
   max_body_bytes : Int32
   max_issues : Int32
-  decode_failure : (@endpoint.FailureContext) -> @http.Response?
-  reject : (@http.Request, Array[@http.Method]) -> @http.Response
-  on_unhandled : (@http.Request, Error) -> @http.Response?
-  middleware : Array[async (@http.Request, async (@http.Request) -> @http.Response noraise) -> @http.Response noraise]
+  decode_failure : (@endpoint.FailureContext) -> @mttp.Response?
+  reject : (@mttp.Request, Array[@mttp.Method]) -> @mttp.Response
+  on_unhandled : (@mttp.Request, Error) -> @mttp.Response?
+  middleware : Array[async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise]
 }
 pub fn ServerOptions::default() -> Self
 
 // Type aliases
 pub using @endpoint {type FailureContext}
 
-pub type Middleware = async (@http.Request, async (@http.Request) -> @http.Response noraise) -> @http.Response noraise
+pub type Middleware = async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
 
 // Traits

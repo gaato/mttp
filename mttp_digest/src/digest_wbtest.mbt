@@ -116,7 +116,7 @@ test "digest_challenge reads a challenge it can answer" {
 
 ///|
 test "find_digest_challenge takes the first one it can answer, across headers" {
-  let headers = @http.Headers::of([
+  let headers = @mttp.Headers::of([
     ("WWW-Authenticate", "Basic realm=\"b\""),
     (
       "WWW-Authenticate", "Digest realm=\"x\", nonce=\"1\", algorithm=SHA-512-256, qop=auth, Digest realm=\"y\", nonce=\"2\", algorithm=SHA-256, qop=auth",
@@ -124,7 +124,7 @@ test "find_digest_challenge takes the first one it can answer, across headers" {
     ("WWW-Authenticate", "Digest realm=\"z\", nonce=\"3\", qop=auth"),
   ])
   assert_eq(describe(find_digest_challenge(headers, false)), "y 2 SHA-256 auth")
-  let none = @http.Headers::of([("WWW-Authenticate", "Bearer")])
+  let none = @mttp.Headers::of([("WWW-Authenticate", "Bearer")])
   assert_eq(describe(find_digest_challenge(none, false)), "none")
 }
 
@@ -425,12 +425,12 @@ test "Digest exhausted same nonce challenge returns the caller owned 401" {
   let backend = DigestScheme::new(
     @client.from_fn((request, _) => {
       sent.push(request.headers.get("authorization"))
-      @http.Response::new(
+      @mttp.Response::new(
         401,
-        headers=@http.Headers::of([
+        headers=@mttp.Headers::of([
           ("www-authenticate", "Digest realm=r, nonce=n, qop=auth"),
         ]),
-        body=Stream(@http.StreamBody::new(body)),
+        body=Stream(@mttp.StreamBody::new(body)),
       )
     }),
     "u",
@@ -448,8 +448,8 @@ test "Digest exhausted same nonce challenge returns the caller owned 401" {
   backend.state.nonces.get(origin).unwrap().count = max_nonce_count - 1
   driver.run(() => {
     let response = backend.send(
-      @http.Request::get("https://a.test/"),
-      @http.SendOptions::default(),
+      @mttp.Request::get("https://a.test/"),
+      @mttp.SendOptions::default(),
     )
     assert_eq(response.status, 401)
     assert_eq(sent.length(), 1)
@@ -497,7 +497,7 @@ test "digest_target: the origin and the request target" {
       msg=case.0,
     )
   }
-  let url = @http.Url::parse("https://a.test/x")
+  let url = @mttp.Url::parse("https://a.test/x")
   assert_true(same_origin_as(url, "https://a.test:443/y"))
   assert_false(same_origin_as(url, "http://a.test/x"))
   assert_false(same_origin_as(url, "https://b.test/x"))

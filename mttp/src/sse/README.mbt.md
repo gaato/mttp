@@ -3,7 +3,7 @@
 Server-sent events (`text/event-stream`) as the
 [WHATWG HTML standard](https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation)
 defines them: an incremental parser, a shared async reader over the portable
-`@http.BodyStream` interface, and an encoder for the server side. No runtime
+`@mttp.BodyStream` interface, and an encoder for the server side. No runtime
 adapter is required.
 
 - `SseParser::feed` takes chunks however the transport splits them, even in
@@ -22,7 +22,7 @@ adapter is required.
 The parser is bounded: one event, counting its `data` lines, the `event` and
 `id` lines in effect and the line being read, may hold `max_event_bytes`
 (16 MiB by default). Past that, `feed` raises
-`@http.TransportError(TooLarge(limit), Body)` and the stream ends; events
+`@mttp.TransportError(TooLarge(limit), Body)` and the stream ends; events
 that the same chunk completed earlier are returned first and the next call
 raises.
 

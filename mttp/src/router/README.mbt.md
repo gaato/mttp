@@ -11,8 +11,8 @@ test "in-process router example" {
   let endpoint = @endpoint.endpoint.get("/hello").output(@endpoint.text_out())
   let router = @router.Router::new([endpoint.serve_public(_ => Ok("hello"))])
   @driver.run_sync(() => {
-    let response = router.dispatch(@http.Request::get("/hello"))
-    assert_eq(response.body, @http.Bytes(b"hello"))
+    let response = router.dispatch(@mttp.Request::get("/hello"))
+    assert_eq(response.body, @mttp.Bytes(b"hello"))
   })
   router.close()
 }

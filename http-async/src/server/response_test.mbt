@@ -7,7 +7,7 @@ priv struct LiveOutput {
 }
 
 ///|
-impl @http.BodyStream for LiveOutput with fn read_some(self) {
+impl @mttp.BodyStream for LiveOutput with fn read_some(self) {
   self.pulls += 1
   match self.pulls {
     1 => Some(b"first")
@@ -23,7 +23,7 @@ impl @http.BodyStream for LiveOutput with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for LiveOutput with fn close(self) {
+impl @mttp.BodyStream for LiveOutput with fn close(self) {
   self.closes += 1
 }
 
@@ -40,7 +40,7 @@ async test "shutdown preserves streamed response through its final chunk and clo
   controllable(
     _ => {
       calls.val += 1
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(output)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(output)))
     },
     { ..@h1server.ServerLimits::default(), drain_ms: 1000, },
     (address, server) => {
@@ -78,7 +78,7 @@ async test "zero grace cancels streamed output and joins producer cleanup" {
     closes: 0,
   }
   controllable(
-    _ => @http.Response::new(200, body=Stream(@http.StreamBody::new(output))),
+    _ => @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(output))),
     { ..@h1server.ServerLimits::default(), drain_ms: 0, },
     (address, server) => {
       let tcp = @socket.Tcp::connect(@socket.Addr::parse(address))
@@ -106,7 +106,7 @@ async test "HEAD empty and zero length streams release leases and preserve pipel
   with_server(
     _ => {
       calls.val += 1
-      @http.Response::new(
+      @mttp.Response::new(
         if calls.val == 5 {
           304
         } else {
@@ -115,7 +115,7 @@ async test "HEAD empty and zero length streams release leases and preserve pipel
         body=match calls.val {
           1 | 4 | 5 => Empty
           2 => Bytes(b"")
-          _ => Stream(@http.StreamBody::new(output, length=0L))
+          _ => Stream(@mttp.StreamBody::new(output, length=0L))
         },
       )
     },

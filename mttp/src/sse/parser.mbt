@@ -124,7 +124,7 @@ pub fn SseParser::new(
 pub fn SseParser::feed(
   self : SseParser,
   bytes : BytesView,
-) -> Array[SseEvent] raise @http.TransportError {
+) -> Array[SseEvent] raise @mttp.TransportError {
   self.raise_overflow()
   let events = []
   if self.finished {
@@ -162,7 +162,7 @@ pub fn SseParser::feed(
 /// connection.
 pub fn SseParser::finish(
   self : SseParser,
-) -> Array[SseEvent] raise @http.TransportError {
+) -> Array[SseEvent] raise @mttp.TransportError {
   self.end()
   self.raise_overflow()
   []
@@ -172,10 +172,10 @@ pub fn SseParser::finish(
 /// Raises a pending overflow once.
 fn SseParser::raise_overflow(
   self : SseParser,
-) -> Unit raise @http.TransportError {
+) -> Unit raise @mttp.TransportError {
   if self.overflow {
     self.overflow = false
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=TooLarge(limit=self.max_event_bytes),
       phase=Body,
       detail="SSE event larger than \{self.max_event_bytes} bytes",

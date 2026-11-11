@@ -1,7 +1,7 @@
 ///|
 async fn[T] decoded(
   input : @endpoint.Input[T],
-  request : @http.Request,
+  request : @mttp.Request,
   captures~ : Map[String, String] = {},
 ) -> T {
   let result : Ref[T?] = Ref(None)
@@ -15,7 +15,7 @@ async fn[T] decoded(
     })
   let context = @endpoint.DispatchContext::new(decode_failure=context => {
     failures.append(context.failures)
-    @http.Response::new(400)
+    @mttp.Response::new(400)
   })
   let response = endpoint.dispatch(request, captures, context)
   defer response.close()
@@ -28,7 +28,7 @@ async fn[T] decoded(
 ///|
 async fn[T] refused(
   input : @endpoint.Input[T],
-  request : @http.Request,
+  request : @mttp.Request,
   captures~ : Map[String, String] = {},
 ) -> Array[@endpoint.InputFailure] {
   try {
@@ -44,7 +44,7 @@ async fn[T] refused(
 test "rest captures reject missing and malformed canonical segment encoding" {
   @driver.run_sync(() => {
     let input = @endpoint.paths("tail")
-    let request = @http.Request::get("/")
+    let request = @mttp.Request::get("/")
     assert_eq(refused(input, request).length(), 1)
     for raw in ["no-slash", "/%GG"] {
       assert_eq(refused(input, request, captures={ "tail": raw }).length(), 1)
@@ -55,7 +55,7 @@ test "rest captures reject missing and malformed canonical segment encoding" {
 ///|
 test "head inputs distinguish absence repetition and malformed values" {
   @driver.run_sync(() => {
-    let request = @http.Request::post("/?q=12")
+    let request = @mttp.Request::post("/?q=12")
     assert_eq(decoded(@endpoint.query("q", @schema.int), request), 12)
     assert_eq(
       decoded(@endpoint.query("q", @schema.int).optional(), request),
@@ -66,20 +66,20 @@ test "head inputs distinguish absence repetition and malformed values" {
       None,
     )
     assert_true(
-      refused(@endpoint.query("q", @schema.int), @http.Request::post("/")).length() ==
+      refused(@endpoint.query("q", @schema.int), @mttp.Request::post("/")).length() ==
       1,
     )
     assert_true(
       refused(
         @endpoint.query("q", @schema.int),
-        @http.Request::post("/?q=1&q=2"),
+        @mttp.Request::post("/?q=1&q=2"),
       )[0].failure
       is @schema.DecodeFailure(kind=Multiple(_), ..),
     )
     assert_true(
       !refused(
         @endpoint.query("q", @schema.int).optional(),
-        @http.Request::post("/?q=bad"),
+        @mttp.Request::post("/?q=bad"),
       ).is_empty(),
     )
     assert_true(
@@ -99,12 +99,12 @@ test "head inputs distinguish absence repetition and malformed values" {
     assert_eq(
       refused(
         @endpoint.query_list("q", @schema.int),
-        @http.Request::post("/?q=a&q=b"),
+        @mttp.Request::post("/?q=a&q=b"),
       ).length(),
       2,
     )
     assert_eq(
-      decoded(@endpoint.query_params(), @http.Request::post("/?q=a&q=b")),
+      decoded(@endpoint.query_params(), @mttp.Request::post("/?q=a&q=b")),
       [("q", "a"), ("q", "b")],
     )
     assert_eq(
@@ -127,7 +127,7 @@ test "head inputs distinguish absence repetition and malformed values" {
 ///|
 test "cookies API keys and Basic credentials reject ambiguous input" {
   @driver.run_sync(() => {
-    let request = @http.Request::post("/")
+    let request = @mttp.Request::post("/")
     let cookie = @endpoint.cookie("session", @schema.int)
     assert_true(!refused(cookie, request).is_empty())
     assert_true(
@@ -147,7 +147,7 @@ test "cookies API keys and Basic credentials reject ambiguous input" {
     assert_eq(
       decoded(
         @endpoint.api_key_query("key"),
-        @http.Request::post("/?key=secret"),
+        @mttp.Request::post("/?key=secret"),
       ),
       "secret",
     )
@@ -185,12 +185,12 @@ test "cookies API keys and Basic credentials reject ambiguous input" {
 test "body mappings report decode failures and optional body encoding is reversible" {
   @driver.run_sync(() => {
     let body = @endpoint.body(@schema.jint.body())
-    let request = @http.Request::post("/")
+    let request = @mttp.Request::post("/")
       .header("content-type", "application/json")
       .body_bytes(b"1")
     assert_eq(decoded(body, request), 1)
     assert_true(!refused(body, request.body_bytes(b"bad")).is_empty())
-    assert_eq(decoded(body.optional(), @http.Request::post("/")), None)
+    assert_eq(decoded(body.optional(), @mttp.Request::post("/")), None)
     let mapped = body.map(
       value => {
         if value < 2 {
@@ -208,8 +208,8 @@ test "body mappings report decode failures and optional body encoding is reversi
     )
     assert_true(refused(head_mapped, request)[0].atom.location is Derived)
     let optional = @endpoint.endpoint.post("/").input(body.optional())
-    assert_eq(optional.request((), Some(3)).raw().body, @http.Bytes(b"3"))
-    assert_eq(optional.request((), None).raw().body, @http.Empty)
+    assert_eq(optional.request((), Some(3)).raw().body, @mttp.Bytes(b"3"))
+    assert_eq(optional.request((), None).raw().body, @mttp.Empty)
     let signed = @endpoint.endpoint
       .post("/")
       .security(
@@ -241,8 +241,8 @@ test "body mappings report decode failures and optional body encoding is reversi
 
 ///|
 test "forwarded addresses are opt in and metadata inputs encode through the client" {
-  let request = @http.Request::post("/")
-    .attribute(@http.remote_addr, "peer")
+  let request = @mttp.Request::post("/")
+    .attribute(@mttp.remote_addr, "peer")
     .header("x-forwarded-for", " client, proxy")
   @driver.run_sync(() => {
     assert_eq(decoded(@endpoint.client_ip(), request), Some("peer"))
@@ -262,7 +262,7 @@ test "forwarded addresses are opt in and metadata inputs encode through the clie
     .post("/")
     .input(@endpoint.pair(@endpoint.query_params(), @endpoint.headers()))
   let raw = ep
-    .request((), ([("a", "a b"), ("a", "+")], @http.Headers::of([("x", "1")])))
+    .request((), ([("a", "a b"), ("a", "+")], @mttp.Headers::of([("x", "1")])))
     .raw()
   assert_eq(raw.url, "/?a=a+b&a=%2B")
   assert_eq(raw.headers.get("x"), Some("1"))
@@ -270,7 +270,7 @@ test "forwarded addresses are opt in and metadata inputs encode through the clie
   assert_eq(address.request((), Some("ignored")).raw().headers.length(), 0)
   let attribute = @endpoint.endpoint
     .post("/")
-    .input(@endpoint.attribute(@http.remote_addr))
+    .input(@endpoint.attribute(@mttp.remote_addr))
   assert_eq(attribute.request((), Some("ignored")).raw().headers.length(), 0)
   let auth = @endpoint.endpoint.get("/").security(@endpoint.bearer())
   assert_eq(

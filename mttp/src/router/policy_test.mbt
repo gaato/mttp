@@ -18,7 +18,7 @@ test "default rejection policy distinguishes body limits media types and authent
     )
     let response = @router.default_decode_failure(
       @endpoint.FailureContext::new(
-        @http.Request::post("/"),
+        @mttp.Request::post("/"),
         doc,
         [failure],
         Security,
@@ -40,7 +40,7 @@ test "default rejection policy distinguishes body limits media types and authent
     ] {
     let response = @router.default_decode_failure(
       @endpoint.FailureContext::new(
-        @http.Request::post("/"),
+        @mttp.Request::post("/"),
         doc,
         [@endpoint.InputFailure::new(atom, failure)],
         Body,
@@ -58,20 +58,20 @@ test "handler errors use opaque defaults or the configured error policy" {
   let normal = @router.Router::new([endpoint])
   let custom = @router.Router::new([endpoint], options={
     ..@router.ServerOptions::default(),
-    on_unhandled: (_, _) => Some(@http.Response::new(502)),
+    on_unhandled: (_, _) => Some(@mttp.Response::new(502)),
   })
   @driver.run_sync(() => {
-    let response = normal.dispatch(@http.Request::get("/fail"))
+    let response = normal.dispatch(@mttp.Request::get("/fail"))
     assert_eq(response.status, 500)
     assert_eq(
       response.body,
-      @http.Bytes(
-        @http.encode_utf8(
+      @mttp.Bytes(
+        @mttp.encode_utf8(
           "{\"type\":\"about:blank\",\"title\":\"Internal Server Error\",\"status\":500,\"errors\":[]}",
         ),
       ),
     )
-    assert_eq(custom.dispatch(@http.Request::get("/fail")).status, 502)
+    assert_eq(custom.dispatch(@mttp.Request::get("/fail")).status, 502)
   })
   let rejected = try {
     ignore(

@@ -1,11 +1,11 @@
 import {
-  "gaato/http",
+  "gaato/mttp",
   "moonbitlang/core/debug",
 }
 
 import {
   "moonbitlang/core/encoding/utf8",
-  "gaato/http/driver",
+  "gaato/mttp/driver",
   "moonbitlang/core/random",
 } for "test"
 
@@ -14,5 +14,5 @@ import {
 } for "wbtest"
 
 options(
-  "allow-experimental-packages": [ "gaato/http/driver" ],
+  "allow-experimental-packages": [ "gaato/mttp/driver" ],
 )

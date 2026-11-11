@@ -24,8 +24,8 @@ pub extend EncodingChoice with @debug.Debug::{to_repr}
 /// wins; Unacceptable means identity and every available encoder are refused.
 /// At most 16 KiB of field values and 128 nonempty entries are accepted.
 pub fn negotiate_encoding(
-  headers : @http.Headers,
-) -> EncodingChoice raise @http.TransportError {
+  headers : @mttp.Headers,
+) -> EncodingChoice raise @mttp.TransportError {
   choose_encoding(headers).0
 }
 
@@ -33,8 +33,8 @@ pub fn negotiate_encoding(
 /// Keep identity's acceptability alongside the preferred coding so a size
 /// threshold cannot select an explicitly forbidden identity representation.
 fn choose_encoding(
-  headers : @http.Headers,
-) -> (EncodingChoice, Bool) raise @http.TransportError {
+  headers : @mttp.Headers,
+) -> (EncodingChoice, Bool) raise @mttp.TransportError {
   let fields = headers.get_all("accept-encoding")
   if fields.is_empty() {
     return (Identity, true)
@@ -111,7 +111,7 @@ fn choose_encoding(
 }
 
 ///|
-fn quality(value : StringView) -> Int32 raise @http.TransportError {
+fn quality(value : StringView) -> Int32 raise @mttp.TransportError {
   guard value.length() > 0 && (value[0] == '0' || value[0] == '1') else {
     raise invalid_encoding("invalid encoding weight")
   }
@@ -135,6 +135,6 @@ fn quality(value : StringView) -> Int32 raise @http.TransportError {
 }
 
 ///|
-fn invalid_encoding(detail : String) -> @http.TransportError {
-  @http.TransportError(kind=Invalid, phase=Head, detail~)
+fn invalid_encoding(detail : String) -> @mttp.TransportError {
+  @mttp.TransportError(kind=Invalid, phase=Head, detail~)
 }

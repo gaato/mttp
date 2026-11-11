@@ -7,7 +7,7 @@ pub(all) struct Part {
   name : String
   filename : String?
   content_type : String?
-  body : @http.Body
+  body : @mttp.Body
 }
 
 ///|
@@ -31,7 +31,7 @@ pub fn Part::text(name : String, value : String) -> Part {
     name,
     filename: None,
     content_type: None,
-    body: Bytes(@http.encode_utf8(value)),
+    body: Bytes(@mttp.encode_utf8(value)),
   }
 }
 
@@ -66,19 +66,19 @@ pub fn Part::file(
 /// sent, so the file need not be held in memory. With `length`, the stream
 /// must produce exactly that many bytes; when every part's length is known,
 /// the multipart body is sent with `Content-Length`, otherwise chunked. The
-/// part can be sent once, like any stream body (`@http.StreamBody`).
+/// part can be sent once, like any stream body (`@mttp.StreamBody`).
 pub fn Part::file_stream(
   name : String,
   filename : String,
   content_type : String,
-  stream : &@http.BodyStream,
+  stream : &@mttp.BodyStream,
   length? : Int64,
 ) -> Part {
   {
     name,
     filename: Some(filename),
     content_type: Some(content_type),
-    body: Stream(@http.StreamBody::new(stream, length?)),
+    body: Stream(@mttp.StreamBody::new(stream, length?)),
   }
 }
 
@@ -97,7 +97,7 @@ pub fn Part::json(name : String, value : Json) -> Part {
     name,
     filename: None,
     content_type: Some("application/json"),
-    body: Bytes(@http.encode_utf8(value.stringify())),
+    body: Bytes(@mttp.encode_utf8(value.stringify())),
   }
 }
 
@@ -178,7 +178,7 @@ fn append_bytes(output : Array[Byte], bytes : Bytes) -> Unit {
 
 ///|
 fn append_text(output : Array[Byte], text : String) -> Unit {
-  append_bytes(output, @http.encode_utf8(text))
+  append_bytes(output, @mttp.encode_utf8(text))
 }
 
 ///|
@@ -186,7 +186,7 @@ fn append_text(output : Array[Byte], text : String) -> Unit {
 /// multipart/form-data encoding algorithm does: `"`, CR and LF become `%22`,
 /// `%0D` and `%0A`, which RFC 7578 §4.2 leaves to the sender.
 fn append_escaped_parameter(output : Array[Byte], value : String) -> Unit {
-  for byte in @http.encode_utf8(value) {
+  for byte in @mttp.encode_utf8(value) {
     match byte.to_int() {
       34 => append_bytes(output, b"%22")
       13 => append_bytes(output, b"%0D")
@@ -198,7 +198,7 @@ fn append_escaped_parameter(output : Array[Byte], value : String) -> Unit {
 
 ///|
 /// A character a part's header value may hold: anything but a control other
-/// than horizontal tab, as `@http.Headers::validate` requires of request
+/// than horizontal tab, as `@mttp.Headers::validate` requires of request
 /// headers. CR and LF would end the header line early and NUL is refused by
 /// receivers. Non-ASCII text is written as UTF-8.
 fn is_field_value_char(c : Char) -> Bool {
@@ -292,7 +292,7 @@ pub fn encode_segments(
 pub fn encode_body(
   parts : Array[Part],
   boundary : String,
-) -> (String, @http.Body) raise MultipartError {
+) -> (String, @mttp.Body) raise MultipartError {
   let (content_type, pieces) = layout(parts, boundary)
   (content_type, pieces_body(pieces, boundary))
 }
@@ -302,7 +302,7 @@ pub fn encode_body(
 /// stream part's body with its part's name.
 priv enum Piece {
   Fixed(Bytes)
-  Streamed(String, @http.StreamBody)
+  Streamed(String, @mttp.StreamBody)
 }
 
 ///|
@@ -313,8 +313,8 @@ fn layout(
   boundary : String,
 ) -> (String, Array[Piece]) raise MultipartError {
   validate_boundary(boundary)
-  let delimiter = @http.encode_utf8("--" + boundary)
-  let embedded = @http.encode_utf8("\r\n--" + boundary)
+  let delimiter = @mttp.encode_utf8("--" + boundary)
+  let embedded = @mttp.encode_utf8("\r\n--" + boundary)
   for part in parts {
     if part.content_type is Some(content_type) &&
       !content_type.iter().all(is_field_value_char) {
@@ -354,7 +354,7 @@ fn layout(
         framing.clear()
         pieces.push(Streamed(part.name, stream))
       }
-      @http.Body::.. => raise StreamPart(part.name)
+      @mttp.Body::.. => raise StreamPart(part.name)
     }
     append_text(framing, "\r\n")
   }
@@ -405,7 +405,7 @@ pub fn make_boundary(random : () -> Double) -> String {
 ///
 /// ```mbt check
 /// test {
-///   let request = @http.Request::post("/upload").header("x-id", "42")
+///   let request = @mttp.Request::post("/upload").header("x-id", "42")
 ///   let result = @multipart.body(
 ///     request,
 ///     [@multipart.Part::text("message", "hello")],
@@ -419,10 +419,10 @@ pub fn make_boundary(random : () -> Double) -> String {
 /// }
 /// ```
 pub fn body(
-  request : @http.Request,
+  request : @mttp.Request,
   parts : Array[Part],
   boundary~ : String,
-) -> @http.Request raise MultipartError {
+) -> @mttp.Request raise MultipartError {
   let (content_type, body) = encode_body(parts, boundary)
   let headers = request.headers.set("content-type", content_type)
   { ..request, headers, body, }

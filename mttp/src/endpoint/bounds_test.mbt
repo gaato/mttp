@@ -8,7 +8,7 @@ test "optional stream body roundtrips absence and present empty bodies through b
     match reader {
       None => Ok("absent")
       Some(reader) =>
-        Ok("present:" + @http.read_bounded(reader, 20).length().to_string())
+        Ok("present:" + @mttp.read_bounded(reader, 20).length().to_string())
     }
   })
   let client = @client.Client::new(
@@ -18,7 +18,7 @@ test "optional stream body roundtrips absence and present empty bodies through b
     @sim.FakeClock::new(),
   )
   defer client.close()
-  assert_eq(ep.request((), None).raw().body, @http.Empty)
+  assert_eq(ep.request((), None).raw().body, @mttp.Empty)
   assert_eq(ep.request((), None).raw().headers.get("content-type"), None)
   let driver = @driver.Driver::new()
   driver.run(() => {
@@ -37,13 +37,13 @@ test "optional stream body roundtrips absence and present empty bodies through b
     }
     // An explicit body still needs its media type, including zero bytes.
     let response = server.dispatch(
-      @http.Request::post("/upload").body_bytes(b""),
+      @mttp.Request::post("/upload").body_bytes(b""),
       {},
       @endpoint.DispatchContext::new(),
     )
     assert_eq(response.status, 415)
     let response = server.dispatch(
-      @http.Request::post("/upload")
+      @mttp.Request::post("/upload")
       .header("content-type", "application/octet-stream")
       .body_bytes(b""),
       {},
@@ -52,7 +52,7 @@ test "optional stream body roundtrips absence and present empty bodies through b
     assert_eq(response.status, 200)
     assert_eq(@client.read_body(response.body, 100), b"present:0")
     let response = server.dispatch(
-      @http.Request::post("/upload").header("content-type", "text/plain"),
+      @mttp.Request::post("/upload").header("content-type", "text/plain"),
       {},
       @endpoint.DispatchContext::new(),
     )
@@ -83,7 +83,7 @@ test "server buffered and streamed bodies admit the exact default and endpoint o
         } else {
           stream_endpoint
         }).serve_public(reader => {
-          Ok(@http.read_bounded(reader, 2 * 1048576).length())
+          Ok(@mttp.read_bounded(reader, 2 * 1048576).length())
         })
       } else {
         (if overridden { endpoint.max_body_bytes(3) } else { endpoint }).serve_public(n => {
@@ -95,11 +95,11 @@ test "server buffered and streamed bodies admit the exact default and endpoint o
       for extra in [0, 1] {
         let source = @sim.Feed::bytes(driver, [Bytes::make(limit + extra, b'x')])
         driver.run(() => {
-          let req = @http.Request::post("/").header(
+          let req = @mttp.Request::post("/").header(
             "content-type", "application/octet-stream",
           )
           let response = server.dispatch(
-            { ..req, body: Stream(@http.StreamBody::new(source)), },
+            { ..req, body: Stream(@mttp.StreamBody::new(source)), },
             {},
             @endpoint.DispatchContext::new(),
           )
@@ -120,7 +120,7 @@ test "adapter TooLarge keeps the smaller ceiling for buffered and streamed input
   let failures = []
   let ctx = @endpoint.DispatchContext::new(max_body_bytes=2, decode_failure=f => {
     failures.append(f.failures)
-    @http.Response::new(413)
+    @mttp.Response::new(413)
   })
   // The endpoint override replaces the default; the adapter still caps it.
   let buffered = @endpoint.endpoint
@@ -134,7 +134,7 @@ test "adapter TooLarge keeps the smaller ceiling for buffered and streamed input
     .input(@endpoint.stream_body())
     .serve_public(reader => {
       // Even a handler catching its read error cannot turn it into success.
-      ignore(@http.read_bounded(reader, 20)) catch {
+      ignore(@mttp.read_bounded(reader, 20)) catch {
         _ => ()
       }
       Ok(())
@@ -144,18 +144,18 @@ test "adapter TooLarge keeps the smaller ceiling for buffered and streamed input
       let source = @sim.Feed::new(driver, [
         Chunk(b"abc"),
         Fail(
-          @http.TransportError(
+          @mttp.TransportError(
             kind=TooLarge(limit=3),
             phase=Body,
             detail="adapter ceiling",
           ),
         ),
       ])
-      let req = @http.Request::post("/").header(
+      let req = @mttp.Request::post("/").header(
         "content-type", "application/octet-stream",
       )
       let response = server.dispatch(
-        { ..req, body: Stream(@http.StreamBody::new(source)), },
+        { ..req, body: Stream(@mttp.StreamBody::new(source)), },
         {},
         ctx,
       )
@@ -179,10 +179,10 @@ test "reported validation issues are capped at one hundred inside a single failu
     .post("/")
     .input(@endpoint.body(codec))
     .serve_public(_ => Ok(()))
-  let request = @http.Request::post("/")
+  let request = @mttp.Request::post("/")
     .header("content-type", "application/json")
     .body_bytes(
-      @http.encode_utf8("[" + Array::make(101, "false").join(",") + "]"),
+      @mttp.encode_utf8("[" + Array::make(101, "false").join(",") + "]"),
     )
   let failures = []
   @driver.run_sync(() => {
@@ -202,7 +202,7 @@ test "reported validation issues are capped at one hundred inside a single failu
     for limit in [1, 100] {
       let ctx = @endpoint.DispatchContext::new(max_issues=limit, decode_failure=f => {
         failures.append(f.failures)
-        @http.Response::new(400)
+        @mttp.Response::new(400)
       })
       assert_eq(server.dispatch(request, {}, ctx).status, 400)
     }
@@ -228,8 +228,8 @@ test "default failure policy distinguishes auth media validation and opaque hand
     let source = @sim.Feed::bytes(driver, [b"bad"])
     let response = secured.dispatch(
       {
-        ..@http.Request::post("/"),
-        body: Stream(@http.StreamBody::new(source)),
+        ..@mttp.Request::post("/"),
+        body: Stream(@mttp.StreamBody::new(source)),
       },
       {},
       contexts,
@@ -238,7 +238,7 @@ test "default failure policy distinguishes auth media validation and opaque hand
     assert_eq(response.headers.get("www-authenticate"), Some("Bearer"))
     assert_eq(source.reads(), 0)
     assert_eq(source.closes(), 1)
-    let req = @http.Request::post("/")
+    let req = @mttp.Request::post("/")
       .header("authorization", "Bearer token")
       .body_bytes(b"bad")
     assert_eq(secured.dispatch(req, {}, contexts).status, 415)
@@ -253,7 +253,7 @@ test "default failure policy distinguishes auth media validation and opaque hand
     let server = @endpoint.endpoint
       .get("/")
       .serve_public(_ => raise Failure("private exception"))
-    let response = server.dispatch(@http.Request::get("/"), {}, contexts)
+    let response = server.dispatch(@mttp.Request::get("/"), {}, contexts)
     assert_eq(response.status, 500)
     assert_false(
       @utf8.decode(@client.read_body(response.body, 1000)).contains(
@@ -277,16 +277,16 @@ test "cancelling streamed input dispatch closes its body without invoking error 
   let errors = Ref(0)
   let ctx = @endpoint.DispatchContext::new(unhandled=(_, _) => {
     errors.val += 1
-    @http.Response::new(500)
+    @mttp.Response::new(500)
   })
   driver.run(() => {
     let task = driver.spawn(() => {
-      let request = @http.Request::post("/").header(
+      let request = @mttp.Request::post("/").header(
         "content-type", "application/octet-stream",
       )
       ignore(
         server.dispatch(
-          { ..request, body: Stream(@http.StreamBody::new(source)), },
+          { ..request, body: Stream(@mttp.StreamBody::new(source)), },
           {},
           ctx,
         ),

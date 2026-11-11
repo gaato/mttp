@@ -1,9 +1,9 @@
 ///|
 test "decoded reader drains through upstream EOF and header rewrite is immutable" {
   @driver.run_sync(() => {
-    let original : @http.ResponseHead = {
+    let original : @mttp.ResponseHead = {
       status: 200,
-      headers: @http.Headers::of([
+      headers: @mttp.Headers::of([
         ("content-encoding", "gzip"),
         ("content-length", "29"),
       ]),
@@ -36,7 +36,7 @@ test "decoded reader drains through upstream EOF and header rewrite is immutable
 test "public decoder rejects invalid plans before allocating stages" {
   for plan in [[], Array::make(6, @codings.Coding::Gzip)] {
     try @codings.ContentDecoder::new(plan) catch {
-      @http.TransportError(kind=Invalid, phase=Body, ..) => ()
+      @mttp.TransportError(kind=Invalid, phase=Body, ..) => ()
       _ => fail("wrong plan error")
     } noraise {
       _ => fail("accepted invalid plan")
@@ -51,13 +51,13 @@ test "public decoder refuses input overwrite and premature EOF without losing in
   let decoder = @codings.ContentDecoder::new([Gzip])
   decoder.feed(b"")
   try decoder.feed(b"lost") catch {
-    @http.TransportError(kind=Invalid, ..) => ()
+    @mttp.TransportError(kind=Invalid, ..) => ()
     _ => fail("wrong overwrite error")
   } noraise {
     _ => fail("accepted overwrite")
   }
   try decoder.end() catch {
-    @http.TransportError(kind=Invalid, ..) => ()
+    @mttp.TransportError(kind=Invalid, ..) => ()
     _ => fail("wrong premature EOF error")
   } noraise {
     _ => fail("accepted premature EOF")
@@ -68,7 +68,7 @@ test "public decoder refuses input overwrite and premature EOF without losing in
   assert_true(decoder.pull() is Done)
   assert_true(decoder.pull() is Done)
   try decoder.feed(b"late") catch {
-    @http.TransportError(kind=Invalid, ..) => ()
+    @mttp.TransportError(kind=Invalid, ..) => ()
     _ => fail("wrong late feed error")
   } noraise {
     _ => fail("accepted input after EOF")
@@ -82,7 +82,7 @@ test "decoder failures remain sticky on every public operation" {
   assert_true(decoder.pull() is NeedInput)
   decoder.end()
   try decoder.pull() catch {
-    @http.TransportError(kind=Protocol, ..) => ()
+    @mttp.TransportError(kind=Protocol, ..) => ()
     _ => fail("wrong malformed coding")
   } noraise {
     _ => fail("accepted corrupt gzip")
@@ -96,7 +96,7 @@ test "decoder failures remain sticky on every public operation" {
       () => decoder.end(),
     ] {
     try operation() catch {
-      @http.TransportError(kind=Protocol, ..) => ()
+      @mttp.TransportError(kind=Protocol, ..) => ()
       _ => fail("changed error kind")
     } noraise {
       _ => fail("lost sticky failure")

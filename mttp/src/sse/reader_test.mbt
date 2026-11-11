@@ -32,7 +32,7 @@ test "event reader drains queued events then raises pending overflow before anot
       ignore(reader.next_event())
       fail("pending overflow lost")
     } catch {
-      @http.TransportError(kind=TooLarge(limit~), phase~, ..) => {
+      @mttp.TransportError(kind=TooLarge(limit~), phase~, ..) => {
         assert_eq(limit, 16)
         assert_eq(phase, Body)
       }
@@ -56,7 +56,7 @@ test "event reader accepts its exact event bound and refuses one byte more" {
       d.run(() => reader.each(event => events.push(event.data)))
       false
     } catch {
-      @http.TransportError(kind=TooLarge(limit~), phase~, ..) => {
+      @mttp.TransportError(kind=TooLarge(limit~), phase~, ..) => {
         assert_eq(limit, 10)
         assert_eq(phase, Body)
         true
@@ -118,7 +118,7 @@ test "event reader closes on callback failure and preserves exception identity" 
 ///|
 test "event reader closes on transport failure and before its first pull" {
   let d = @driver.Driver::new()
-  let original = @http.TransportError(kind=Network, phase=Body, detail="source")
+  let original = @mttp.TransportError(kind=Network, phase=Body, detail="source")
   let source = @sim.Feed::new(d, [Fail(original)])
   let reader = @sse.SseReader::new(source)
   d.run(() => {
@@ -126,7 +126,7 @@ test "event reader closes on transport failure and before its first pull" {
       ignore(reader.next_event())
       fail("transport failure lost")
     } catch {
-      @http.TransportError(..) as error =>
+      @mttp.TransportError(..) as error =>
         assert_true(physical_equal(error, original))
       error => raise error
     }

@@ -2,9 +2,9 @@
 package "gaato/mttp/client"
 
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
   "gaato/mttp/client/retry",
+  "gaato/mttp/rt",
   "gaato/mttp/sse",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",
@@ -25,45 +25,45 @@ pub fn as_lines(async (String) -> Unit, max_line_bytes? : Int32) -> ResponsePlan
 
 pub fn as_sse(async (@sse.SseEvent) -> Unit, max_event_bytes? : Int32, stop? : (@sse.SseEvent) -> Bool) -> ResponsePlan[Result[Unit, ResponseFailure], Streaming]
 
-pub fn[T] as_stream(async (@http.ResponseHead, &@http.BodyStream) -> T) -> ResponsePlan[Result[T, ResponseFailure], Streaming]
+pub fn[T] as_stream(async (@mttp.ResponseHead, &@mttp.BodyStream) -> T) -> ResponsePlan[Result[T, ResponseFailure], Streaming]
 
 pub fn as_string() -> ResponsePlan[Result[String, ResponseFailure], Buffered]
 
-pub let final_url : @http.AttributeKey[String]
+pub let final_url : @mttp.AttributeKey[String]
 
-pub fn from_fn(async (@http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError, on_close? : () -> Unit) -> &@http.Backend
+pub fn from_fn(async (@mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError, on_close? : () -> Unit) -> &@mttp.Backend
 
-pub fn from_handler(async (@http.Request) -> @http.Response noraise) -> &@http.Backend
+pub fn from_handler(async (@mttp.Request) -> @mttp.Response noraise) -> &@mttp.Backend
 
-pub fn[T, M : ResponseMode] from_head((@http.ResponseHead) -> ResponsePlan[T, M]) -> ResponsePlan[T, M]
+pub fn[T, M : ResponseMode] from_head((@mttp.ResponseHead) -> ResponsePlan[T, M]) -> ResponsePlan[T, M]
 
 pub fn get(String) -> RequestPlan[Result[String, ResponseFailure], Buffered]
 
-pub let global_exempt : @http.AttributeKey[Bool]
+pub let global_exempt : @mttp.AttributeKey[Bool]
 
 pub fn ignore_body() -> ResponsePlan[Result[Unit, ResponseFailure], Buffered]
 
 pub let max_error_body : Int32
 
-pub let operation_id : @http.AttributeKey[String]
+pub let operation_id : @mttp.AttributeKey[String]
 
-pub fn parse_link_next(@http.Headers) -> String?
+pub fn parse_link_next(@mttp.Headers) -> String?
 
 pub fn parse_retry_after(String, now_unix_ms? : Int64) -> Int32?
 
 pub fn post(String) -> RequestPlan[Result[String, ResponseFailure], Buffered]
 
-pub let rate_limit_bucket : @http.AttributeKey[String]
+pub let rate_limit_bucket : @mttp.AttributeKey[String]
 
-pub async fn read_body(@http.Body, Int32) -> Bytes raise @http.TransportError
+pub async fn read_body(@mttp.Body, Int32) -> Bytes raise @mttp.TransportError
 
-pub let redirect_history : @http.AttributeKey[Array[RedirectHop]]
+pub let redirect_history : @mttp.AttributeKey[Array[RedirectHop]]
 
-pub let redirect_limit : @http.AttributeKey[Int32]
+pub let redirect_limit : @mttp.AttributeKey[Int32]
 
-pub fn request(@http.Request) -> RequestPlan[Result[String, ResponseFailure], Buffered]
+pub fn request(@mttp.Request) -> RequestPlan[Result[String, ResponseFailure], Buffered]
 
-pub fn retry_after_ms(@http.Headers, now_unix_ms? : Int64) -> Int32?
+pub fn retry_after_ms(@mttp.Headers, now_unix_ms? : Int64) -> Int32?
 
 pub fn status_of(ResponseFailure) -> Int32?
 
@@ -83,12 +83,12 @@ pub fn Admission::new(String, sequence~ : Int64) -> Self
 pub fn Admission::sequence(Self) -> Int64
 
 pub(all) struct Attempt {
-  request : @http.RequestHead
-  attributes : @http.Attributes
+  request : @mttp.RequestHead
+  attributes : @mttp.Attributes
   bucket : String
   attempt : Int32
   status : Int32
-  headers : @http.Headers
+  headers : @mttp.Headers
   duration_ms : Int64
   error : Error?
   decision : @retry.Decision?
@@ -96,8 +96,8 @@ pub(all) struct Attempt {
 
 pub(all) enum AttemptResult[T] {
   Buffered(Reply[T])
-  StreamReady(@http.ResponseHead)
-  TransportFailure(@http.TransportError)
+  StreamReady(@mttp.ResponseHead)
+  TransportFailure(@mttp.TransportError)
 }
 pub fn[T] AttemptResult::http_outcome(Self[T]) -> @retry.AttemptOutcome
 
@@ -113,23 +113,23 @@ pub struct Client {
   // private fields
 }
 pub fn Client::close(Self) -> Unit
-pub fn Client::new(&@http.Backend, &@rt.Clock, base_url? : String, headers? : @http.Headers, timeout_ms? : Int32, max_body_bytes? : Int32, read_idle_ms? : Int32, timer? : &@rt.Timer, retry? : RetryPolicy, limiter? : &RateLimiter, total_ms? : Int32, observer? : (Attempt) -> Unit, random? : () -> Double) -> Self
+pub fn Client::new(&@mttp.Backend, &@rt.Clock, base_url? : String, headers? : @mttp.Headers, timeout_ms? : Int32, max_body_bytes? : Int32, read_idle_ms? : Int32, timer? : &@rt.Timer, retry? : RetryPolicy, limiter? : &RateLimiter, total_ms? : Int32, observer? : (Attempt) -> Unit, random? : () -> Double) -> Self
 pub async fn[T, M : ResponseMode] Client::send(Self, RequestPlan[T, M], decide_retry? : (AttemptResult[T], RetryContext) -> @retry.Decision) -> Reply[T]
 
 pub struct FollowRedirects {
   // private fields
 }
 pub fn FollowRedirects::close(Self) -> Unit
-pub fn FollowRedirects::new(&@http.Backend, config? : RedirectConfig, on_redirect? : (RedirectHop) -> Unit) -> Self
-pub async fn FollowRedirects::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
-pub impl @http.Backend for FollowRedirects
+pub fn FollowRedirects::new(&@mttp.Backend, config? : RedirectConfig, on_redirect? : (RedirectHop) -> Unit) -> Self
+pub async fn FollowRedirects::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
+pub impl @mttp.Backend for FollowRedirects
 
 pub struct NoLimiter {
   // private fields
 }
 pub async fn NoLimiter::acquire(Self, String, global_exempt~ : Bool) -> Admission
 pub fn NoLimiter::new() -> Self
-pub async fn NoLimiter::release(Self, Admission, status~ : Int32, headers~ : @http.Headers) -> Unit
+pub async fn NoLimiter::release(Self, Admission, status~ : Int32, headers~ : @mttp.Headers) -> Unit
 pub impl RateLimiter for NoLimiter
 
 pub(all) struct Page[T] {
@@ -159,9 +159,9 @@ pub fn RedirectConfig::to_repr(Self) -> @debug.Repr
 
 #derive(Eq, @debug.Debug)
 pub struct RedirectHop {
-  request : @http.RequestHead
-  head : @http.ResponseHead
-  next : @http.RequestHead
+  request : @mttp.RequestHead
+  head : @mttp.ResponseHead
+  next : @mttp.RequestHead
 }
 pub fn RedirectHop::equal(Self, Self) -> Bool
 pub fn RedirectHop::not_equal(Self, Self) -> Bool
@@ -169,16 +169,16 @@ pub fn RedirectHop::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Reply[T] {
   status : Int32
-  headers : @http.Headers
+  headers : @mttp.Headers
   body : T
-  request : @http.RequestHead
-  attributes : @http.Attributes
+  request : @mttp.RequestHead
+  attributes : @mttp.Attributes
 }
 
 pub struct RequestPlan[T, M] {
   // private fields
 }
-pub fn[T, A, M] RequestPlan::attribute(Self[T, M], @http.AttributeKey[A], A) -> Self[T, M]
+pub fn[T, A, M] RequestPlan::attribute(Self[T, M], @mttp.AttributeKey[A], A) -> Self[T, M]
 pub fn[T, M] RequestPlan::bearer(Self[T, M], String) -> Self[T, M]
 pub fn[T, M] RequestPlan::body_bytes(Self[T, M], Bytes) -> Self[T, M]
 pub fn[T, M] RequestPlan::body_fn(Self[T, M], () -> Bytes) -> Self[T, M]
@@ -187,8 +187,8 @@ pub fn[T, M] RequestPlan::follow_redirects(Self[T, M], Bool) -> Self[T, M]
 pub fn[T, M] RequestPlan::header(Self[T, M], String, String) -> Self[T, M]
 pub fn[T, M] RequestPlan::max_body_bytes(Self[T, M], Int32) -> Self[T, M]
 pub fn[T, M] RequestPlan::max_redirects(Self[T, M], Int32) -> Self[T, M]
-pub fn[T, M] RequestPlan::new(@http.Request, ResponsePlan[T, M]) -> Self[T, M]
-pub fn[T, M] RequestPlan::raw(Self[T, M]) -> @http.Request
+pub fn[T, M] RequestPlan::new(@mttp.Request, ResponsePlan[T, M]) -> Self[T, M]
+pub fn[T, M] RequestPlan::raw(Self[T, M]) -> @mttp.Request
 pub fn[T, M] RequestPlan::read_idle_ms(Self[T, M], Int32) -> Self[T, M]
 pub fn[T, U, M, N] RequestPlan::response(Self[T, M], ResponsePlan[U, N]) -> Self[U, N]
 pub async fn[T, M : ResponseMode] RequestPlan::send(Self[T, M], Client, decide_retry? : (AttemptResult[T], RetryContext) -> @retry.Decision) -> Reply[T]
@@ -198,11 +198,11 @@ pub fn[T] RequestPlan::to_curl(Self[T, Buffered], sensitive_headers? : Array[Str
 #non_exhaustive
 #derive(Eq, @debug.Debug)
 pub(all) enum ResponseFailure {
-  UnexpectedStatus(@http.ResponseHead, body~ : Bytes)
-  Deserialization(@http.ResponseHead, message~ : String, body~ : Bytes)
+  UnexpectedStatus(@mttp.ResponseHead, body~ : Bytes)
+  Deserialization(@mttp.ResponseHead, message~ : String, body~ : Bytes)
 }
 pub fn ResponseFailure::equal(Self, Self) -> Bool
-pub fn ResponseFailure::head(Self) -> @http.ResponseHead
+pub fn ResponseFailure::head(Self) -> @mttp.ResponseHead
 pub fn ResponseFailure::not_equal(Self, Self) -> Bool
 pub fn ResponseFailure::to_repr(Self) -> @debug.Repr
 
@@ -213,14 +213,14 @@ pub fn[T, M] ResponsePlan::any_status(Self[T, M]) -> Self[T, M]
 pub fn[T] ResponsePlan::as_streaming(Self[T, Buffered]) -> Self[T, Streaming]
 pub fn[A, B, M] ResponsePlan::map(Self[A, M], (A) -> B raise) -> Self[B, M]
 pub fn[A, B, E, M] ResponsePlan::map_ok(Self[Result[A, E], M], (A) -> B raise) -> Self[Result[B, E], M]
-pub fn[A, B, M] ResponsePlan::map_with_head(Self[A, M], (A, @http.ResponseHead) -> B raise) -> Self[B, M]
-pub fn[T] ResponsePlan::new((@http.ResponseHead, Bytes) -> T raise) -> Self[T, Buffered]
-pub fn[A, T] ResponsePlan::prepared_stream((@http.ResponseHead, Bytes) -> Result[A, T] raise, async (A) -> T) -> Self[T, Streaming]
+pub fn[A, B, M] ResponsePlan::map_with_head(Self[A, M], (A, @mttp.ResponseHead) -> B raise) -> Self[B, M]
+pub fn[T] ResponsePlan::new((@mttp.ResponseHead, Bytes) -> T raise) -> Self[T, Buffered]
+pub fn[A, T] ResponsePlan::prepared_stream((@mttp.ResponseHead, Bytes) -> Result[A, T] raise, async (A) -> T) -> Self[T, Streaming]
 pub fn[T] ResponsePlan::reject() -> Self[Result[T, ResponseFailure], Buffered]
-pub fn[T] ResponsePlan::stream(async (@http.ResponseHead, &@http.BodyStream, Int32) -> T) -> Self[Result[T, ResponseFailure], Streaming]
+pub fn[T] ResponsePlan::stream(async (@mttp.ResponseHead, &@mttp.BodyStream, Int32) -> T) -> Self[Result[T, ResponseFailure], Streaming]
 
 pub(all) struct RetryContext {
-  request : @http.RequestHead
+  request : @mttp.RequestHead
   idempotent : Bool
   bucket : String
   attempt : Int32
@@ -230,8 +230,8 @@ pub(all) struct RetryContext {
   replayable : Bool
   default_decision : @retry.Decision
 }
-pub fn RetryContext::capture(@http.Request, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, replayable? : Bool) -> Self
-pub fn RetryContext::new(@http.RequestHead, idempotent~ : Bool, replayable~ : Bool, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, default_decision? : @retry.Decision) -> Self
+pub fn RetryContext::capture(@mttp.Request, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, replayable? : Bool) -> Self
+pub fn RetryContext::new(@mttp.RequestHead, idempotent~ : Bool, replayable~ : Bool, attempt? : Int32, bucket? : String, random? : Double, now_unix_ms? : Int64, remaining_ms? : Int64, default_decision? : @retry.Decision) -> Self
 
 #derive(Eq, @debug.Debug)
 pub(all) struct RetryPolicy {
@@ -292,7 +292,7 @@ pub type StreamResponseAs[T] = ResponsePlan[T, Streaming]
 // Traits
 pub(open) trait RateLimiter {
   async fn acquire(Self, String, global_exempt~ : Bool) -> Admission
-  async fn release(Self, Admission, status~ : Int32, headers~ : @http.Headers) -> Unit
+  async fn release(Self, Admission, status~ : Int32, headers~ : @mttp.Headers) -> Unit
 }
 
 pub trait ResponseMode {

@@ -1,12 +1,12 @@
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/rt",
   "moonbitlang/core/debug",
   "moonbitlang/core/int64",
 }
 
 import {
-  "gaato/http/sim",
+  "gaato/mttp/sim",
 } for "test"
 
 import {

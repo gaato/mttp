@@ -1,8 +1,8 @@
 ///|
 test "retry snapshots survive later body acquisition and closure" {
   let source = @sim.Feed::new(@driver.Driver::new(), [Chunk(b"payload"), End])
-  let stream = @http.StreamBody::new(source)
-  let request = { ..@http.Request::post("/"), body: @http.Stream(stream), }
+  let stream = @mttp.StreamBody::new(source)
+  let request = { ..@mttp.Request::post("/"), body: @mttp.Stream(stream), }
   let snapshot = @client.RetryContext::capture(request)
   assert_true(snapshot.replayable)
   ignore(stream.take())

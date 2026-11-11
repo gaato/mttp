@@ -23,13 +23,13 @@ fn platform_backend(
 }
 
 ///|
-impl @http.Backend for FetchDriver with fn close(self) {
+impl @mttp.Backend for FetchDriver with fn close(self) {
   self.closed = true
 }
 
 ///|
-fn invalid(detail : String) -> @http.TransportError {
-  @http.TransportError(kind=Invalid, phase=Pool, detail~)
+fn invalid(detail : String) -> @mttp.TransportError {
+  @mttp.TransportError(kind=Invalid, phase=Pool, detail~)
 }
 
 ///|
@@ -60,9 +60,9 @@ fn FetchTimer::new(
 ///|
 async fn[X] FetchTimer::run(
   self : FetchTimer,
-  phase : @http.Phase,
+  phase : @mttp.Phase,
   f : async () -> X,
-) -> X raise @http.TransportError {
+) -> X raise @mttp.TransportError {
   let budget = match self.deadline {
     Some(at) =>
       Some(
@@ -87,29 +87,29 @@ async fn[X] FetchTimer::run(
         None => ()
       }
     }
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Timeout(ms=limit),
       phase~,
       detail="fetch deadline expired",
     )
   } catch {
-    @http.TransportError(_) as error => raise error
+    @mttp.TransportError(_) as error => raise error
     error =>
-      raise @http.TransportError(kind=Network, phase~, detail=error.to_string())
+      raise @mttp.TransportError(kind=Network, phase~, detail=error.to_string())
   }
 }
 
 ///|
 async fn upload(
-  body : @http.Body,
+  body : @mttp.Body,
   timer : FetchTimer,
-) -> Bytes raise @http.TransportError {
+) -> Bytes raise @mttp.TransportError {
   let limit = 16 * 1024 * 1024
   match body {
     Empty => b""
     Bytes(bytes) => {
       if bytes.length() > limit {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=TooLarge(limit~),
           phase=Write,
           detail="fetch upload exceeds buffer limit",
@@ -121,7 +121,7 @@ async fn upload(
       let stream = cell.take()
       defer stream.close()
       if cell.length() is Some(n) && n > limit.to_int64() {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=TooLarge(limit~),
           phase=Write,
           detail="fetch upload exceeds buffer limit",
@@ -130,7 +130,7 @@ async fn upload(
       let buffer = Buffer()
       while timer.run(Write, () => stream.read_some()) is Some(bytes) {
         if bytes.length() > limit - buffer.length() {
-          raise @http.TransportError(
+          raise @mttp.TransportError(
             kind=TooLarge(limit~),
             phase=Write,
             detail="fetch upload exceeds buffer limit",
@@ -140,21 +140,21 @@ async fn upload(
       }
       buffer.to_bytes()
     }
-    @http.Body::.. => raise invalid("unsupported body kind")
+    @mttp.Body::.. => raise invalid("unsupported body kind")
   }
 }
 
 ///|
-impl @http.Backend for FetchDriver with fn send(self, request, options) {
+impl @mttp.Backend for FetchDriver with fn send(self, request, options) {
   if self.closed {
-    raise @http.TransportError(kind=Closed, phase=Pool, detail="backend closed")
+    raise @mttp.TransportError(kind=Closed, phase=Pool, detail="backend closed")
   }
   request.validate()
   options.validate()
   if self.ceiling is Some(n) && n < 0 {
     raise invalid("negative body ceiling")
   }
-  let url = @http.Url::parse(request.url) catch {
+  let url = @mttp.Url::parse(request.url) catch {
     _ => raise invalid("invalid URL")
   }
   guard url.scheme is Some("http" | "https" as scheme) &&
@@ -186,7 +186,7 @@ impl @http.Backend for FetchDriver with fn send(self, request, options) {
         FetchTimer::new(self.clock, self.timer, None, idle?=idle_ms),
         self.ceiling,
       )
-    @http.BodyTiming::.. => raise invalid("unsupported body timing")
+    @mttp.BodyTiming::.. => raise invalid("unsupported body timing")
   }
   let bytes = upload(request.body, timer)
   if framing is Length(declared) && declared != bytes.length().to_int64() {
@@ -223,18 +223,18 @@ impl @http.Backend for FetchDriver with fn send(self, request, options) {
   errdefer reader.close()
   let status = response.status()
   if status < 100 || status > 599 {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Protocol,
       phase=Unknown,
       detail="fetch returned an opaque response",
     )
   }
-  let headers = @http.Headers::of(
+  let headers = @mttp.Headers::of(
     response.headers().iter().map(pair => (pair[0], pair[1])).collect(),
   )
   if request.meth == Head || status == 204 || status == 304 {
     reader.close()
-    return @http.Response::new(status, headers~)
+    return @mttp.Response::new(status, headers~)
   }
   let body = FetchBody::{
     reader,
@@ -247,9 +247,9 @@ impl @http.Backend for FetchDriver with fn send(self, request, options) {
     closed: false,
   }
   transferred = true
-  @http.Response::new(
+  @mttp.Response::new(
     status,
     headers~,
-    body=Stream(@http.StreamBody::new(body)),
+    body=Stream(@mttp.StreamBody::new(body)),
   )
 }

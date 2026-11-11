@@ -8,7 +8,7 @@ priv struct CountedBody {
 }
 
 ///|
-impl @http.BodyStream for CountedBody with fn read_some(self) {
+impl @mttp.BodyStream for CountedBody with fn read_some(self) {
   self.reads.val += 1
   if self.closed || self.index == self.chunks.length() {
     return None
@@ -19,7 +19,7 @@ impl @http.BodyStream for CountedBody with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for CountedBody with fn close(self) {
+impl @mttp.BodyStream for CountedBody with fn close(self) {
   if !self.closed {
     self.closed = true
     self.closes.val += 1
@@ -30,7 +30,7 @@ impl @http.BodyStream for CountedBody with fn close(self) {
 test "rejected heads close unread bodies and limits survive caught read errors" {
   let closes = Ref(0)
   let reads = Ref(0)
-  let source : &@http.BodyStream = CountedBody::{
+  let source : &@mttp.BodyStream = CountedBody::{
     chunks: [b"abcd"],
     index: 0,
     closed: false,
@@ -47,13 +47,13 @@ test "rejected heads close unread bodies and limits survive caught read errors" 
   let failures = []
   let ctx = @endpoint.DispatchContext::new(decode_failure=f => {
     failures.push(f)
-    @http.Response::new(413)
+    @mttp.Response::new(413)
   })
   @driver.run_sync(() => {
-    let req = @http.Request::post("/upload").header(
+    let req = @mttp.Request::post("/upload").header(
       "content-type", "application/octet-stream",
     )
-    let req = { ..req, body: @http.Stream(@http.StreamBody::new(source)), }
+    let req = { ..req, body: @mttp.Stream(@mttp.StreamBody::new(source)), }
     let response = server.dispatch(req, Map([]), ctx)
     assert_eq(response.status, 413)
     assert_eq(response.headers.get("connection"), Some("close"))
@@ -66,7 +66,7 @@ test "rejected heads close unread bodies and limits survive caught read errors" 
     failures[0].failures[0].failure
     is @schema.DecodeFailure(kind=TooLarge(limit=3), ..),
   )
-  let source : &@http.BodyStream = CountedBody::{
+  let source : &@mttp.BodyStream = CountedBody::{
     chunks: [b"abcd"],
     index: 0,
     closed: false,
@@ -75,8 +75,8 @@ test "rejected heads close unread bodies and limits survive caught read errors" 
   }
   @driver.run_sync(() => {
     let req = {
-      ..@http.Request::post("/upload"),
-      body: @http.Stream(@http.StreamBody::new(source)),
+      ..@mttp.Request::post("/upload"),
+      body: @mttp.Stream(@mttp.StreamBody::new(source)),
     }
     assert_eq(
       server.dispatch(req, Map([]), @endpoint.DispatchContext::new()).status,
@@ -91,7 +91,7 @@ test "rejected heads close unread bodies and limits survive caught read errors" 
 test "request ownership lasts until the streamed response closes" {
   let closes = Ref(0)
   let reads = Ref(0)
-  let source : &@http.BodyStream = CountedBody::{
+  let source : &@mttp.BodyStream = CountedBody::{
     chunks: [b"abc"],
     index: 0,
     closed: false,
@@ -116,10 +116,10 @@ test "request ownership lasts until the streamed response closes" {
     )
   })
   @driver.run_sync(() => {
-    let req = @http.Request::post("/events").header(
+    let req = @mttp.Request::post("/events").header(
       "content-type", "application/octet-stream",
     )
-    let req = { ..req, body: @http.Stream(@http.StreamBody::new(source)), }
+    let req = { ..req, body: @mttp.Stream(@mttp.StreamBody::new(source)), }
     let response = server.dispatch(
       req,
       Map([]),

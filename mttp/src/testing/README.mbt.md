@@ -4,7 +4,7 @@ Test doubles for code built on `gaato/mttp/client`. They import only
 `gaato/http` and the client, so an SDK's tests do not compile the endpoint
 layer.
 
-- `BackendStub` is a strict `@http.Backend`: `expect` queues one-shot answers
+- `BackendStub` is a strict `@mttp.Backend`: `expect` queues one-shot answers
   in FIFO order, `when` adds reusable rules after them, `sent` returns a
   `Recorded` request head, options and byte body per send, and `verify`
   fails while expectations remain. An unmatched send raises `Protocol`,
@@ -28,7 +28,7 @@ test "an unsent failure is retried even for a POST" {
   )
   let backend = @testing.fail_sends(
     stub,
-    @http.TransportError(kind=Connect, phase=Dial, detail="refused"),
+    @mttp.TransportError(kind=Connect, phase=Dial, detail="refused"),
   )
   let client = @client.Client::new(
     backend,

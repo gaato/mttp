@@ -2,8 +2,8 @@
 /// Transfer one stream reader, or slice caller-owned bytes without buffering
 /// the whole representation again. Both wrappers use this ownership boundary.
 fn body_source(
-  body : @http.Body,
-) -> (async () -> Bytes? raise @http.TransportError, () -> Unit) raise @http.TransportError {
+  body : @mttp.Body,
+) -> (async () -> Bytes? raise @mttp.TransportError, () -> Unit) raise @mttp.TransportError {
   match body {
     Stream(stream) => {
       let reader = stream.take()
@@ -25,8 +25,8 @@ fn body_source(
         () => (),
       )
     }
-    @http.Body::.. =>
-      raise @http.TransportError(
+    @mttp.Body::.. =>
+      raise @mttp.TransportError(
         kind=Invalid,
         phase=Body,
         detail="unsupported body representation",

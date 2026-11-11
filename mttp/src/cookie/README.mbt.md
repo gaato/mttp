@@ -29,7 +29,7 @@ test "store a response's cookies and send them back" {
   let clock = @sim.FakeClock::new(start_unix_ms=1_000_000L)
   let jar = @cookie.CookieJar::new(clock)
   jar.store(
-    @http.Headers::of([
+    @mttp.Headers::of([
       ("Set-Cookie", "sid=abc; Path=/; Secure; HttpOnly"),
       ("Set-Cookie", "theme=dark; Max-Age=60"),
     ]),

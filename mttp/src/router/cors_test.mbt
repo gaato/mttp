@@ -8,15 +8,15 @@ test "CORS reflects only allowed origins and uses route methods for preflight" {
   @driver.run_sync(() => {
     for
       headers in [
-        @http.Headers::empty(),
-        @http.Headers::of([("origin", "https://other.test")]),
-        @http.Headers::of([("origin", "https://client.test")]),
-        @http.Headers::of([("origin", "a"), ("origin", "b")]),
+        @mttp.Headers::empty(),
+        @mttp.Headers::of([("origin", "https://other.test")]),
+        @mttp.Headers::of([("origin", "https://client.test")]),
+        @mttp.Headers::of([("origin", "a"), ("origin", "b")]),
       ] {
-      let response = router.dispatch({ ..@http.Request::get("/"), headers, })
+      let response = router.dispatch({ ..@mttp.Request::get("/"), headers, })
       assert_eq(response.headers.get_all("vary"), ["Origin"])
     }
-    let request = @http.Request::get("/").header(
+    let request = @mttp.Request::get("/").header(
       "origin", "https://client.test",
     )
     assert_eq(
@@ -25,17 +25,17 @@ test "CORS reflects only allowed origins and uses route methods for preflight" {
     )
     assert_eq(
       router.dispatch(
-        @http.Request::get("/").header("origin", "https://other.test"),
+        @mttp.Request::get("/").header("origin", "https://other.test"),
       ).headers.get("access-control-allow-origin"),
       None,
     )
     assert_eq(
-      router.dispatch(@http.Request::get("/")).headers.get(
+      router.dispatch(@mttp.Request::get("/")).headers.get(
         "access-control-allow-origin",
       ),
       None,
     )
-    let preflight = @http.Request::new(Options, "/")
+    let preflight = @mttp.Request::new(Options, "/")
       .header("origin", "https://client.test")
       .header("access-control-request-method", "GET")
       .header("access-control-request-headers", "x-custom")
@@ -56,9 +56,9 @@ test "CORS reflects only allowed origins and uses route methods for preflight" {
     assert_eq(response.headers.get("access-control-allow-methods"), None)
     for
       request in [
-        @http.Request::options("/"),
-        @http.Request::options("/").header("origin", "https://other.test"),
-        @http.Request::options("/").header("origin", "https://client.test"),
+        @mttp.Request::options("/"),
+        @mttp.Request::options("/").header("origin", "https://other.test"),
+        @mttp.Request::options("/").header("origin", "https://client.test"),
       ] {
       assert_eq(router.dispatch(request).headers.get_all("vary"), [
         "Origin", "Access-Control-Request-Method, Access-Control-Request-Headers",
@@ -72,7 +72,7 @@ test "CORS reflects only allowed origins and uses route methods for preflight" {
     })
     @driver.run_sync(() => {
       assert_eq(
-        router.dispatch(@http.Request::get("/")).headers.get("vary"),
+        router.dispatch(@mttp.Request::get("/")).headers.get("vary"),
         if credentials {
           Some("Origin")
         } else {
@@ -80,7 +80,7 @@ test "CORS reflects only allowed origins and uses route methods for preflight" {
         },
       )
       let response = router.dispatch(
-        @http.Request::get("/").header("origin", "https://client.test"),
+        @mttp.Request::get("/").header("origin", "https://client.test"),
       )
       assert_eq(
         response.headers.get("access-control-allow-origin"),
@@ -111,7 +111,7 @@ test "CORS preserves existing Vary and wildcard replies cannot be primed without
       middleware: [@router.cors(origins), vary],
     })
     @driver.run_sync(() => {
-      let response = router.dispatch(@http.Request::get("/"))
+      let response = router.dispatch(@mttp.Request::get("/"))
       assert_eq(
         response.headers.get_all("vary"),
         if origins == ["*"] {

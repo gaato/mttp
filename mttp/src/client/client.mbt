@@ -17,10 +17,10 @@ priv struct Limits {
 /// defaults, admission, deadlines, decoded-body limits and retries, and maps
 /// each plan onto the `SendOptions` the backend receives.
 pub struct Client {
-  priv backend : &@http.Backend
+  priv backend : &@mttp.Backend
   priv clock : &@rt.Clock
   priv base_url : String
-  priv headers : @http.Headers
+  priv headers : @mttp.Headers
   priv limits : Limits
   priv timer : &@rt.Timer?
   priv retry : RetryPolicy
@@ -34,7 +34,7 @@ pub struct Client {
 ///|
 /// Creates a client over `backend`, reading time from `clock`.
 ///
-/// - `base_url` is prefixed to each request URL with `@http.join_url` (a
+/// - `base_url` is prefixed to each request URL with `@mttp.join_url` (a
 ///   prefix join, never RFC 3986 resolution); `headers` are defaults, and a
 ///   header the request sets itself wins.
 /// - `timeout_ms` is the attempt deadline, sent as `SendOptions.timeout_ms`.
@@ -50,10 +50,10 @@ pub struct Client {
 /// - `retry` (default: none), `limiter` (default: admits at once),
 ///   `observer` (gets one `Attempt` per attempt) and `random` (for jitter).
 pub fn Client::new(
-  backend : &@http.Backend,
+  backend : &@mttp.Backend,
   clock : &@rt.Clock,
   base_url~ : String = "",
-  headers~ : @http.Headers = @http.Headers::empty(),
+  headers~ : @mttp.Headers = @mttp.Headers::empty(),
   timeout_ms? : Int32,
   max_body_bytes~ : Int32 = default_max_body_bytes,
   read_idle_ms? : Int32,
@@ -95,10 +95,10 @@ pub fn Client::close(self : Client) -> Unit {
 ///|
 fn Client::prepare(
   self : Client,
-  request : @http.Request,
-) -> @http.Request raise @http.TransportError {
+  request : @mttp.Request,
+) -> @mttp.Request raise @mttp.TransportError {
   request.validate()
-  let mut headers = @http.Headers::empty()
+  let mut headers = @mttp.Headers::empty()
   for (name, value) in self.headers.iter() {
     if !request.headers.contains(name) {
       headers = headers.add(name, value)
@@ -109,7 +109,7 @@ fn Client::prepare(
   }
   let request = {
     ..request,
-    url: @http.join_url(self.base_url, request.url),
+    url: @mttp.join_url(self.base_url, request.url),
     headers,
   }
   request.validate()
@@ -119,16 +119,16 @@ fn Client::prepare(
 ///|
 /// Refuses limits no attempt can honour, before admission: a negative body
 /// limit or a nonpositive idle limit is `Invalid` in phase Pool.
-fn validate_limits(limits : Limits) -> Unit raise @http.TransportError {
+fn validate_limits(limits : Limits) -> Unit raise @mttp.TransportError {
   if limits.max_body_bytes < 0 {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Pool,
       detail="negative body byte limit",
     )
   }
   if limits.read_idle_ms is Some(ms) && ms <= 0 {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Pool,
       detail="the idle read limit is not positive",
@@ -142,7 +142,7 @@ fn validate_limits(limits : Limits) -> Unit raise @http.TransportError {
 /// Streaming plan, `from_head` included, may hand the body to a consumer
 /// after the attempt, so the deadline ends at the head and each read gets
 /// the idle limit.
-fn body_timing(streaming : Bool, limits : Limits) -> @http.BodyTiming {
+fn body_timing(streaming : Bool, limits : Limits) -> @mttp.BodyTiming {
   if streaming {
     Stream(idle_ms=limits.read_idle_ms)
   } else {
@@ -152,13 +152,13 @@ fn body_timing(streaming : Bool, limits : Limits) -> @http.BodyTiming {
 
 ///|
 priv enum ReadResult[T] {
-  Buffered(T, @http.Response)
-  Streaming(@http.Response, Selected[T])
+  Buffered(T, @mttp.Response)
+  Streaming(@mttp.Response, Selected[T])
 }
 
 ///|
-fn timeout(ms : Int32) -> @http.TransportError {
-  @http.TransportError(
+fn timeout(ms : Int32) -> @mttp.TransportError {
+  @mttp.TransportError(
     kind=Timeout(ms~),
     phase=Unknown,
     detail="attempt deadline expired",
@@ -171,11 +171,11 @@ fn timeout(ms : Int32) -> @http.TransportError {
 /// selected stream is handed back unread.
 async fn[T, M] Client::exchange(
   self : Client,
-  request : @http.Request,
+  request : @mttp.Request,
   reader : ResponsePlan[T, M],
-  options : @http.SendOptions,
+  options : @mttp.SendOptions,
   limit : Int32,
-  received : Ref[@http.ResponseHead?],
+  received : Ref[@mttp.ResponseHead?],
 ) -> ReadResult[T] {
   let started = self.clock.now_unix_ms()
   let response = self.backend.send(request, options)
@@ -285,7 +285,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
     raw.body is (Empty | Bytes(_))
   for attempt = 0; ; attempt = attempt + 1 {
     if self.closed {
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Closed,
         phase=Pool,
         detail="client closed",
@@ -320,7 +320,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
         self.release_cancelled(admission, received.val)
       }
     }
-    let options : @http.SendOptions = {
+    let options : @mttp.SendOptions = {
       timeout_ms: self.budget(limits.timeout_ms, started),
       body,
     }
@@ -354,7 +354,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
     self.limiter.release(
       admission,
       status=received.val.map(h => h.status).unwrap_or(0),
-      headers=received.val.map(h => h.headers).unwrap_or(@http.Headers::empty()),
+      headers=received.val.map(h => h.headers).unwrap_or(@mttp.Headers::empty()),
     ) catch {
       error =>
         if outcome is Ok(_) {
@@ -376,7 +376,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
     let event : AttemptResult[T] = match outcome {
       Ok(Buffered(body, response)) => Buffered(reply_of(sent, body, response))
       Ok(Streaming(response, _)) => StreamReady(response.head())
-      Err(@http.TransportError(..) as error) => TransportFailure(error)
+      Err(@mttp.TransportError(..) as error) => TransportFailure(error)
       Err(error) => {
         settled = true
         (self.observer)(
@@ -395,7 +395,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
     }
     let context = RetryContext::new(
       raw.head(),
-      idempotent=@http.is_idempotent(raw),
+      idempotent=@mttp.is_idempotent(raw),
       replayable~,
       bucket~,
       attempt~,
@@ -415,7 +415,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
       _ => None
     }
     let observed_decision = if error is Some(_) ||
-      (received.val is Some(head) && !@http.is_success(head.status)) ||
+      (received.val is Some(head) && !@mttp.is_success(head.status)) ||
       decide_retry is Some(_) {
       Some(decision)
     } else {
@@ -495,9 +495,9 @@ fn Client::guard_retry(
 
 ///|
 fn[T] reply_of(
-  request : @http.Request,
+  request : @mttp.Request,
   body : T,
-  response : @http.Response,
+  response : @mttp.Response,
 ) -> Reply[T] {
   {
     status: response.status,
@@ -514,11 +514,11 @@ fn[T] reply_of(
 /// so a buffered read selected after a `Stream` head keeps the remainder.
 async fn[T, M] Client::exchange_timed(
   self : Client,
-  raw : @http.Request,
+  raw : @mttp.Request,
   reader : ResponsePlan[T, M],
-  options : @http.SendOptions,
+  options : @mttp.SendOptions,
   limit : Int32,
-  received : Ref[@http.ResponseHead?],
+  received : Ref[@mttp.ResponseHead?],
 ) -> ReadResult[T] {
   match (self.timer, options.timeout_ms) {
     (Some(timer), Some(ms)) => {
@@ -536,7 +536,7 @@ async fn[T, M] Client::exchange_timed(
         Some(Err(error)) => raise error
         None if !complete => raise timeout(ms)
         None =>
-          raise @http.TransportError(
+          raise @mttp.TransportError(
             kind=Protocol,
             phase=Unknown,
             detail="timer completed without running callback",
@@ -565,7 +565,7 @@ fn Client::remaining(self : Client, started : Int64) -> Int64? {
 fn Client::check_total(
   self : Client,
   started : Int64,
-) -> Unit raise @http.TransportError {
+) -> Unit raise @mttp.TransportError {
   if self.remaining(started) is Some(left) && left <= 0L {
     raise timeout(self.total_ms.unwrap())
   }
@@ -590,12 +590,12 @@ fn Client::budget(
 async fn Client::release_cancelled(
   self : Client,
   admission : Admission,
-  head : @http.ResponseHead?,
+  head : @mttp.ResponseHead?,
 ) -> Unit noraise {
   self.limiter.release(
     admission,
     status=head.map(h => h.status).unwrap_or(0),
-    headers=head.map(h => h.headers).unwrap_or(@http.Headers::empty()),
+    headers=head.map(h => h.headers).unwrap_or(@mttp.Headers::empty()),
   ) catch {
     _ => ()
   }
@@ -603,10 +603,10 @@ async fn Client::release_cancelled(
 
 ///|
 fn attempt_info(
-  request : @http.Request,
+  request : @mttp.Request,
   bucket : String,
   attempt : Int32,
-  head : @http.ResponseHead?,
+  head : @mttp.ResponseHead?,
   duration_ms : Int64,
   error : Error?,
   decision : @retry.Decision?,
@@ -617,7 +617,7 @@ fn attempt_info(
     bucket,
     attempt,
     status: head.map(h => h.status).unwrap_or(0),
-    headers: head.map(h => h.headers).unwrap_or(@http.Headers::empty()),
+    headers: head.map(h => h.headers).unwrap_or(@mttp.Headers::empty()),
     duration_ms,
     error,
     decision,
@@ -627,7 +627,7 @@ fn attempt_info(
 ///|
 /// Pairs a wire request with a UTF-8 string reader accepting successful statuses.
 pub fn request(
-  raw : @http.Request,
+  raw : @mttp.Request,
 ) -> ClientRequest[Result[String, ResponseFailure]] {
   ClientRequest::new(raw, as_string())
 }

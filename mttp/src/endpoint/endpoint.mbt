@@ -43,7 +43,7 @@ fn parse_template(template : String) -> Array[Seg] {
 ///|
 /// A typed endpoint definition interpreted by clients, servers and API docs.
 pub struct Endpoint[S, I, E, O, M] {
-  priv meth : @http.Method?
+  priv meth : @mttp.Method?
   priv template : String
   priv security : Input[S]
   priv input : Input[I]
@@ -51,7 +51,7 @@ pub struct Endpoint[S, I, E, O, M] {
   priv output : Out[O, M]
   priv info : Info
   priv max_body_bytes : Int32?
-  priv bucket : ((@http.Request) -> String)?
+  priv bucket : ((@mttp.Request) -> String)?
   priv method_set_twice : Bool
 }
 
@@ -98,7 +98,7 @@ pub fn[S, I, E, O, M] Endpoint::path(
 /// Sets the method and appends a template; repeated method assignment is checked later.
 pub fn[S, I, E, O, M] Endpoint::with_method(
   self : Endpoint[S, I, E, O, M],
-  meth : @http.Method,
+  meth : @mttp.Method,
   template : String,
 ) -> Endpoint[S, I, E, O, M] {
   {
@@ -255,7 +255,7 @@ pub fn[S, I, E, O, M] Endpoint::max_body_bytes(
 ///|
 /// Interpreter-independent endpoint metadata for routing, checking and API docs.
 pub struct EndpointDoc {
-  meth : @http.Method?
+  meth : @mttp.Method?
   template : String
   segments : Array[Seg]
   security : Array[Atom]
@@ -405,7 +405,7 @@ pub fn EndpointDoc::problems(self : EndpointDoc) -> Array[String] {
         out.push("duplicate response header " + name)
       }
       headers[lower] = true
-      @http.Request::get("/").header(name, "").validate() catch {
+      @mttp.Request::get("/").header(name, "").validate() catch {
         _ => out.push("invalid response header " + name)
       }
       if lower == "content-length" ||

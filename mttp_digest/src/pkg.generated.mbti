@@ -2,7 +2,7 @@
 package "gaato/mttp_digest"
 
 import {
-  "gaato/http",
+  "gaato/mttp",
 }
 
 // Values
@@ -14,9 +14,9 @@ pub struct DigestScheme {
   // private fields
 }
 pub fn DigestScheme::close(Self) -> Unit
-pub fn DigestScheme::new(&@http.Backend, String, String, origin~ : String, random~ : () -> Double) -> Self raise @http.TransportError
-pub async fn DigestScheme::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
-pub impl @http.Backend for DigestScheme
+pub fn DigestScheme::new(&@mttp.Backend, String, String, origin~ : String, random~ : () -> Double) -> Self raise @mttp.TransportError
+pub async fn DigestScheme::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
+pub impl @mttp.Backend for DigestScheme
 
 // Type aliases
 

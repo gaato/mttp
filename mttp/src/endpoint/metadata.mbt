@@ -112,7 +112,7 @@ pub fn VariantDoc::new(
 /// Supplies head-only data to an input decoder. Query pairs and captures are
 /// already decoded by the dispatcher; no body is read by this constructor.
 pub fn Head::new(
-  request : @http.Request,
+  request : @mttp.Request,
   captures~ : Map[String, String] = {},
   query~ : Array[(String, String)] = [],
 ) -> Head {
@@ -165,6 +165,6 @@ pub fn RequestSink::set_capture(
 
 ///|
 /// Supplies the request body during client encoding.
-pub fn RequestSink::set_body(self : RequestSink, body : @http.Body) -> Unit {
+pub fn RequestSink::set_body(self : RequestSink, body : @mttp.Body) -> Unit {
   self.body = body
 }

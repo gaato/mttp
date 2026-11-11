@@ -142,7 +142,7 @@ test "documentation endpoint returns the serialized OpenAPI document" {
   let endpoint = @openapi.docs_endpoint(spec)
   @driver.run_sync(() => {
     let response = endpoint.dispatch(
-      @http.Request::get("/openapi.json"),
+      @mttp.Request::get("/openapi.json"),
       Map([]),
       @endpoint.DispatchContext::new(),
     )
@@ -150,7 +150,7 @@ test "documentation endpoint returns the serialized OpenAPI document" {
     assert_eq(response.headers.get("content-type"), Some("application/json"))
     assert_eq(
       response.body,
-      @http.Bytes(@http.encode_utf8(Json(spec).stringify())),
+      @mttp.Bytes(@mttp.encode_utf8(Json(spec).stringify())),
     )
   })
 }

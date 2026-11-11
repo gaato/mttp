@@ -1,7 +1,7 @@
 ///|
 test "encoding negotiation honors weights exclusions aliases and identity" {
   assert_eq(
-    @codings.negotiate_encoding(@http.Headers::empty()),
+    @codings.negotiate_encoding(@mttp.Headers::empty()),
     @codings.Identity,
   )
   for
@@ -20,14 +20,14 @@ test "encoding negotiation honors weights exclusions aliases and identity" {
     ] {
     assert_eq(
       @codings.negotiate_encoding(
-        @http.Headers::of([("Accept-Encoding", value)]),
+        @mttp.Headers::of([("Accept-Encoding", value)]),
       ),
       choice,
     )
   }
   assert_eq(
     @codings.negotiate_encoding(
-      @http.Headers::of([
+      @mttp.Headers::of([
         ("Accept-Encoding", "gzip"),
         ("accept-encoding", "gzip;q=0, br"),
       ]),
@@ -41,12 +41,12 @@ test "encoding negotiation rejects malformed weights and bounds field bytes and 
   let non_ascii = try {
     ignore(
       @codings.negotiate_encoding(
-        @http.Headers::of([("accept-encoding", String::make(8193, 'é'))]),
+        @mttp.Headers::of([("accept-encoding", String::make(8193, 'é'))]),
       ),
     )
     false
   } catch {
-    @http.TransportError(kind=Invalid, ..) => true
+    @mttp.TransportError(kind=Invalid, ..) => true
     _ => false
   }
   assert_true(non_ascii)
@@ -67,19 +67,19 @@ test "encoding negotiation rejects malformed weights and bounds field bytes and 
     let rejected = try {
       ignore(
         @codings.negotiate_encoding(
-          @http.Headers::of([("accept-encoding", value)]),
+          @mttp.Headers::of([("accept-encoding", value)]),
         ),
       )
       false
     } catch {
-      @http.TransportError(kind=Invalid, phase=Head, ..) => true
+      @mttp.TransportError(kind=Invalid, phase=Head, ..) => true
       _ => false
     }
     assert_true(rejected)
   }
   assert_eq(
     @codings.negotiate_encoding(
-      @http.Headers::of([
+      @mttp.Headers::of([
         ("accept-encoding", Array::make(128, "gzip").join(",")),
       ]),
     ),
@@ -87,7 +87,7 @@ test "encoding negotiation rejects malformed weights and bounds field bytes and 
   )
   assert_eq(
     @codings.negotiate_encoding(
-      @http.Headers::of([("accept-encoding", "gzip" + String::make(16380, ' '))]),
+      @mttp.Headers::of([("accept-encoding", "gzip" + String::make(16380, ' '))]),
     ),
     @codings.Encoded(Gzip),
   )

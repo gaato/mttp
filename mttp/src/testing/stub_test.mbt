@@ -3,10 +3,10 @@ test "stub FIFO mismatch is terminal and does not consume expectation" {
   let stub = @testing.BackendStub::new()
     .expect(r => r.url == "/one", @testing.Canned::bytes(201, body=b"one"))
     .when(_ => true, @testing.Canned::bytes(200, body=b"fallback"))
-  let opts = @http.SendOptions::default()
+  let opts = @mttp.SendOptions::default()
   @driver.run_sync(() => {
     let failed = try {
-      let _ = stub.send(@http.Request::get("/wrong"), opts)
+      let _ = stub.send(@mttp.Request::get("/wrong"), opts)
       false
     } catch {
       error => {
@@ -16,9 +16,9 @@ test "stub FIFO mismatch is terminal and does not consume expectation" {
     }
     assert_true(failed)
     assert_eq(stub.remaining(), 1)
-    assert_eq(stub.send(@http.Request::get("/one"), opts).status, 201)
+    assert_eq(stub.send(@mttp.Request::get("/one"), opts).status, 201)
     assert_eq(
-      stub.send(@http.Request::get("/two"), opts).body.as_bytes(),
+      stub.send(@mttp.Request::get("/two"), opts).body.as_bytes(),
       Some(b"fallback"),
     )
   })
@@ -33,10 +33,10 @@ test "stub FIFO mismatch is terminal and does not consume expectation" {
 ///|
 test "stub unmatched close failure factory and verify behavior" {
   let stub = @testing.BackendStub::new()
-  let opts = @http.SendOptions::default()
+  let opts = @mttp.SendOptions::default()
   @driver.run_sync(() => {
     let failed = try {
-      let _ = stub.send(@http.Request::get("/"), opts)
+      let _ = stub.send(@mttp.Request::get("/"), opts)
       false
     } catch {
       error => {
@@ -48,7 +48,7 @@ test "stub unmatched close failure factory and verify behavior" {
   })
   let _ = stub.expect(
     _ => true,
-    Failure(@http.TransportError(kind=Network, phase=Head, detail="injected")),
+    Failure(@mttp.TransportError(kind=Network, phase=Head, detail="injected")),
   )
   let missing = try {
     stub.verify()
@@ -59,27 +59,27 @@ test "stub unmatched close failure factory and verify behavior" {
   assert_true(missing)
   @driver.run_sync(() => {
     let failed = try {
-      let _ = stub.send(@http.Request::get("/"), opts)
+      let _ = stub.send(@mttp.Request::get("/"), opts)
       false
     } catch {
-      @http.TransportError(kind=Network, ..) => true
+      @mttp.TransportError(kind=Network, ..) => true
       _ => false
     }
     assert_true(failed)
   })
   let _ = stub.when(
     r => r.url == "/factory",
-    Factory((_, _) => @http.Response::new(202)),
+    Factory((_, _) => @mttp.Response::new(202)),
   )
   assert_eq(
-    @driver.run_sync(() => stub.send(@http.Request::get("/factory"), opts)).status,
+    @driver.run_sync(() => stub.send(@mttp.Request::get("/factory"), opts)).status,
     202,
   )
   stub.close()
   stub.close()
   let refused = try {
     let _ = @driver.run_sync(() => {
-      stub.send(@http.Request::get("/factory"), opts)
+      stub.send(@mttp.Request::get("/factory"), opts)
     })
     false
   } catch {
@@ -95,46 +95,46 @@ test "canned answers close a stream request body and a factory owns it" {
     .expect(_ => true, @testing.Canned::bytes(201))
     .expect(
       _ => true,
-      Failure(@http.TransportError(kind=Network, phase=Head, detail="fixture")),
+      Failure(@mttp.TransportError(kind=Network, phase=Head, detail="fixture")),
     )
     .expect(
       _ => true,
       Factory((request, _) => {
         guard request.body is Stream(body) else {
-          raise @http.TransportError(
+          raise @mttp.TransportError(
             kind=Invalid,
             phase=Pool,
             detail="no stream",
           )
         }
-        let read = @http.read_bounded(body.take(), 16)
-        @http.Response::new(200, body=Bytes(read))
+        let read = @mttp.read_bounded(body.take(), 16)
+        @mttp.Response::new(200, body=Bytes(read))
       }),
     )
   let feeds = []
   let upload = () => {
     let feed = @sim.Feed::bytes(d, [b"part"])
     feeds.push(feed)
-    @http.Request::post("/").body_stream(feed)
+    @mttp.Request::post("/").body_stream(feed)
   }
   d.run(() => {
-    assert_eq(stub.send(upload(), @http.SendOptions::default()).status, 201)
+    assert_eq(stub.send(upload(), @mttp.SendOptions::default()).status, 201)
     let failed = try {
-      ignore(stub.send(upload(), @http.SendOptions::default()))
+      ignore(stub.send(upload(), @mttp.SendOptions::default()))
       false
     } catch {
-      @http.TransportError(kind=Network, ..) => true
+      @mttp.TransportError(kind=Network, ..) => true
       error => raise error
     }
     assert_true(failed)
-    let factory = stub.send(upload(), @http.SendOptions::default())
+    let factory = stub.send(upload(), @mttp.SendOptions::default())
     assert_eq(factory.body.as_bytes(), Some(b"part"))
     // An unmatched send closes the body too.
     let unmatched = try {
-      ignore(stub.send(upload(), @http.SendOptions::default()))
+      ignore(stub.send(upload(), @mttp.SendOptions::default()))
       false
     } catch {
-      @http.TransportError(kind=Protocol, ..) => true
+      @mttp.TransportError(kind=Protocol, ..) => true
       error => raise error
     }
     assert_true(unmatched)

@@ -8,28 +8,28 @@ priv suberror RedirectError {
 }
 
 ///|
-fn redirect_failure(error : RedirectError) -> @http.TransportError {
+fn redirect_failure(error : RedirectError) -> @mttp.TransportError {
   match error {
     TooManyRedirects(max~, location~) =>
-      @http.TransportError(
+      @mttp.TransportError(
         kind=TooManyRedirects(max~),
         phase=Head,
         detail="redirect limit exceeded: " + location,
       )
     Downgrade(location~) =>
-      @http.TransportError(
+      @mttp.TransportError(
         kind=RedirectRefused,
         phase=Head,
         detail="refused redirect to http: " + location,
       )
     BadLocation(location~, reason~) =>
-      @http.TransportError(
+      @mttp.TransportError(
         kind=RedirectRefused,
         phase=Head,
         detail="bad redirect Location " + location.escape() + ": " + reason,
       )
     UnreplayableBody(location~) =>
-      @http.TransportError(
+      @mttp.TransportError(
         kind=Unreplayable,
         phase=Head,
         detail="request body was already sent: " + location,
@@ -42,9 +42,9 @@ fn redirect_failure(error : RedirectError) -> @http.TransportError {
 /// response bodies. Its response stream is closed before this is reported.
 #derive(Eq, Debug)
 pub struct RedirectHop {
-  request : @http.RequestHead
-  head : @http.ResponseHead
-  next : @http.RequestHead
+  request : @mttp.RequestHead
+  head : @mttp.ResponseHead
+  next : @mttp.RequestHead
 }
 
 ///|
@@ -57,13 +57,13 @@ pub extend RedirectHop with @debug.Debug::{to_repr}
 
 ///|
 /// Final URL sent by FollowRedirects, including when no hop was followed.
-pub let final_url : @http.AttributeKey[String] = @http.AttributeKey::new(
+pub let final_url : @mttp.AttributeKey[String] = @mttp.AttributeKey::new(
   "final_url",
 )
 
 ///|
 /// Followed hops, at most the effective redirect limit.
-pub let redirect_history : @http.AttributeKey[Array[RedirectHop]] = @http.AttributeKey::new(
+pub let redirect_history : @mttp.AttributeKey[Array[RedirectHop]] = @mttp.AttributeKey::new(
   "redirect_history",
 )
 
@@ -133,7 +133,7 @@ pub fn RedirectConfig::default() -> RedirectConfig {
 /// `Unknown`, and a `Connect` or `Proxy` kind becomes `Network`; the detail
 /// keeps the original.
 pub struct FollowRedirects {
-  priv inner : &@http.Backend
+  priv inner : &@mttp.Backend
   priv config : RedirectConfig
   priv credentials : Array[String]
   priv on_redirect : ((RedirectHop) -> Unit)?
@@ -144,7 +144,7 @@ pub struct FollowRedirects {
 /// Wraps a backend. `on_redirect` sees each followed hop after its response
 /// was closed.
 pub fn FollowRedirects::new(
-  inner : &@http.Backend,
+  inner : &@mttp.Backend,
   config~ : RedirectConfig = RedirectConfig::default(),
   on_redirect? : (RedirectHop) -> Unit,
 ) -> FollowRedirects {
@@ -162,11 +162,11 @@ pub fn FollowRedirects::new(
 /// followed hops (`redirect_history`) on the returned response.
 pub async fn FollowRedirects::send(
   self : FollowRedirects,
-  request : @http.Request,
-  options : @http.SendOptions,
-) -> @http.Response raise @http.TransportError {
+  request : @mttp.Request,
+  options : @mttp.SendOptions,
+) -> @mttp.Response raise @mttp.TransportError {
   if self.closed {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Closed,
       phase=Pool,
       detail="redirect backend is closed",
@@ -228,9 +228,9 @@ pub async fn FollowRedirects::send(
 
 ///|
 fn apply_redirect(
-  request : @http.Request,
+  request : @mttp.Request,
   plan : RedirectPlan,
-) -> @http.Request {
+) -> @mttp.Request {
   {
     ..request,
     meth: plan.head.meth,
@@ -255,13 +255,13 @@ pub fn FollowRedirects::close(self : FollowRedirects) -> Unit {
 
 ///|
 /// Sends through the shared backend interface.
-pub impl @http.Backend for FollowRedirects with fn send(self, request, options) {
+pub impl @mttp.Backend for FollowRedirects with fn send(self, request, options) {
   self.send(request, options)
 }
 
 ///|
 /// Closes through the shared backend interface.
-pub impl @http.Backend for FollowRedirects with fn close(self) {
+pub impl @mttp.Backend for FollowRedirects with fn close(self) {
   self.close()
 }
 
@@ -273,15 +273,15 @@ pub impl @http.Backend for FollowRedirects with fn close(self) {
 /// was sent) becomes `Network`, and the detail keeps the original kind,
 /// phase and detail.
 fn after_redirect(
-  error : @http.TransportError,
+  error : @mttp.TransportError,
   followed : Int32,
-) -> @http.TransportError {
-  let @http.TransportError(kind~, ..) = error
-  let kind : @http.Kind = match kind {
+) -> @mttp.TransportError {
+  let @mttp.TransportError(kind~, ..) = error
+  let kind : @mttp.Kind = match kind {
     Connect | Proxy(_) => Network
     kind => kind
   }
-  @http.TransportError(
+  @mttp.TransportError(
     kind~,
     phase=Unknown,
     detail="redirect hop \{followed} failed after an earlier hop was answered: \{error.message()}",

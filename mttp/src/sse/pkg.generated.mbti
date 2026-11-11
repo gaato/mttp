@@ -2,12 +2,12 @@
 package "gaato/mttp/sse"
 
 import {
-  "gaato/http",
+  "gaato/mttp",
   "moonbitlang/core/debug",
 }
 
 // Values
-pub fn encode(SseEvent) -> Bytes raise @http.TransportError
+pub fn encode(SseEvent) -> Bytes raise @mttp.TransportError
 
 // Errors
 
@@ -27,8 +27,8 @@ pub fn SseEvent::to_repr(Self) -> @debug.Repr
 pub struct SseParser {
   // private fields
 }
-pub fn SseParser::feed(Self, BytesView) -> Array[SseEvent] raise @http.TransportError
-pub fn SseParser::finish(Self) -> Array[SseEvent] raise @http.TransportError
+pub fn SseParser::feed(Self, BytesView) -> Array[SseEvent] raise @mttp.TransportError
+pub fn SseParser::finish(Self) -> Array[SseEvent] raise @mttp.TransportError
 pub fn SseParser::last_event_id(Self) -> String?
 pub fn SseParser::new(max_event_bytes? : Int32) -> Self
 pub fn SseParser::reconnection_ms(Self) -> Int32?
@@ -38,8 +38,8 @@ pub struct SseReader {
 }
 pub fn SseReader::close(Self) -> Unit
 pub async fn SseReader::each(Self, async (SseEvent) -> Unit, stop? : (SseEvent) -> Bool) -> Unit
-pub fn SseReader::new(&@http.BodyStream, max_event_bytes? : Int32) -> Self
-pub async fn SseReader::next_event(Self) -> SseEvent? raise @http.TransportError
+pub fn SseReader::new(&@mttp.BodyStream, max_event_bytes? : Int32) -> Self
+pub async fn SseReader::next_event(Self) -> SseEvent? raise @mttp.TransportError
 
 // Type aliases
 

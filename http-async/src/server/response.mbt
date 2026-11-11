@@ -3,15 +3,15 @@
 // failures). A private body lease therefore tracks the whole response, not
 // just the handler call, without adding runtime hooks to the portable engine.
 priv struct ResponseLease {
-  body : @http.Body
+  body : @mttp.Body
   done : () -> Unit
-  mut reader : &@http.BodyStream?
+  mut reader : &@mttp.BodyStream?
   mut sent : Bool
   mut closed : Bool
 }
 
 ///|
-impl @http.BodyStream for ResponseLease with fn read_some(self) {
+impl @mttp.BodyStream for ResponseLease with fn read_some(self) {
   if self.closed {
     return None
   }
@@ -41,7 +41,7 @@ impl @http.BodyStream for ResponseLease with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for ResponseLease with fn close(self) {
+impl @mttp.BodyStream for ResponseLease with fn close(self) {
   if !self.closed {
     self.closed = true
     match self.reader {
@@ -54,14 +54,14 @@ impl @http.BodyStream for ResponseLease with fn close(self) {
 
 ///|
 fn lease(
-  response : @http.Response,
-  meth : @http.Method,
+  response : @mttp.Response,
+  meth : @mttp.Method,
   done : () -> Unit,
-) -> @http.Response {
+) -> @mttp.Response {
   {
     ..response,
     body: Stream(
-      @http.StreamBody::new(
+      @mttp.StreamBody::new(
         ResponseLease::{
           body: response.body,
           done,

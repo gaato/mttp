@@ -15,6 +15,6 @@ preferred_target = "native"
 supported_targets = "native+wasm"
 
 import {
-  "gaato/http@0.6.0",
+  "gaato/mttp@0.1.0",
   "gaato/http-async@0.6.0",
 }

@@ -13,7 +13,7 @@ test "parse_request_url keeps the scheme, host and path a jar reads" {
     ("http://host?q=/a", Some(("http", "host", "/"))),
     ("http://host#/a", Some(("http", "host", "/"))),
     ("wss://[::1]:443/ws", Some(("wss", "[::1]", "/ws"))),
-    // Hosts and paths come out as @http.Url normalises them.
+    // Hosts and paths come out as @mttp.Url normalises them.
     ("http://[0:0:0:0:0:0:0:1]:8080/", Some(("http", "[::1]", "/"))),
     ("http://[2001:DB8:0::0:1]", Some(("http", "[2001:db8::1]", "/"))),
     (

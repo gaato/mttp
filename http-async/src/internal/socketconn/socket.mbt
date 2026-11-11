@@ -16,7 +16,7 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
   max_len~,
 ) {
   if max_len <= 0 {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Unknown,
       detail="max_len must be positive",
@@ -84,7 +84,7 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
   bytes,
 ) {
   if self.closed {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Closed,
       phase=Unknown,
       detail="connection closed",
@@ -111,7 +111,7 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
     }
     task.wait() catch {
       @async.WaitedTaskAlreadyCancelled if self.closed =>
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=Closed,
           phase=Unknown,
           detail="connection closed during write",
@@ -141,11 +141,11 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
 }
 
 ///|
-pub fn transport_error(error : Error) -> @http.TransportError {
+pub fn transport_error(error : Error) -> @mttp.TransportError {
   match error {
-    @http.TransportError(..) as original => original
+    @mttp.TransportError(..) as original => original
     _ =>
-      @http.TransportError(
+      @mttp.TransportError(
         kind=Network,
         phase=Unknown,
         detail=error.to_string(),

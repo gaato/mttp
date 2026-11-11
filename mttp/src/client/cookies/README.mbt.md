@@ -22,9 +22,9 @@ test "wrap each redirect hop with cookies" {
   @driver.run_sync(() => {
     let jar = @cookie.CookieJar::new(@sim.FakeClock::new())
     let transport = @client.from_fn((_, _) => {
-      @http.Response::new(
+      @mttp.Response::new(
         200,
-        headers=@http.Headers::of([("Set-Cookie", "sid=one; Path=/")]),
+        headers=@mttp.Headers::of([("Set-Cookie", "sid=one; Path=/")]),
       )
     })
     let backend = @client.FollowRedirects::new(
@@ -33,8 +33,8 @@ test "wrap each redirect hop with cookies" {
     defer backend.close()
     backend
     .send(
-      @http.Request::get("https://example.test/"),
-      @http.SendOptions::default(),
+      @mttp.Request::get("https://example.test/"),
+      @mttp.SendOptions::default(),
     )
     .close()
     assert_eq(jar.header_for("https://example.test/"), Some("sid=one"))

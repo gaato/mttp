@@ -1,12 +1,12 @@
 ///|
 fn matches_template(
   doc : @endpoint.EndpointDoc,
-  request : @http.Request,
+  request : @mttp.Request,
 ) -> Bool {
   if doc.meth != Some(request.meth) {
     return false
   }
-  let path = @http.Url::parse(request.url).path_segments() catch {
+  let path = @mttp.Url::parse(request.url).path_segments() catch {
     _ => return false
   }
   let rest = doc.segments.last() is Some(Rest(_))

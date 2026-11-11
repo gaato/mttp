@@ -1,7 +1,7 @@
 ///|
 /// A body-free plan, computed without acquiring or inspecting a live stream.
 priv struct RedirectPlan {
-  head : @http.RequestHead
+  head : @mttp.RequestHead
   drop_body : Bool
 }
 
@@ -9,8 +9,8 @@ priv struct RedirectPlan {
 /// The request head to send after a response, or None when it is
 /// not a redirect to follow.
 fn plan_redirect(
-  request : @http.RequestHead,
-  response : @http.ResponseHead,
+  request : @mttp.RequestHead,
+  response : @mttp.ResponseHead,
   replayable~ : Bool,
   followed~ : Int32,
   max_redirects~ : Int32,
@@ -44,7 +44,7 @@ fn plan_redirect(
   )
   Some({
     head: {
-      meth: @http.Method::parse(http_method),
+      meth: @mttp.Method::parse(http_method),
       url: to.without_fragment().to_string(),
       headers,
     },
@@ -78,17 +78,17 @@ fn redirect_method(status : Int32, http_method : String) -> String {
 fn redirect_target(
   request_url : String,
   location : String,
-) -> (@http.Url, @http.Url) raise RedirectError {
-  let from = @http.Url::parse(request_url) catch {
-    @http.UrlError::Invalid(reason) =>
+) -> (@mttp.Url, @mttp.Url) raise RedirectError {
+  let from = @mttp.Url::parse(request_url) catch {
+    @mttp.UrlError::Invalid(reason) =>
       raise BadLocation(location~, reason="request URL: " + reason)
   }
   guard from.scheme is Some("http" | "https") else {
     raise BadLocation(location~, reason="request URL is not absolute http(s)")
   }
   let to = from.resolve(
-    @http.Url::parse(location) catch {
-      @http.UrlError::Invalid(reason) => raise BadLocation(location~, reason~)
+    @mttp.Url::parse(location) catch {
+      @mttp.UrlError::Invalid(reason) => raise BadLocation(location~, reason~)
     },
   )
   guard to.scheme is Some("http" | "https") else {
@@ -106,12 +106,12 @@ fn redirect_target(
 /// origin changes, except on a same-host upgrade from `http` to `https` on
 /// default ports.
 fn redirect_headers(
-  headers : @http.Headers,
-  from~ : @http.Url,
-  to~ : @http.Url,
+  headers : @mttp.Headers,
+  from~ : @mttp.Url,
+  to~ : @mttp.Url,
   drop_body~ : Bool,
   credential_headers~ : Array[String],
-) -> @http.Headers {
+) -> @mttp.Headers {
   let removed = []
   if drop_body {
     removed.push_iter(body_headers.iter())
@@ -122,7 +122,7 @@ fn redirect_headers(
       removed.push_iter(credential_headers.iter())
     }
   }
-  @http.Headers::of(
+  @mttp.Headers::of(
     headers.iter().filter(pair => !removed.contains(pair.0)).collect(),
   )
 }
@@ -136,7 +136,7 @@ let body_headers : Array[String] = [
 ///|
 /// Whether `to` is `from` moved from `http` on port 80 to `https` on port 443
 /// of the same host (httpx's `_is_https_redirect`).
-fn secure_upgrade(from : @http.Url, to : @http.Url) -> Bool {
+fn secure_upgrade(from : @mttp.Url, to : @mttp.Url) -> Bool {
   from.host == to.host &&
   from.scheme == Some("http") &&
   from.port_or_default() == Some(80) &&

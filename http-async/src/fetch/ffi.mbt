@@ -20,7 +20,7 @@ pub type JsEnv
 
 ///|
 /// Optional host environment; absent unless with_env was used for this request.
-pub let env : @http.AttributeKey[JsEnv] = @http.AttributeKey::new("fetch.env")
+pub let env : @mttp.AttributeKey[JsEnv] = @mttp.AttributeKey::new("fetch.env")
 
 ///|
 #external

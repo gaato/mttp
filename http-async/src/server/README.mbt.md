@@ -10,7 +10,7 @@ when response compression is wanted.
 ```mbt check
 ///|
 async test "listener errors are distinct from connection errors" {
-  try @server.serve(_ => @http.Response::new(204), addr="invalid") catch {
+  try @server.serve(_ => @mttp.Response::new(204), addr="invalid") catch {
     @server.Bind(..) => ()
     error => raise error
   } noraise {

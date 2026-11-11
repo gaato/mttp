@@ -52,7 +52,7 @@ pub fn body_out(
     header_schemas: {},
     description: "buffered response with a dynamic content type",
     encode: value => {
-      (@http.Headers::of([("content-type", value.0)]), Bytes(value.1))
+      (@mttp.Headers::of([("content-type", value.0)]), Bytes(value.1))
     },
     decode_bytes: Some((head, bytes) => {
       guard head.headers.get("content-type") is Some(media_type) else {
@@ -72,8 +72,8 @@ pub fn body_out(
 /// for the callback's lifetime, which ends by closing that stream.
 pub fn stream_body_out(
   status~ : Int32 = 200,
-) -> Out[(String?, @http.Body), @client.Buffered] {
-  let variant : Variant[(String?, @http.Body)] = {
+) -> Out[(String?, @mttp.Body), @client.Buffered] {
+  let variant : Variant[(String?, @mttp.Body)] = {
     status,
     status_of: None,
     dynamic_media: true,
@@ -86,18 +86,18 @@ pub fn stream_body_out(
     description: "response body with an optional dynamic content type",
     encode: value => {
       let headers = match value.0 {
-        Some(media_type) => @http.Headers::of([("content-type", media_type)])
-        None => @http.Headers::empty()
+        Some(media_type) => @mttp.Headers::of([("content-type", media_type)])
+        None => @mttp.Headers::empty()
       }
       (headers, value.1)
     },
     decode_bytes: Some((head, bytes) => {
-      (head.headers.get("content-type"), @http.Bytes(bytes))
+      (head.headers.get("content-type"), @mttp.Bytes(bytes))
     }),
     decode_stream: Some((head, stream) => {
       (
         head.headers.get("content-type"),
-        @http.Stream(@http.StreamBody::new(stream)),
+        @mttp.Stream(@mttp.StreamBody::new(stream)),
       )
     }),
   }
@@ -124,7 +124,7 @@ pub fn[T, M] Out::set_cookie(
     mode: self.mode,
     variants: self.variants.map(variant => {
       let paired = variant.and_header("set-cookie", codec)
-      let select = (head : @http.ResponseHead) => {
+      let select = (head : @mttp.ResponseHead) => {
         let values = head.headers
           .get_all("set-cookie")
           .filter(raw => raw.has_prefix(name + "="))

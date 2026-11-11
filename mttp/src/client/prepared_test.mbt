@@ -5,7 +5,7 @@ test "prepared stream decodes before retry and consumes after observation throug
   let client = @client.Client::new(
     @client.from_handler(_ => {
       calls.val += 1
-      @http.Response::new(
+      @mttp.Response::new(
         if calls.val == 1 {
           503
         } else {
@@ -51,7 +51,7 @@ test "prepared streams keep decoded limits and never retry callback exceptions" 
   let client = @client.Client::new(
     @client.from_handler(_ => {
       calls.val += 1
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.FakeClock::new(),
     retry=@client.RetryPolicy::conservative(),
@@ -65,7 +65,7 @@ test "prepared streams keep decoded limits and never retry callback exceptions" 
       ignore(@client.get("/").max_body_bytes(3).response(reader).send(client))
       fail("crossing body accepted")
     } catch {
-      @http.TransportError(kind=TooLarge(limit=3), ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=3), ..) => ()
       error => raise error
     }
   })
@@ -74,7 +74,7 @@ test "prepared streams keep decoded limits and never retry callback exceptions" 
   let client = @client.Client::new(
     @client.from_handler(_ => {
       calls.val += 1
-      @http.Response::new(200, body=Bytes(b"x"))
+      @mttp.Response::new(200, body=Bytes(b"x"))
     }),
     @sim.FakeClock::new(),
     retry=@client.RetryPolicy::conservative(),
@@ -109,7 +109,7 @@ test "prepared decoding remains inside the attempt deadline" {
     _ => consumed.val = true,
   )
   let client = @client.Client::new(
-    @client.from_handler(_ => @http.Response::new(200)),
+    @client.from_handler(_ => @mttp.Response::new(200)),
     clock,
   )
   defer client.close()
@@ -118,7 +118,7 @@ test "prepared decoding remains inside the attempt deadline" {
       ignore(@client.get("/").timeout_ms(10).response(reader).send(client))
       fail("expired preparation reached callback")
     } catch {
-      @http.TransportError(kind=Timeout(ms=10), ..) => ()
+      @mttp.TransportError(kind=Timeout(ms=10), ..) => ()
       error => raise error
     }
   })

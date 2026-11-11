@@ -5,10 +5,10 @@
 /// backend must; a factory receives the request and owns its body.
 #non_exhaustive
 pub(all) enum Canned {
-  Response(status~ : Int32, headers~ : @http.Headers, body~ : Bytes)
-  Failure(@http.TransportError)
+  Response(status~ : Int32, headers~ : @mttp.Headers, body~ : Bytes)
+  Failure(@mttp.TransportError)
   Factory(
-    async (@http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
+    async (@mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
   )
 }
 
@@ -17,7 +17,7 @@ pub(all) enum Canned {
 pub fn Canned::bytes(
   status : Int32,
   body~ : Bytes = b"",
-  headers~ : @http.Headers = @http.Headers::empty(),
+  headers~ : @mttp.Headers = @mttp.Headers::empty(),
 ) -> Canned {
   Response(status~, headers~, body~)
 }
@@ -25,13 +25,13 @@ pub fn Canned::bytes(
 ///|
 async fn Canned::respond(
   self : Canned,
-  request : @http.Request,
-  options : @http.SendOptions,
-) -> @http.Response raise @http.TransportError {
+  request : @mttp.Request,
+  options : @mttp.SendOptions,
+) -> @mttp.Response raise @mttp.TransportError {
   match self {
     Response(status~, headers~, body~) => {
       close_body(request)
-      @http.Response::new(status, headers~, body=Bytes(body))
+      @mttp.Response::new(status, headers~, body=Bytes(body))
     }
     Failure(error) => {
       close_body(request)
@@ -43,7 +43,7 @@ async fn Canned::respond(
 
 ///|
 /// Closes a stream request body nobody will read, as a backend must.
-fn close_body(request : @http.Request) -> Unit {
+fn close_body(request : @mttp.Request) -> Unit {
   if request.body is Stream(stream) {
     stream.close()
   }
@@ -54,8 +54,8 @@ fn close_body(request : @http.Request) -> Unit {
 /// recorded as None without consuming them; byte bodies are captured by value.
 #derive(Eq, Debug)
 pub(all) struct Recorded {
-  request : @http.RequestHead
-  options : @http.SendOptions
+  request : @mttp.RequestHead
+  options : @mttp.SendOptions
   body : Bytes?
 }
 
@@ -69,7 +69,7 @@ pub extend Recorded with @debug.Debug::{to_repr}
 
 ///|
 priv struct Rule {
-  matches : (@http.Request) -> Bool
+  matches : (@mttp.Request) -> Bool
   response : Canned
 }
 
@@ -94,7 +94,7 @@ pub fn BackendStub::new() -> BackendStub {
 /// Appends a one-shot expectation. A mismatch does not consume it.
 pub fn BackendStub::expect(
   self : BackendStub,
-  matches : (@http.Request) -> Bool,
+  matches : (@mttp.Request) -> Bool,
   response : Canned,
 ) -> BackendStub {
   self.expected.push({ matches, response, })
@@ -105,7 +105,7 @@ pub fn BackendStub::expect(
 /// Adds a reusable rule, evaluated in registration order after expectations.
 pub fn BackendStub::when(
   self : BackendStub,
-  matches : (@http.Request) -> Bool,
+  matches : (@mttp.Request) -> Bool,
   response : Canned,
 ) -> BackendStub {
   self.rules.push({ matches, response, })
@@ -134,9 +134,9 @@ pub fn BackendStub::verify(self : BackendStub) -> Unit raise {
 
 ///|
 /// Validates, records and responds to one send. An unexpected send is terminal.
-pub impl @http.Backend for BackendStub with fn send(self, request, options) {
+pub impl @mttp.Backend for BackendStub with fn send(self, request, options) {
   if self.closed {
-    raise @http.TransportError(kind=Closed, phase=Pool, detail="stub is closed")
+    raise @mttp.TransportError(kind=Closed, phase=Pool, detail="stub is closed")
   }
   request.validate()
   options.validate()
@@ -149,7 +149,7 @@ pub impl @http.Backend for BackendStub with fn send(self, request, options) {
     let rule = self.expected[self.next]
     if !(rule.matches)(request) {
       close_body(request)
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Protocol,
         phase=Unknown,
         detail="stub FIFO expectation did not match",
@@ -164,7 +164,7 @@ pub impl @http.Backend for BackendStub with fn send(self, request, options) {
     }
   }
   close_body(request)
-  raise @http.TransportError(
+  raise @mttp.TransportError(
     kind=Protocol,
     phase=Unknown,
     detail="no stub rule matched request",
@@ -173,10 +173,10 @@ pub impl @http.Backend for BackendStub with fn send(self, request, options) {
 
 ///|
 /// Closes the stub; future sends fail without recording or matching.
-pub impl @http.Backend for BackendStub with fn close(self) {
+pub impl @mttp.Backend for BackendStub with fn close(self) {
   self.closed = true
 }
 
 ///|
 /// Exposes backend operations on the concrete stub.
-pub extend BackendStub with @http.Backend::{send, close}
+pub extend BackendStub with @mttp.Backend::{send, close}

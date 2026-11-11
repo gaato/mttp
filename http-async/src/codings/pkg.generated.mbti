@@ -2,26 +2,26 @@
 package "gaato/http-async/codings"
 
 import {
-  "gaato/http",
+  "gaato/mttp",
   "moonbitlang/core/debug",
 }
 
 // Values
 pub fn accept_encoding() -> String
 
-pub fn coding_plan(String) -> Array[Coding] raise @http.TransportError
+pub fn coding_plan(String) -> Array[Coding] raise @mttp.TransportError
 
-pub fn coding_plan_fields(Array[String]) -> CodingPlan raise @http.TransportError
+pub fn coding_plan_fields(Array[String]) -> CodingPlan raise @mttp.TransportError
 
-pub fn compress(async (@http.Request) -> @http.Response noraise, min_bytes? : Int32) -> async (@http.Request) -> @http.Response noraise
+pub fn compress(async (@mttp.Request) -> @mttp.Response noraise, min_bytes? : Int32) -> async (@mttp.Request) -> @mttp.Response noraise
 
-pub fn decode_head(@http.ResponseHead) -> (@http.ResponseHead, ContentDecoder?) raise @http.TransportError
+pub fn decode_head(@mttp.ResponseHead) -> (@mttp.ResponseHead, ContentDecoder?) raise @mttp.TransportError
 
-pub fn encode_body(@http.Body, Coding) -> @http.Body raise @http.TransportError
+pub fn encode_body(@mttp.Body, Coding) -> @mttp.Body raise @mttp.TransportError
 
 pub fn has_body(String, Int32) -> Bool
 
-pub fn negotiate_encoding(@http.Headers) -> EncodingChoice raise @http.TransportError
+pub fn negotiate_encoding(@mttp.Headers) -> EncodingChoice raise @mttp.TransportError
 
 pub async fn read_decoded(async () -> Bytes?, ContentDecoder?) -> Bytes?
 
@@ -51,26 +51,26 @@ pub struct CodingPlan {
 pub struct ContentDecoder {
   // private fields
 }
-pub fn ContentDecoder::end(Self) -> Unit raise @http.TransportError
-pub fn ContentDecoder::feed(Self, Bytes) -> Unit raise @http.TransportError
-pub fn ContentDecoder::new(Array[Coding]) -> Self raise @http.TransportError
-pub fn ContentDecoder::pull(Self) -> Pulled raise @http.TransportError
+pub fn ContentDecoder::end(Self) -> Unit raise @mttp.TransportError
+pub fn ContentDecoder::feed(Self, Bytes) -> Unit raise @mttp.TransportError
+pub fn ContentDecoder::new(Array[Coding]) -> Self raise @mttp.TransportError
+pub fn ContentDecoder::pull(Self) -> Pulled raise @mttp.TransportError
 
 pub struct ContentEncoder {
   // private fields
 }
-pub fn ContentEncoder::end(Self) -> Unit raise @http.TransportError
-pub fn ContentEncoder::feed(Self, Bytes) -> Unit raise @http.TransportError
-pub fn ContentEncoder::new(Coding) -> Self raise @http.TransportError
-pub fn ContentEncoder::pull(Self) -> Pulled raise @http.TransportError
+pub fn ContentEncoder::end(Self) -> Unit raise @mttp.TransportError
+pub fn ContentEncoder::feed(Self, Bytes) -> Unit raise @mttp.TransportError
+pub fn ContentEncoder::new(Coding) -> Self raise @mttp.TransportError
+pub fn ContentEncoder::pull(Self) -> Pulled raise @mttp.TransportError
 
 pub struct Decompress {
   // private fields
 }
 pub fn Decompress::close(Self) -> Unit
-pub fn Decompress::new(&@http.Backend) -> Self
-pub async fn Decompress::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
-pub impl @http.Backend for Decompress
+pub fn Decompress::new(&@mttp.Backend) -> Self
+pub async fn Decompress::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
+pub impl @mttp.Backend for Decompress
 
 #non_exhaustive
 #derive(Eq, @debug.Debug)
