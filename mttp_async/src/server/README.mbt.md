@@ -43,7 +43,7 @@ is closed when the server starts to shut down instead of being drained: the
 stream is no longer pulled (a pull that waits is cancelled within a quarter
 second), its `close` runs once, a chunked body ends with its last chunk and
 the connection closes. Its clients reconnect, as event-stream clients do.
-`endpoint.sse_out` sets it on the responses it builds.
+`endpoint.sse_out` and `sse_body_out` set it on the responses they build.
 
 The listener sets `SO_REUSEADDR`, as Go and Node do, so a restart (a systemd
 `Restart=`, a deploy) binds again while the previous process's connections

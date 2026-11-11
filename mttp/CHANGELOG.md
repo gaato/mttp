@@ -39,6 +39,13 @@ never does.
   `to_event=v => @sse.SseEvent::{ data: ..., id: Some(x), .. }` with
   `meta=v => SseMeta::new(id=x)`; for data that is not JSON, such as HTML,
   use `sse_body_out`.
+- An event stream from `sse_out` or `sse_body_out` opens with an SSE comment
+  line (`:` and a blank line) before its first event, so every server sends
+  the response head at once instead of when the first event exists: a
+  browser's `onopen` fires, a proxy does not time out an idle stream, and on
+  Deno, Bun and Node `shutdown()` ends a stream that has no event yet. SSE
+  parsers ignore the comment, so typed clients and `EventSource` read the same
+  events.
 - An event that an event stream cannot encode (an `id` with a line break,
   data that is not UTF-8) ends it with that `Invalid` error instead of
   `event source failed`, which stays the error for a failing producer.

@@ -5,6 +5,8 @@ import {
 }
 
 import {
+  "gaato/mttp/endpoint",
+  "gaato/mttp/schema",
   "moonbitlang/core/async",
   "moonbitlang/core/async/cond_var",
 } for "wbtest"

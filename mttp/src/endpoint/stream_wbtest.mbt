@@ -47,10 +47,11 @@ test "internal stream adapters obey the shared BodyStream contract" {
             source.close()
           }),
           encode: bytes => bytes,
+          opened: false,
           done: false,
         }
       },
-      b"abc",
+      b":\n\nabc",
     )
   })
 }

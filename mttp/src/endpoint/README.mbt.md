@@ -82,6 +82,8 @@ callback returns). Values a handler returns from `from_pull` or `from_array`
 carry no fields of their own: on the server, `meta` decides them.
 `map` converts each event and keeps its fields; the mapped stream owns the
 original, so read and close only the mapped one.
+Every event stream opens with an SSE comment line, which parsers ignore, so
+that a server sends the response head before the first event exists.
 
 `sse_body_out` takes a `BodyCodec` instead, and sends each value's encoding as
 the event's text; `sse_out(codec)` is `sse_body_out(codec.body())`. For htmx's
@@ -112,7 +114,7 @@ test "htmx rows as HTML events" {
     )
     assert_eq(
       response.body.read_all(max=1024),
-      b"event: row\ndata: <tr id=\"row-7\">\ndata:   <td>7</td>\ndata: </tr>\n\n",
+      b":\n\nevent: row\ndata: <tr id=\"row-7\">\ndata:   <td>7</td>\ndata: </tr>\n\n",
     )
   })
 }

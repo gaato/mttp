@@ -566,13 +566,29 @@ pub fn[T, U] EventStream::map(
 priv struct EventBody[T] {
   events : EventStream[T]
   encode : (T) -> Bytes raise @mttp.TransportError
+  mut opened : Bool
   mut done : Bool
 }
+
+///|
+/// The first piece of every event stream: an SSE comment. Servers pull a
+/// stream's first piece before writing the response head, so that a producer
+/// failing at once can still be answered with 500, and a stream may wait long
+/// for its first event. Giving a piece at once makes every server, ours or a
+/// host's, send the head now: a browser's `onopen` fires, a proxy does not
+/// time the request out, and a host can attach shutdown handling to the
+/// response. Every event-stream parser ignores a comment line, and the blank
+/// line after it dispatches nothing, since no data was buffered.
+let stream_opening : Bytes = b":\n\n"
 
 ///|
 impl[T] @mttp.BodyStream for EventBody[T] with fn read_some(self) {
   if self.done {
     return None
+  }
+  if !self.opened {
+    self.opened = true
+    return Some(stream_opening)
   }
   errdefer @mttp.BodyStream::close(self)
   let next = self.events.next() catch {
@@ -605,7 +621,8 @@ impl[T] @mttp.BodyStream for EventBody[T] with fn close(self) {
 /// Streams events whose `data` is the codec's JSON. `meta` gives each value
 /// its `id`, event name and `retry`; without it each event has data only. A
 /// client reads the fields back with `EventStream::next_item` or `each_item`.
-/// This is `sse_body_out(codec.body(), meta?)`; for data that is
+/// The response opens with an SSE comment, so its head is sent before the
+/// first event. This is `sse_body_out(codec.body(), meta?)`; for data that is
 /// not JSON, such as HTML for htmx, use `sse_body_out`.
 pub fn[T] sse_out(
   codec : @schema.JsonCodec[T],
@@ -621,7 +638,8 @@ pub fn[T] sse_out(
 /// encoding that is not UTF-8 ends the stream with a `TransportError` of kind
 /// `Invalid`, since an event's data is text. Text with line breaks is sent as
 /// several `data` lines, which a client joins with LF, so a CR or CRLF arrives
-/// as LF.
+/// as LF. The response opens with an SSE comment, so its head is sent before
+/// the first event.
 ///
 /// For htmx's SSE extension, stream HTML fragments with `@schema.html_body`;
 /// `EventStream::map` turns a stream of rows into one of HTML strings:
@@ -646,7 +664,7 @@ pub fn[T] sse_out(
 ///       @endpoint.DispatchContext::new(),
 ///     )
 ///     let text = @utf8.decode(response.body.read_all(max=1024))
-///     assert_true(text.has_prefix("event: row\ndata: <tr id=\"row-1\">\n"))
+///     assert_true(text.has_prefix(":\n\nevent: row\ndata: <tr id=\"row-1\">\n"))
 ///   })
 /// }
 /// ```
@@ -717,6 +735,7 @@ pub fn[T] sse_body_out(
       let body : &@mttp.BodyStream = EventBody::{
         events: es,
         encode,
+        opened: false,
         done: false,
       }
       (

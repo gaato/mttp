@@ -1,5 +1,5 @@
 // sse_body_out: event data from any body codec, such as HTML fragments for
-// htmx.
+// htmx, and the comment that opens every event stream.
 
 ///|
 /// A client that reaches `server` in memory.
@@ -40,6 +40,8 @@ test "sse_body_out sends HTML as data lines and a client reads it back" {
     assert_true(
       wire.has_prefix(
         (
+          #|:
+          #|
           #|event: row
           #|id: 36
           #|data: <tr id="row-1">
@@ -84,7 +86,7 @@ test "sse_body_out turns CR and CRLF in data into LF, as every SSE parser does" 
     )
     assert_eq(
       response.body.read_all(max=1024),
-      b"data: <p>\ndata:   a\ndata: </p>\ndata: \n\n",
+      b":\n\ndata: <p>\ndata:   a\ndata: </p>\ndata: \n\n",
     )
   })
   let client = sse_client(server)
@@ -128,6 +130,7 @@ test "sse_body_out fails the stream when an encoding is not UTF-8" {
       Stream(stream) => stream.take()
       _ => fail("expected a stream")
     }
+    assert_eq(body.read_some(), Some(b":\n\n"))
     assert_eq(body.read_some(), Some(b"data: ok\n\n"))
     let error = try {
       let _ = body.read_some()
@@ -176,4 +179,47 @@ test "sse_body_out describes data with the codec's media type and schema" {
     "contentMediaType": "application/json",
     "contentSchema": { "type": "integer", "format": "int32" },
   })
+}
+
+///|
+test "an event stream sends its opening before pulling the first event" {
+  let pulls = Ref(0)
+  let events = @endpoint.endpoint
+    .get("/events")
+    .output(@endpoint.sse_out(@schema.jint))
+    .serve_public(_ => {
+      Ok(
+        @endpoint.EventStream::from_pull(
+          () => {
+            pulls.val += 1
+            if pulls.val == 1 {
+              Some(1)
+            } else {
+              None
+            }
+          },
+          () => (),
+        ),
+      )
+    })
+  @driver.run_sync(() => {
+    let response = events.dispatch(
+      @mttp.Request::get("/events"),
+      Map([]),
+      @endpoint.DispatchContext::new(),
+    )
+    let body = match response.body {
+      Stream(stream) => stream.take()
+      _ => fail("expected a stream")
+    }
+    assert_eq(body.read_some(), Some(b":\n\n"))
+    assert_eq(pulls.val, 0)
+    assert_eq(body.read_some(), Some(b"data: 1\n\n"))
+    assert_eq(pulls.val, 1)
+    body.close()
+  })
+  // The opening is no event: a parser dispatches only the events after it.
+  let parser = @sse.SseParser::new()
+  assert_eq(parser.feed(b":\n\ndata: 1\n\n"), [@sse.SseEvent::new("1")])
+  assert_eq(parser.last_event_id(), None)
 }
