@@ -68,6 +68,9 @@ never does.
   also while its producer waits (asking `stopping` every 250 ms then): it
   closes the body, ends a chunked body with its last chunk and closes the
   connection. `endpoint.sse_out` sets it on the responses it builds.
+- `Router::must`: `Router::new` for definitions known to be right, such as a
+  top-level `let` in an app or a JavaScript entry, where an error cannot be
+  raised; a definition problem aborts with the problems.
 
 ## [0.1.0] - 2026-11-10
 

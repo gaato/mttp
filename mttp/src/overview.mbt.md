@@ -47,6 +47,16 @@ tells whether resending a non-idempotent request is safe.
 runtime implements `Backend` itself, or only the ports in `rt` and reuses the
 `h1client` engine.
 
+### On another runtime
+
+`gaato/mttp_async` is the backend for `moonbitlang/core/async`. A program on
+another runtime uses this module directly: implement `Backend` over that
+runtime's HTTP client (in a browser, `fetch`) and the `rt` ports the client
+needs (`Clock`, and `Timer` for deadlines), then pass them to `Client::new`.
+The client, typed endpoints and server-sent events work unchanged. This is
+also how to use it inside an app whose framework still runs on the registry
+`moonbitlang/async`, which cannot share a program with `moonbitlang/core/async`.
+
 ## A client in a library
 
 A library takes a `Client` and leaves the backend to its caller. In a test,
@@ -89,6 +99,10 @@ test "a library call against a test backend" {
 `Client::new` sends nothing it is not told to: retries, deadlines and rate
 limits are opt-in here (`retry=`, `timeout_ms=`, `limiter=`), while
 `gaato/mttp_async`'s `client()` turns them on for apps.
+
+Every failure prints as a readable message: `"\{error}"` on a
+`TransportError`, or `failure.to_string()` on a `ResponseFailure`, summarises
+it (status, phase, cause) for logs and UIs.
 
 ## Typed endpoints
 

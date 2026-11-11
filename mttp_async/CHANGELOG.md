@@ -31,6 +31,8 @@ never does.
   with `close_on_shutdown` set, such as every `endpoint.sse_out` response: the
   stream ends when the shutdown starts, and its clients reconnect. Other
   streamed responses are still drained.
+- The stale `fetch/pkg.generated.js.mbti` is gone: `moon info` writes only the
+  canonical (native) interface, so nothing kept the js-only file current.
 
 ## Earlier versions, as gaato/http-async
 
