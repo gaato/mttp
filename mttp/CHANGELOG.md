@@ -15,6 +15,10 @@ never does.
   `VariantDoc` gains `item_schema` (experimental `endpoint` package).
 - gaato/http is now part of gaato/mttp. Its vocabulary (`Request`, `Response`, `Body`, `Backend` and the rest) is the root package, `@mttp`, and `h1`, `rt`, `sim`, `driver`, `h1client` and `h1server` are `gaato/mttp/...`. Replace `gaato/http` with `gaato/mttp` in moon.mod and moon.pkg, and `@http.` with `@mttp.` in code. gaato/mttp no longer depends on any module.
 
+### Added
+
+- `RetryBudget`: a Client caps its retries at a share of recent requests (by default 20 % of the requests of the last 10 s plus 10 per second), so the callers of a failing server do not multiply its load. `Client::new` takes `retry_budget` and uses `RetryBudget::new()` by default; a refused retry stops with the new `StopReason::RetryBudgetSpent`. `RetryBudget::unlimited()` leaves the decision to the retry policy.
+
 ## [0.1.0] - 2026-11-10
 
 ### Added

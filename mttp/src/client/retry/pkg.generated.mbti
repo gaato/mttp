@@ -141,6 +141,7 @@ pub(all) enum StopReason {
   ServerSaidNo
   RetryAfterTooLong(Int32)
   Budget(Int32)
+  RetryBudgetSpent
 }
 pub fn StopReason::equal(Self, Self) -> Bool
 pub fn StopReason::not_equal(Self, Self) -> Bool

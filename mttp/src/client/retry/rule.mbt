@@ -312,6 +312,9 @@ pub(all) enum StopReason {
   RetryAfterTooLong(Int32)
   /// Waiting this many milliseconds would use up the remaining budget.
   Budget(Int32)
+  /// The Client's `RetryBudget` is spent: retries in its window already
+  /// reached their share of the requests.
+  RetryBudgetSpent
 }
 
 ///|

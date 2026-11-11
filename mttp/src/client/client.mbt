@@ -24,6 +24,7 @@ pub struct Client {
   priv limits : Limits
   priv timer : &@rt.Timer?
   priv retry : RetryPolicy
+  priv retry_budget : RetryBudget
   priv limiter : &RateLimiter
   priv total_ms : Int32?
   priv observer : (Attempt) -> Unit
@@ -49,6 +50,9 @@ pub struct Client {
 ///   `total_ms`, which requires it.
 /// - `retry` (default: none), `limiter` (default: admits at once),
 ///   `observer` (gets one `Attempt` per attempt) and `random` (for jitter).
+/// - `retry_budget` caps the retries of all sends at a share of recent
+///   requests (default: `RetryBudget::new()`, 20 % plus 10 per second over
+///   10 s); a retry it refuses stops with `RetryBudgetSpent`.
 pub fn Client::new(
   backend : &@mttp.Backend,
   clock : &@rt.Clock,
@@ -59,6 +63,7 @@ pub fn Client::new(
   read_idle_ms? : Int32,
   timer? : &@rt.Timer,
   retry~ : RetryPolicy = RetryPolicy::none(),
+  retry_budget~ : RetryBudget = RetryBudget::new(),
   limiter~ : &RateLimiter = NoLimiter::new(),
   total_ms? : Int32,
   observer~ : (Attempt) -> Unit = _ => (),
@@ -72,6 +77,7 @@ pub fn Client::new(
     limits: { timeout_ms, max_body_bytes, read_idle_ms, },
     timer,
     retry,
+    retry_budget,
     limiter,
     total_ms,
     observer,
@@ -283,6 +289,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
   let exempt = raw.attributes.get(global_exempt).unwrap_or(false)
   let replayable = request.body_factory is Some(_) ||
     raw.body is (Empty | Bytes(_))
+  self.retry_budget.deposit(self.clock.now_unix_ms())
   for attempt = 0; ; attempt = attempt + 1 {
     if self.closed {
       raise @mttp.TransportError(
@@ -485,6 +492,8 @@ fn Client::guard_retry(
       let ms = ms.max(0)
       if context.remaining_ms is Some(left) && ms.to_int64() >= left {
         Stop(Budget(ms))
+      } else if !self.retry_budget.try_withdraw(self.clock.now_unix_ms()) {
+        Stop(RetryBudgetSpent)
       } else {
         Wait(ms)
       }
