@@ -61,6 +61,13 @@ never does.
   client reads each typed event's `id`, event name and `retry` beside its
   value, so it can resume with the `last_event_id()` input, and pulls events
   one at a time, so it can stop before the end and `close` the stream.
+- `close_on_shutdown`, a response attribute: a streamed response with it set
+  to true is closed when the server starts to shut down instead of being
+  drained, for endless streams such as server-sent events, whose clients
+  reconnect. `h1server.serve_conn` cuts such a stream once `stopping` holds,
+  also while its producer waits (asking `stopping` every 250 ms then): it
+  closes the body, ends a chunked body with its last chunk and closes the
+  connection. `endpoint.sse_out` sets it on the responses it builds.
 
 ## [0.1.0] - 2026-11-10
 

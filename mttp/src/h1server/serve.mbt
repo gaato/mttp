@@ -33,7 +33,11 @@
 /// response, a body the handler left unread is drained up to
 /// `drain_max_bytes`, otherwise the connection closes. `stopping` is asked
 /// before each request; once it returns `true` the current response carries
-/// `Connection: close`.
+/// `Connection: close`. A streamed response marked
+/// `@mttp.close_on_shutdown` also asks it before each pull of its body and,
+/// while a pull waits, every 250 ms; once it returns `true` the pull is
+/// cancelled, the body closed, a chunked body ended with its last chunk (a
+/// body with a Content-Length is left short) and the connection closed.
 ///
 /// Raises `ServerConfigError` for invalid `limits`, before reading anything;
 /// every other failure (including a scheme other than `http` or `https`)

@@ -122,6 +122,12 @@ test "one definition for client, server and docs" {
 The router is itself a `Backend`, as above, and its `handler()` is what
 `gaato/mttp_async`'s server or a JavaScript `fetch` export serves.
 
+Requests and responses also carry `Attributes`: typed local metadata that is
+never sent. A server shutting down lets running responses finish, and a
+streamed response with `close_on_shutdown` set to true is closed instead of
+being drained. It is for endless streams such as server-sent events, whose
+clients reconnect; the endpoint layer's `sse_out` sets it.
+
 ## Packages
 
 | Package | What it holds |

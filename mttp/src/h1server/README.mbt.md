@@ -107,6 +107,10 @@ test "serve a request" {
   background scheduler. `max_connections` (256) and shutdown `drain_ms`
   (10 seconds) are validated settings for that adapter, which enforces them
   across connections. `serve_conn` checks `stopping` between requests and
-  before writing a response to send `Connection: close`; cancelling it
-  unwinds and closes its connection. It does not bind, accept or manage
+  before writing a response to send `Connection: close`. A streamed
+  response marked `@mttp.close_on_shutdown` is cut once `stopping` holds,
+  also while its producer waits (`stopping` is asked every 250 ms then): the
+  body is closed, a chunked body ends with its last chunk, a body with a
+  Content-Length is left short, and the connection closes. Cancelling
+  `serve_conn` unwinds and closes its connection. It does not bind, accept or manage
   detached jobs.

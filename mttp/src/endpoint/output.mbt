@@ -11,6 +11,9 @@ pub struct Variant[T] {
   priv headers : Array[String]
   priv header_schemas : Map[String, @schema.Schema]
   priv description : String
+  /// Attributes every response of this variant carries, such as
+  /// `close_on_shutdown` on server-sent events.
+  priv attributes : @mttp.Attributes
   priv encode : (T) -> (@mttp.Headers, @mttp.Body)
   priv decode_bytes : ((@mttp.ResponseHead, Bytes) -> T raise)?
   priv decode_stream : (async (@mttp.ResponseHead, &@mttp.BodyStream) -> T)?
@@ -67,6 +70,7 @@ pub fn[T] json_variant(
     headers: [],
     header_schemas: {},
     description,
+    attributes: @mttp.Attributes::empty(),
     encode: v => {
       (
         @mttp.Headers::of([("content-type", media_type)]),
@@ -100,6 +104,7 @@ pub fn empty_variant(
     headers: [],
     header_schemas: {},
     description,
+    attributes: @mttp.Attributes::empty(),
     encode: _ => (@mttp.Headers::empty(), Empty),
     decode_bytes: Some((_, _) => ()),
     decode_stream: None,
@@ -136,6 +141,7 @@ pub fn[A, T] Variant::contramap(
     headers: self.headers,
     header_schemas: self.header_schemas,
     description: self.description,
+    attributes: self.attributes,
     encode: t => {
       match project(t) {
         Some(a) => (self.encode)(a)
@@ -175,6 +181,7 @@ pub fn[T, H] Variant::and_header(
     headers: [..self.headers, name],
     header_schemas,
     description: self.description,
+    attributes: self.attributes,
     encode: v => {
       let (hs, body) = enc(v.0)
       (hs.add(name, codec.encode(v.1)), body)
@@ -289,11 +296,13 @@ fn[T, M] Out::encode(self : Out[T, M], v : T) -> @mttp.Response? {
         return None
       }
       let (headers, body) = (variant.encode)(v)
-      if status == 204 || status == 304 {
+      let response = if status == 204 || status == 304 {
         discard(body)
-        return Some(@mttp.Response::new(status, headers~))
+        @mttp.Response::new(status, headers~)
+      } else {
+        @mttp.Response::new(status, headers~, body~)
       }
-      return Some(@mttp.Response::new(status, headers~, body~))
+      return Some({ ..response, attributes: variant.attributes, })
     }
   }
   None
@@ -610,6 +619,7 @@ pub fn[T] sse_out(
     headers: [],
     header_schemas: {},
     description: "event stream",
+    attributes: @mttp.Attributes::empty().put(@mttp.close_on_shutdown, true),
     encode: es => {
       let body : &@mttp.BodyStream = EventBody::{
         pull: () => {

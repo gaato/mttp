@@ -307,3 +307,24 @@ test "event streams close once after callbacks fail and custom event metadata is
     )
   })
 }
+
+///|
+test "SSE responses end at server shutdown and other outputs drain" {
+  let context = @endpoint.DispatchContext::new()
+  let events = @endpoint.endpoint
+    .get("/")
+    .output(@endpoint.sse_out(@schema.jint).and_header("x-int", @schema.int))
+    .serve_public(_ => Ok((@endpoint.EventStream::from_array([1]), 2)))
+  let text = @endpoint.endpoint
+    .get("/")
+    .output(@endpoint.text_out())
+    .serve_public(_ => Ok("text"))
+  @driver.run_sync(() => {
+    let response = events.dispatch(@mttp.Request::get("/"), Map([]), context)
+    assert_eq(response.attributes.get(@mttp.close_on_shutdown), Some(true))
+    assert_eq(response.headers.get("x-int"), Some("2"))
+    response.close()
+    let response = text.dispatch(@mttp.Request::get("/"), Map([]), context)
+    assert_eq(response.attributes.get(@mttp.close_on_shutdown), None)
+  })
+}

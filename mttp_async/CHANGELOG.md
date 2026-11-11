@@ -27,6 +27,10 @@ never does.
   re-exports it.
 - Depends on gaato/mttp, which now holds the vocabulary formerly in
   gaato/http.
+- The server's shutdown no longer waits `drain_ms` for a streamed response
+  with `close_on_shutdown` set, such as every `endpoint.sse_out` response: the
+  stream ends when the shutdown starts, and its clients reconnect. Other
+  streamed responses are still drained.
 
 ## Earlier versions, as gaato/http-async
 

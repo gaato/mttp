@@ -24,6 +24,7 @@ pub fn[T] Variant::and_status(self : Variant[T]) -> Variant[(T, Int32)] {
     headers: self.headers,
     header_schemas: self.header_schemas,
     description: self.description,
+    attributes: self.attributes,
     encode: value => (self.encode)(value.0),
     decode_bytes: self.decode_bytes.map(decode => {
       (head, bytes) => (decode(head, bytes), head.status)
@@ -51,6 +52,7 @@ pub fn body_out(
     headers: [],
     header_schemas: {},
     description: "buffered response with a dynamic content type",
+    attributes: @mttp.Attributes::empty(),
     encode: value => {
       (@mttp.Headers::of([("content-type", value.0)]), Bytes(value.1))
     },
@@ -84,6 +86,7 @@ pub fn stream_body_out(
     headers: [],
     header_schemas: {},
     description: "response body with an optional dynamic content type",
+    attributes: @mttp.Attributes::empty(),
     encode: value => {
       let headers = match value.0 {
         Some(media_type) => @mttp.Headers::of([("content-type", media_type)])

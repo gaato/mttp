@@ -70,6 +70,53 @@ async test "shutdown preserves streamed response through its final chunk and clo
 }
 
 ///|
+async test "shutdown ends a close_on_shutdown stream well before the drain time" {
+  let output = LiveOutput::{
+    changed: @cond_var.Cond(),
+    release: Ref(false),
+    pulls: 0,
+    closes: 0,
+  }
+  controllable(
+    _ => {
+      let response = @mttp.Response::new(
+        200,
+        body=Stream(@mttp.StreamBody::new(output)),
+      )
+      {
+        ..response,
+        attributes: response.attributes.put(@mttp.close_on_shutdown, true),
+      }
+    },
+    // Neither the drain time nor the body deadline can end the stream within
+    // the test's three seconds; only the shutdown cut can.
+    {
+      ..@h1server.ServerLimits::default(),
+      drain_ms: 10000,
+      body_timeout_ms: 60000,
+    },
+    (address, server) => {
+      let tcp = @socket.Tcp::connect(@socket.Addr::parse(address))
+      defer tcp.close()
+      tcp.write(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+      assert_true(
+        tcp.read_until(b"\r\n\r\n").unwrap().has_prefix(b"HTTP/1.1 200"),
+      )
+      while output.pulls < 2 {
+        output.changed.wait()
+      }
+      server.cancel()
+      @async.with_timeout(1000, () => {
+        assert_eq(tcp.read_all(), b"5\r\nfirst\r\n0\r\n\r\n")
+        stopped(server)
+      })
+      assert_eq(output.pulls, 2)
+      assert_eq(output.closes, 1)
+    },
+  )
+}
+
+///|
 async test "zero grace cancels streamed output and joins producer cleanup" {
   let output = LiveOutput::{
     changed: @cond_var.Cond(),

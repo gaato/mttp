@@ -57,7 +57,10 @@ and its borrowed streams close when it exits. `call` and `call_with` are
 convenience forms. `EventStream.each` closes on EOF, failure or cancellation.
 SSE outputs share `sse.SseReader` with `client.as_sse`: queued complete events
 are delivered before an oversized event fails, and pending overflow is raised
-before another read, even when the peer goes quiet.
+before another read, even when the peer goes quiet. On the server, an SSE
+response carries `@mttp.close_on_shutdown`, so it ends when the server shuts
+down instead of holding the shutdown for its drain time; clients reconnect
+with `Last-Event-ID`.
 
 `sse_out` writes each value's JSON as the event's `data`. Its `meta` mapping
 gives each value an `id`, an event name and a `retry` hint as an `SseMeta`.
