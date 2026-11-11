@@ -48,10 +48,10 @@ test "ambiguous framing is refused once and nothing after it is served" {
       let wire = "POST / HTTP/1.1\r\nHost: example.test\r\n\{fields}\r\n0\r\n\r\n" +
         get("/smuggled")
       let out = h.exchange(
-        @http.encode_utf8(wire),
+        @mttp.encode_utf8(wire),
         _ => {
           calls.val += 1
-          @http.Response::new(200)
+          @mttp.Response::new(200)
         },
         chunk_bytes~,
       )
@@ -78,7 +78,7 @@ test "the smuggling corpus forbidden trailers never expose a second request" {
       let wire = "POST / HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n0\r\n\{field}: x\r\n\r\n" +
         get("/smuggled")
       let out = h.exchange(
-        @http.encode_utf8(wire),
+        @mttp.encode_utf8(wire),
         request => {
           calls.val += 1
           echo()(request)
@@ -99,12 +99,12 @@ test "Transfer-Encoding on HTTP/1.0 is refused even with a valid length" {
     let h = Harness::new()
     let calls = Ref(0)
     let out = h.exchange(
-      @http.encode_utf8(
+      @mttp.encode_utf8(
         "POST / HTTP/1.0\r\n\{length}Transfer-Encoding: chunked\r\n\r\n0\r\n\r\nGET /smuggled HTTP/1.0\r\n\r\n",
       ),
       _ => {
         calls.val += 1
-        @http.Response::new(200)
+        @mttp.Response::new(200)
       },
     )
     assert_true(out.has_prefix("HTTP/1.1 400 "))
@@ -119,10 +119,10 @@ test "a body framed by its length never leaks into the next request" {
   let hidden = get("/hidden")
   let h = Harness::new()
   let urls = []
-  let out = h.exchange(@http.encode_utf8(post("/", hidden) + get("/next")), request => {
+  let out = h.exchange(@mttp.encode_utf8(post("/", hidden) + get("/next")), request => {
     urls.push(request.url)
     let body = body_of(request) catch { _ => b"" }
-    @http.Response::new(200, body=Bytes(body))
+    @mttp.Response::new(200, body=Bytes(body))
   })
   assert_eq(urls, ["http://example.test/", "http://example.test/next"])
   assert_eq(out.split("HTTP/1.1 200").count(), 3)
@@ -137,7 +137,7 @@ test "bad chunk framing is refused and the connection closes" {
     ] {
     let h = Harness::new()
     let out = h.exchange(
-      @http.encode_utf8(
+      @mttp.encode_utf8(
         "POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked\r\n\r\n" +
         body +
         get("/smuggled"),

@@ -28,8 +28,8 @@ fn Wire::new(conn : &@rt.Conn, timer : &@rt.Timer) -> Wire {
 async fn Wire::read(
   self : Wire,
   max_len : Int32,
-  phase : @http.Phase,
-) -> Bytes? raise @http.TransportError {
+  phase : @mttp.Phase,
+) -> Bytes? raise @mttp.TransportError {
   if !self.pending.is_empty() {
     let n = self.pending.length().min(max_len)
     let bytes = self.pending[:n].to_owned()
@@ -37,8 +37,8 @@ async fn Wire::read(
     return Some(bytes)
   }
   self.conn.read(max_len~) catch {
-    @http.TransportError(kind~, detail~, ..) =>
-      raise @http.TransportError(kind~, phase~, detail~)
+    @mttp.TransportError(kind~, detail~, ..) =>
+      raise @mttp.TransportError(kind~, phase~, detail~)
   }
 }
 
@@ -57,7 +57,7 @@ async fn Wire::write(
   self : Wire,
   bytes : BytesView,
   timeout_ms : Int32,
-) -> Unit raise @http.TransportError {
+) -> Unit raise @mttp.TransportError {
   for offset = 0; offset < bytes.length(); {
     let end = offset + (bytes.length() - offset).min(io_bytes)
     let slice = bytes[offset:end].to_owned()
@@ -67,8 +67,8 @@ async fn Wire::write(
       timeout(timeout_ms, Write, "the response write"),
       () => self.conn.write(slice),
     ) catch {
-      @http.TransportError(kind~, detail~, ..) =>
-        raise @http.TransportError(kind~, phase=Write, detail~)
+      @mttp.TransportError(kind~, detail~, ..) =>
+        raise @mttp.TransportError(kind~, phase=Write, detail~)
     }
     continue end
   }
@@ -81,10 +81,10 @@ async fn Wire::write(
 async fn[X] within(
   timer : &@rt.Timer,
   ms : Int32,
-  expired : @http.TransportError,
-  f : async () -> X raise @http.TransportError,
-) -> X raise @http.TransportError {
-  let mut outcome : Result[X, @http.TransportError]? = None
+  expired : @mttp.TransportError,
+  f : async () -> X raise @mttp.TransportError,
+) -> X raise @mttp.TransportError {
+  let mut outcome : Result[X, @mttp.TransportError]? = None
   let completed = timer.within(ms, () => {
     outcome = Some(Ok(f()) catch { error => Err(error) })
   })
@@ -99,10 +99,10 @@ async fn[X] within(
 /// The error of a limit of `ms` that ran out while doing `what`.
 fn timeout(
   ms : Int32,
-  phase : @http.Phase,
+  phase : @mttp.Phase,
   what : String,
-) -> @http.TransportError {
-  @http.TransportError(
+) -> @mttp.TransportError {
+  @mttp.TransportError(
     kind=Timeout(ms~),
     phase~,
     detail="\{what} exceeded \{ms} ms",

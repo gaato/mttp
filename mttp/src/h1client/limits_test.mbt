@@ -14,16 +14,16 @@ fn padded(prefix : String, total : Int32, suffix : String) -> Bytes {
 fn outcome(
   wire : Bytes,
   config~ : @h1client.ClientConfig = @h1client.ClientConfig::default(),
-  options~ : @http.SendOptions = exchange(),
-) -> Result[String, (@http.Kind, @http.Phase)] raise {
+  options~ : @mttp.SendOptions = exchange(),
+) -> Result[String, (@mttp.Kind, @mttp.Phase)] raise {
   let h = Harness::new(config~)
   let conn = h.scripted([Chunk(wire), Eof])
-  let mut result : Result[String, (@http.Kind, @http.Phase)] = Err(
+  let mut result : Result[String, (@mttp.Kind, @mttp.Phase)] = Err(
     (Invalid, Unknown),
   )
   h.run(() => {
     result = Ok(
-      fetch(h.client, @http.Request::get("http://example.test/"), options~),
+      fetch(h.client, @mttp.Request::get("http://example.test/"), options~),
     ) catch {
       error => Err(kind_phase(error))
     }
@@ -166,7 +166,7 @@ test "a buffered body admits max_bytes from the wire and refuses one more" {
   ])
   h.run(() => {
     let response = h.client.send(
-      @http.Request::get("http://example.test/"),
+      @mttp.Request::get("http://example.test/"),
       five,
     )
     assert_eq(
@@ -210,7 +210,7 @@ test "body reads and request writes are sliced to 64 KiB" {
   let conn = h.scripted([Chunk(reply + payload)])
   h.run(() => {
     let response = h.client.send(
-      @http.Request::post("http://example.test/").body_bytes(payload),
+      @mttp.Request::post("http://example.test/").body_bytes(payload),
       exchange(),
     )
     guard response.body is Stream(body) else { fail("expected a stream") }

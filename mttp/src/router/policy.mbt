@@ -1,7 +1,7 @@
 ///|
 /// An ordered handler wrapper. Calling next transfers the request body to it;
 /// returning without calling next leaves cleanup to the router.
-pub type Middleware = async (@http.Request, @http.Handler) -> @http.Response noraise
+pub type Middleware = async (@mttp.Request, @mttp.Handler) -> @mttp.Response noraise
 
 ///|
 /// The shared endpoint rejection context used by router policies.
@@ -12,9 +12,9 @@ pub using @endpoint {type FailureContext}
 pub(all) struct ServerOptions {
   max_body_bytes : Int32
   max_issues : Int32
-  decode_failure : (@endpoint.FailureContext) -> @http.Response?
-  reject : (@http.Request, Array[@http.Method]) -> @http.Response
-  on_unhandled : (@http.Request, Error) -> @http.Response?
+  decode_failure : (@endpoint.FailureContext) -> @mttp.Response?
+  reject : (@mttp.Request, Array[@mttp.Method]) -> @mttp.Response
+  on_unhandled : (@mttp.Request, Error) -> @mttp.Response?
   middleware : Array[Middleware]
 }
 
@@ -24,17 +24,17 @@ pub fn problem(
   status : Int32,
   title : String,
   errors~ : Json = [],
-) -> @http.Response {
+) -> @mttp.Response {
   let body : Json = {
     "type": "about:blank",
     "title": Json(title),
     "status": Json(status),
     "errors": errors,
   }
-  @http.Response::new(
+  @mttp.Response::new(
     status,
-    headers=@http.Headers::of([("content-type", "application/problem+json")]),
-    body=Bytes(@http.encode_utf8(body.stringify())),
+    headers=@mttp.Headers::of([("content-type", "application/problem+json")]),
+    body=Bytes(@mttp.encode_utf8(body.stringify())),
   )
 }
 
@@ -56,7 +56,7 @@ fn location_name(location : @endpoint.Location) -> String {
 /// and unsupported representations to 415. Credentials are never echoed.
 pub fn default_decode_failure(
   context : @endpoint.FailureContext,
-) -> @http.Response {
+) -> @mttp.Response {
   let items : Array[Json] = []
   for f in context.failures {
     let location = location_name(f.atom.location)
@@ -114,7 +114,7 @@ pub fn default_decode_failure(
 ///|
 /// Hides routes with failed authentication inputs behind a 404. Other input
 /// failures use the default policy when this is installed as decode_failure.
-pub fn hide_endpoints_with_auth(context : FailureContext) -> @http.Response? {
+pub fn hide_endpoints_with_auth(context : FailureContext) -> @mttp.Response? {
   if context.stage is Security &&
     context.failures.iter().any(f => f.atom.location is Auth(..)) {
     Some(problem(404, "Not Found"))

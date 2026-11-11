@@ -6,21 +6,21 @@ test "redirects close intermediate streams and preserve final attributes and his
   let seen = []
   let hops = []
   let closes = Ref(0)
-  let key : @http.AttributeKey[String] = @http.AttributeKey::new("server")
-  let backend : &@http.Backend = @client.FollowRedirects::new(
+  let key : @mttp.AttributeKey[String] = @mttp.AttributeKey::new("server")
+  let backend : &@mttp.Backend = @client.FollowRedirects::new(
     @client.from_fn(
       (request, options) => {
         seen.push((request.head(), options))
         if seen.length() == 1 {
-          @http.Response::new(
+          @mttp.Response::new(
             302,
-            headers=@http.Headers::of([("location", "/b")]),
-            body=Stream(@http.StreamBody::new(first)),
+            headers=@mttp.Headers::of([("location", "/b")]),
+            body=Stream(@mttp.StreamBody::new(first)),
           )
         } else {
           {
-            ..@http.Response::new(200, body=Stream(@http.StreamBody::new(last))),
-            attributes: @http.Attributes::empty().put(key, "kept"),
+            ..@mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(last))),
+            attributes: @mttp.Attributes::empty().put(key, "kept"),
           }
         }
       },
@@ -30,8 +30,8 @@ test "redirects close intermediate streams and preserve final attributes and his
   )
   let response = d.run(() => {
     backend.send(
-      @http.Request::post("https://h/a").body_text("data"),
-      @http.SendOptions::default(),
+      @mttp.Request::post("https://h/a").body_text("data"),
+      @mttp.SendOptions::default(),
     )
   })
   assert_eq(first.closes(), 1)
@@ -41,8 +41,8 @@ test "redirects close intermediate streams and preserve final attributes and his
   assert_eq(seen[1].0.meth, Get)
   assert_eq(seen[1].0.url, "https://h/b")
   // Every hop gets the options unchanged.
-  assert_eq(seen[0].1, @http.SendOptions::default())
-  assert_eq(seen[1].1, @http.SendOptions::default())
+  assert_eq(seen[0].1, @mttp.SendOptions::default())
+  assert_eq(seen[1].1, @mttp.SendOptions::default())
   assert_eq(response.attributes.get(@client.final_url), Some("https://h/b"))
   assert_eq(response.attributes.get(@client.redirect_history), Some(hops))
   assert_eq(response.attributes.get(key), Some("kept"))
@@ -55,12 +55,12 @@ test "redirects close intermediate streams and preserve final attributes and his
   try
     d.run(() => {
       backend.send(
-        @http.Request::get("https://h/"),
-        @http.SendOptions::default(),
+        @mttp.Request::get("https://h/"),
+        @mttp.SendOptions::default(),
       )
     })
   catch {
-    @http.TransportError(kind=Closed, ..) => ()
+    @mttp.TransportError(kind=Closed, ..) => ()
     _ => fail("wrong error")
   } noraise {
     _ => fail("accepted after close")
@@ -72,7 +72,7 @@ test "redirect refusals close received bodies and retain error classification" {
   let d = @driver.Driver::new()
   for
     case in [
-      ("/b", 302, 1, @http.Kind::TooManyRedirects(max=1), 2),
+      ("/b", 302, 1, @mttp.Kind::TooManyRedirects(max=1), 2),
       ("http://h/b", 302, 10, RedirectRefused, 1),
       ("ftp://h/b", 302, 10, RedirectRefused, 1),
       ("/b", 307, 10, Unreplayable, 1),
@@ -87,10 +87,10 @@ test "redirect refusals close received bodies and retain error classification" {
         }
         let body = @sim.Feed::bytes(d, [b"unread"])
         bodies.push(body)
-        @http.Response::new(
+        @mttp.Response::new(
           status,
-          headers=@http.Headers::of([("location", location)]),
-          body=Stream(@http.StreamBody::new(body)),
+          headers=@mttp.Headers::of([("location", location)]),
+          body=Stream(@mttp.StreamBody::new(body)),
         )
       }),
       config={ ..@client.RedirectConfig::default(), max_redirects: max, },
@@ -100,12 +100,12 @@ test "redirect refusals close received bodies and retain error classification" {
     try
       d.run(() => {
         backend.send(
-          @http.Request::post("https://h/a").body_stream(upload),
-          @http.SendOptions::default(),
+          @mttp.Request::post("https://h/a").body_stream(upload),
+          @mttp.SendOptions::default(),
         )
       })
     catch {
-      @http.TransportError(kind~, phase~, ..) => {
+      @mttp.TransportError(kind~, phase~, ..) => {
         assert_eq(kind, expected)
         assert_eq(phase, Head)
       }
@@ -130,20 +130,20 @@ test "a redirect limit of zero returns the redirect and failures pass through" {
     @client.from_fn((_, _) => {
       let body = @sim.Feed::bytes(d, [b"unread"])
       bodies.push(body)
-      @http.Response::new(
+      @mttp.Response::new(
         302,
-        headers=@http.Headers::of([("location", "/next")]),
-        body=Stream(@http.StreamBody::new(body)),
+        headers=@mttp.Headers::of([("location", "/next")]),
+        body=Stream(@mttp.StreamBody::new(body)),
       )
     }),
   )
   for
     request in [
-      @http.Request::get("https://h/").attribute(@client.redirect_limit, 0),
-      @http.Request::get("https://h/").attribute(@client.redirect_limit, -1),
+      @mttp.Request::get("https://h/").attribute(@client.redirect_limit, 0),
+      @mttp.Request::get("https://h/").attribute(@client.redirect_limit, -1),
     ] {
     let response = d.run(() => {
-      backend.send(request, @http.SendOptions::default())
+      backend.send(request, @mttp.SendOptions::default())
     })
     assert_eq(response.status, 302)
     assert_eq(response.attributes.get(@client.redirect_history), Some([]))
@@ -155,31 +155,31 @@ test "a redirect limit of zero returns the redirect and failures pass through" {
   backend.close()
   let unfollowed = @client.FollowRedirects::new(
     @client.from_fn((_, _) => {
-      @http.Response::new(302, headers=@http.Headers::of([("location", "/n")]))
+      @mttp.Response::new(302, headers=@mttp.Headers::of([("location", "/n")]))
     }),
     config={ ..@client.RedirectConfig::default(), max_redirects: 0, },
   )
   let response = d.run(() => {
     unfollowed.send(
-      @http.Request::get("https://h/"),
-      @http.SendOptions::default(),
+      @mttp.Request::get("https://h/"),
+      @mttp.SendOptions::default(),
     )
   })
   assert_eq(response.status, 302)
   let failed = @client.FollowRedirects::new(
     @client.from_fn((_, _) => {
-      raise @http.TransportError(kind=Network, phase=Dial, detail="fixture")
+      raise @mttp.TransportError(kind=Network, phase=Dial, detail="fixture")
     }),
   )
   try
     d.run(() => {
       failed.send(
-        @http.Request::get("https://h/"),
-        @http.SendOptions::default(),
+        @mttp.Request::get("https://h/"),
+        @mttp.SendOptions::default(),
       )
     })
   catch {
-    @http.TransportError(kind=Network, phase=Dial, detail="fixture") => ()
+    @mttp.TransportError(kind=Network, phase=Dial, detail="fixture") => ()
     _ => fail("wrong failure")
   } noraise {
     _ => fail("expected failure")
@@ -199,7 +199,7 @@ test "the configured hop limit and credential set apply, and a plan overrides th
       } else {
         "https://a.test/"
       }
-      @http.Response::new(302, headers=@http.Headers::of([("location", next)]))
+      @mttp.Response::new(302, headers=@mttp.Headers::of([("location", next)]))
     }),
     config={
       ..@client.RedirectConfig::default(),
@@ -208,14 +208,14 @@ test "the configured hop limit and credential set apply, and a plan overrides th
     },
   )
   let client = @client.Client::new(backend, @sim.SimClock::new(d))
-  let request = @http.Request::get("https://a.test/")
+  let request = @mttp.Request::get("https://a.test/")
     .header("x-api-key", "secret")
     .bearer("token")
   let failure = try {
     ignore(d.run(() => client.send(@client.request(request))))
     None
   } catch {
-    @http.TransportError(kind~, ..) => Some(kind)
+    @mttp.TransportError(kind~, ..) => Some(kind)
     error => raise error
   }
   assert_eq(failure, Some(TooManyRedirects(max=3)))
@@ -228,7 +228,7 @@ test "the configured hop limit and credential set apply, and a plan overrides th
     ignore(d.run(() => client.send(@client.request(request).max_redirects(1))))
     None
   } catch {
-    @http.TransportError(kind~, ..) => Some(kind)
+    @mttp.TransportError(kind~, ..) => Some(kind)
     error => raise error
   }
   assert_eq(failure, Some(TooManyRedirects(max=1)))
@@ -238,12 +238,12 @@ test "the configured hop limit and credential set apply, and a plan overrides th
     @client.from_fn((request, _) => {
       seen.push(request.head())
       if request.url == "https://a.test/" {
-        @http.Response::new(
+        @mttp.Response::new(
           302,
-          headers=@http.Headers::of([("location", "https://b.test/")]),
+          headers=@mttp.Headers::of([("location", "https://b.test/")]),
         )
       } else {
-        @http.Response::new(200)
+        @mttp.Response::new(200)
       }
     }),
   )
@@ -251,7 +251,7 @@ test "the configured hop limit and credential set apply, and a plan overrides th
   let response = d.run(() => {
     defaults.send(
       request.header("cookie", "a=1").header("proxy-authorization", "p"),
-      @http.SendOptions::default(),
+      @mttp.SendOptions::default(),
     )
   })
   assert_eq(response.status, 200)
@@ -268,21 +268,21 @@ test "the default configuration follows ten hops and refuses the eleventh" {
     @client.from_fn((request, _) => {
       sends += 1
       let next = if request.url.has_suffix("/a") { "/b" } else { "/a" }
-      @http.Response::new(302, headers=@http.Headers::of([("location", next)]))
+      @mttp.Response::new(302, headers=@mttp.Headers::of([("location", next)]))
     }),
   )
   let failure = try {
     ignore(
       @driver.run_sync(() => {
         backend.send(
-          @http.Request::get("https://h/a"),
-          @http.SendOptions::default(),
+          @mttp.Request::get("https://h/a"),
+          @mttp.SendOptions::default(),
         )
       }),
     )
     None
   } catch {
-    @http.TransportError(kind~, ..) => Some(kind)
+    @mttp.TransportError(kind~, ..) => Some(kind)
     error => raise error
   }
   assert_eq(failure, Some(TooManyRedirects(max=10)))
@@ -293,17 +293,17 @@ test "the default configuration follows ten hops and refuses the eleventh" {
     @client.from_fn((_, _) => {
       sends += 1
       if sends <= 10 {
-        @http.Response::new(
+        @mttp.Response::new(
           302,
-          headers=@http.Headers::of([("location", "/n")]),
+          headers=@mttp.Headers::of([("location", "/n")]),
         )
       } else {
-        @http.Response::new(200)
+        @mttp.Response::new(200)
       }
     }),
   )
   let response = @driver.run_sync(() => {
-    ten.send(@http.Request::get("https://h/a"), @http.SendOptions::default())
+    ten.send(@mttp.Request::get("https://h/a"), @mttp.SendOptions::default())
   })
   assert_eq(response.status, 200)
   assert_eq(
@@ -319,12 +319,12 @@ test "a failure after a followed redirect is never unsent, so it is not resent" 
     @client.from_fn((request, _) => {
       sends.push(request.meth.to_string() + " " + request.url)
       if request.url == "https://h/form" {
-        @http.Response::new(
+        @mttp.Response::new(
           302,
-          headers=@http.Headers::of([("location", "/done")]),
+          headers=@mttp.Headers::of([("location", "/done")]),
         )
       } else {
-        raise @http.TransportError(kind=Connect, phase=Dial, detail="refused")
+        raise @mttp.TransportError(kind=Connect, phase=Dial, detail="refused")
       }
     }),
   )
@@ -343,10 +343,10 @@ test "a failure after a followed redirect is never unsent, so it is not resent" 
     )
     None
   } catch {
-    @http.TransportError(..) as error => Some(error)
+    @mttp.TransportError(..) as error => Some(error)
     error => raise error
   }
-  guard failure is Some(@http.TransportError(kind~, phase~, ..) as error) else {
+  guard failure is Some(@mttp.TransportError(kind~, phase~, ..) as error) else {
     fail("expected a transport failure")
   }
   assert_false(error.is_unsent())
@@ -362,7 +362,7 @@ test "a failure after a followed redirect is never unsent, so it is not resent" 
     )
     None
   } catch {
-    @http.TransportError(kind~, phase~, ..) => Some((kind, phase))
+    @mttp.TransportError(kind~, phase~, ..) => Some((kind, phase))
     error => raise error
   }
   assert_eq(failure, Some((Connect, Dial)))
@@ -371,12 +371,12 @@ test "a failure after a followed redirect is never unsent, so it is not resent" 
   let timed = @client.FollowRedirects::new(
     @client.from_fn((request, _) => {
       if request.url == "https://h/a" {
-        @http.Response::new(
+        @mttp.Response::new(
           307,
-          headers=@http.Headers::of([("location", "/b")]),
+          headers=@mttp.Headers::of([("location", "/b")]),
         )
       } else {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=Timeout(ms=5),
           phase=Head,
           detail="slow",
@@ -388,14 +388,14 @@ test "a failure after a followed redirect is never unsent, so it is not resent" 
     ignore(
       @driver.run_sync(() => {
         timed.send(
-          @http.Request::get("https://h/a"),
-          @http.SendOptions::default(),
+          @mttp.Request::get("https://h/a"),
+          @mttp.SendOptions::default(),
         )
       }),
     )
     None
   } catch {
-    @http.TransportError(kind~, phase~, ..) => Some((kind, phase))
+    @mttp.TransportError(kind~, phase~, ..) => Some((kind, phase))
     error => raise error
   }
   assert_eq(failure, Some((Timeout(ms=5), Unknown)))

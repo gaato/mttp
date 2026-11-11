@@ -19,11 +19,11 @@ fn describe_setting(setting : Result[ProxyServer, String]?) -> String {
 /// How `proxies` sends a GET for `url`: its route, the key its connection
 /// is parked under, and its request target.
 fn describe_route(proxies : Proxies, url : String) -> String {
-  let origin = target(@http.Request::get(url)) catch {
+  let origin = target(@mttp.Request::get(url)) catch {
     error => return "unexpected: " + @debug.to_string(error)
   }
   let route = proxies.route(origin) catch {
-    @http.TransportError(kind=Protocol, phase=Pool, detail=message) =>
+    @mttp.TransportError(kind=Protocol, phase=Pool, detail=message) =>
       return "Protocol: " + message
     error => return "unexpected: " + @debug.to_string(error)
   }

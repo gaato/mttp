@@ -61,7 +61,7 @@ test "cancelling a timer after its callback completed discards the held stream" 
   let source = @sim.Feed::bytes(d, [b"held"])
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
     timer=SlowReturnTimer::{ driver: d, },
@@ -69,7 +69,7 @@ test "cancelling a timer after its callback completed discards the held stream" 
   d.run(() => {
     let task = d.spawn(() => {
       let _ = client.send(
-        @client.request(@http.Request::get("/"))
+        @client.request(@mttp.Request::get("/"))
         .timeout_ms(2000)
         .response(@client.as_stream((_, stream) => stream.read_some())),
       )
@@ -89,18 +89,18 @@ test "buffered readers that finish after their deadline fail and retain the head
   let observed = []
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
     observer=a => observed.push(a.status),
   )
   let failed = try {
     let _ = d.run(() => {
-      client.send(@client.request(@http.Request::get("/")).timeout_ms(5))
+      client.send(@client.request(@mttp.Request::get("/")).timeout_ms(5))
     })
     false
   } catch {
-    @http.TransportError(kind=Timeout(ms=5), ..) => true
+    @mttp.TransportError(kind=Timeout(ms=5), ..) => true
     error => raise error
   }
   assert_true(failed)
@@ -119,14 +119,14 @@ test "release failure propagates after an error-valued response" {
   }
   let observed = []
   let client = @client.Client::new(
-    @client.from_handler(_ => @http.Response::new(503)),
+    @client.from_handler(_ => @mttp.Response::new(503)),
     clock,
     limiter~,
     observer=a => observed.push(a.error),
   )
   let failed = try {
     let _ = @driver.run_sync(() => {
-      client.send(@client.request(@http.Request::get("/")))
+      client.send(@client.request(@mttp.Request::get("/")))
     })
     false
   } catch {
@@ -182,14 +182,14 @@ test "cancellation while awaiting admission releases nothing" {
   }
   let observed = []
   let client = @client.Client::new(
-    @client.from_handler(_ => @http.Response::new(200)),
+    @client.from_handler(_ => @mttp.Response::new(200)),
     @sim.SimClock::new(d),
     limiter~,
     observer=a => observed.push(a.status),
   )
   d.run(() => {
     let task = d.spawn(() => {
-      let _ = client.send(@client.request(@http.Request::get("/")))
+      let _ = client.send(@client.request(@mttp.Request::get("/")))
     })
     d.pause()
     task.cancel()
@@ -213,7 +213,7 @@ test "cancellation during release closes the response and observes once" {
   let observed = []
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
     limiter~,
@@ -222,7 +222,7 @@ test "cancellation during release closes the response and observes once" {
   d.run(() => {
     let task = d.spawn(() => {
       let _ = client.send(
-        @client.request(@http.Request::get("/")).response(
+        @client.request(@mttp.Request::get("/")).response(
           @client.as_stream((_, stream) => stream.read_some()),
         ),
       )
@@ -238,7 +238,7 @@ test "cancellation during release closes the response and observes once" {
 
 ///|
 test "an attempt that runs out of time is retried for GET not POST" {
-  for meth in [@http.Method::Get, Post] {
+  for meth in [@mttp.Method::Get, Post] {
     let d = @driver.Driver::new()
     let calls = Ref(0)
     let attempts = []
@@ -247,7 +247,7 @@ test "an attempt that runs out of time is retried for GET not POST" {
       if calls.val == 1 {
         d.sleep(60000)
       }
-      @http.Response::new(200, body=Bytes(b"ok"))
+      @mttp.Response::new(200, body=Bytes(b"ok"))
     })
     let client = @client.Client::new(
       backend,
@@ -260,13 +260,13 @@ test "an attempt that runs out of time is retried for GET not POST" {
     let ok = try {
       let reply = d.run(() => {
         client.send(
-          @client.request(@http.Request::new(meth, "/")).timeout_ms(20),
+          @client.request(@mttp.Request::new(meth, "/")).timeout_ms(20),
         )
       })
       assert_eq(reply.body, Ok("ok"))
       true
     } catch {
-      @http.TransportError(kind=Timeout(ms=20), ..) => false
+      @mttp.TransportError(kind=Timeout(ms=20), ..) => false
       error => raise error
     }
     assert_eq(ok, meth == Get)
@@ -295,7 +295,7 @@ test "total timeout caps backoff and shrinks attempt budgets" {
     @client.from_fn((_, options) => {
       budgets.push(options.timeout_ms)
       clock.advance(100)
-      @http.Response::new(500)
+      @mttp.Response::new(500)
     }),
     clock,
     total_ms=1000,
@@ -323,7 +323,7 @@ test "no attempt starts once total timeout has passed even with custom retry" {
     @client.from_fn((_, options) => {
       budgets.push(options.timeout_ms)
       clock.advance(400)
-      @http.Response::new(500)
+      @mttp.Response::new(500)
     }),
     clock,
     total_ms=1000,
@@ -337,7 +337,7 @@ test "no attempt starts once total timeout has passed even with custom retry" {
     })
     false
   } catch {
-    @http.TransportError(kind=Timeout(ms=1000), ..) => true
+    @mttp.TransportError(kind=Timeout(ms=1000), ..) => true
     error => raise error
   }
   assert_true(expired)
@@ -360,9 +360,9 @@ test "body factory follows admission on every retry and headers survive reader f
     @client.from_handler(request => {
       calls.val += 1
       events.push("send:\{calls.val}")
-      @http.Response::new(
+      @mttp.Response::new(
         200,
-        headers=@http.Headers::of([("x-head", "yes")]),
+        headers=@mttp.Headers::of([("x-head", "yes")]),
         body=request.body,
       )
     }),
@@ -372,7 +372,7 @@ test "body factory follows admission on every retry and headers survive reader f
     observer=_ => events.push("observe"),
   )
   let reads = Ref(0)
-  let request = @client.request(@http.Request::post("/"))
+  let request = @client.request(@mttp.Request::post("/"))
     .attribute(@client.rate_limit_bucket, "b")
     .attribute(@client.global_exempt, true)
     .body_fn(() => {
@@ -420,13 +420,13 @@ test "custom retry cannot replay any stream without a factory" {
   let client = @client.Client::new(
     @client.from_handler(_ => {
       sends.val += 1
-      @http.Response::new(503)
+      @mttp.Response::new(503)
     }),
     @sim.SimClock::new(d),
     retry=@client.RetryPolicy::conservative().with_max_retries(10),
     observer=a => observed.push(a.decision),
   )
-  let raw = @http.Request::post("/").body_stream(feed)
+  let raw = @mttp.Request::post("/").body_stream(feed)
   let failed = d.run(() => {
       client.send(@client.request(raw), decide_retry=(_, _) => Wait(1))
     }).body
@@ -453,7 +453,7 @@ test "limiter wait uses total budget and still releases before observation" {
     }
     let built = Ref(0)
     let client = @client.Client::new(
-      @client.from_handler(_ => @http.Response::new(200)),
+      @client.from_handler(_ => @mttp.Response::new(200)),
       clock,
       limiter~,
       timer=PassthroughTimer::{ },
@@ -463,7 +463,7 @@ test "limiter wait uses total budget and still releases before observation" {
     let failed = try {
       let _ = @driver.run_sync(() => {
         client.send(
-          @client.request(@http.Request::get("/")).body_fn(() => {
+          @client.request(@mttp.Request::get("/")).body_fn(() => {
             built.val += 1
             b"body"
           }),
@@ -471,7 +471,7 @@ test "limiter wait uses total budget and still releases before observation" {
       })
       false
     } catch {
-      @http.TransportError(kind=Timeout(..), ..) => true
+      @mttp.TransportError(kind=Timeout(..), ..) => true
       error => raise error
     }
     assert_true(failed)
@@ -502,7 +502,7 @@ test "release failure closes accepted stream and is not retried" {
   }
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(feed)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(feed)))
     }),
     clock,
     limiter~,
@@ -512,7 +512,7 @@ test "release failure closes accepted stream and is not retried" {
   let failed = try {
     let _ = d.run(() => {
       client.send(
-        @client.request(@http.Request::get("/")).response(
+        @client.request(@mttp.Request::get("/")).response(
           @client.as_stream((_, stream) => stream.read_some()),
         ),
       )
@@ -546,7 +546,7 @@ test "cancellation after a head releases its status and closes the body" {
   }
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(feed)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(feed)))
     }),
     clock,
     limiter~,
@@ -554,7 +554,7 @@ test "cancellation after a head releases its status and closes the body" {
   )
   d.run(() => {
     let task = d.spawn(() => {
-      let _ = client.send(@client.request(@http.Request::get("/")))
+      let _ = client.send(@client.request(@mttp.Request::get("/")))
     })
     d.pause()
     task.cancel()
@@ -580,7 +580,7 @@ test "cancellation survives a failing release and is observed once" {
   let observed = []
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     clock,
     limiter~,
@@ -588,7 +588,7 @@ test "cancellation survives a failing release and is observed once" {
   )
   d.run(() => {
     let task = d.spawn(() => {
-      let _ = client.send(@client.request(@http.Request::get("/")))
+      let _ = client.send(@client.request(@mttp.Request::get("/")))
     })
     d.pause()
     task.cancel()
@@ -605,7 +605,7 @@ test "the total deadline cancels a send in flight" {
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
       d.sleep(50)
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     }),
     @sim.SimClock::new(d),
     timer=@sim.SimTimer::new(d),
@@ -615,7 +615,7 @@ test "the total deadline cancels a send in flight" {
     ignore(d.run(() => client.send(@client.get("/"))))
     None
   } catch {
-    @http.TransportError(kind~, ..) => Some(kind)
+    @mttp.TransportError(kind~, ..) => Some(kind)
     error => raise error
   }
   assert_eq(failure, Some(Timeout(ms=20)))

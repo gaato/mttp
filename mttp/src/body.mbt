@@ -9,7 +9,7 @@
 ///
 /// ```mbt check
 /// test {
-///   let request = @http.Request::post("/upload").body_bytes(b"abc")
+///   let request = @mttp.Request::post("/upload").body_bytes(b"abc")
 ///   assert_eq(request.body, Bytes(b"abc"))
 ///   assert_eq(request.body.length(), Some(3L))
 ///   assert_true(request.body.is_replayable())

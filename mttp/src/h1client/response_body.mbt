@@ -74,7 +74,7 @@ fn ResponseBody::finish(self : ResponseBody, reusable : Bool) -> Unit {
 }
 
 ///|
-impl @http.BodyStream for ResponseBody with fn close(self) {
+impl @mttp.BodyStream for ResponseBody with fn close(self) {
   self.finish(false)
 }
 
@@ -82,12 +82,12 @@ impl @http.BodyStream for ResponseBody with fn close(self) {
 /// The next piece of the body under the Body limits: `TooLarge(limit)` at
 /// the piece that would cross the byte bound, before it is delivered. Any
 /// failure, cancellation included, closes the connection.
-impl @http.BodyStream for ResponseBody with fn read_some(self) {
+impl @mttp.BodyStream for ResponseBody with fn read_some(self) {
   if self.closed {
     return None
   }
   if self.busy {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Body,
       detail="concurrent body read",
@@ -132,7 +132,7 @@ async fn ResponseBody::read_raw(self : ResponseBody) -> Bytes? {
       }
       let max = self.remaining.min(io_bytes.to_int64()).to_int()
       guard self.wire.read(max) is Some(bytes) else {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=Protocol,
           phase=Body,
           detail="EOF before the end of Content-Length",
@@ -181,8 +181,8 @@ async fn ResponseBody::read_raw(self : ResponseBody) -> Bytes? {
 }
 
 ///|
-fn too_large(limit : Int32) -> @http.TransportError {
-  @http.TransportError(
+fn too_large(limit : Int32) -> @mttp.TransportError {
+  @mttp.TransportError(
     kind=TooLarge(limit~),
     phase=Body,
     detail="the response body exceeds \{limit} bytes",

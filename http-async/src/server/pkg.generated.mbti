@@ -2,13 +2,13 @@
 package "gaato/http-async/server"
 
 import {
-  "gaato/http",
-  "gaato/http/h1server",
+  "gaato/mttp",
+  "gaato/mttp/h1server",
   "moonbitlang/core/debug",
 }
 
 // Values
-pub async fn serve(async (@http.Request) -> @http.Response noraise, addr~ : String, limits? : @h1server.ServerLimits, on_listen? : (String) -> Unit, on_error? : (@http.TransportError) -> Unit) -> Unit raise ListenError
+pub async fn serve(async (@mttp.Request) -> @mttp.Response noraise, addr~ : String, limits? : @h1server.ServerLimits, on_listen? : (String) -> Unit, on_error? : (@mttp.TransportError) -> Unit) -> Unit raise ListenError
 
 // Errors
 #derive(@debug.Debug)

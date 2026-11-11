@@ -2,7 +2,7 @@
 /// The body for `pieces`: one buffer when every piece is in memory, so a
 /// request without stream parts goes out exactly as `encode` makes it, and
 /// otherwise a stream with the total length when every stream part has one.
-fn pieces_body(pieces : Array[Piece], boundary : String) -> @http.Body {
+fn pieces_body(pieces : Array[Piece], boundary : String) -> @mttp.Body {
   let mut length : Int64? = Some(0L)
   let mut streamed = false
   let fixed : Array[Bytes] = []
@@ -27,20 +27,20 @@ fn pieces_body(pieces : Array[Piece], boundary : String) -> @http.Body {
   guard streamed else { Bytes(join_segments(fixed)) }
   let stream = MultipartStream::{
     pieces,
-    delimiter: @http.encode_utf8("\r\n--" + boundary),
+    delimiter: @mttp.encode_utf8("\r\n--" + boundary),
     readers: None,
     next_reader: 0,
     next: 0,
     current: None,
     closed: false,
   }
-  Stream(@http.StreamBody::new(stream, length?))
+  Stream(@mttp.StreamBody::new(stream, length?))
 }
 
 ///|
 /// The stream part being read: its reader, its name and its boundary scan.
 priv struct Reading {
-  reader : &@http.BodyStream
+  reader : &@mttp.BodyStream
   name : String
   scan : BoundaryScan
 }
@@ -54,7 +54,7 @@ priv struct Reading {
 priv struct MultipartStream {
   pieces : Array[Piece]
   delimiter : Bytes
-  mut readers : Array[&@http.BodyStream]?
+  mut readers : Array[&@mttp.BodyStream]?
   mut next_reader : Int32
   mut next : Int32
   mut current : Reading?
@@ -65,7 +65,7 @@ priv struct MultipartStream {
 /// A failure ends the body without the caller's help: the `StreamBody` that
 /// wraps this stream closes it on any error, which closes every part still
 /// open, so later reads see EOF rather than the rest of a refused part.
-impl @http.BodyStream for MultipartStream with fn read_some(self) {
+impl @mttp.BodyStream for MultipartStream with fn read_some(self) {
   if self.readers is None && !self.closed {
     self.readers = Some(self.take_parts())
   }
@@ -77,7 +77,7 @@ impl @http.BodyStream for MultipartStream with fn read_some(self) {
       match part.reader.read_some() {
         Some(chunk) => {
           if part.scan.feed(chunk) {
-            raise @http.TransportError(
+            raise @mttp.TransportError(
               kind=Protocol,
               phase=Body,
               detail="multipart part \{part.name.escape()} contains the boundary delimiter",
@@ -117,8 +117,8 @@ impl @http.BodyStream for MultipartStream with fn read_some(self) {
 /// so far are closed, the body is closed and the error is raised.
 fn MultipartStream::take_parts(
   self : MultipartStream,
-) -> Array[&@http.BodyStream] raise @http.TransportError {
-  let readers : Array[&@http.BodyStream] = []
+) -> Array[&@mttp.BodyStream] raise @mttp.TransportError {
+  let readers : Array[&@mttp.BodyStream] = []
   let mut index = 0
   errdefer {
     for reader in readers {
@@ -155,7 +155,7 @@ fn close_unclaimed(piece : Piece) -> Unit {
 
 ///|
 /// Closes the part being read and every stream part not reached yet.
-impl @http.BodyStream for MultipartStream with fn close(self) {
+impl @mttp.BodyStream for MultipartStream with fn close(self) {
   if self.closed {
     return
   }

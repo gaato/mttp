@@ -207,7 +207,7 @@ async fn measure(modules : Array[String]) -> String {
 }
 
 ///|
-/// The budgets of TEST_COVERAGE.md: rows like "| http/src/foo.mbt | 12 | reason |".
+/// The budgets of TEST_COVERAGE.md: rows like "| mttp/src/foo.mbt | 12 | reason |".
 async fn budgets(
   modules : Array[String],
   ledger : String,

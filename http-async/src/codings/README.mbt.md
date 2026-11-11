@@ -16,7 +16,7 @@ when writing that body. Buffered bodies are read in 64 KiB pieces.
 ```mbt check
 ///|
 test "negotiate a response encoding" {
-  let headers = @http.Headers::of([("accept-encoding", "gzip;q=0.5, br;q=1")])
+  let headers = @mttp.Headers::of([("accept-encoding", "gzip;q=0.5, br;q=1")])
   assert_eq(@codings.negotiate_encoding(headers), @codings.Encoded(Brotli))
 }
 ```

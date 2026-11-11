@@ -154,7 +154,7 @@ async test "socket read and write bounds EOF halves and close errors" {
   let conn : &@rt.Conn = wrap(io, closes)
   for invalid in [0, -1] {
     try conn.read(max_len=invalid) catch {
-      @http.TransportError(kind=Invalid, phase=Unknown, ..) => ()
+      @mttp.TransportError(kind=Invalid, phase=Unknown, ..) => ()
       error => raise error
     } noraise {
       _ => fail("invalid read size accepted")
@@ -173,7 +173,7 @@ async test "socket read and write bounds EOF halves and close errors" {
   assert_eq(closes.val, 1)
   assert_eq(conn.read(max_len=1), None)
   try conn.write(b"x") catch {
-    @http.TransportError(kind=Closed, phase=Unknown, ..) => ()
+    @mttp.TransportError(kind=Closed, phase=Unknown, ..) => ()
     error => raise error
   } noraise {
     _ => fail("closed write accepted")
@@ -191,20 +191,20 @@ async test "socket adapter translates runtime I O failures and preserves transpo
       () => conn.write(b"x"),
     ] {
     try action() catch {
-      @http.TransportError(kind=Network, phase=Unknown, ..) => ()
+      @mttp.TransportError(kind=Network, phase=Unknown, ..) => ()
       error => raise error
     } noraise {
       _ => fail("runtime error lost")
     }
   }
-  let original = @http.TransportError(
+  let original = @mttp.TransportError(
     kind=Timeout(ms=7),
     phase=Write,
     detail="original",
   )
   assert_true(
     transport_error(original)
-    is @http.TransportError(kind=Timeout(ms=7), phase=Write, detail="original"),
+    is @mttp.TransportError(kind=Timeout(ms=7), phase=Write, detail="original"),
   )
 }
 
@@ -217,7 +217,7 @@ async test "closing socket cancels a pending write and joins cleanup" {
   @async.with_task_group(group => {
     group.spawn_bg(() => {
       conn.write(b"pending") catch {
-        @http.TransportError(kind=Closed, phase=Unknown, ..) =>
+        @mttp.TransportError(kind=Closed, phase=Unknown, ..) =>
           failed.val = true
         error => raise error
       }

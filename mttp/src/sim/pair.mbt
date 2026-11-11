@@ -98,7 +98,7 @@ pub fn SimConn::closes(self : SimConn) -> Int32 {
 /// nonpositive `max_len` raises `Invalid`.
 pub impl @rt.Conn for SimConn with fn read(self, max_len~) {
   if max_len <= 0 {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Unknown,
       detail="nonpositive read size",
@@ -131,7 +131,7 @@ pub impl @rt.Conn for SimConn with fn read(self, max_len~) {
 /// down its writes, or after the peer closed.
 pub impl @rt.Conn for SimConn with fn write(self, bytes) {
   if self.closed || self.output.ended || self.output.reader_closed {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Network,
       phase=Write,
       detail="closed simulated connection",

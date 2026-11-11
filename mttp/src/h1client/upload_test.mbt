@@ -7,7 +7,7 @@ test "known and unknown length uploads arrive with valid framing" {
     let peer = h.peer(chunk_bytes=4096)
     h.run(() => {
       let feed = @sim.Feed::bytes(h.driver, pieces)
-      let request = @http.Request::post("http://example.test/up")
+      let request = @mttp.Request::post("http://example.test/up")
       let request = match mode {
         0 => request.body_bytes(payload)
         1 => request.body_stream(feed, length=140000L)
@@ -45,7 +45,7 @@ test "a chunked upload frames each piece and ends with the last chunk" {
   let conn = h.scripted([Chunk(b"HTTP/1.1 204 No Content\r\n\r\n")])
   h.run(() => {
     let feed = @sim.Feed::bytes(h.driver, [b"ab", b"cde"])
-    let request = @http.Request::post("http://example.test/").body_stream(feed)
+    let request = @mttp.Request::post("http://example.test/").body_stream(feed)
     h.client.send(request, exchange()).close()
     h.finish()
   })
@@ -62,7 +62,7 @@ test "a stream body is validated by its first read before anything is sent" {
     let h = Harness::new()
     let failing_feed = @sim.Feed::new(h.driver, [
       Fail(
-        @http.TransportError(
+        @mttp.TransportError(
           kind=Unreplayable,
           phase=Write,
           detail="nested body already taken",
@@ -70,12 +70,12 @@ test "a stream body is validated by its first read before anything is sent" {
       ),
     ])
     let lying = @sim.Feed::bytes(h.driver, [b"x"])
-    let request = @http.Request::post("http://example.test/")
+    let request = @mttp.Request::post("http://example.test/")
     let (request, source) = match mode {
       0 => (request.body_stream(lying, length=0L), lying)
       1 => (request.body_stream(failing_feed), failing_feed)
       _ => {
-        let cell = @http.StreamBody::new(failing_feed)
+        let cell = @mttp.StreamBody::new(failing_feed)
         cell.take().close()
         ({ ..request, body: Stream(cell), }, failing_feed)
       }
@@ -104,7 +104,7 @@ test "empty known and unknown length streams are read exactly once" {
     let conn = h.scripted([Chunk(b"HTTP/1.1 204 No Content\r\n\r\n")])
     h.run(() => {
       let feed = @sim.Feed::bytes(h.driver, [])
-      let request = @http.Request::post("http://example.test/").body_stream(
+      let request = @mttp.Request::post("http://example.test/").body_stream(
         feed,
         length?,
       )
@@ -147,7 +147,7 @@ test "an early final response ends the upload and the connection is not reused" 
       }
     })
     let response = h.client.send(
-      @http.Request::post("http://example.test/").body_stream(feed),
+      @mttp.Request::post("http://example.test/").body_stream(feed),
       exchange(),
     )
     assert_eq(response.status, 413)
@@ -169,7 +169,7 @@ test "upload producer errors keep their kind and release the connection" {
     let feed = @sim.Feed::new(h.driver, [
       Chunk(b"x"),
       Fail(
-        @http.TransportError(
+        @mttp.TransportError(
           kind=Unreplayable,
           phase=Write,
           detail="producer refused",
@@ -186,7 +186,7 @@ test "upload producer errors keep their kind and release the connection" {
         ignore(
           fetch(
             h.client,
-            @http.Request::post("http://example.test/").body_stream(feed),
+            @mttp.Request::post("http://example.test/").body_stream(feed),
           ),
         )
       }),
@@ -202,7 +202,7 @@ test "upload producer errors keep their kind and release the connection" {
 ///|
 test "an answer sent before an upload's network failure is still delivered" {
   let big = Bytes::make(100000, b'x')
-  let write_error = @http.TransportError(
+  let write_error = @mttp.TransportError(
     kind=Network,
     phase=Write,
     detail="connection reset",
@@ -216,7 +216,7 @@ test "an answer sent before an upload's network failure is still delivered" {
     }
     let conn = h.scripted(steps, write_error~)
     h.run(() => {
-      let request = @http.Request::post("http://example.test/").body_bytes(big)
+      let request = @mttp.Request::post("http://example.test/").body_bytes(big)
       if answered {
         let response = h.client.send(request, exchange())
         assert_eq(response.status, 413)
@@ -245,7 +245,7 @@ test "a head deadline after a failed upload reports the write failure" {
   ignore(
     h.scripted(
       [Wait(h.coordination.signal())],
-      write_error=@http.TransportError(
+      write_error=@mttp.TransportError(
         kind=Network,
         phase=Write,
         detail="upstream input failed",
@@ -253,14 +253,14 @@ test "a head deadline after a failed upload reports the write failure" {
     ),
   )
   h.run(() => {
-    let request = @http.Request::post("http://example.test/").body_bytes(
+    let request = @mttp.Request::post("http://example.test/").body_bytes(
       Bytes::make(100000, b'x'),
     )
     let detail = try {
       ignore(h.client.send(request, exchange()))
       ""
     } catch {
-      @http.TransportError(kind=Network, phase=Write, detail~) => detail
+      @mttp.TransportError(kind=Network, phase=Write, detail~) => detail
       error => raise error
     }
     assert_eq(detail, "upstream input failed")
@@ -278,7 +278,7 @@ test "the head limit starts once an upload has finished" {
   let conn = h.scripted([Wait(h.coordination.signal())])
   h.run(() => {
     let feed = @sim.Feed::new(h.driver, [Chunk(b"a"), Wait(50), Chunk(b"b")])
-    let request = @http.Request::post("http://example.test/").body_stream(feed)
+    let request = @mttp.Request::post("http://example.test/").body_stream(feed)
     assert_eq(
       failing(() => ignore(h.client.send(request, exchange()))),
       (Timeout(ms=20), Head),
@@ -299,7 +299,7 @@ fn relay(h : Harness, delay : Int32) -> @sim.Feed {
     Chunk(b"x"),
     Wait(delay),
     Fail(
-      @http.TransportError(
+      @mttp.TransportError(
         kind=Network,
         phase=Write,
         detail="upstream input failed",
@@ -337,13 +337,13 @@ test "a stream failing mid-upload aborts the exchange at once with its own error
       let detail = try {
         ignore(
           h.client.send(
-            @http.Request::post("http://example.test/").body_stream(feed),
+            @mttp.Request::post("http://example.test/").body_stream(feed),
             exchange(),
           ),
         )
         ""
       } catch {
-        @http.TransportError(kind=Network, phase=Write, detail~) => detail
+        @mttp.TransportError(kind=Network, phase=Write, detail~) => detail
         error => raise error
       }
       assert_eq(detail, "upstream input failed")
@@ -373,7 +373,7 @@ test "an answer before the stream fails ends the upload and wins" {
       }
     })
     let response = h.client.send(
-      @http.Request::post("http://example.test/").body_stream(feed),
+      @mttp.Request::post("http://example.test/").body_stream(feed),
       exchange(),
     )
     assert_eq(response.status, 413)

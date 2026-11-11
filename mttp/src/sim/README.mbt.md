@@ -44,7 +44,7 @@ header pairs).
 ///|
 /// Reads until EOF and answers with what it read, in brackets: a stand-in
 /// for code written against the ports.
-async fn echo(conn : &@rt.Conn) -> Unit raise @http.TransportError {
+async fn echo(conn : &@rt.Conn) -> Unit raise @mttp.TransportError {
   let reply = Buffer()
   reply.write_bytes(b"[")
   while conn.read(max_len=64) is Some(chunk) {

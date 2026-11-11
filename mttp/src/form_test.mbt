@@ -35,7 +35,7 @@ test "form_urlencode follows the WHATWG urlencoded serializer" {
   ]
   for row in rows {
     let (label, pairs, expected) = row
-    assert_eq(@http.form_urlencode(pairs), expected, msg=label)
+    assert_eq(@mttp.form_urlencode(pairs), expected, msg=label)
   }
 }
 
@@ -56,7 +56,7 @@ test "form_urlencode writes a lone surrogate as U+FFFD" {
   for row in rows {
     let (label, units, expected) = row
     assert_eq(
-      @http.form_urlencode([("s", String::from_array(units))]),
+      @mttp.form_urlencode([("s", String::from_array(units))]),
       "s=" + expected,
       msg=label,
     )
@@ -65,7 +65,7 @@ test "form_urlencode writes a lone surrogate as U+FFFD" {
 
 ///|
 test "form_body sets the body and a default content type" {
-  let request = @http.Request::post("/token").body_form([
+  let request = @mttp.Request::post("/token").body_form([
     ("grant_type", "client_credentials"),
     ("scope", "read write"),
   ])
@@ -77,7 +77,7 @@ test "form_body sets the body and a default content type" {
     request.headers.get("content-type"),
     Some("application/x-www-form-urlencoded"),
   )
-  let kept = @http.Request::post("/token")
+  let kept = @mttp.Request::post("/token")
     .header("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
     .body_form([("a", "b")])
   assert_eq(kept.headers.get_all("content-type"), [

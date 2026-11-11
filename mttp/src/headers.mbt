@@ -4,7 +4,7 @@
 ///
 /// ```mbt check
 /// test {
-///   let headers = @http.Headers::of([("Accept", "text/plain")])
+///   let headers = @mttp.Headers::of([("Accept", "text/plain")])
 ///   assert_eq(headers.get("ACCEPT"), Some("text/plain"))
 /// }
 /// ```

@@ -15,36 +15,36 @@ test "framing rejects conflicting lengths and unsupported transfer encodings" {
       ([("transfer-encoding", "")], Malformed),
       ([("transfer-encoding", "gzip, chunked")], Unsupported),
     ] {
-    try @h1.request_framing(@http.Headers::of(pair.0)) catch {
+    try @h1.request_framing(@mttp.Headers::of(pair.0)) catch {
       @h1.ParseError(kind~, ..) => assert_eq(kind, pair.1)
     } noraise {
       _ => fail("accepted framing")
     }
   }
-  assert_eq(@h1.request_framing(@http.Headers::empty()), NoBody)
+  assert_eq(@h1.request_framing(@mttp.Headers::empty()), NoBody)
   assert_eq(
     @h1.request_framing(
-      @http.Headers::of([("content-length", "9223372036854775807")]),
+      @mttp.Headers::of([("content-length", "9223372036854775807")]),
     ),
     Length(9223372036854775807L),
   )
   assert_eq(
-    @h1.request_framing(@http.Headers::of([("transfer-encoding", "Chunked")])),
+    @h1.request_framing(@mttp.Headers::of([("transfer-encoding", "Chunked")])),
     Chunked,
   )
   assert_eq(
-    @h1.response_framing(@http.Headers::empty(), status=200),
+    @h1.response_framing(@mttp.Headers::empty(), status=200),
     UntilClose,
   )
   for status in [100, 204, 304] {
-    assert_eq(@h1.response_framing(@http.Headers::empty(), status~), NoBody)
+    assert_eq(@h1.response_framing(@mttp.Headers::empty(), status~), NoBody)
   }
   assert_eq(
-    @h1.response_framing(@http.Headers::empty(), status=200, meth=Head),
+    @h1.response_framing(@mttp.Headers::empty(), status=200, meth=Head),
     NoBody,
   )
   assert_eq(
-    @h1.response_framing(@http.Headers::empty(), status=200, meth=Connect),
+    @h1.response_framing(@mttp.Headers::empty(), status=200, meth=Connect),
     NoBody,
   )
 }

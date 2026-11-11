@@ -1,7 +1,7 @@
 ///|
 /// An HTTP/1.1 client over the `rt` ports: a pool of connections per
 /// origin, bounded heads and bodies, and per-phase deadlines. It implements
-/// `@http.Backend`, so it moves raw bytes: no redirects, retries, cookies or
+/// `@mttp.Backend`, so it moves raw bytes: no redirects, retries, cookies or
 /// content decoding, and no `Accept-Encoding` of its own.
 ///
 /// A response owns its connection until its body is read to the end, which
@@ -26,7 +26,7 @@ pub struct Client {
 /// replayable body that is idempotent or marked `replay_safe` is resent,
 /// and only once. The resend is a repair of a stale connection, not a
 /// policy attempt.
-pub let stale_resend : @http.AttributeKey[Bool] = @http.AttributeKey::new(
+pub let stale_resend : @mttp.AttributeKey[Bool] = @mttp.AttributeKey::new(
   "h1client.stale_resend",
 )
 
@@ -48,11 +48,11 @@ pub let stale_resend : @http.AttributeKey[Bool] = @http.AttributeKey::new(
 ///   )
 ///   driver.run(() => {
 ///     let response = client.send(
-///       @http.Request::get("http://example.test/"),
-///       @http.SendOptions::default(),
+///       @mttp.Request::get("http://example.test/"),
+///       @mttp.SendOptions::default(),
 ///     )
 ///     guard response.body is Stream(body) else { fail("expected a body") }
-///     assert_eq(@http.read_bounded(body.take(), 1024), b"hi")
+///     assert_eq(@mttp.read_bounded(body.take(), 1024), b"hi")
 ///     assert_eq(client.idle_connections(), 1)
 ///     client.close()
 ///   })
@@ -96,7 +96,7 @@ pub fn Client::idle_connections(self : Client) -> Int32 {
 /// Closes the parked connections and refuses queued and later sends with
 /// `Closed` in phase Pool. Responses in flight keep their connections;
 /// finishing them closes the connection instead of parking it. Idempotent.
-pub impl @http.Backend for Client with fn close(self) {
+pub impl @mttp.Backend for Client with fn close(self) {
   for wire in self.pool.drain() {
     wire.close()
   }
@@ -113,27 +113,27 @@ pub impl @http.Backend for Client with fn close(self) {
 /// one with the same User-Agent is parked for the origin, otherwise it is
 /// dialled; a reused connection that fails before any response byte arrived
 /// is replaced once by a fresh one, if the body is replayable and the
-/// request idempotent (`@http.is_idempotent`).
+/// request idempotent (`@mttp.is_idempotent`).
 ///
 /// With `Exchange(max_bytes)`, `timeout_ms` covers the head and the whole
 /// body, and at most `max_bytes` (and `ClientConfig.max_body_bytes`) body
 /// bytes are read from the wire. With `Stream(idle_ms)`, `timeout_ms` ends
 /// at the head, each body read waits at most `idle_ms` (and the read
 /// limit), and only the configured ceiling bounds the bytes.
-pub impl @http.Backend for Client with fn send(self, request, options) {
+pub impl @mttp.Backend for Client with fn send(self, request, options) {
   self.send_request(request, options)
 }
 
 ///|
 /// The Backend operations as methods of the client.
-pub extend Client with @http.Backend::{send, close}
+pub extend Client with @mttp.Backend::{send, close}
 
 ///|
 async fn Client::send_request(
   self : Client,
-  request : @http.Request,
-  options : @http.SendOptions,
-) -> @http.Response raise @http.TransportError {
+  request : @mttp.Request,
+  options : @mttp.SendOptions,
+) -> @mttp.Response raise @mttp.TransportError {
   // Taken first, so that every exit below closes the stream: a refusal, a
   // failure, cancellation, or the end of the upload.
   let stream = match request.body {
@@ -187,7 +187,7 @@ async fn Client::send_request(
   let mut transferred = false
   defer (if !transferred { self.slots.release(key) })
   let agent = request.headers.get("user-agent")
-  let resendable = request.body.is_replayable() && @http.is_idempotent(request)
+  let resendable = request.body.is_replayable() && @mttp.is_idempotent(request)
   let mut fresh = false
   for ;; {
     if self.pool.control.closed {
@@ -232,7 +232,7 @@ async fn Client::send_request(
       self.config.head_limits,
       self.coordination,
     ) catch {
-      @http.TransportError(kind=Network, ..) if reused &&
+      @mttp.TransportError(kind=Network, ..) if reused &&
         resendable &&
         wire.received == 0L => {
         fresh = true
@@ -259,16 +259,16 @@ async fn Client::send_request(
         connection_token(response.headers, "keep-alive")
       )
     let attributes = if fresh {
-      @http.Attributes::empty().put(stale_resend, true)
+      @mttp.Attributes::empty().put(stale_resend, true)
     } else {
-      @http.Attributes::empty()
+      @mttp.Attributes::empty()
     }
     owned = false
     transferred = true
     if body_framing is NoBody || body_framing == Length(0L) {
       self.release(key, agent, wire, keep_alive)
       return {
-        ..@http.Response::new(response.status, headers=response.headers),
+        ..@mttp.Response::new(response.status, headers=response.headers),
         attributes,
       }
     }
@@ -288,7 +288,7 @@ async fn Client::send_request(
           timer,
           Some(min_limit(self.config.max_body_bytes, Some(max_bytes)).unwrap()),
         )
-      @http.BodyTiming::.. => (timer, self.config.max_body_bytes)
+      @mttp.BodyTiming::.. => (timer, self.config.max_body_bytes)
     }
     let reader = ResponseBody::new(
       self, key, agent, wire, body_framing, body_timer, limit, keep_alive,
@@ -298,10 +298,10 @@ async fn Client::send_request(
       _ => None
     }
     return {
-      ..@http.Response::new(
+      ..@mttp.Response::new(
         response.status,
         headers=response.headers,
-        body=Stream(@http.StreamBody::new(reader, length?)),
+        body=Stream(@mttp.StreamBody::new(reader, length?)),
       ),
       attributes,
     }
@@ -322,7 +322,7 @@ fn min_limit(a : Int32?, b : Int32?) -> Int32? {
 /// How the request body is framed. An empty body of a method that expects
 /// content (POST, PUT, PATCH) sends `Content-Length: 0`; for other methods
 /// it sends no framing field, as RFC 9110 §8.6 asks.
-fn request_framing(request : @http.Request) -> @h1.Framing {
+fn request_framing(request : @mttp.Request) -> @h1.Framing {
   match request.body.length() {
     Some(0L) if !(request.meth is (Post | Put | Patch)) => NoBody
     Some(n) => Length(n)
@@ -353,7 +353,7 @@ fn Client::release(
 
 ///|
 /// Whether a Connection field lists `token`.
-fn connection_token(headers : @http.Headers, token : String) -> Bool {
+fn connection_token(headers : @mttp.Headers, token : String) -> Bool {
   headers
   .get_all("connection")
   .iter()

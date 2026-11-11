@@ -1,9 +1,9 @@
 ///|
 test "stream requests decode declared errors before handoff and retain bounded failures" {
   let response = Ref(
-    @http.Response::new(
+    @mttp.Response::new(
       400,
-      headers=@http.Headers::of([("content-type", "text/plain")]),
+      headers=@mttp.Headers::of([("content-type", "text/plain")]),
       body=Bytes(b"denied"),
     ),
   )
@@ -23,9 +23,9 @@ test "stream requests decode declared errors before handoff and retain bounded f
     })
     assert_eq(request.send(client).body, Ok(Err("denied")))
     assert_eq(delivered.val, 0)
-    response.val = @http.Response::new(
+    response.val = @mttp.Response::new(
       200,
-      headers=@http.Headers::of([("content-type", "text/plain")]),
+      headers=@mttp.Headers::of([("content-type", "text/plain")]),
       body=Bytes(b"success"),
     )
     assert_eq(request.send(client).body, Ok(Ok("success")))
@@ -35,9 +35,9 @@ test "stream requests decode declared errors before handoff and retain bounded f
       request.send(client).body is Err(@client.Deserialization(_, ..)),
     )
     assert_eq(delivered.val, 1)
-    response.val = @http.Response::new(
+    response.val = @mttp.Response::new(
       400,
-      headers=@http.Headers::of([("content-type", "application/json")]),
+      headers=@mttp.Headers::of([("content-type", "application/json")]),
       body=Bytes(Bytes::make(2 * 1048576, b'x')),
     )
     let json = @endpoint.endpoint
@@ -62,9 +62,9 @@ test "stream requests decode declared errors before handoff and retain bounded f
 test "stream callbacks retain user exceptions and never become response failures" {
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
-      @http.Response::new(
+      @mttp.Response::new(
         200,
-        headers=@http.Headers::of([("content-type", "text/plain")]),
+        headers=@mttp.Headers::of([("content-type", "text/plain")]),
         body=Bytes(b"value"),
       )
     }),
@@ -106,13 +106,13 @@ test "call_with decodes buffered outputs before retry observation and invokes it
   let client = @client.Client::new(
     @client.from_handler(_ => {
       calls.val += 1
-      @http.Response::new(
+      @mttp.Response::new(
         if calls.val == 1 {
           503
         } else {
           200
         },
-        headers=@http.Headers::of([("content-type", "text/plain")]),
+        headers=@mttp.Headers::of([("content-type", "text/plain")]),
         body=Bytes(b"ok"),
       )
     }),
@@ -142,10 +142,10 @@ test "SSE callbacks preserve unknown exceptions and close their borrowed source"
   let source = @sim.Feed::bytes(driver, [b"data: 1\n\n"])
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(
+      @mttp.Response::new(
         200,
-        headers=@http.Headers::of([("content-type", "text/event-stream")]),
-        body=Stream(@http.StreamBody::new(source)),
+        headers=@mttp.Headers::of([("content-type", "text/event-stream")]),
+        body=Stream(@mttp.StreamBody::new(source)),
       )
     }),
     @sim.FakeClock::new(),
@@ -183,7 +183,7 @@ test "authentication errors are ordinary declared values before the handler runs
   })
   @driver.run_sync(() => {
     let response = server.dispatch(
-      @http.Request::post("/"),
+      @mttp.Request::post("/"),
       Map([]),
       @endpoint.DispatchContext::new(),
     )
@@ -207,7 +207,7 @@ test "authentication errors are ordinary declared values before the handler runs
   @driver.run_sync(() => {
     assert_eq(
       server.dispatch(
-        @http.Request::get("/"),
+        @mttp.Request::get("/"),
         Map([]),
         @endpoint.DispatchContext::new(),
       ).status,
@@ -224,10 +224,10 @@ test "unknown buffered and stream representations stop at the diagnostic bound" 
     let source = @sim.Feed::bytes(driver, [Bytes::make(2 * 1048576, b'x')])
     let client = @client.Client::new(
       @client.from_fn((_, _) => {
-        @http.Response::new(
+        @mttp.Response::new(
           200,
-          body=Stream(@http.StreamBody::new(source)),
-          headers=@http.Headers::of([("content-type", "image/unexpected")]),
+          body=Stream(@mttp.StreamBody::new(source)),
+          headers=@mttp.Headers::of([("content-type", "image/unexpected")]),
         )
       }),
       @sim.FakeClock::new(),

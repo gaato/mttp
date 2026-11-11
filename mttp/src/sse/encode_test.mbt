@@ -54,7 +54,7 @@ test "SSE encoder refuses fields that could inject lines" {
       let _ = @sse.encode(event)
       false
     } catch {
-      @http.TransportError(kind=Invalid, ..) => true
+      @mttp.TransportError(kind=Invalid, ..) => true
       _ => false
     }
     assert_true(refused)

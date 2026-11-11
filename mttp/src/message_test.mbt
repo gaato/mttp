@@ -13,32 +13,32 @@ test "method tokens parse roundtrip and classify idempotence" {
       ("PATCH", false),
       ("CUSTOM", false),
     ] {
-    let meth = @http.Method::parse(name)
+    let meth = @mttp.Method::parse(name)
     assert_eq(meth.to_string(), name)
     assert_eq("\{meth}", name)
     assert_eq(meth.is_idempotent(), idem)
-    assert_eq(@http.is_idempotent(@http.Request::new(meth, "/")), idem)
+    assert_eq(@mttp.is_idempotent(@mttp.Request::new(meth, "/")), idem)
   }
   assert_false(
-    @http.is_idempotent(
-      @http.Request::post("/").header("Idempotency-Key", "key"),
+    @mttp.is_idempotent(
+      @mttp.Request::post("/").header("Idempotency-Key", "key"),
     ),
   )
   assert_true(
-    @http.is_idempotent(
-      @http.Request::post("/").attribute(@http.replay_safe, true),
+    @mttp.is_idempotent(
+      @mttp.Request::post("/").attribute(@mttp.replay_safe, true),
     ),
   )
   assert_false(
-    @http.is_idempotent(
-      @http.Request::post("/").attribute(@http.replay_safe, false),
+    @mttp.is_idempotent(
+      @mttp.Request::post("/").attribute(@mttp.replay_safe, false),
     ),
   )
 }
 
 ///|
 test "request builders preserve their source" {
-  let source = @http.Request::get("https://example.test/items")
+  let source = @mttp.Request::get("https://example.test/items")
   let changed = source
     .header("x", "1")
     .set_header("x", "2")
@@ -53,10 +53,10 @@ test "request builders preserve their source" {
   assert_eq(changed.headers.get("authorization"), Some("Bearer token"))
   assert_eq(changed.url, "https://example.test/items?q=a%20b")
   assert_eq(changed.head().meth, Get)
-  assert_eq(@http.Request::put("/").head().meth, Put)
-  assert_eq(@http.Request::delete("/").head().meth, Delete)
+  assert_eq(@mttp.Request::put("/").head().meth, Put)
+  assert_eq(@mttp.Request::delete("/").head().meth, Delete)
   source.validate()
-  let invalid = @http.Request::new(Other("bad method"), "/")
+  let invalid = @mttp.Request::new(Other("bad method"), "/")
   let refused = try {
     invalid.validate()
     false
@@ -68,18 +68,18 @@ test "request builders preserve their source" {
 
 ///|
 test "response metadata success classes and conventional phrases" {
-  let response = @http.Response::new(
+  let response = @mttp.Response::new(
     201,
-    headers=@http.Headers::of([("x", "1")]),
+    headers=@mttp.Headers::of([("x", "1")]),
     body=Bytes(b"created"),
   )
   assert_eq(response.head().status, 201)
   assert_eq(response.head().headers.get("x"), Some("1"))
   response.close()
-  assert_false(@http.is_success(199))
-  assert_true(@http.is_success(200))
-  assert_true(@http.is_success(299))
-  assert_false(@http.is_success(300))
+  assert_false(@mttp.is_success(199))
+  assert_true(@mttp.is_success(200))
+  assert_true(@mttp.is_success(299))
+  assert_false(@mttp.is_success(300))
   for
     (status, phrase) in [
       (200, "OK"),
@@ -101,18 +101,18 @@ test "response metadata success classes and conventional phrases" {
       (504, "Gateway Timeout"),
       (599, ""),
     ] {
-    assert_eq(@http.reason_phrase(status), phrase)
+    assert_eq(@mttp.reason_phrase(status), phrase)
   }
 }
 
 ///|
 test "prefix joining and path codecs" {
   assert_eq(
-    @http.append_query("/a#fragment?x", "q", "a b"),
+    @mttp.append_query("/a#fragment?x", "q", "a b"),
     "/a?q=a%20b#fragment?x",
   )
   assert_eq(
-    @http.append_query("/a?x=1#fragment", "q", "2"),
+    @mttp.append_query("/a?x=1#fragment", "q", "2"),
     "/a?x=1&q=2#fragment",
   )
   for
@@ -125,18 +125,18 @@ test "prefix joining and path codecs" {
       ("https://h", "https://other/x", "https://other/x"),
       ("https://h", "http://other/x", "http://other/x"),
     ] {
-    assert_eq(@http.join_url(base, target), expected)
+    assert_eq(@mttp.join_url(base, target), expected)
   }
-  assert_eq(@http.encode_path([]), "/")
-  assert_eq(@http.encode_path(["a/b", "日本"]), "/a%2Fb/%E6%97%A5%E6%9C%AC")
-  assert_eq(@http.Url::parse("/a%2Fb/%E6%97%A5%E6%9C%AC").path_segments(), [
+  assert_eq(@mttp.encode_path([]), "/")
+  assert_eq(@mttp.encode_path(["a/b", "日本"]), "/a%2Fb/%E6%97%A5%E6%9C%AC")
+  assert_eq(@mttp.Url::parse("/a%2Fb/%E6%97%A5%E6%9C%AC").path_segments(), [
     "a/b", "日本",
   ])
-  assert_eq(@http.Url::parse("").path_segments(), [])
-  assert_eq(@http.Url::parse("/").path_segments(), [])
-  assert_eq(@http.Url::parse("a/b").path_segments(), ["a", "b"])
+  assert_eq(@mttp.Url::parse("").path_segments(), [])
+  assert_eq(@mttp.Url::parse("/").path_segments(), [])
+  assert_eq(@mttp.Url::parse("a/b").path_segments(), ["a", "b"])
   let refused = try {
-    let _ = @http.percent_decode("%xx")
+    let _ = @mttp.percent_decode("%xx")
     false
   } catch {
     _ => true
@@ -146,7 +146,7 @@ test "prefix joining and path codecs" {
 
 ///|
 test "unsent classification is conservative" {
-  let cases : Array[(@http.Kind, @http.Phase, Bool)] = [
+  let cases : Array[(@mttp.Kind, @mttp.Phase, Bool)] = [
     (Connect, Dial, true),
     (Proxy(status=407), Head, true),
     (Timeout(ms=1), Pool, true),
@@ -163,7 +163,7 @@ test "unsent classification is conservative" {
     (Closed, Head, false),
   ]
   for (kind, phase, unsent) in cases {
-    let error = @http.TransportError(kind~, phase~, detail="test failure")
+    let error = @mttp.TransportError(kind~, phase~, detail="test failure")
     assert_eq(error.is_unsent(), unsent)
     assert_true(error.message().has_suffix(": test failure"))
   }

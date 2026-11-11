@@ -2,14 +2,14 @@
 package "gaato/mttp/testing"
 
 import {
-  "gaato/http",
+  "gaato/mttp",
   "moonbitlang/core/debug",
 }
 
 // Values
-pub fn fail_after(&@http.BodyStream, Int32, @http.TransportError) -> &@http.BodyStream raise @http.TransportError
+pub fn fail_after(&@mttp.BodyStream, Int32, @mttp.TransportError) -> &@mttp.BodyStream raise @mttp.TransportError
 
-pub fn fail_sends(&@http.Backend, @http.TransportError, times? : Int32) -> &@http.Backend
+pub fn fail_sends(&@mttp.Backend, @mttp.TransportError, times? : Int32) -> &@mttp.Backend
 
 // Errors
 
@@ -18,27 +18,27 @@ pub struct BackendStub {
   // private fields
 }
 pub fn BackendStub::close(Self) -> Unit
-pub fn BackendStub::expect(Self, (@http.Request) -> Bool, Canned) -> Self
+pub fn BackendStub::expect(Self, (@mttp.Request) -> Bool, Canned) -> Self
 pub fn BackendStub::new() -> Self
 pub fn BackendStub::remaining(Self) -> Int32
-pub async fn BackendStub::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
+pub async fn BackendStub::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
 pub fn BackendStub::sent(Self) -> Array[Recorded]
 pub fn BackendStub::verify(Self) -> Unit raise
-pub fn BackendStub::when(Self, (@http.Request) -> Bool, Canned) -> Self
-pub impl @http.Backend for BackendStub
+pub fn BackendStub::when(Self, (@mttp.Request) -> Bool, Canned) -> Self
+pub impl @mttp.Backend for BackendStub
 
 #non_exhaustive
 pub(all) enum Canned {
-  Response(status~ : Int32, headers~ : @http.Headers, body~ : Bytes)
-  Failure(@http.TransportError)
-  Factory(async (@http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError)
+  Response(status~ : Int32, headers~ : @mttp.Headers, body~ : Bytes)
+  Failure(@mttp.TransportError)
+  Factory(async (@mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError)
 }
-pub fn Canned::bytes(Int32, body? : Bytes, headers? : @http.Headers) -> Self
+pub fn Canned::bytes(Int32, body? : Bytes, headers? : @mttp.Headers) -> Self
 
 #derive(Eq, @debug.Debug)
 pub(all) struct Recorded {
-  request : @http.RequestHead
-  options : @http.SendOptions
+  request : @mttp.RequestHead
+  options : @mttp.SendOptions
   body : Bytes?
 }
 pub fn Recorded::equal(Self, Self) -> Bool

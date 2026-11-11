@@ -1,11 +1,11 @@
 import {
-  "gaato/http",
-  "gaato/http/rt",
-  "gaato/http/driver",
+  "gaato/mttp",
+  "gaato/mttp/rt",
+  "gaato/mttp/driver",
   "moonbitlang/core/debug",
   "moonbitlang/core/quickcheck" @qc,
 }
 
 options(
-  "allow-experimental-packages": [ "gaato/http/driver" ],
+  "allow-experimental-packages": [ "gaato/mttp/driver" ],
 )

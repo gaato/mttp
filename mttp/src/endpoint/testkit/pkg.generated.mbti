@@ -2,8 +2,8 @@
 package "gaato/mttp/endpoint/testkit"
 
 import {
-  "gaato/http/rt",
   "gaato/mttp/endpoint",
+  "gaato/mttp/rt",
   "gaato/mttp/testing",
 }
 

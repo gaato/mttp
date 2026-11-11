@@ -47,9 +47,9 @@ test "concurrent Client attempts release their own admissions in delivery order"
         calls.val += 1
         if calls.val == 1 {
           d.sleep(10)
-          @http.Response::new(201)
+          @mttp.Response::new(201)
         } else {
-          @http.Response::new(202)
+          @mttp.Response::new(202)
         }
       }),
       @sim.SimClock::new(d),
@@ -72,7 +72,7 @@ test "each retry retains a distinct Admission through release" {
     let client = @client.Client::new(
       @client.from_handler(_ => {
         calls.val += 1
-        @http.Response::new(if calls.val == 1 { 503 } else { 200 })
+        @mttp.Response::new(if calls.val == 1 { 503 } else { 200 })
       }),
       @sim.FakeClock::new(),
       limiter~,
@@ -90,7 +90,7 @@ test "a failed exchange releases its Admission with status zero" {
     let limiter = IdentityLimiter::new()
     let client = @client.Client::new(
       @client.from_fn((_, _) => {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=Closed,
           phase=Pool,
           detail="test exchange failure",
@@ -100,7 +100,7 @@ test "a failed exchange releases its Admission with status zero" {
       limiter~,
     )
     try client.send(@client.get("/")) catch {
-      @http.TransportError(kind=Closed, ..) => ()
+      @mttp.TransportError(kind=Closed, ..) => ()
       _ => fail("wrong exchange error")
     } noraise {
       _ => fail("expected exchange failure")
@@ -118,7 +118,7 @@ test "cancelled Client cleanup passes the acquired Admission to release" {
     let client = @client.Client::new(
       @client.from_handler(_ => {
         d.sleep(1000)
-        @http.Response::new(200)
+        @mttp.Response::new(200)
       }),
       @sim.SimClock::new(d),
       limiter~,

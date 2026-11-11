@@ -1,6 +1,6 @@
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/rt",
   "gaato/mttp/endpoint",
   "gaato/mttp/router",
   "gaato/mttp/testing",
@@ -9,8 +9,8 @@ import {
 import {
   "gaato/mttp/schema",
   "gaato/mttp/client",
-  "gaato/http/driver",
-  "gaato/http/sim",
+  "gaato/mttp/driver",
+  "gaato/mttp/sim",
 } for "test"
 
 options(
@@ -18,6 +18,6 @@ options(
   "allow-experimental-packages": [
     "gaato/mttp/endpoint",
     "gaato/mttp/router",
-    "gaato/http/driver",
+    "gaato/mttp/driver",
   ],
 )

@@ -2,11 +2,11 @@
 // Deliberately does no validation or body cleanup: refusals and cancellation
 // must be handled by Cookies rather than hidden by a conforming inner stub.
 priv struct BareBackend {
-  run : async (@http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
+  run : async (@mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
 }
 
 ///|
-impl @http.Backend for BareBackend with fn send(self, request, options) {
+impl @mttp.Backend for BareBackend with fn send(self, request, options) {
   (self.run)(request, options)
 }
 
@@ -18,21 +18,21 @@ test "Cookies validates every refusal before I/O and closes unread stream bodies
     let inner = BareBackend::{
       run: (_, _) => {
         calls.val += 1
-        @http.Response::new(200)
+        @mttp.Response::new(200)
       },
     }
     let backend = @cookies.Cookies::new(
       inner,
       @cookie.CookieJar::new(@sim.FakeClock::new()),
     )
-    let options = @http.SendOptions::default()
+    let options = @mttp.SendOptions::default()
     for scenario in 0..<7 {
       let feed = @sim.Feed::bytes(d, [b"body"])
-      let base = @http.Request::post("https://example.test/").body_stream(feed)
+      let base = @mttp.Request::post("https://example.test/").body_stream(feed)
       let (request, options, expected) : (
-        @http.Request,
-        @http.SendOptions,
-        @http.Kind,
+        @mttp.Request,
+        @mttp.SendOptions,
+        @mttp.Kind,
       ) = match scenario {
         0 => ({ ..base, meth: Other("BAD METHOD"), }, options, Invalid)
         1 => ({ ..base, url: "https://example.test/\r\n", }, options, Invalid)
@@ -46,7 +46,7 @@ test "Cookies validates every refusal before I/O and closes unread stream bodies
         }
       }
       try backend.send(request, options) catch {
-        @http.TransportError(kind~, phase~, ..) => {
+        @mttp.TransportError(kind~, phase~, ..) => {
           assert_eq(kind, expected)
           assert_eq(phase, Pool)
         }
@@ -66,7 +66,7 @@ test "Cookies stores every Set-Cookie on an error head without taking the respon
   d.run(() => {
     let feed = @sim.Feed::bytes(d, [b"diagnostic"])
     let jar = @cookie.CookieJar::new(@sim.FakeClock::new())
-    let options : @http.SendOptions = {
+    let options : @mttp.SendOptions = {
       timeout_ms: Some(17),
       body: Stream(idle_ms=Some(23)),
     }
@@ -76,20 +76,20 @@ test "Cookies stores every Set-Cookie on an error head without taking the respon
           assert_eq(actual, options) catch {
             _ => abort("options changed")
           }
-          @http.Response::new(
+          @mttp.Response::new(
             503,
-            headers=@http.Headers::of([
+            headers=@mttp.Headers::of([
               ("Set-Cookie", "a=1; Path=/"),
               ("Set-Cookie", "b=2; Path=/"),
             ]),
-            body=Stream(@http.StreamBody::new(feed)),
+            body=Stream(@mttp.StreamBody::new(feed)),
           )
         },
       },
       jar,
     )
     let response = backend.send(
-      @http.Request::get("https://example.test/"),
+      @mttp.Request::get("https://example.test/"),
       options,
     )
     assert_eq(response.status, 503)
@@ -111,9 +111,9 @@ test "Cookies cancellation propagates after closing the request without storing 
       BareBackend::{
         run: (_, _) => {
           d.sleep(100)
-          @http.Response::new(
+          @mttp.Response::new(
             200,
-            headers=@http.Headers::of([("set-cookie", "late=1")]),
+            headers=@mttp.Headers::of([("set-cookie", "late=1")]),
           )
         },
       },
@@ -122,8 +122,8 @@ test "Cookies cancellation propagates after closing the request without storing 
     let task = d.spawn(() => {
       backend
       .send(
-        @http.Request::post("https://example.test/").body_stream(feed),
-        @http.SendOptions::default(),
+        @mttp.Request::post("https://example.test/").body_stream(feed),
+        @mttp.SendOptions::default(),
       )
       .close()
     })
@@ -140,7 +140,7 @@ test "Cookies cancellation propagates after closing the request without storing 
 test "Cookies closes request bodies on success and preserves transport failure identity" {
   let d = @driver.Driver::new()
   d.run(() => {
-    let sentinel = @http.TransportError(
+    let sentinel = @mttp.TransportError(
       kind=Protocol,
       phase=Head,
       detail="sentinel",
@@ -151,7 +151,7 @@ test "Cookies closes request bodies on success and preserves transport failure i
         BareBackend::{
           run: (_, _) => {
             if success {
-              @http.Response::new(200)
+              @mttp.Response::new(200)
             } else {
               raise sentinel
             }
@@ -162,8 +162,8 @@ test "Cookies closes request bodies on success and preserves transport failure i
       try
         backend
         .send(
-          @http.Request::post("https://example.test/").body_stream(feed),
-          @http.SendOptions::default(),
+          @mttp.Request::post("https://example.test/").body_stream(feed),
+          @mttp.SendOptions::default(),
         )
         .close()
       catch {

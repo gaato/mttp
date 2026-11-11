@@ -5,9 +5,9 @@
 /// nonnegative. Invalid fields raise Invalid rather than injecting fields.
 /// An event of type `message` or `""` gets no `event` field, since a stream
 /// gives that type to an event without one.
-pub fn encode(event : SseEvent) -> Bytes raise @http.TransportError {
+pub fn encode(event : SseEvent) -> Bytes raise @mttp.TransportError {
   if event.event.contains("\r") || event.event.contains("\n") {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Write,
       detail="SSE event name contains a line break",
@@ -15,14 +15,14 @@ pub fn encode(event : SseEvent) -> Bytes raise @http.TransportError {
   }
   if event.id is Some(id) &&
     (id.contains("\r") || id.contains("\n") || id.contains("\u0000")) {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Write,
       detail="invalid SSE id",
     )
   }
   if event.retry is Some(retry) && retry < 0 {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Write,
       detail="negative SSE retry",
@@ -45,5 +45,5 @@ pub fn encode(event : SseEvent) -> Bytes raise @http.TransportError {
     out.write_string("data: " + line.to_owned() + "\n")
   }
   out.write_char('\n')
-  @http.encode_utf8(out.to_string())
+  @mttp.encode_utf8(out.to_string())
 }

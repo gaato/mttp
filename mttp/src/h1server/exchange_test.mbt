@@ -7,17 +7,17 @@ test "keep-alive serves several requests on one connection with absolute URLs" {
       request => {
         seen.push(
           (
-            request.attributes.get(@http.remote_addr),
-            request.attributes.get(@http.background) is Some(_),
+            request.attributes.get(@mttp.remote_addr),
+            request.attributes.get(@mttp.background) is Some(_),
           ),
         )
-        @http.Response::new(
+        @mttp.Response::new(
           200,
-          headers=@http.Headers::of([
+          headers=@mttp.Headers::of([
             ("set-cookie", "a=1"),
             ("set-cookie", "b=2"),
           ]),
-          body=Bytes(@http.encode_utf8(request.url)),
+          body=Bytes(@mttp.encode_utf8(request.url)),
         )
       },
       scheme="https",
@@ -46,7 +46,7 @@ test "exchanges survive 1 17 and 65536 byte fragments" {
   for chunk_bytes in [1, 17, 65536] {
     let h = Harness::new()
     let out = h.exchange(
-      @http.encode_utf8(post("/upload", "hello world")),
+      @mttp.encode_utf8(post("/upload", "hello world")),
       echo(),
       chunk_bytes~,
     )
@@ -83,12 +83,12 @@ test "HTTP/1.0 keeps the connection only when asked and is never chunked" {
   h.run(() => {
     let (client, task) = h.serve(request => {
       if request.url.has_suffix("/stream") {
-        @http.Response::new(
+        @mttp.Response::new(
           200,
-          body=Stream(@http.StreamBody::new(Pieces::new([b"ab", b"cd"]))),
+          body=Stream(@mttp.StreamBody::new(Pieces::new([b"ab", b"cd"]))),
         )
       } else {
-        @http.Response::new(200, body=Bytes(b"fixed"))
+        @mttp.Response::new(200, body=Bytes(b"fixed"))
       }
     })
     client.send(
@@ -117,7 +117,7 @@ test "the URL comes from the scheme and Host, an absolute target or the authorit
   h.run(() => {
     let (client, task) = h.serve(request => {
       urls.push(request.url)
-      @http.Response::new(204)
+      @mttp.Response::new(204)
     })
     for
       request in [
@@ -142,9 +142,9 @@ test "the URL comes from the scheme and Host, an absolute target or the authorit
 test "empty lines before a request line are skipped" {
   let h = Harness::new()
   let out = h.exchange(
-    @http.encode_utf8("\r\n\r\n" + get("/after-empty-lines")),
+    @mttp.encode_utf8("\r\n\r\n" + get("/after-empty-lines")),
     request => {
-      @http.Response::new(200, body=Bytes(@http.encode_utf8(request.url)))
+      @mttp.Response::new(200, body=Bytes(@mttp.encode_utf8(request.url)))
     },
   )
   assert_true(out.has_prefix("HTTP/1.1 200 OK\r\n"))
@@ -178,9 +178,9 @@ test "refused heads are answered before the handler and close the connection" {
     ] {
     let h = Harness::new()
     let calls = Ref(0)
-    let out = h.exchange(@http.encode_utf8(request), _ => {
+    let out = h.exchange(@mttp.encode_utf8(request), _ => {
       calls.val += 1
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     })
     assert_true(
       out.has_prefix("HTTP/1.1 \{status} "),
@@ -214,9 +214,9 @@ test "HEAD 204 and 304 responses carry no body and leave the stream unread" {
       } else {
         None
       }
-      @http.Response::new(
+      @mttp.Response::new(
         status,
-        body=Stream(@http.StreamBody::new(pieces, length?)),
+        body=Stream(@mttp.StreamBody::new(pieces, length?)),
       )
     })
     client.send("HEAD / HTTP/1.1\r\nHost: example.test\r\n\r\n")
@@ -251,10 +251,10 @@ test "streamed responses are chunked unless their length is declared" {
       } else {
         None
       }
-      @http.Response::new(
+      @mttp.Response::new(
         200,
         body=Stream(
-          @http.StreamBody::new(Pieces::new([b"one", b"two"]), length?),
+          @mttp.StreamBody::new(Pieces::new([b"one", b"two"]), length?),
         ),
       )
     })
@@ -273,21 +273,21 @@ test "streamed responses are chunked unless their length is declared" {
 
 ///|
 test "responses the engine cannot write become 500 and are reported" {
-  let taken = @http.StreamBody::new(Pieces::new([b"x"]))
+  let taken = @mttp.StreamBody::new(Pieces::new([b"x"]))
   ignore(try! taken.take())
   for
     response in [
-      @http.Response::new(100),
-      @http.Response::new(101),
-      @http.Response::new(200, headers=@http.Headers::of([("bad\n", "value")])),
-      @http.Response::new(200, body=Stream(taken)),
-      @http.Response::new(
+      @mttp.Response::new(100),
+      @mttp.Response::new(101),
+      @mttp.Response::new(200, headers=@mttp.Headers::of([("bad\n", "value")])),
+      @mttp.Response::new(200, body=Stream(taken)),
+      @mttp.Response::new(
         200,
         body=Stream(
-          @http.StreamBody::new(
+          @mttp.StreamBody::new(
             Pieces::new(
               [],
-              failure=@http.TransportError(
+              failure=@mttp.TransportError(
                 kind=Network,
                 phase=Body,
                 detail="producer",
@@ -298,7 +298,7 @@ test "responses the engine cannot write become 500 and are reported" {
       ),
     ] {
     let h = Harness::new()
-    let out = h.exchange(@http.encode_utf8(get("/")), _ => response)
+    let out = h.exchange(@mttp.encode_utf8(get("/")), _ => response)
     assert_true(out.has_prefix("HTTP/1.1 500 "), msg=out)
     assert_eq(out.split("HTTP/1.1").count(), 2)
     assert_eq(h.errors.length(), 1)
@@ -308,14 +308,14 @@ test "responses the engine cannot write become 500 and are reported" {
 ///|
 test "a stream that fails after the head ends the connection" {
   let h = Harness::new()
-  let out = h.exchange(@http.encode_utf8(get("/") + get("/next")), _ => {
-    @http.Response::new(
+  let out = h.exchange(@mttp.encode_utf8(get("/") + get("/next")), _ => {
+    @mttp.Response::new(
       200,
       body=Stream(
-        @http.StreamBody::new(
+        @mttp.StreamBody::new(
           Pieces::new(
             [b"partial"],
-            failure=@http.TransportError(
+            failure=@mttp.TransportError(
               kind=Network,
               phase=Body,
               detail="producer",
@@ -337,8 +337,8 @@ test "pipelined requests are answered in order" {
   for i in 0..<20 {
     wire.write_string(get("/\{i}"))
   }
-  let out = h.exchange(@http.encode_utf8(wire.to_string()), request => {
-    @http.Response::new(200, body=Bytes(@http.encode_utf8(request.url)))
+  let out = h.exchange(@mttp.encode_utf8(wire.to_string()), request => {
+    @mttp.Response::new(200, body=Bytes(@mttp.encode_utf8(request.url)))
   })
   assert_eq(out.split("HTTP/1.1 200 OK").count(), 21)
   let mut at = 0
@@ -363,7 +363,7 @@ test "a pipelined request arriving during a suspended handler is kept" {
         entered.notify()
         release.wait()
       }
-      @http.Response::new(204)
+      @mttp.Response::new(204)
     })
     client.send(get("/one"))
     entered.wait()
@@ -389,11 +389,11 @@ test "a stopping server answers with Connection close and ends" {
       server,
       _ => {
         stopping.val = true
-        @http.Response::new(204)
+        @mttp.Response::new(204)
       },
       stopping=() => stopping.val,
     )
-    client.write(@http.encode_utf8(get("/") + get("/never")))
+    client.write(@mttp.encode_utf8(get("/") + get("/never")))
     let out = { conn: client, pending: b"", }.rest()
     assert_eq(out.split("HTTP/1.1 204").count(), 2)
     assert_true(out.contains("connection: close\r\n"))
@@ -409,11 +409,11 @@ test "the background attribute is advertised only with a scheduler" {
   h.run(() => {
     let (client, task) = h.serve(
       request => {
-        guard request.attributes.get(@http.background) is Some(schedule) else {
-          return @http.Response::new(500)
+        guard request.attributes.get(@mttp.background) is Some(schedule) else {
+          return @mttp.Response::new(500)
         }
         schedule(() => ran.val += 1)
-        @http.Response::new(204)
+        @mttp.Response::new(204)
       },
       background=work => ignore(h.driver.spawn(work)),
     )
@@ -434,7 +434,7 @@ test "invalid limits or scheme are refused and the connection is closed" {
       ({ ..defaults, header_timeout_ms: 0, }, "http"),
     ] {
     let h = Harness::new()
-    let conn = @sim.ScriptedConn::new([Chunk(@http.encode_utf8(get("/")))])
+    let conn = @sim.ScriptedConn::new([Chunk(@mttp.encode_utf8(get("/")))])
     let refused = h.driver.run(() => {
       try
         @h1server.serve_conn(
@@ -461,7 +461,7 @@ test "invalid limits or scheme are refused and the connection is closed" {
 ///|
 test "an invalid scheme is reported before reading and closes the connection" {
   let h = Harness::new()
-  let conn = @sim.ScriptedConn::new([Chunk(@http.encode_utf8(get("/")))])
+  let conn = @sim.ScriptedConn::new([Chunk(@mttp.encode_utf8(get("/")))])
   h.run(() => {
     @h1server.serve_conn(
       conn,

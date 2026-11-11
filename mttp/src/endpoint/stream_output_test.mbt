@@ -10,7 +10,7 @@ test "dynamic body output preserves chunks and closes a partially read callback"
       (
         (
           Some("multipart/form-data; boundary=test"),
-          @http.Stream(@http.StreamBody::new(source)),
+          @mttp.Stream(@mttp.StreamBody::new(source)),
         ),
         202,
       ),
@@ -41,7 +41,7 @@ test "dynamic body output preserves chunks and closes a partially read callback"
 ///|
 test "dynamic body output buffers ordinary calls and permits absent content type" {
   let ep = @endpoint.endpoint.get("/").output(@endpoint.stream_body_out())
-  let server = ep.serve_public(_ => Ok((None, @http.Bytes(b"payload"))))
+  let server = ep.serve_public(_ => Ok((None, @mttp.Bytes(b"payload"))))
   let client = @client.Client::new(
     @client.from_fn((request, _) => {
       server.dispatch(request, {}, @endpoint.DispatchContext::new())

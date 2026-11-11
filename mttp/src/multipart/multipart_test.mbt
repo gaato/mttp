@@ -174,7 +174,7 @@ test "make_boundary is fixed deterministic and clamps random values" {
 
 ///|
 test "apply replaces content type preserves headers and input" {
-  let original = @http.Request::post("/upload")
+  let original = @mttp.Request::post("/upload")
     .header("Content-Type", "old/one")
     .header("content-type", "old/two")
     .header("x-keep", "yes")
@@ -321,12 +321,12 @@ test "lone surrogates in names, filenames and text encode as U+FFFD" {
 priv struct Unread {}
 
 ///|
-impl @http.BodyStream for Unread with fn read_some(_) {
+impl @mttp.BodyStream for Unread with fn read_some(_) {
   None
 }
 
 ///|
-impl @http.BodyStream for Unread with fn close(_) {
+impl @mttp.BodyStream for Unread with fn close(_) {
   ()
 }
 
@@ -352,7 +352,7 @@ test "encode_body leaves bytes-only bodies exactly as encode makes them" {
       (content_type, Bytes(encoded)),
     )
     let applied = @multipart.body(
-      @http.Request::post("/u"),
+      @mttp.Request::post("/u"),
       parts,
       boundary="B",
     )

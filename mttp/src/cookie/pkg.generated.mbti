@@ -2,8 +2,8 @@
 package "gaato/mttp/cookie"
 
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/rt",
   "moonbitlang/core/debug",
 }
 
@@ -34,7 +34,7 @@ pub fn Cookie::to_repr(Self) -> @debug.Repr
 pub struct CookieJar {
   // private fields
 }
-pub fn CookieJar::attach(Self, @http.Request) -> @http.Request
+pub fn CookieJar::attach(Self, @mttp.Request) -> @mttp.Request
 pub fn CookieJar::clear(Self) -> Unit
 pub fn CookieJar::clear_domain(Self, String) -> Unit
 pub fn CookieJar::clear_session(Self) -> Unit
@@ -43,7 +43,7 @@ pub fn CookieJar::iter(Self) -> Iter[Cookie]
 pub fn CookieJar::length(Self) -> Int32
 pub fn CookieJar::new(&@rt.Clock, max_per_domain? : Int32, max_total? : Int32, is_public_suffix? : (String) -> Bool) -> Self
 pub fn CookieJar::remove_expired(Self) -> Unit
-pub fn CookieJar::store(Self, @http.Headers, String) -> Unit
+pub fn CookieJar::store(Self, @mttp.Headers, String) -> Unit
 
 #non_exhaustive
 #derive(Eq, @debug.Debug)

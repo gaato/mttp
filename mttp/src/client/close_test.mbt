@@ -60,7 +60,7 @@ test "close from observer returns the reply without retry wait or admission" {
       @client.from_fn(
         (_, _) => {
           calls.val += 1
-          @http.Response::new(status, body=Bytes(b"last"))
+          @mttp.Response::new(status, body=Bytes(b"last"))
         },
         on_close=() => closes.val += 1,
       ),
@@ -95,7 +95,7 @@ test "close from observer preserves the last transport failure" {
   let limiter = CloseLimiter::{ acquires: 0, releases: [], }
   let holder : Ref[@client.Client?] = Ref(None)
   let calls = Ref(0)
-  let failure = @http.TransportError(kind=Connect, phase=Dial, detail="last")
+  let failure = @mttp.TransportError(kind=Connect, phase=Dial, detail="last")
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
       calls.val += 1
@@ -111,7 +111,7 @@ test "close from observer preserves the last transport failure" {
     ignore(@driver.run_sync(() => client.send(@client.get("/"))))
     fail("lost transport failure")
   } catch {
-    @http.TransportError(..) as error =>
+    @mttp.TransportError(..) as error =>
       assert_true(physical_equal(error, failure))
     error => raise error
   }
@@ -127,14 +127,14 @@ test "close during backoff returns the last outcome on waking without admission"
     let clock = CloseClock::{ now: 0L, sleeps: [], on_sleep: () => d.pause(), }
     let limiter = CloseLimiter::{ acquires: 0, releases: [], }
     let calls = Ref(0)
-    let failure = @http.TransportError(kind=Connect, phase=Dial, detail="last")
+    let failure = @mttp.TransportError(kind=Connect, phase=Dial, detail="last")
     let client = @client.Client::new(
       @client.from_fn((_, _) => {
         calls.val += 1
         if failing {
           raise failure
         }
-        @http.Response::new(503, body=Bytes(b"last"))
+        @mttp.Response::new(503, body=Bytes(b"last"))
       }),
       clock,
       limiter~,
@@ -148,7 +148,7 @@ test "close during backoff returns the last outcome on waking without admission"
         client.close()
       })
       try client.send(@client.get("/")) catch {
-        @http.TransportError(..) as error if failing =>
+        @mttp.TransportError(..) as error if failing =>
           assert_true(physical_equal(error, failure))
         error => raise error
       } noraise {
@@ -181,7 +181,7 @@ test "send after close refuses admission even for a backend that ignores close" 
     ignore(@driver.run_sync(() => client.send(@client.get("/"))))
     fail("closed client sent")
   } catch {
-    @http.TransportError(kind=Closed, phase=Pool, ..) => ()
+    @mttp.TransportError(kind=Closed, phase=Pool, ..) => ()
     error => raise error
   }
   assert_eq((calls.val, limiter.acquires), (0, 0))
@@ -194,9 +194,9 @@ priv struct CloseIgnoringBackend {
 }
 
 ///|
-impl @http.Backend for CloseIgnoringBackend with fn send(self, _, _) {
+impl @mttp.Backend for CloseIgnoringBackend with fn send(self, _, _) {
   self.calls.val += 1
-  @http.Response::new(200)
+  @mttp.Response::new(200)
 }
 
 ///|
@@ -206,13 +206,13 @@ priv struct CloseBody {
 }
 
 ///|
-impl @http.BodyStream for CloseBody with fn read_some(self) {
+impl @mttp.BodyStream for CloseBody with fn read_some(self) {
   self.reads += 1
   Some(b"last stream")
 }
 
 ///|
-impl @http.BodyStream for CloseBody with fn close(self) {
+impl @mttp.BodyStream for CloseBody with fn close(self) {
   if self.closes == 0 {
     self.closes = 1
   }
@@ -228,7 +228,7 @@ test "close before or during backoff preserves the selected stream until consump
     let holder : Ref[@client.Client?] = Ref(None)
     let client = @client.Client::new(
       @client.from_fn((_, _) => {
-        @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+        @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
       }),
       clock,
       limiter~,
@@ -266,7 +266,7 @@ test "cancellation during backoff closes the retained stream after releasing adm
   let source = CloseBody::{ reads: 0, closes: 0, }
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     clock,
     limiter~,

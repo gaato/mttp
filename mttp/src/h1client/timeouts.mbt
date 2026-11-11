@@ -14,7 +14,7 @@ priv struct Timeouts {
 
 ///|
 /// The limit of `phase`: Head and Body share the read limit.
-fn Timeouts::of(self : Timeouts, phase : @http.Phase) -> Int32? {
+fn Timeouts::of(self : Timeouts, phase : @mttp.Phase) -> Int32? {
   match phase {
     Pool => self.pool
     Dial => self.connect
@@ -84,9 +84,9 @@ fn PhaseTimer::new(
 /// so it propagates untouched.
 async fn[X] PhaseTimer::run(
   self : PhaseTimer,
-  phase : @http.Phase,
+  phase : @mttp.Phase,
   f : async () -> X,
-) -> X raise @http.TransportError {
+) -> X raise @mttp.TransportError {
   let remaining = self.deadline.map(at => {
     let now = self.clock.now_unix_ms()
     if at <= now {
@@ -104,7 +104,7 @@ async fn[X] PhaseTimer::run(
     is Some((budget, limit)) else {
     return f() catch { error => raise failure(phase, error) }
   }
-  let expired = @http.TransportError(
+  let expired = @mttp.TransportError(
     kind=Timeout(ms=limit),
     phase~,
     detail="the limit of \{limit} ms ran out",
@@ -112,7 +112,7 @@ async fn[X] PhaseTimer::run(
   if budget <= 0 {
     raise expired
   }
-  let mut outcome : Result[X, @http.TransportError]? = None
+  let mut outcome : Result[X, @mttp.TransportError]? = None
   let completed = self.timer.within(budget, () => {
     outcome = Some(Ok(f()) catch { error => Err(failure(phase, error)) })
   })

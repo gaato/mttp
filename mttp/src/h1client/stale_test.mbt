@@ -7,7 +7,7 @@ async fn park_stale(h : Harness, count : Int32) -> Array[@sim.ScriptedConn] {
   let responses = []
   for _ in 0..<count {
     responses.push(
-      h.client.send(@http.Request::get("http://example.test/"), exchange()),
+      h.client.send(@mttp.Request::get("http://example.test/"), exchange()),
     )
   }
   for response in responses {
@@ -29,7 +29,7 @@ test "a stale parked connection is replaced once by a fresh one" {
       assert_true(seen[0].raw.has_prefix(b"GET /?a=1 HTTP/1.1\r\n"))
     })
     let response = h.client.send(
-      @http.Request::get("http://example.test/?a=1#fragment"),
+      @mttp.Request::get("http://example.test/?a=1#fragment"),
       exchange(),
     )
     assert_eq(response.attributes.get(@h1client.stale_resend), Some(true))
@@ -40,7 +40,7 @@ test "a stale parked connection is replaced once by a fresh one" {
     assert_eq(stale[1].written().length(), 2)
     assert_eq(h.client.idle_connections(), 1)
     let again = h.client.send(
-      @http.Request::get("http://example.test/"),
+      @mttp.Request::get("http://example.test/"),
       exchange(),
     )
     assert_eq(again.attributes.get(@h1client.stale_resend), None)
@@ -53,19 +53,19 @@ test "a stale parked connection is replaced once by a fresh one" {
 
 ///|
 test "only replayable idempotent requests are resent after a stale connection" {
-  let rows : Array[(String, @http.Request, Bool)] = [
-    ("GET", @http.Request::get("http://example.test/"), true),
-    ("DELETE", @http.Request::delete("http://example.test/"), true),
+  let rows : Array[(String, @mttp.Request, Bool)] = [
+    ("GET", @mttp.Request::get("http://example.test/"), true),
+    ("DELETE", @mttp.Request::delete("http://example.test/"), true),
     (
       "POST",
-      @http.Request::post("http://example.test/").body_bytes(b"x"),
+      @mttp.Request::post("http://example.test/").body_bytes(b"x"),
       false,
     ),
     (
       "POST marked replay_safe",
-      @http.Request::post("http://example.test/")
+      @mttp.Request::post("http://example.test/")
       .body_bytes(b"x")
-      .attribute(@http.replay_safe, true),
+      .attribute(@mttp.replay_safe, true),
       true,
     ),
   ]
@@ -96,7 +96,7 @@ test "only replayable idempotent requests are resent after a stale connection" {
   h.run(() => {
     ignore(park_stale(h, 1))
     let feed = @sim.Feed::bytes(h.driver, [b"x"])
-    let request = @http.Request::put("http://example.test/").body_stream(
+    let request = @mttp.Request::put("http://example.test/").body_stream(
       feed,
       length=1L,
     )
@@ -121,12 +121,12 @@ test "a failure after a response byte or on a fresh connection is not resent" {
       partial.conn.close()
     })
     assert_eq(
-      fetch(h.client, @http.Request::get("http://example.test/")),
+      fetch(h.client, @mttp.Request::get("http://example.test/")),
       "first",
     )
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
       }),
       (Network, Head),
     )
@@ -140,7 +140,7 @@ test "a failure after a response byte or on a fresh connection is not resent" {
   h.run(() => {
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
       }),
       (Network, Head),
     )
@@ -154,7 +154,7 @@ test "a failure after a response byte or on a fresh connection is not resent" {
     ignore(h.scripted([Eof]))
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
       }),
       (Network, Head),
     )

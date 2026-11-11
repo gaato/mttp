@@ -8,7 +8,7 @@
 async fn outcome(f : async () -> Unit) -> String {
   try f() catch {
     Failure(rule) => rule
-    @http.TransportError(detail~, ..) => "raised: \{detail}"
+    @mttp.TransportError(detail~, ..) => "raised: \{detail}"
     error => "other: \{error}"
   } noraise {
     _ => "passed"
@@ -50,7 +50,7 @@ impl @rt.Coordination for WrongOutcome with fn supervise(
 ) {
   self.calls.val += 1
   if self.calls.val == self.fail_at {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Network,
       phase=Unknown,
       detail="wrong outcome",
@@ -163,8 +163,8 @@ impl @rt.Coordination for Flawed with fn signal(self) {
 /// Sets `flag` and returns `error`.
 fn noted(
   flag : Ref[Bool],
-  error : @http.TransportError,
-) -> @http.TransportError {
+  error : @mttp.TransportError,
+) -> @mttp.TransportError {
   flag.val = true
   error
 }
@@ -175,9 +175,9 @@ impl @rt.Coordination for Flawed with fn supervise(self, primary~, monitor~) {
     KillsPrimary =>
       self.inner.supervise(primary~, monitor=() => {
         monitor()
-        raise @http.TransportError(kind=Closed, phase=Unknown, detail="stop")
+        raise @mttp.TransportError(kind=Closed, phase=Unknown, detail="stop")
       }) catch {
-        @http.TransportError(detail="stop", ..) => ()
+        @mttp.TransportError(detail="stop", ..) => ()
         error => raise error
       }
     SwallowsMonitorFailure | SwallowsPrimaryFailure => {
@@ -196,7 +196,7 @@ impl @rt.Coordination for Flawed with fn supervise(self, primary~, monitor~) {
     }
     _ => {
       // (error, raised by the monitor)
-      let failure : Ref[(@http.TransportError, Bool)?] = Ref(None)
+      let failure : Ref[(@mttp.TransportError, Bool)?] = Ref(None)
       let completed = Ref(false)
       let done = self.inner.signal()
       let work = self.driver.spawn(
@@ -311,7 +311,7 @@ impl @rt.Coordination for MonitorFirst with fn supervise(
   primary~,
   monitor~,
 ) {
-  let failure : Ref[@http.TransportError?] = Ref(None)
+  let failure : Ref[@mttp.TransportError?] = Ref(None)
   let completed = Ref(false)
   let primary_task : Ref[@driver.Task?] = Ref(None)
   let watching = self.driver.spawn(() => {
@@ -475,7 +475,7 @@ impl @rt.Conn for Faulty with fn read(self, max_len~) {
     Corrupt if max_len > 2 =>
       self.inner.read(max_len~).map(chunk => Bytes::make(chunk.length(), b'#'))
     Impatient if max_len == 1 =>
-      raise @http.TransportError(kind=Network, phase=Unknown, detail="idle")
+      raise @mttp.TransportError(kind=Network, phase=Unknown, detail="idle")
     Phantom if max_len == 1 && !self.interrupted => {
       self.interrupted = true
       Some(b"?")
@@ -636,7 +636,7 @@ priv struct BrokenStream {
 }
 
 ///|
-impl @http.BodyStream for BrokenStream with fn read_some(self) {
+impl @mttp.BodyStream for BrokenStream with fn read_some(self) {
   self.calls += 1
   match self.mode {
     0 => Some(b"")
@@ -656,7 +656,7 @@ impl @http.BodyStream for BrokenStream with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for BrokenStream with fn close(self) {
+impl @mttp.BodyStream for BrokenStream with fn close(self) {
   self.closed = true
 }
 
@@ -705,20 +705,20 @@ priv struct Validating {
 }
 
 ///|
-impl @http.Backend for Validating with fn send(self, request, options) {
+impl @mttp.Backend for Validating with fn send(self, request, options) {
   if self.closed {
-    raise @http.TransportError(kind=Closed, phase=Pool, detail="closed")
+    raise @mttp.TransportError(kind=Closed, phase=Pool, detail="closed")
   }
   request.validate()
   options.validate()
   if request.body is Stream(body) {
     body.take().close()
   }
-  @http.Response::new(200)
+  @mttp.Response::new(200)
 }
 
 ///|
-impl @http.Backend for Validating with fn close(self) {
+impl @mttp.Backend for Validating with fn close(self) {
   self.closed = true
 }
 
@@ -730,13 +730,13 @@ priv struct BrokenBackend {
 }
 
 ///|
-impl @http.Backend for BrokenBackend with fn send(self, request, options) {
+impl @mttp.Backend for BrokenBackend with fn send(self, request, options) {
   match self.mode {
     0 => ()
     1 =>
-      raise @http.TransportError(kind=Network, phase=Head, detail="wrong kind")
+      raise @mttp.TransportError(kind=Network, phase=Head, detail="wrong kind")
     2 =>
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Invalid,
         phase=Write,
         detail="wrong phase",
@@ -756,15 +756,15 @@ impl @http.Backend for BrokenBackend with fn send(self, request, options) {
         body.take().close()
       }
       if self.closed {
-        raise @http.TransportError(kind=Closed, phase=Write, detail="late")
+        raise @mttp.TransportError(kind=Closed, phase=Write, detail="late")
       }
     }
   }
-  @http.Response::new(200)
+  @mttp.Response::new(200)
 }
 
 ///|
-impl @http.Backend for BrokenBackend with fn close(self) {
+impl @mttp.Backend for BrokenBackend with fn close(self) {
   self.closed = true
 }
 

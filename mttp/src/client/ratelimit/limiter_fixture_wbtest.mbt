@@ -13,7 +13,7 @@ test "WindowLimiter sleeps to reset and removes the expired state" {
     limiter.respond(
       "bucket",
       status=200,
-      headers=@http.Headers::of([("remaining", "0"), ("reset-after", "2")]),
+      headers=@mttp.Headers::of([("remaining", "0"), ("reset-after", "2")]),
     )
     limiter.admit("bucket", global_exempt=false)
     assert_eq(clock.slept(), [2000])
@@ -37,7 +37,7 @@ test "WindowLimiter gives 429 Retry-After precedence" {
     limiter.respond(
       "bucket",
       status=429,
-      headers=@http.Headers::of([
+      headers=@mttp.Headers::of([
         ("remaining", "5"),
         ("reset-after", "100"),
         ("retry-after", "1.5"),
@@ -68,12 +68,12 @@ test "WindowLimiter buckets are independent and remaining is consumed" {
     limiter.respond(
       "blocked",
       status=200,
-      headers=@http.Headers::of([("remaining", "0"), ("reset-after", "2")]),
+      headers=@mttp.Headers::of([("remaining", "0"), ("reset-after", "2")]),
     )
     limiter.respond(
       "open",
       status=200,
-      headers=@http.Headers::of([("remaining", "2"), ("reset-after", "5")]),
+      headers=@mttp.Headers::of([("remaining", "2"), ("reset-after", "5")]),
     )
     limiter.admit("open", global_exempt=false)
     assert_eq(clock.slept(), [])
@@ -109,9 +109,9 @@ test "WindowLimiter ignores a release without a response" {
     limiter.respond(
       "bucket",
       status=200,
-      headers=@http.Headers::of([("remaining", "3"), ("reset-after", "5")]),
+      headers=@mttp.Headers::of([("remaining", "3"), ("reset-after", "5")]),
     )
-    limiter.respond("bucket", status=0, headers=@http.Headers::empty())
+    limiter.respond("bucket", status=0, headers=@mttp.Headers::empty())
     assert_eq(
       limiter.state("bucket"),
       Some({ remaining: 3, reset_at_unix_ms: 6000L, }),
@@ -145,21 +145,21 @@ test "gates serialize one bucket and status zero preserves its state" {
       let waiter = group.spawn(() => {
         limiter.admit("a", global_exempt=false)
         entered.val = true
-        limiter.respond("a", status=0, headers=@http.Headers::empty())
+        limiter.respond("a", status=0, headers=@mttp.Headers::empty())
       })
       d.sleep(10)
       assert_false(entered.val)
       limiter.admit("b", global_exempt=false)
-      limiter.respond("b", status=200, headers=@http.Headers::empty())
+      limiter.respond("b", status=200, headers=@mttp.Headers::empty())
       let state = limiter.state("b")
       limiter.admit("b", global_exempt=false)
       let consumed = limiter.state("b")
       assert_true(state != consumed)
-      limiter.respond("b", status=0, headers=@http.Headers::empty())
+      limiter.respond("b", status=0, headers=@mttp.Headers::empty())
       assert_eq(limiter.state("b"), consumed)
       limiter.admit("b", global_exempt=false)
-      limiter.respond("b", status=0, headers=@http.Headers::empty())
-      limiter.respond("a", status=0, headers=@http.Headers::empty())
+      limiter.respond("b", status=0, headers=@mttp.Headers::empty())
+      limiter.respond("a", status=0, headers=@mttp.Headers::empty())
       assert_true(waiter.wait())
       assert_true(entered.val)
     })
@@ -182,7 +182,7 @@ test "cancellation during a bucket reset returns the gate" {
     limiter.respond(
       "a",
       status=429,
-      headers=@http.Headers::of([("retry-after", "0.08")]),
+      headers=@mttp.Headers::of([("retry-after", "0.08")]),
     )
     with_group(d, group => {
       let waiter = group.spawn(allow_failure=true, () => {
@@ -193,7 +193,7 @@ test "cancellation during a bucket reset returns the gate" {
       assert_false(waiter.wait())
       // The parser does not clear the reset: the next caller must finish it.
       limiter.admit("a", global_exempt=false)
-      limiter.respond("a", status=0, headers=@http.Headers::empty())
+      limiter.respond("a", status=0, headers=@mttp.Headers::empty())
     })
   })
 }
@@ -224,7 +224,7 @@ test "global window starts at first admission and exempts bypass it" {
       default_retry_after_ms=1000,
       global_block=_ => true,
     )
-    account.respond("a", status=429, headers=@http.Headers::empty())
+    account.respond("a", status=429, headers=@mttp.Headers::empty())
     assert_eq(account.state("a"), None)
     account.admit("b", global_exempt=true)
     assert_eq(clock.slept(), [1000])
@@ -235,7 +235,7 @@ test "global window starts at first admission and exempts bypass it" {
       (_, _) => None,
       default_retry_after_ms=-1,
     )
-    immediate.respond("a", status=429, headers=@http.Headers::empty())
+    immediate.respond("a", status=429, headers=@mttp.Headers::empty())
     assert_eq(
       immediate.state("a"),
       Some({ remaining: 0, reset_at_unix_ms: clock.now_unix_ms(), }),
@@ -258,12 +258,12 @@ test "global 429 preserves parsed bucket state and never shortens a block" {
     limiter.respond(
       "a",
       status=429,
-      headers=@http.Headers::of([("global", "true"), ("retry-after", "2")]),
+      headers=@mttp.Headers::of([("global", "true"), ("retry-after", "2")]),
     )
     limiter.respond(
       "a",
       status=429,
-      headers=@http.Headers::of([("global", "true"), ("retry-after", "1")]),
+      headers=@mttp.Headers::of([("global", "true"), ("retry-after", "1")]),
     )
     assert_eq(
       limiter.state("a"),
@@ -287,13 +287,13 @@ test "429 fallback is optional and applies only to the selected scope" {
       default_retry_after_ms=1000,
       global_block=_ => false,
     )
-    limiter.respond("a", status=429, headers=@http.Headers::empty())
+    limiter.respond("a", status=429, headers=@mttp.Headers::empty())
     limiter.admit("b", global_exempt=false)
     assert_eq(clock.slept(), [])
     limiter.admit("a", global_exempt=true)
     assert_eq(clock.slept(), [1000])
     let legacy = WindowLimiter::new(clock, (_, _) => None)
-    legacy.respond("a", status=429, headers=@http.Headers::empty())
+    legacy.respond("a", status=429, headers=@mttp.Headers::empty())
     legacy.admit("a", global_exempt=false)
     assert_eq(legacy.state("a"), None)
     assert_eq(clock.slept(), [1000])
@@ -303,8 +303,8 @@ test "429 fallback is optional and applies only to the selected scope" {
 ///|
 /// Paces `write:*` buckets as one group, one second apart; every other bucket
 /// is its own unpaced group.
-fn limit_headers(pairs : Array[(String, String)]) -> @http.Headers {
-  @http.Headers::of(pairs)
+fn limit_headers(pairs : Array[(String, String)]) -> @mttp.Headers {
+  @mttp.Headers::of(pairs)
 }
 
 ///|
@@ -350,7 +350,7 @@ test "concurrent acquires in one paced group are admitted one interval apart" {
           limiter.admit(name, global_exempt=false)
           admitted.push((name, clock.now_unix_ms()))
           d.pause()
-          limiter.respond(name, status=200, headers=@http.Headers::empty())
+          limiter.respond(name, status=200, headers=@mttp.Headers::empty())
         })
       }
     })
@@ -394,7 +394,7 @@ test "a key learned between acquire and release does not keep the gate" {
     )
     // Had the release left a gate keyed by "hash", this would block forever.
     limiter.admit("a", global_exempt=false)
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
     assert_eq(made.val, 2)
     assert_eq(
       limiter.state("a"),

@@ -152,8 +152,8 @@ fn parse_proxy(text : String, scheme~ : String) -> Result[ProxyServer, String] {
   let source = "\{scheme} proxy"
   let text = text.trim().to_owned()
   let text = if text.contains("://") { text } else { "http://" + text }
-  let url = @http.Url::parse(text) catch {
-    @http.UrlError::Invalid(reason) =>
+  let url = @mttp.Url::parse(text) catch {
+    @mttp.UrlError::Invalid(reason) =>
       return Err("invalid \{source} URL: \{reason}")
   }
   let proxy_scheme = url.scheme.unwrap_or("")
@@ -194,11 +194,11 @@ fn basic_credentials(userinfo : String) -> String? {
     Some(colon) => (userinfo[:colon], userinfo[colon + 1:])
     None => (userinfo[:], "")
   }
-  let user = @http.percent_decode(user.to_owned()) catch { _ => return None }
-  let password = @http.percent_decode(password.to_owned()) catch {
+  let user = @mttp.percent_decode(user.to_owned()) catch { _ => return None }
+  let password = @mttp.percent_decode(password.to_owned()) catch {
     _ => return None
   }
-  @http.Request::get("/").basic(user, password).headers.get("authorization")
+  @mttp.Request::get("/").basic(user, password).headers.get("authorization")
 }
 
 ///|
@@ -210,7 +210,7 @@ fn basic_credentials(userinfo : String) -> String? {
 fn Proxies::route(
   self : Proxies,
   target : Target,
-) -> Route raise @http.TransportError {
+) -> Route raise @mttp.TransportError {
   guard (if target.secure { self.https } else { self.http }) is Some(setting) else {
     return Direct
   }
@@ -220,7 +220,7 @@ fn Proxies::route(
   match setting {
     Ok(server) => if target.secure { Tunnel(server) } else { Forward(server) }
     Err(message) =>
-      raise @http.TransportError(kind=Protocol, phase=Pool, detail=message)
+      raise @mttp.TransportError(kind=Protocol, phase=Pool, detail=message)
   }
 }
 
@@ -238,7 +238,7 @@ fn Route::key(self : Route, origin : String) -> String {
 ///|
 /// The request target: origin form directly and through a tunnel, absolute
 /// form to a forward proxy; a CONNECT keeps its authority on every route.
-fn Route::target(self : Route, target : Target, meth : @http.Method) -> String {
+fn Route::target(self : Route, target : Target, meth : @mttp.Method) -> String {
   match self {
     Forward(_) if meth != Connect => "http://" + target.host_field + target.path
     _ => target.path
@@ -249,7 +249,7 @@ fn Route::target(self : Route, target : Target, meth : @http.Method) -> String {
 /// The headers as this route sends them: the request's own
 /// `Proxy-Authorization` is always dropped, and a forward proxy's
 /// credentials are added; a tunnel's go on its CONNECT instead.
-fn Route::headers(self : Route, headers : @http.Headers) -> @http.Headers {
+fn Route::headers(self : Route, headers : @mttp.Headers) -> @mttp.Headers {
   let headers = headers.remove("proxy-authorization")
   match self {
     Forward({ authorization: Some(auth), .. }) =>
@@ -268,7 +268,7 @@ async fn dial_route(
   route : Route,
   agent : String?,
   limits : @h1.Limits,
-) -> Wire raise @http.TransportError {
+) -> Wire raise @mttp.TransportError {
   match route {
     Direct => Wire::dial(dialer, target.host, target.port, target.secure)
     Forward(proxy) => Wire::dial(dialer, proxy.host, proxy.port, proxy.secure)
@@ -293,8 +293,8 @@ async fn open_tunnel(
   proxy : ProxyServer,
   agent : String?,
   limits : @h1.Limits,
-) -> Unit raise @http.TransportError {
-  let mut headers = @http.Headers::of([("host", target.authority)])
+) -> Unit raise @mttp.TransportError {
+  let mut headers = @mttp.Headers::of([("host", target.authority)])
   if proxy.authorization is Some(auth) {
     headers = headers.add("proxy-authorization", auth)
   }
@@ -314,7 +314,7 @@ async fn open_tunnel(
   for _ in 0..<17 {
     let answer = wire.head(limits, phase=Dial)
     if answer.status >= 300 {
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Proxy(status=answer.status),
         phase=Dial,
         detail="the proxy refused CONNECT",
@@ -322,7 +322,7 @@ async fn open_tunnel(
     }
     if answer.status >= 200 {
       if !wire.pending.is_empty() {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=Protocol,
           phase=Dial,
           detail="unexpected bytes after the proxy's CONNECT answer",
@@ -334,7 +334,7 @@ async fn open_tunnel(
       break
     }
   }
-  raise @http.TransportError(
+  raise @mttp.TransportError(
     kind=Protocol,
     phase=Dial,
     detail="invalid informational answer to CONNECT",

@@ -60,7 +60,7 @@ pub impl @rt.Coordination for SimCoordination with fn supervise(
   primary~,
   monitor~,
 ) {
-  let failure : Ref[@http.TransportError?] = Ref(None)
+  let failure : Ref[@mttp.TransportError?] = Ref(None)
   let completed = Ref(false)
   let work = self.driver.spawn(
     () => {

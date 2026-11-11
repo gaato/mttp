@@ -113,7 +113,7 @@ test "Paginator failures leave cursor unchanged for expected and transport error
         1 => Ok(@client.Page::{ items: [1], next: Some("next"), })
         2 => Err("expected")
         3 =>
-          raise @http.TransportError(kind=Network, phase=Head, detail="offline")
+          raise @mttp.TransportError(kind=Network, phase=Head, detail="offline")
         _ => Ok(@client.Page::{ items: [2], next: None, })
       }
     })
@@ -123,7 +123,7 @@ test "Paginator failures leave cursor unchanged for expected and transport error
       let _ = p.next_page()
       fail("transport error lost")
     } catch {
-      @http.TransportError(kind=Network, ..) => ()
+      @mttp.TransportError(kind=Network, ..) => ()
       other => raise other
     }
     assert_eq(p.collect(max=10), Ok([2]))

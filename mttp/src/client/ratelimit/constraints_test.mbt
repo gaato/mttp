@@ -10,12 +10,12 @@ test "an alias merge preserves ordinary exhaustion alongside a shorter Retry-Aft
     limiter.release(
       blocked,
       status=429,
-      headers=@http.Headers::of([("retry-after", "1")]),
+      headers=@mttp.Headers::of([("retry-after", "1")]),
     )
     limiter.release(
       naming,
       status=200,
-      headers=@http.Headers::of([("key", "shared")]),
+      headers=@mttp.Headers::of([("key", "shared")]),
     )
     assert_eq(
       limiter.state("a"),
@@ -23,7 +23,7 @@ test "an alias merge preserves ordinary exhaustion alongside a shorter Retry-Aft
     )
     let next = limiter.acquire("a", global_exempt=false)
     assert_eq(clock.slept(), [60000])
-    limiter.release(next, status=0, headers=@http.Headers::empty())
+    limiter.release(next, status=0, headers=@mttp.Headers::empty())
   })
 }
 
@@ -38,10 +38,10 @@ test "a stale Retry-After cannot discard a newer quota constraint on the same ke
     limiter.release(
       older,
       status=429,
-      headers=@http.Headers::of([("retry-after", "1")]),
+      headers=@mttp.Headers::of([("retry-after", "1")]),
     )
     let next = limiter.acquire("a", global_exempt=false)
     assert_eq(clock.slept(), [60000])
-    limiter.release(next, status=0, headers=@http.Headers::empty())
+    limiter.release(next, status=0, headers=@mttp.Headers::empty())
   })
 }

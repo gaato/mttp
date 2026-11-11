@@ -200,7 +200,7 @@ fn resolve_pointer(root : Json, reference : String) -> Json? {
   if !reference.has_prefix("#") {
     return None
   }
-  let decoded = @http.percent_decode(reference[1:].to_owned()) catch {
+  let decoded = @mttp.percent_decode(reference[1:].to_owned()) catch {
     _ => return None
   }
   if !decoded.has_prefix("/") {

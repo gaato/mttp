@@ -1,15 +1,15 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/http/h1client"
+package "gaato/mttp/h1client"
 
 import {
-  "gaato/http",
-  "gaato/http/h1",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/h1",
+  "gaato/mttp/rt",
   "moonbitlang/core/debug",
 }
 
 // Values
-pub let stale_resend : @http.AttributeKey[Bool]
+pub let stale_resend : @mttp.AttributeKey[Bool]
 
 // Errors
 
@@ -20,8 +20,8 @@ pub struct Client {
 pub fn Client::close(Self) -> Unit
 pub fn Client::idle_connections(Self) -> Int32
 pub fn Client::new(dialer~ : &@rt.Dialer, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, config~ : ClientConfig) -> Self
-pub async fn Client::send(Self, @http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
-pub impl @http.Backend for Client
+pub async fn Client::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
+pub impl @mttp.Backend for Client
 
 #derive(Eq, @debug.Debug)
 pub(all) struct ClientConfig {

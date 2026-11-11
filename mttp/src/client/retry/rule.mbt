@@ -53,12 +53,12 @@ fn StatusMatch::contains(self : StatusMatch, status : Int32) -> Bool {
 pub(all) enum Methods {
   /// No method.
   Never
-  /// Requests that `@http.is_idempotent` accepts (an idempotent method or
+  /// Requests that `@mttp.is_idempotent` accepts (an idempotent method or
   /// an explicit replay_safe statement), unless the caller says otherwise with
   /// `decide`'s `idempotent` argument.
   Idempotent
   /// These methods, compared ignoring ASCII case.
-  Listed(Array[@http.Method])
+  Listed(Array[@mttp.Method])
   /// Every method.
   Any
 }
@@ -209,8 +209,8 @@ pub extend Backoff with @debug.Debug::{to_repr}
 ///     statuses: [{ statuses: [Code(429), Range(500, 599)], methods: Idempotent, }],
 ///     backoff: { base_ms: 500, max_ms: 8000, jitter: NoJitter, },
 ///   }
-///   let get = @http.Request::get("/items")
-///   let busy = @retry.Response(status=503, headers=@http.Headers::empty())
+///   let get = @mttp.Request::get("/items")
+///   let busy = @retry.Response(status=503, headers=@mttp.Headers::empty())
 ///   assert_eq(
 ///     rule.decide(
 ///       busy,
@@ -284,9 +284,9 @@ pub fn RetryRule::never() -> RetryRule {
 #derive(Debug)
 pub(all) enum AttemptOutcome {
   /// A response whose status the caller treats as a failure.
-  Response(status~ : Int32, headers~ : @http.Headers)
+  Response(status~ : Int32, headers~ : @mttp.Headers)
   /// A transport failure.
-  Failure(@http.TransportError)
+  Failure(@mttp.TransportError)
 }
 
 ///|

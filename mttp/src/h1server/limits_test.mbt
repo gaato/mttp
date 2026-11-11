@@ -79,14 +79,14 @@ test "a head of max_header_bytes is served and one byte more is 431" {
     ] {
     let h = Harness::new()
     let served = h.exchange(
-      @http.encode_utf8(head_of_size(size)),
+      @mttp.encode_utf8(head_of_size(size)),
       reply("ok"),
       limits~,
     )
     assert_true(served.has_prefix("HTTP/1.1 200 "), msg=served)
     let h = Harness::new()
     let refused = h.exchange(
-      @http.encode_utf8(head_of_size(size + 1)),
+      @mttp.encode_utf8(head_of_size(size + 1)),
       reply("ok"),
       limits~,
     )
@@ -105,7 +105,7 @@ test "a head of 100 fields is served and 101 are 431" {
     }
     head.write_string("\r\n")
     let h = Harness::new()
-    let out = h.exchange(@http.encode_utf8(head.to_string()), reply("ok"))
+    let out = h.exchange(@mttp.encode_utf8(head.to_string()), reply("ok"))
     let status = if fields == 100 { "200" } else { "431" }
     assert_true(out.has_prefix("HTTP/1.1 \{status} "), msg="\{fields}: \{out}")
   }
@@ -137,7 +137,7 @@ test "header floods and chunk-line bombs are refused after one read" {
     h.closes.push(() => server.closes())
     h.run(() => {
       let task = h.serve_on(recording, echo())
-      client.write(@http.encode_utf8(wire))
+      client.write(@mttp.encode_utf8(wire))
       let out = { conn: client, pending: b"", }.rest()
       assert_true(out.has_prefix("HTTP/1.1 \{status} "), msg=out)
       ignore(task.wait())
@@ -156,15 +156,15 @@ test "header floods and chunk-line bombs are refused after one read" {
 test "request bodies admit max_body_bytes and refuse one more" {
   let limits = { ..@h1server.ServerLimits::default(), max_body_bytes: 3, }
   let chunked = (body : String) => {
-    @http.encode_utf8(
+    @mttp.encode_utf8(
       "POST / HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked\r\n\r\n" +
       body,
     )
   }
   for
     (wire, status, calls) in [
-      (@http.encode_utf8(post("/", "abc")), "200", 1),
-      (@http.encode_utf8(post("/", "abcd")), "413", 0),
+      (@mttp.encode_utf8(post("/", "abc")), "200", 1),
+      (@mttp.encode_utf8(post("/", "abcd")), "413", 0),
       (chunked("3\r\nabc\r\n0\r\n\r\n"), "200", 1),
       // The handler catches the failure; the answer is still 413.
       (chunked("2\r\nab\r\n2\r\ncd\r\n0\r\n\r\n"), "413", 1),
@@ -194,14 +194,14 @@ test "the default body ceiling admits 1 MiB" {
     let body = Bytes::make(size, b'x')
     let lengths = []
     let out = h.exchange(
-      @http.encode_utf8(
+      @mttp.encode_utf8(
         "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: \{size}\r\n\r\n",
       ) +
       body,
       request => {
         let bytes = body_of(request, limit=2 << 20) catch { _ => b"" }
         lengths.push(bytes.length())
-        @http.Response::new(204)
+        @mttp.Response::new(204)
       },
     )
     assert_true(out.has_prefix("HTTP/1.1 \{status} "), msg=out)
@@ -211,14 +211,14 @@ test "the default body ceiling admits 1 MiB" {
 
 ///|
 test "drain reads at most drain_max_bytes of an unread body" {
-  let unread : @http.Handler = _ => @http.Response::new(204)
-  let partial : @http.Handler = request => {
+  let unread : @mttp.Handler = _ => @mttp.Response::new(204)
+  let partial : @mttp.Handler = request => {
     if request.body is Stream(stream) {
-      let reader = stream.take() catch { _ => return @http.Response::new(500) }
+      let reader = stream.take() catch { _ => return @mttp.Response::new(500) }
       ignore(reader.read_some() catch { _ => None })
       reader.close()
     }
-    @http.Response::new(204)
+    @mttp.Response::new(204)
   }
   for chunk_bytes in [7, 65536] {
     for
@@ -239,7 +239,7 @@ test "drain reads at most drain_max_bytes of an unread body" {
       ] {
       let h = Harness::new()
       let out = h.exchange(
-        @http.encode_utf8(body + get("/next")),
+        @mttp.encode_utf8(body + get("/next")),
         handler,
         limits={ ..@h1server.ServerLimits::default(), drain_max_bytes: limits, },
         chunk_bytes~,
@@ -259,10 +259,10 @@ test "reads ask for at most 64 KiB and writes are sliced to 64 KiB" {
   h.run(() => {
     let task = h.serve_on(recording, request => {
       if request.url.has_suffix("/big") {
-        @http.Response::new(
+        @mttp.Response::new(
           200,
           body=Stream(
-            @http.StreamBody::new(Pieces::new([Bytes::make(131073, b'x')])),
+            @mttp.StreamBody::new(Pieces::new([Bytes::make(131073, b'x')])),
           ),
         )
       } else {
@@ -300,14 +300,14 @@ test "a running exchange reads at most one read ahead of its request" {
         entered.notify()
         release.wait()
       }
-      @http.Response::new(204)
+      @mttp.Response::new(204)
     })
-    client.write(@http.encode_utf8(get("/first")))
+    client.write(@mttp.encode_utf8(get("/first")))
     entered.wait()
     let before = recording.read_sizes.length()
     // A flood of pipelined requests, far more than one read.
     for i in 0..<2000 {
-      client.write(@http.encode_utf8(get("/\{i}")))
+      client.write(@mttp.encode_utf8(get("/\{i}")))
     }
     h.driver.sleep(10)
     // The peer monitor's one read may already have been pending.

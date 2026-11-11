@@ -12,9 +12,9 @@ test "path scalar and rest inputs round trip with projected serialization" {
     ep.serve_public(id => Ok(id.to_string())),
     ep.request((), 7).raw(),
   )
-  assert_eq(response.body, @http.Body::Bytes(b"7"))
+  assert_eq(response.body, @mttp.Body::Bytes(b"7"))
   assert_eq(
-    dispatch(ep.serve_public(_ => Ok("")), @http.Request::get("/items/bad")).status,
+    dispatch(ep.serve_public(_ => Ok("")), @mttp.Request::get("/items/bad")).status,
     400,
   )
   let rest = @endpoint.endpoint
@@ -66,7 +66,7 @@ test "scalar query inputs round trip with requiredness and validation schema" {
     200,
   )
   for url in ["/query", "/query?n=0", "/query?n=1&n=2"] {
-    assert_eq(dispatch(server, @http.Request::get(url)).status, 400)
+    assert_eq(dispatch(server, @mttp.Request::get(url)).status, 400)
   }
   let server = ep.serve_public(value => {
     assert_eq(value, (2, None))
@@ -134,7 +134,7 @@ test "header and cookie inputs round trip with documented names types and option
     dispatch(server, ep.request((), (7, "token", Some("event-1"))).raw()).status,
     200,
   )
-  assert_eq(dispatch(server, @http.Request::post("/heads")).status, 400)
+  assert_eq(dispatch(server, @mttp.Request::post("/heads")).status, 400)
 }
 
 ///|
@@ -146,7 +146,7 @@ test "unbounded header and query collections add no invented named requirements"
   let op = project(ep.doc()).paths["/collections"].operations["post"]
   assert_eq(op.parameters.length(), 0)
   assert_eq(op.request_body, None)
-  let hs = @http.Headers::of([("x-any", "one"), ("x-any", "two")])
+  let hs = @mttp.Headers::of([("x-any", "one"), ("x-any", "two")])
   let qs = [("q", "a"), ("q", "b")]
   let response = dispatch(
     ep.serve_public(value => {
@@ -187,7 +187,7 @@ fn[T : Eq + @debug.Debug] body_roundtrip(
     Some(codec.schema().json),
   )
   assert_eq(
-    dispatch(ep.serve_public(input => Ok(input)), @http.Request::post("/body")).status,
+    dispatch(ep.serve_public(input => Ok(input)), @mttp.Request::post("/body")).status,
     400,
   )
   assert_eq(
@@ -222,11 +222,11 @@ test "typed JSON body validation agrees with the projected constraints" {
   let server = ep.serve_public(value => Ok(value))
   assert_eq(
     dispatch(server, ep.request((), 10).raw()).body,
-    @http.Body::Bytes(b"10"),
+    @mttp.Body::Bytes(b"10"),
   )
   for json in [Json(9), Json("not an integer")] {
     assert_eq(
-      dispatch(server, @http.Request::post("/validated").body_json(json)).status,
+      dispatch(server, @mttp.Request::post("/validated").body_json(json)).status,
       400,
     )
   }
@@ -272,11 +272,11 @@ test "optional typed bodies describe absence and present empty bytes accurately"
   })
   assert_eq(
     dispatch(server, ep.request((), None).raw()).body,
-    @http.Body::Bytes(b"absent"),
+    @mttp.Body::Bytes(b"absent"),
   )
   assert_eq(
     dispatch(server, ep.request((), Some("")).raw()).body,
-    @http.Body::Bytes(b"present:"),
+    @mttp.Body::Bytes(b"present:"),
   )
 }
 
@@ -299,11 +299,11 @@ test "stream and opaque multipart bodies round trip without pretending to parse 
     let source = @sim.Feed::bytes(driver, [body])
     let request = ep.request((), source).raw().set_header("content-type", wire)
     let response = dispatch(
-      ep.serve_public(reader => Ok(@http.read_bounded(reader, 4096))),
+      ep.serve_public(reader => Ok(@mttp.read_bounded(reader, 4096))),
       request,
     )
     assert_eq(response.status, 200)
-    assert_eq(response.body, @http.Body::Bytes(body))
+    assert_eq(response.body, @mttp.Body::Bytes(body))
     assert_eq(source.closes(), 1)
     let op = project(ep.doc()).paths["/stream"].operations["post"]
     assert_true(op.request_body.unwrap().required)
@@ -322,7 +322,7 @@ test "derived inputs are server metadata and impose no wire requirements" {
     .get("/derived")
     .input(
       @endpoint.pair(
-        @endpoint.attribute(@http.remote_addr),
+        @endpoint.attribute(@mttp.remote_addr),
         @endpoint.client_ip(),
       ),
     )
@@ -333,7 +333,7 @@ test "derived inputs are server metadata and impose no wire requirements" {
   let request = ep
     .request((), (None, None))
     .raw()
-    .attribute(@http.remote_addr, "adapter")
+    .attribute(@mttp.remote_addr, "adapter")
   assert_eq(
     dispatch(
       ep.serve_public(value => {

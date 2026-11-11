@@ -20,10 +20,10 @@ test "server bounds buffered streams records read failures and rejects reused st
   let contexts = []
   let ctx = @endpoint.DispatchContext::new(decode_failure=f => {
     contexts.push(f)
-    @http.Response::new(400)
+    @mttp.Response::new(400)
   })
   driver.run(() => {
-    let request = @http.Request::post("/").header(
+    let request = @mttp.Request::post("/").header(
       "content-type", "application/octet-stream",
     )
     assert_eq(ep.dispatch(request.body_bytes(b"abc"), Map([]), ctx).status, 200)
@@ -32,11 +32,11 @@ test "server bounds buffered streams records read failures and rejects reused st
       400,
     )
     let failed = @sim.Feed::new(driver, [
-      Fail(@http.TransportError(kind=Network, phase=Body, detail="disconnect")),
+      Fail(@mttp.TransportError(kind=Network, phase=Body, detail="disconnect")),
     ])
     assert_eq(
       ep.dispatch(
-        { ..request, body: Stream(@http.StreamBody::new(failed)), },
+        { ..request, body: Stream(@mttp.StreamBody::new(failed)), },
         Map([]),
         ctx,
       ).status,
@@ -44,11 +44,11 @@ test "server bounds buffered streams records read failures and rejects reused st
     )
     assert_eq(failed.closes(), 1)
     let failed = @sim.Feed::new(driver, [
-      Fail(@http.TransportError(kind=Network, phase=Body, detail="disconnect")),
+      Fail(@mttp.TransportError(kind=Network, phase=Body, detail="disconnect")),
     ])
     assert_eq(
       streamed.dispatch(
-        { ..request, body: Stream(@http.StreamBody::new(failed)), },
+        { ..request, body: Stream(@mttp.StreamBody::new(failed)), },
         Map([]),
         ctx,
       ).status,
@@ -56,7 +56,7 @@ test "server bounds buffered streams records read failures and rejects reused st
     )
     assert_eq(failed.closes(), 1)
     let source = @sim.Feed::bytes(driver, [b"abc"])
-    let body = @http.StreamBody::new(source)
+    let body = @mttp.StreamBody::new(source)
     ignore(body.take())
     assert_eq(
       streamed.dispatch({ ..request, body: Stream(body), }, Map([]), ctx).status,
@@ -92,7 +92,7 @@ test "invalid requests excessive queries and issue lists are rejected before the
   let issues = []
   let ctx = @endpoint.DispatchContext::new(max_issues=1, decode_failure=f => {
     issues.push(f)
-    @http.Response::new(400)
+    @mttp.Response::new(400)
   })
   let input = @endpoint.pair(
     @endpoint.query("a", @schema.int),
@@ -109,7 +109,7 @@ test "invalid requests excessive queries and issue lists are rejected before the
       .serve_public(_ => Ok(()))
     assert_eq(
       bounded.dispatch(
-        @http.Request::post("/?" + Array::make(256, "q=1").join("&")),
+        @mttp.Request::post("/?" + Array::make(256, "q=1").join("&")),
         Map([]),
         ctx,
       ).status,
@@ -123,7 +123,7 @@ test "invalid requests excessive queries and issue lists are rejected before the
         "/",
       ] {
       assert_eq(
-        endpoint.dispatch(@http.Request::post(url), Map([]), ctx).status,
+        endpoint.dispatch(@mttp.Request::post(url), Map([]), ctx).status,
         400,
       )
     }
@@ -149,11 +149,11 @@ test "custom body stages without metadata still receive bounded body failures" {
   let failures = []
   let ctx = @endpoint.DispatchContext::new(decode_failure=f => {
     failures.append(f.failures)
-    @http.Response::new(413)
+    @mttp.Response::new(413)
   })
   @driver.run_sync(() => {
     assert_eq(
-      endpoint.dispatch(@http.Request::post("/").body_bytes(b"x"), Map([]), ctx).status,
+      endpoint.dispatch(@mttp.Request::post("/").body_bytes(b"x"), Map([]), ctx).status,
       413,
     )
   })
@@ -185,7 +185,7 @@ test "security decoding and authentication errors use their correct stage and po
   let contexts = []
   let ctx = @endpoint.DispatchContext::new(decode_failure=f => {
     contexts.push(f)
-    @http.Response::new(400)
+    @mttp.Response::new(400)
   })
   let endpoint = @endpoint.endpoint
     .post("/")
@@ -193,7 +193,7 @@ test "security decoding and authentication errors use their correct stage and po
     .serve(_ => Ok(()), (_, _) => Ok(()))
   @driver.run_sync(() => {
     assert_eq(
-      endpoint.dispatch(@http.Request::post("/"), Map([]), ctx).status,
+      endpoint.dispatch(@mttp.Request::post("/"), Map([]), ctx).status,
       400,
     )
     let auth = @endpoint.endpoint
@@ -202,7 +202,7 @@ test "security decoding and authentication errors use their correct stage and po
       .serve(_ => raise Failure("auth failed"), (_ : Unit, _) => Ok(()))
     assert_eq(
       auth.dispatch(
-        @http.Request::get("/").header("authorization", "Bearer token"),
+        @mttp.Request::get("/").header("authorization", "Bearer token"),
         Map([]),
         ctx,
       ).status,
@@ -221,19 +221,19 @@ test "invalid error-policy streams are closed and retain route metadata on fallb
   driver.run(() => {
     for recover in [true, false] {
       let source = @sim.Feed::bytes(driver, [b"bad"])
-      let stream = @http.StreamBody::new(source)
+      let stream = @mttp.StreamBody::new(source)
       ignore(stream.take())
       let calls = Ref(0)
       let context = @endpoint.DispatchContext::new(unhandled=(_, _) => {
         calls.val += 1
         if recover && calls.val == 2 {
-          @http.Response::new(502)
+          @mttp.Response::new(502)
         } else {
-          @http.Response::new(500, body=Stream(stream))
+          @mttp.Response::new(500, body=Stream(stream))
         }
       })
       let response = endpoint.dispatch(
-        @http.Request::get("/failed"),
+        @mttp.Request::get("/failed"),
         Map([]),
         context,
       )
@@ -256,7 +256,7 @@ test "output status validation and bodyless statuses are enforced by the interpr
         .output(@endpoint.text_out().and_status())
         .serve_public(_ => Ok(("body", status)))
       let response = endpoint.dispatch(
-        @http.Request::get("/"),
+        @mttp.Request::get("/"),
         Map([]),
         @endpoint.DispatchContext::new(),
       )
@@ -269,7 +269,7 @@ test "output status validation and bodyless statuses are enforced by the interpr
         },
       )
       if status == 204 || status == 304 {
-        assert_eq(response.body, @http.Empty)
+        assert_eq(response.body, @mttp.Empty)
       } else {
         assert_eq(
           response.headers.get("content-type"),
@@ -284,7 +284,7 @@ test "output status validation and bodyless statuses are enforced by the interpr
       .serve_public(_ => Ok(()))
     assert_eq(
       endpoint.dispatch(
-        @http.Request::get("/"),
+        @mttp.Request::get("/"),
         Map([]),
         @endpoint.DispatchContext::new(),
       ).status,
@@ -311,8 +311,8 @@ test "failed event producers close their sources and in-flight request bodies" {
     let source = @sim.Feed::bytes(driver, [b"request"])
     let response = endpoint.dispatch(
       {
-        ..@http.Request::post("/"),
-        body: Stream(@http.StreamBody::new(source)),
+        ..@mttp.Request::post("/"),
+        body: Stream(@mttp.StreamBody::new(source)),
       },
       Map([]),
       @endpoint.DispatchContext::new(),
@@ -321,7 +321,7 @@ test "failed event producers close their sources and in-flight request bodies" {
       ignore(@client.read_body(response.body, 100))
       false
     } catch {
-      @http.TransportError(kind=Protocol, ..) => true
+      @mttp.TransportError(kind=Protocol, ..) => true
       _ => false
     }
     assert_true(failed)

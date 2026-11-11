@@ -24,7 +24,7 @@ priv struct RequestBody {
   mut closed : Bool
   /// `100 Continue` is still owed before the first read from the wire.
   mut expect : Bool
-  mut failure : @http.TransportError?
+  mut failure : @mttp.TransportError?
   /// The first body pull requests ownership from the read-ahead monitor.
   mut claimed : Bool
   claim : &@rt.Signal
@@ -82,7 +82,7 @@ fn RequestBody::new(
 ///|
 /// What is left of the body's deadline; raises `Timeout` in phase Body once
 /// it ran out. The deadline starts at the first pull.
-fn RequestBody::budget(self : RequestBody) -> Int32 raise @http.TransportError {
+fn RequestBody::budget(self : RequestBody) -> Int32 raise @mttp.TransportError {
   let now = self.clock.now_unix_ms()
   let started = self.started_at.unwrap_or(now)
   self.started_at = Some(started)
@@ -100,7 +100,7 @@ fn RequestBody::budget(self : RequestBody) -> Int32 raise @http.TransportError {
 async fn RequestBody::next(
   self : RequestBody,
   max_len~ : Int32 = io_bytes,
-) -> Bytes? raise @http.TransportError {
+) -> Bytes? raise @mttp.TransportError {
   if self.failure is Some(error) {
     raise error
   }
@@ -124,7 +124,7 @@ async fn RequestBody::next(
   if chunk is Some(bytes) {
     self.count += bytes.length().to_int64()
     if self.count > self.limits.max_body_bytes.to_int64() {
-      let error = @http.TransportError(
+      let error = @mttp.TransportError(
         kind=TooLarge(limit=self.limits.max_body_bytes),
         phase=Body,
         detail="request body exceeds \{self.limits.max_body_bytes} bytes",
@@ -139,8 +139,8 @@ async fn RequestBody::next(
 /// Records the body's first failure and returns `error` to raise.
 fn RequestBody::fail(
   self : RequestBody,
-  error : @http.TransportError,
-) -> @http.TransportError {
+  error : @mttp.TransportError,
+) -> @mttp.TransportError {
   if self.failure is None {
     self.failure = Some(error)
   }
@@ -152,7 +152,7 @@ fn RequestBody::fail(
 async fn RequestBody::next_raw(
   self : RequestBody,
   max_len : Int32,
-) -> Bytes? raise @http.TransportError {
+) -> Bytes? raise @mttp.TransportError {
   for ;; {
     if self.done && self.chunks.is_empty() {
       return None
@@ -172,7 +172,7 @@ async fn RequestBody::next_raw(
       () => self.wire.read(max_len, Body),
     )
     guard read is Some(bytes) else {
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Protocol,
         phase=Body,
         detail="the peer ended the request body early",
@@ -191,7 +191,7 @@ async fn RequestBody::next_raw(
       _ => {
         let decoded = self.decoder.feed(bytes) catch {
           @h1.ParseError(detail~, ..) =>
-            raise @http.TransportError(kind=Protocol, phase=Body, detail~)
+            raise @mttp.TransportError(kind=Protocol, phase=Body, detail~)
         }
         self.wire.unread(bytes[decoded.consumed:])
         for chunk in decoded.chunks {
@@ -220,7 +220,7 @@ fn RequestBody::finish(self : RequestBody) -> Unit {
 /// leaves the connection to be closed.
 async fn RequestBody::drain(
   self : RequestBody,
-) -> Bool raise @http.TransportError {
+) -> Bool raise @mttp.TransportError {
   if self.expect {
     return false
   }
@@ -239,7 +239,7 @@ async fn RequestBody::drain(
 }
 
 ///|
-impl @http.BodyStream for RequestBody with fn read_some(self) {
+impl @mttp.BodyStream for RequestBody with fn read_some(self) {
   if self.closed {
     return None
   }
@@ -257,6 +257,6 @@ impl @http.BodyStream for RequestBody with fn read_some(self) {
 /// Closing the application's reader leaves the bytes on the wire: the
 /// engine still answers a failure with its status and drains a small rest
 /// before reusing the connection.
-impl @http.BodyStream for RequestBody with fn close(self) {
+impl @mttp.BodyStream for RequestBody with fn close(self) {
   self.closed = true
 }

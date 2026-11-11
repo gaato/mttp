@@ -21,12 +21,12 @@ fn FetchBody::close(self : FetchBody) -> Unit {
 }
 
 ///|
-impl @http.BodyStream for FetchBody with fn close(self) {
+impl @mttp.BodyStream for FetchBody with fn close(self) {
   self.close()
 }
 
 ///|
-impl @http.BodyStream for FetchBody with fn read_some(self) {
+impl @mttp.BodyStream for FetchBody with fn read_some(self) {
   if self.closed {
     return None
   }
@@ -35,7 +35,7 @@ impl @http.BodyStream for FetchBody with fn read_some(self) {
     if self.pending.is_empty() {
       for empty = 0; ; empty = empty + 1 {
         if empty >= 1024 {
-          raise @http.TransportError(
+          raise @mttp.TransportError(
             kind=Protocol,
             phase=Body,
             detail="too many empty fetch chunks",
@@ -56,7 +56,7 @@ impl @http.BodyStream for FetchBody with fn read_some(self) {
         }
         if self.limit is Some(limit) {
           if chunk.value.length().to_int64() > limit.to_int64() - self.count {
-            raise @http.TransportError(
+            raise @mttp.TransportError(
               kind=TooLarge(limit~),
               phase=Body,
               detail="fetch body exceeds limit",

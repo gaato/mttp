@@ -8,7 +8,7 @@ test "stream variant projections retain decoding and event ownership" {
   driver.run(() => {
     let source = @sim.Feed::bytes(driver, [b"data: 4\n\n"])
     let decode = variant.decode_stream.unwrap()
-    let stream = decode(@http.Response::new(200).head(), source)
+    let stream = decode(@mttp.Response::new(200).head(), source)
     let values = []
     stream.each(value => values.push(value))
     assert_eq(values, [4])

@@ -30,8 +30,8 @@ test "dot-only literal segments are refused instead of documenting a route norma
 ///|
 fn dispatch(
   server : @endpoint.ServerEndpoint,
-  request : @http.Request,
-) -> @http.Response raise {
+  request : @mttp.Request,
+) -> @mttp.Response raise {
   let router = @router.Router::new([server])
   @driver.run_sync(() => router.dispatch(request))
 }
@@ -47,8 +47,8 @@ test "projection encodes literal path segments exactly as the endpoint client" {
     let request = ep.request((), "x/y").raw()
     let response = dispatch(ep.serve_public(id => Ok(id)), request)
     assert_eq(response.status, 200)
-    assert_eq(response.body, @http.Body::Bytes(b"x/y"))
-    let expected = "/files/" + @http.percent_encode(literal) + "/{id}"
+    assert_eq(response.body, @mttp.Body::Bytes(b"x/y"))
+    let expected = "/files/" + @mttp.percent_encode(literal) + "/{id}"
     let spec = project(ep.doc())
     assert_true(spec.paths.contains(expected))
     assert_eq(@openapi.check_documented(spec, template, Get, 200), None)
@@ -69,7 +69,7 @@ test "raw-only body projection declares wildcard content with atom requiredness"
     .header("content-type", "application/custom"),
   )
   assert_eq(response.status, 200)
-  assert_eq(response.body, @http.Body::Bytes(b"\xff\x00"))
+  assert_eq(response.body, @mttp.Body::Bytes(b"\xff\x00"))
   let spec = project(ep.doc())
   guard spec.paths["/raw"].operations["post"].request_body is Some(body) else {
     fail("raw body missing from projection")
@@ -89,13 +89,13 @@ test "raw-only body projection declares wildcard content with atom requiredness"
 test "required and optional raw bodies distinguish absence from present empty bytes" {
   let ep = @endpoint.endpoint.post("/raw").input(@endpoint.raw_body())
   assert_eq(
-    dispatch(ep.serve_public(_ => Ok(())), @http.Request::post("/raw")).status,
+    dispatch(ep.serve_public(_ => Ok(())), @mttp.Request::post("/raw")).status,
     400,
   )
   assert_eq(
     dispatch(
       ep.serve_public(_ => Ok(())),
-      @http.Request::post("/raw").body_bytes(b""),
+      @mttp.Request::post("/raw").body_bytes(b""),
     ).status,
     200,
   )
@@ -108,11 +108,11 @@ test "required and optional raw bodies distinguish absence from present empty by
   })
   assert_eq(
     dispatch(server, optional.request((), None).raw()).body,
-    @http.Body::Bytes(b"absent"),
+    @mttp.Body::Bytes(b"absent"),
   )
   assert_eq(
     dispatch(server, optional.request((), Some(b"")).raw()).body,
-    @http.Body::Bytes(b"present"),
+    @mttp.Body::Bytes(b"present"),
   )
 }
 
@@ -153,10 +153,10 @@ test "projected media keys match case-insensitive parameter-tolerant body decodi
     .output(@endpoint.json_out(codec))
   let response = dispatch(ep.serve_public(text => Ok(text)), {
     ..ep.request((), "hello").raw(),
-    headers: @http.Headers::of([("content-type", "text/plain; other=value")]),
+    headers: @mttp.Headers::of([("content-type", "text/plain; other=value")]),
   })
   assert_eq(response.status, 200)
-  assert_eq(response.body, @http.Body::Bytes(b"hello"))
+  assert_eq(response.body, @mttp.Body::Bytes(b"hello"))
   let operation = project(ep.doc()).paths["/text"].operations["post"]
   assert_true(operation.request_body.unwrap().content.contains("text/plain"))
   assert_true(operation.responses["200"].content.contains("text/plain"))

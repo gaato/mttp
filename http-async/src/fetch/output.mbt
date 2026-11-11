@@ -1,6 +1,6 @@
 ///|
 priv struct Output {
-  stream : &@http.BodyStream?
+  stream : &@mttp.BodyStream?
   input : Input
   mut pending : Bytes
   mut offset : Int32
@@ -48,7 +48,7 @@ async fn Output::next(self : Output) -> Chunk {
 
 ///|
 async fn adapt_response(
-  reply : @http.Response,
+  reply : @mttp.Response,
   input : Input,
   request : JsRequest,
 ) -> WebResponse {

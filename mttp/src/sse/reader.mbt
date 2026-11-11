@@ -4,7 +4,7 @@
 /// reading again, even when the peer sends nothing more. Use one reader per
 /// source, without concurrent pulls, and close it when stopping early.
 pub struct SseReader {
-  priv source : &@http.BodyStream
+  priv source : &@mttp.BodyStream
   priv parser : SseParser
   priv ready : Array[SseEvent]
   priv mut offset : Int32
@@ -29,7 +29,7 @@ pub struct SseReader {
 /// }
 /// ```
 pub fn SseReader::new(
-  source : &@http.BodyStream,
+  source : &@mttp.BodyStream,
   max_event_bytes~ : Int32 = default_max_event_bytes,
 ) -> SseReader {
   {
@@ -47,7 +47,7 @@ pub fn SseReader::new(
 /// source on EOF, failure or cancellation; a successful pull keeps it open.
 pub async fn SseReader::next_event(
   self : SseReader,
-) -> SseEvent? raise @http.TransportError {
+) -> SseEvent? raise @mttp.TransportError {
   if self.closed {
     return None
   }

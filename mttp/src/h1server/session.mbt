@@ -8,12 +8,12 @@ priv struct Session {
   wire : Wire
   clock : &@rt.Clock
   coordination : &@rt.Coordination
-  handler : @http.Handler
+  handler : @mttp.Handler
   limits : ServerLimits
   scheme : String
   peer : String?
   authority : String
-  on_error : (@http.TransportError) -> Unit
+  on_error : (@mttp.TransportError) -> Unit
   stopping : () -> Bool
   background : ((async () -> Unit) -> Unit)?
   mut control : @control.SessionState
@@ -25,7 +25,7 @@ fn Session::set_busy(self : Session, busy : Bool) -> Unit {
 }
 
 ///|
-fn Session::report(self : Session, error : @http.TransportError) -> Unit {
+fn Session::report(self : Session, error : @mttp.TransportError) -> Unit {
   (self.on_error)(error)
 }
 
@@ -64,7 +64,7 @@ async fn Session::exchange(
   let { meth, target, version, headers, } = parsed
   let framing = @h1.request_framing(headers) catch {
     @h1.ParseError(kind~, detail~) => {
-      self.report(@http.TransportError(kind=Protocol, phase=Head, detail~))
+      self.report(@mttp.TransportError(kind=Protocol, phase=Head, detail~))
       self.reject(framing_status(kind))
       return false
     }
@@ -76,7 +76,7 @@ async fn Session::exchange(
   }
   if framing is Length(n) && n > self.limits.max_body_bytes.to_int64() {
     self.report(
-      @http.TransportError(
+      @mttp.TransportError(
         kind=TooLarge(limit=self.limits.max_body_bytes),
         phase=Head,
         detail="Content-Length exceeds \{self.limits.max_body_bytes} bytes",
@@ -111,11 +111,11 @@ async fn Session::exchange(
     self.limits,
     expect~,
   )
-  let body : @http.Body = if source.done {
+  let body : @mttp.Body = if source.done {
     Empty
   } else {
     Stream(
-      @http.StreamBody::new(
+      @mttp.StreamBody::new(
         source,
         length?=match framing {
           Length(n) => Some(n)
@@ -125,15 +125,15 @@ async fn Session::exchange(
     )
   }
   defer (if body is Stream(stream) { stream.close() })
-  let mut attributes = @http.Attributes::empty()
+  let mut attributes = @mttp.Attributes::empty()
   if self.peer is Some(peer) {
-    attributes = attributes.put(@http.remote_addr, peer)
+    attributes = attributes.put(@mttp.remote_addr, peer)
   }
   if self.background is Some(schedule) {
-    attributes = attributes.put(@http.background, schedule)
+    attributes = attributes.put(@mttp.background, schedule)
   }
-  let request = @http.Request::{
-    ..@http.Request::new(meth, url),
+  let request = @mttp.Request::{
+    ..@mttp.Request::new(meth, url),
     headers,
     body,
     attributes,
@@ -156,7 +156,7 @@ async fn Session::exchange(
 /// `true` when the connection may carry the next request.
 async fn Session::respond(
   self : Session,
-  request : @http.Request,
+  request : @mttp.Request,
   source : RequestBody,
   version : @h1.Version,
 ) -> Bool noraise {
@@ -184,9 +184,9 @@ async fn Session::respond(
     Some(error) => {
       response.close()
       self.report(error)
-      @http.Response::new(
+      @mttp.Response::new(
         body_status(error),
-        headers=@http.Headers::of([("connection", "close")]),
+        headers=@mttp.Headers::of([("connection", "close")]),
       )
     }
     None => response
@@ -218,7 +218,7 @@ async fn Session::respond(
         // an independent producer's timeout is a server failure.
         let status = match (source.failure, error) {
           (Some(failure), _) => body_status(failure)
-          (None, @http.TransportError(kind=Timeout(..), phase=Body, ..)) if source.reading =>
+          (None, @mttp.TransportError(kind=Timeout(..), phase=Body, ..)) if source.reading =>
             408
           _ => 500
         }
@@ -254,7 +254,7 @@ async fn Session::respond(
 async fn Session::watch_peer(
   self : Session,
   source : RequestBody,
-) -> Unit raise @http.TransportError {
+) -> Unit raise @mttp.TransportError {
   if !source.done {
     self.coordination.supervise(primary=() => source.claim.wait(), monitor=() => {
       // Append tiny fragments without repeatedly copying the whole buffer.
@@ -291,14 +291,14 @@ async fn Session::watch_peer(
 async fn Session::read_peer(
   self : Session,
   max_len : Int32,
-) -> Bytes? raise @http.TransportError {
+) -> Bytes? raise @mttp.TransportError {
   let next = self.wire.conn.read(max_len~) catch {
     error => {
       let change = self.control.step(PeerFailure)
       self.control = change.state
       if change.cancel_exchange {
-        let @http.TransportError(kind~, detail~, ..) = error
-        raise @http.TransportError(kind~, phase=Unknown, detail~)
+        let @mttp.TransportError(kind~, detail~, ..) = error
+        raise @mttp.TransportError(kind~, phase=Unknown, detail~)
       }
       return None
     }
@@ -316,8 +316,8 @@ async fn Session::read_peer(
 /// Answers with a bare `status` and `Connection: close`, ignoring failures:
 /// the connection closes next either way.
 async fn Session::reject(self : Session, status : Int32) -> Unit noraise {
-  let head = "HTTP/1.1 \{status} \{@http.reason_phrase(status)}\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"
-  self.wire.write(@http.encode_utf8(head), self.limits.body_timeout_ms) catch {
+  let head = "HTTP/1.1 \{status} \{@mttp.reason_phrase(status)}\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"
+  self.wire.write(@mttp.encode_utf8(head), self.limits.body_timeout_ms) catch {
     _ => ()
   }
 }
@@ -331,8 +331,8 @@ async fn Session::reject(self : Session, status : Int32) -> Unit noraise {
 fn Session::request_url(
   self : Session,
   target : String,
-  headers : @http.Headers,
-) -> String raise @http.TransportError {
+  headers : @mttp.Headers,
+) -> String raise @mttp.TransportError {
   let url = if target.has_prefix("/") || target == "*" {
     let host = headers.get("host").unwrap_or(self.authority)
     let path = if target == "*" { "/*" } else { target }
@@ -340,15 +340,15 @@ fn Session::request_url(
   } else {
     target
   }
-  let _ = @http.Url::parse(url) catch {
+  let _ = @mttp.Url::parse(url) catch {
     _ => raise protocol("the request URL does not parse")
   }
   url
 }
 
 ///|
-fn protocol(detail : String) -> @http.TransportError {
-  @http.TransportError(kind=Protocol, phase=Head, detail~)
+fn protocol(detail : String) -> @mttp.TransportError {
+  @mttp.TransportError(kind=Protocol, phase=Head, detail~)
 }
 
 ///|
@@ -358,7 +358,7 @@ fn lower_trim(value : String) -> String {
 
 ///|
 /// Whether a comma-separated field `name` lists `wanted`, ignoring case.
-fn has_token(headers : @http.Headers, name : String, wanted : String) -> Bool {
+fn has_token(headers : @mttp.Headers, name : String, wanted : String) -> Bool {
   headers
   .get_all(name)
   .iter()

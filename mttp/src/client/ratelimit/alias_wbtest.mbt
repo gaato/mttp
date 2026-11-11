@@ -8,8 +8,8 @@ fn alias_limiter(clock : &@rt.Clock) -> WindowLimiter {
 }
 
 ///|
-fn alias_quota(left : String, reset : String) -> @http.Headers {
-  @http.Headers::of([("left", left), ("reset", reset)])
+fn alias_quota(left : String, reset : String) -> @mttp.Headers {
+  @mttp.Headers::of([("left", left), ("reset", reset)])
 }
 
 ///|
@@ -45,7 +45,7 @@ test "alias expiry transfers a refreshed shared block and quota before detaching
         assert_false(limiter.aliases.contains("a"))
         limiter.admit("a", global_exempt=false)
         assert_eq(clock.slept(), if blocked { [1000] } else { [] })
-        limiter.respond("a", status=0, headers=@http.Headers::empty())
+        limiter.respond("a", status=0, headers=@mttp.Headers::empty())
       }
     }
   })
@@ -86,7 +86,7 @@ test "alias expiry at state capacity retains its route until transfer has room" 
     assert_eq(limiter.states.length(), 4096)
     limiter.admit("a", global_exempt=false)
     assert_eq(clock.slept(), [1000])
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
   })
 }
 
@@ -122,10 +122,10 @@ test "refused alias transitions preserve the previously resolved block" {
         limiter.respond(
           "a",
           status=200,
-          headers=@http.Headers::of([("key", "new")]),
+          headers=@mttp.Headers::of([("key", "new")]),
         )
       catch {
-        @http.TransportError(kind=TooLarge(limit=4096), phase=Unknown, ..) => ()
+        @mttp.TransportError(kind=TooLarge(limit=4096), phase=Unknown, ..) => ()
         _ => fail("wrong refusal")
       } noraise {
         _ => fail("accepted a transition without room")
@@ -133,7 +133,7 @@ test "refused alias transitions preserve the previously resolved block" {
       assert_eq(limiter.resolve("a", limiter.now()), "a")
       limiter.admit("a", global_exempt=false)
       assert_eq(clock.slept(), [1000])
-      limiter.respond("a", status=0, headers=@http.Headers::empty())
+      limiter.respond("a", status=0, headers=@mttp.Headers::empty())
     }
   })
 }
@@ -168,7 +168,7 @@ test "admission accounting cannot allocate fallback state after capacity checks"
     assert_eq(limiter.states.length(), 4096)
     assert_eq(limiter.resolve("b", limiter.now()), "shared")
     assert_eq(limiter.states.length(), 4096)
-    limiter.respond("b", status=0, headers=@http.Headers::empty())
+    limiter.respond("b", status=0, headers=@mttp.Headers::empty())
     assert_eq(limiter.admissions.length(), 0)
   })
 }

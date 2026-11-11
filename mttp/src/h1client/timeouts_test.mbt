@@ -15,7 +15,7 @@ impl @rt.Conn for StallConn with fn read(self, max_len~) {
 ///|
 impl @rt.Conn for StallConn with fn write(self, _) {
   self.signal.wait()
-  raise @http.TransportError(kind=Network, phase=Write, detail="closed")
+  raise @mttp.TransportError(kind=Network, phase=Write, detail="closed")
 }
 
 ///|
@@ -47,14 +47,14 @@ test "a response head that never comes times out under the read limit" {
   h.run(() => {
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
       }),
       (Timeout(ms=5), Head),
     )
     assert_eq(h.driver.now(), 5L)
     assert_eq(blocked.closes(), 1)
     // The slot was released: the next request gets a connection.
-    assert_eq(fetch(h.client, @http.Request::get("http://example.test/")), "")
+    assert_eq(fetch(h.client, @mttp.Request::get("http://example.test/")), "")
     h.finish()
   })
 }
@@ -82,7 +82,7 @@ test "the attempt deadline covers a buffered body but ends at a streamed head" {
         exchange(timeout_ms=50)
       }
       let result = Ok(
-        fetch(h.client, @http.Request::get("http://example.test/"), options~),
+        fetch(h.client, @mttp.Request::get("http://example.test/"), options~),
       ) catch {
         error => Err(kind_phase(error))
       }
@@ -120,7 +120,7 @@ test "each streamed read waits at most the idle or the read limit" {
     )
     h.run(() => {
       let response = h.client.send(
-        @http.Request::get("http://example.test/"),
+        @mttp.Request::get("http://example.test/"),
         streaming(idle_ms?=idle),
       )
       guard response.body is Stream(body) else { fail("expected a stream") }
@@ -156,7 +156,7 @@ test "cancelling a send or a body read closes the connection and frees the slot"
     ignore(h.scripted([Chunk(ok("next"))]))
     h.run(() => {
       let task = h.driver.spawn(() => {
-        ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
       })
       h.driver.pause()
       assert_true(task.is_parked())
@@ -165,7 +165,7 @@ test "cancelling a send or a body read closes the connection and frees the slot"
       assert_eq(blocked.closes(), 1)
       assert_eq(h.client.idle_connections(), 0)
       assert_eq(
-        fetch(h.client, @http.Request::get("http://example.test/")),
+        fetch(h.client, @mttp.Request::get("http://example.test/")),
         "next",
       )
       h.finish()
@@ -184,7 +184,7 @@ test "a concurrent read of one body is refused and discards the connection" {
   ])
   h.run(() => {
     let response = h.client.send(
-      @http.Request::get("http://example.test/"),
+      @mttp.Request::get("http://example.test/"),
       exchange(),
     )
     guard response.body is Stream(body) else { fail("expected a stream") }
@@ -215,7 +215,7 @@ test "every phase reports the limit that ran out, when it ran out" {
     write_timeout_ms: Some(300),
     read_timeout_ms: Some(400),
   })
-  let phases : Array[(@http.Phase, Int32)] = [
+  let phases : Array[(@mttp.Phase, Int32)] = [
     (Pool, 100),
     (Dial, 200),
     (Write, 300),
@@ -243,7 +243,7 @@ test "every phase reports the limit that ran out, when it ran out" {
     }
     h.run(() => {
       let held = if phase == Pool {
-        Some(h.client.send(@http.Request::get("http://a.test/"), exchange()))
+        Some(h.client.send(@mttp.Request::get("http://a.test/"), exchange()))
       } else {
         None
       }
@@ -253,7 +253,7 @@ test "every phase reports the limit that ran out, when it ran out" {
           ignore(
             fetch(
               h.client,
-              @http.Request::get("http://a.test/"),
+              @mttp.Request::get("http://a.test/"),
               options=exchange(timeout_ms=1000),
             ),
           )
@@ -272,7 +272,7 @@ test "every phase reports the limit that ran out, when it ran out" {
 ///|
 test "the attempt deadline caps the phase that is running when it ends" {
   // (head arrival, read limit, outcome, time of the outcome)
-  let rows : Array[(Int32, Int32?, (@http.Kind, @http.Phase), Int64)] = [
+  let rows : Array[(Int32, Int32?, (@mttp.Kind, @mttp.Phase), Int64)] = [
     // The body read starts at 800 with 200 ms of the deadline left.
     (800, None, (Timeout(ms=1000), Body), 1000L),
     (999, None, (Timeout(ms=1000), Body), 1000L),
@@ -303,7 +303,7 @@ test "the attempt deadline caps the phase that is running when it ends" {
           ignore(
             fetch(
               h.client,
-              @http.Request::get("http://a.test/"),
+              @mttp.Request::get("http://a.test/"),
               options=exchange(timeout_ms=1000),
             ),
           )
@@ -334,7 +334,7 @@ test "deadlines survive extreme and backward clocks" {
     assert_eq(
       fetch(
         client,
-        @http.Request::get("http://a.test/"),
+        @mttp.Request::get("http://a.test/"),
         options=exchange(timeout_ms=1000),
       ),
       "late",
@@ -360,7 +360,7 @@ test "deadlines survive extreme and backward clocks" {
   )
   driver.run(() => {
     let response = client.send(
-      @http.Request::get("http://a.test/"),
+      @mttp.Request::get("http://a.test/"),
       exchange(timeout_ms=50),
     )
     guard response.body is Stream(body) else { fail("expected a stream") }
@@ -389,7 +389,7 @@ test "a body read started after the attempt deadline fails at once" {
   ])
   h.run(() => {
     let response = h.client.send(
-      @http.Request::get("http://example.test/"),
+      @mttp.Request::get("http://example.test/"),
       exchange(timeout_ms=100),
     )
     guard response.body is Stream(body) else { fail("expected a stream") }
@@ -420,7 +420,7 @@ test "closing the client while a stream's first piece is read refuses the send" 
         ignore(
           fetch(
             h.client,
-            @http.Request::post("http://example.test/").body_stream(feed),
+            @mttp.Request::post("http://example.test/").body_stream(feed),
           ),
         )
       }),

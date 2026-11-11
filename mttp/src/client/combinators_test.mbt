@@ -15,12 +15,12 @@ test "combined readers buffer once and select each interpretation once" {
   )
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.FakeClock::new(),
   )
   let reply = d.run(() => {
-    client.send(@client.request(@http.Request::get("/form")).response(reader))
+    client.send(@client.request(@mttp.Request::get("/form")).response(reader))
   })
   assert_eq(reply.body, (Ok("a=1&a=2"), Ok([("a", "1"), ("a", "2")])))
   assert_eq(selections.val, 2)
@@ -47,12 +47,12 @@ test "combined readers honor each head rejection and left error priority" {
       @client.ResponsePlan::new((_, _) => raise ChosenReject(2)),
     )
     let client = @client.Client::new(
-      @client.from_fn((_, _) => @http.Response::new(400)),
+      @client.from_fn((_, _) => @mttp.Response::new(400)),
       @sim.FakeClock::new(),
     )
     try
       @driver.run_sync(() => {
-        client.send(@client.request(@http.Request::get("/")).response(reader))
+        client.send(@client.request(@mttp.Request::get("/")).response(reader))
       })
     catch {
       ChosenReject(which) => assert_eq(which, if accept_left { 2 } else { 1 })
@@ -70,13 +70,13 @@ fn lines(chunks : Array[Bytes], limit~ : Int32 = 100) -> Array[String] raise {
   let values = []
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.FakeClock::new(),
   )
   let _ = d.run(() => {
     client.send(
-      @client.request(@http.Request::get("/")).response(
+      @client.request(@mttp.Request::get("/")).response(
         @client.as_lines(value => values.push(value), max_line_bytes=limit),
       ),
     )
@@ -87,7 +87,7 @@ fn lines(chunks : Array[Bytes], limit~ : Int32 = 100) -> Array[String] raise {
 
 ///|
 test "line reader handles every byte split including UTF-8 and CRLF boundaries" {
-  let bytes = @http.encode_utf8("a\r\n\n日本\nlast\r")
+  let bytes = @mttp.encode_utf8("a\r\n\n日本\nlast\r")
   for cut in 0..<=bytes.length() {
     assert_eq(lines([bytes[:cut].to_owned(), bytes[cut:].to_owned()]), [
       "a", "", "日本", "last\r",
@@ -108,7 +108,7 @@ test "line bounds refuse crossing bytes close streams and default to one MiB" {
   assert_eq(lines([b"123"], limit=3), ["123"])
   for bytes in [b"1234", b"123\r", b"123\rx"] {
     try lines([bytes], limit=3) catch {
-      @http.TransportError(kind=TooLarge(limit=3), ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=3), ..) => ()
       _ => fail("wrong overflow error")
     } noraise {
       _ => fail("accepted oversized line")
@@ -118,27 +118,27 @@ test "line bounds refuse crossing bytes close streams and default to one MiB" {
   let source = @sim.Feed::bytes(d, [Bytes::make(1024 * 1024, b'x'), b"x"])
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.FakeClock::new(),
   )
   try
     d.run(() => {
       client.send(
-        @client.request(@http.Request::get("/")).response(
+        @client.request(@mttp.Request::get("/")).response(
           @client.as_lines(_ => ()),
         ),
       )
     })
   catch {
-    @http.TransportError(kind=TooLarge(limit=1048576), ..) => ()
+    @mttp.TransportError(kind=TooLarge(limit=1048576), ..) => ()
     _ => fail("wrong default limit")
   } noraise {
     _ => fail("accepted default overflow")
   }
   assert_eq(source.closes(), 1)
   try lines([], limit=-1) catch {
-    @http.TransportError(kind=Invalid, ..) => ()
+    @mttp.TransportError(kind=Invalid, ..) => ()
     _ => fail("wrong negative bound error")
   } noraise {
     _ => fail("accepted negative limit")
@@ -153,7 +153,7 @@ test "streaming line callback errors close once without retrying delivered lines
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
       calls.val += 1
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.FakeClock::new(),
     retry=@client.RetryPolicy::default(),
@@ -161,9 +161,9 @@ test "streaming line callback errors close once without retrying delivered lines
   try
     d.run(() => {
       client.send(
-        @client.request(@http.Request::get("/")).response(
+        @client.request(@mttp.Request::get("/")).response(
           @client.as_lines(_ => {
-            raise @http.TransportError(
+            raise @mttp.TransportError(
               kind=Network,
               phase=Body,
               detail="callback",
@@ -173,7 +173,7 @@ test "streaming line callback errors close once without retrying delivered lines
       )
     })
   catch {
-    @http.TransportError(kind=Network, ..) => ()
+    @mttp.TransportError(kind=Network, ..) => ()
     _ => fail("wrong callback error")
   } noraise {
     _ => fail("expected callback error")

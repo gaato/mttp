@@ -33,7 +33,7 @@ impl Backend with fn close(_) {
 ///
 /// ```mbt check
 /// test {
-///   let options = { ..@http.SendOptions::default(), timeout_ms: Some(5000), }
+///   let options = { ..@mttp.SendOptions::default(), timeout_ms: Some(5000), }
 ///   assert_eq(options.body, Exchange(max_bytes=64 * 1024 * 1024))
 ///   let streaming = { ..options, body: Stream(idle_ms=Some(30000)), }
 ///   assert_eq(streaming.timeout_ms, Some(5000))
@@ -96,10 +96,10 @@ pub fn SendOptions::default() -> SendOptions {
 ///
 /// ```mbt check
 /// test {
-///   @http.SendOptions::default().validate()
-///   let bad = { ..@http.SendOptions::default(), body: Exchange(max_bytes=-1), }
+///   @mttp.SendOptions::default().validate()
+///   let bad = { ..@mttp.SendOptions::default(), body: Exchange(max_bytes=-1), }
 ///   try bad.validate() catch {
-///     @http.TransportError(kind~, phase~, ..) => {
+///     @mttp.TransportError(kind~, phase~, ..) => {
 ///       assert_eq(kind, Invalid)
 ///       assert_eq(phase, Pool)
 ///     }

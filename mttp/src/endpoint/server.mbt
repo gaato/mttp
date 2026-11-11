@@ -19,7 +19,7 @@ pub extend FailureStage with @debug.Debug::{to_repr}
 ///|
 /// The request and input issues supplied to a server's rejection policy.
 pub(all) struct FailureContext {
-  request : @http.Request
+  request : @mttp.Request
   endpoint : EndpointDoc
   failures : Array[InputFailure]
   stage : FailureStage
@@ -30,8 +30,8 @@ pub(all) struct FailureContext {
 pub(all) struct DispatchContext {
   max_body_bytes : Int32
   max_issues : Int32
-  decode_failure : (FailureContext) -> @http.Response
-  unhandled : (@http.Request, Error) -> @http.Response
+  decode_failure : (FailureContext) -> @mttp.Response
+  unhandled : (@mttp.Request, Error) -> @mttp.Response
 }
 
 ///|
@@ -41,8 +41,8 @@ pub(all) struct DispatchContext {
 pub fn DispatchContext::new(
   max_body_bytes~ : Int32 = 1048576,
   max_issues~ : Int32 = 100,
-  decode_failure~ : (FailureContext) -> @http.Response = default_failure,
-  unhandled~ : (@http.Request, Error) -> @http.Response = (_, _) => {
+  decode_failure~ : (FailureContext) -> @mttp.Response = default_failure,
+  unhandled~ : (@mttp.Request, Error) -> @mttp.Response = (_, _) => {
     problem(500, "Internal Server Error", [])
   },
 ) -> DispatchContext {
@@ -52,7 +52,7 @@ pub fn DispatchContext::new(
 ///|
 /// Creates an input failure context.
 pub fn FailureContext::new(
-  request : @http.Request,
+  request : @mttp.Request,
   endpoint : EndpointDoc,
   failures : Array[InputFailure],
   stage : FailureStage,
@@ -62,7 +62,7 @@ pub fn FailureContext::new(
 
 ///|
 /// Template of the endpoint which dispatched a response, for middleware labels.
-pub let route_template : @http.AttributeKey[String] = @http.AttributeKey::new(
+pub let route_template : @mttp.AttributeKey[String] = @mttp.AttributeKey::new(
   "route_template",
 )
 
@@ -70,7 +70,7 @@ pub let route_template : @http.AttributeKey[String] = @http.AttributeKey::new(
 /// An erased endpoint with its documented definition and server interpreter.
 pub struct ServerEndpoint {
   priv doc : EndpointDoc
-  priv run : async (@http.Request, Map[String, String], DispatchContext) -> @http.Response noraise
+  priv run : async (@mttp.Request, Map[String, String], DispatchContext) -> @mttp.Response noraise
 }
 
 ///|
@@ -88,7 +88,7 @@ pub fn ServerEndpoint::doc(self : ServerEndpoint) -> EndpointDoc {
 }
 
 ///|
-fn discard(body : @http.Body) -> Unit {
+fn discard(body : @mttp.Body) -> Unit {
   if body is Stream(stream) {
     stream.close()
   }
@@ -99,10 +99,10 @@ fn discard(body : @http.Body) -> Unit {
 /// or transfers to the response stream until it finishes or closes.
 pub async fn ServerEndpoint::dispatch(
   self : ServerEndpoint,
-  req : @http.Request,
+  req : @mttp.Request,
   params : Map[String, String],
   ctx : DispatchContext,
-) -> @http.Response noraise {
+) -> @mttp.Response noraise {
   let mut transferred = false
   defer (if !transferred { discard(req.body) })
   let response = (self.run)(req, params, ctx)
@@ -110,7 +110,7 @@ pub async fn ServerEndpoint::dispatch(
     error => {
       let fallback = (ctx.unhandled)(req, error)
       own_response(req.body, fallback) catch {
-        _ => @http.Response::new(500)
+        _ => @mttp.Response::new(500)
       }
     }
   }
@@ -128,19 +128,19 @@ pub async fn ServerEndpoint::dispatch(
 
 ///|
 fn own_response(
-  request : @http.Body,
-  response : @http.Response,
-) -> @http.Response raise @http.TransportError {
+  request : @mttp.Body,
+  response : @mttp.Response,
+) -> @mttp.Response raise @mttp.TransportError {
   errdefer response.close()
   if response.body is Stream(stream) {
-    let owner : &@http.BodyStream = ResponseOwner::{
+    let owner : &@mttp.BodyStream = ResponseOwner::{
       reader: stream.take(),
       request,
       closed: false,
     }
     {
       ..response,
-      body: Stream(@http.StreamBody::new(owner, length?=stream.length())),
+      body: Stream(@mttp.StreamBody::new(owner, length?=stream.length())),
     }
   } else {
     response
@@ -159,11 +159,11 @@ fn body_atom(atoms : Array[Atom]) -> Atom {
 
 ///|
 async fn read_body(
-  body : @http.Body,
+  body : @mttp.Body,
   limit : Int32,
 ) -> Bytes raise @schema.DecodeFailure {
   @client.read_body(body, limit) catch {
-    @http.TransportError(kind=TooLarge(limit~), ..) =>
+    @mttp.TransportError(kind=TooLarge(limit~), ..) =>
       raise @schema.DecodeFailure(
         kind=TooLarge(limit~),
         message="request body exceeds limit",
@@ -179,18 +179,18 @@ async fn read_body(
 ///|
 fn[S, I, E, O, P, M] Endpoint::pipeline(
   self : Endpoint[S, I, E, O, M],
-  authenticate : async (@http.Request, DispatchContext, S) -> Result[
+  authenticate : async (@mttp.Request, DispatchContext, S) -> Result[
     P,
-    @http.Response,
+    @mttp.Response,
   ],
-  logic : async (@http.Request, DispatchContext, P, I) -> @http.Response,
+  logic : async (@mttp.Request, DispatchContext, P, I) -> @mttp.Response,
 ) -> ServerEndpoint {
   let doc = self.doc()
   let streamed = self.input.atoms
     .iter()
     .any(a => a.location is Body(streamed=true, ..))
   let run = (
-    req : @http.Request,
+    req : @mttp.Request,
     captures : Map[String, String],
     ctx : DispatchContext,
   ) => {
@@ -209,7 +209,7 @@ fn[S, I, E, O, P, M] Endpoint::pipeline(
         ])
     }
     let query = {
-      let url = @http.Url::parse(req.url) catch {
+      let url = @mttp.Url::parse(req.url) catch {
         _ =>
           return failure(Head, [
             InputFailure::new(
@@ -221,7 +221,7 @@ fn[S, I, E, O, P, M] Endpoint::pipeline(
             ),
           ])
       }
-      @http.form_urldecode(url.query.unwrap_or("")) catch {
+      @mttp.form_urldecode(url.query.unwrap_or("")) catch {
         _ =>
           return failure(Head, [
             InputFailure::new(
@@ -275,7 +275,7 @@ fn[S, I, E, O, P, M] Endpoint::pipeline(
     let stream_failure : Ref[@schema.DecodeFailure?] = Ref(None)
     if !body_read && input.needs_body {
       body = if streamed {
-        let reader : &@http.BodyStream = match req.body {
+        let reader : &@mttp.BodyStream = match req.body {
           Stream(stream) =>
             stream.take() catch {
               _ =>
@@ -291,7 +291,7 @@ fn[S, I, E, O, P, M] Endpoint::pipeline(
             }
           Bytes(bytes) => BufferedStream::new(bytes)
           Empty => BufferedStream::new(b"")
-          @http.Body::.. =>
+          @mttp.Body::.. =>
             return failure(Body, [
               InputFailure::new(
                 body_atom(self.input.atoms),
@@ -354,10 +354,10 @@ fn[S, I, E, O, P, M] Endpoint::pipeline(
 ///|
 fn[E] respond_error(
   out : Out[E, @client.Buffered],
-  req : @http.Request,
+  req : @mttp.Request,
   error : E,
   ctx : DispatchContext,
-) -> @http.Response {
+) -> @mttp.Response {
   out
   .encode(error)
   .unwrap_or_else(() => {

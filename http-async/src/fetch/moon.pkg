@@ -1,6 +1,6 @@
 import {
-  "gaato/http",
-  "gaato/http/h1",
+  "gaato/mttp",
+  "gaato/mttp/h1",
   "moonbitlang/core/async/js_async",
 }
 

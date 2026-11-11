@@ -2,11 +2,11 @@
 /// In-process transport strips local attributes, validates SendOptions, and
 /// transfers bodies by pull. Timed sends require clock and timer ports at
 /// construction, since this portable package has no scheduler of its own.
-pub impl @http.Backend for Router with fn send(self, request, options) {
+pub impl @mttp.Backend for Router with fn send(self, request, options) {
   let mut transferred = false
   defer (if !transferred { discard(request.body) })
   if self.closed {
-    raise @http.TransportError(kind=Closed, phase=Pool, detail="router closed")
+    raise @mttp.TransportError(kind=Closed, phase=Pool, detail="router closed")
   }
   request.validate()
   options.validate()
@@ -16,7 +16,7 @@ pub impl @http.Backend for Router with fn send(self, request, options) {
   }
   if (options.timeout_ms is Some(_) || idle is Some(_)) &&
     (self.clock is None || self.timer is None) {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Pool,
       detail="timed router sends require clock and timer",
@@ -28,8 +28,8 @@ pub impl @http.Backend for Router with fn send(self, request, options) {
       Stream(body) => {
         let reader = body.take()
         let first = reader.read_some()
-        @http.Body::Stream(
-          @http.StreamBody::new(
+        @mttp.Body::Stream(
+          @mttp.StreamBody::new(
             Prefetched::{ reader, first, closed: false, },
             length?=body.length(),
           ),
@@ -40,8 +40,8 @@ pub impl @http.Backend for Router with fn send(self, request, options) {
     self.dispatch({
       ..request,
       body,
-      url: @http.join_url("http://in-process", request.url),
-      attributes: @http.Attributes::empty().put(@http.remote_addr, "in-process"),
+      url: @mttp.join_url("http://in-process", request.url),
+      attributes: @mttp.Attributes::empty().put(@mttp.remote_addr, "in-process"),
     })
   })
   transferred = true
@@ -53,7 +53,7 @@ pub impl @http.Backend for Router with fn send(self, request, options) {
   let body = match response.body {
     Bytes(bytes) => {
       if cap is Some(limit) && bytes.length() > limit {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=TooLarge(limit~),
           phase=Body,
           detail="in-process response exceeds limit",
@@ -62,8 +62,8 @@ pub impl @http.Backend for Router with fn send(self, request, options) {
       response.body
     }
     Stream(stream) =>
-      @http.Stream(
-        @http.StreamBody::new(
+      @mttp.Stream(
+        @mttp.StreamBody::new(
           BackendBody::{
             reader: stream.take(),
             clock: self.clock,
@@ -80,19 +80,19 @@ pub impl @http.Backend for Router with fn send(self, request, options) {
       )
     body => body
   }
-  { ..response, body, attributes: @http.Attributes::empty(), }
+  { ..response, body, attributes: @mttp.Attributes::empty(), }
 }
 
 ///|
 async fn[T] timed(
   timer : &@rt.Timer?,
   ms : Int32?,
-  phase : @http.Phase,
-  f : async () -> T raise @http.TransportError,
-) -> T raise @http.TransportError {
+  phase : @mttp.Phase,
+  f : async () -> T raise @mttp.TransportError,
+) -> T raise @mttp.TransportError {
   guard ms is Some(ms) && timer is Some(timer) else { return f() }
-  let mut result : Result[T, @http.TransportError] = Err(
-    @http.TransportError(
+  let mut result : Result[T, @mttp.TransportError] = Err(
+    @mttp.TransportError(
       kind=Timeout(ms~),
       phase~,
       detail="in-process deadline",
@@ -102,7 +102,7 @@ async fn[T] timed(
     result = Ok(f()) catch { error => Err(error) }
   })
   if !completed {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Timeout(ms~),
       phase~,
       detail="in-process deadline",
@@ -116,30 +116,30 @@ async fn[T] timed(
 
 ///|
 priv struct Prefetched {
-  reader : &@http.BodyStream
+  reader : &@mttp.BodyStream
   mut first : Bytes?
   mut closed : Bool
 }
 
 ///|
-impl @http.BodyStream for Prefetched with fn read_some(self) {
+impl @mttp.BodyStream for Prefetched with fn read_some(self) {
   if self.closed {
     return None
   }
-  errdefer @http.BodyStream::close(self)
+  errdefer @mttp.BodyStream::close(self)
   if self.first is Some(first) {
     self.first = None
     return Some(first)
   }
   let chunk = self.reader.read_some()
   if chunk is None {
-    @http.BodyStream::close(self)
+    @mttp.BodyStream::close(self)
   }
   chunk
 }
 
 ///|
-impl @http.BodyStream for Prefetched with fn close(self) {
+impl @mttp.BodyStream for Prefetched with fn close(self) {
   if !self.closed {
     self.closed = true
     self.first = None
@@ -149,7 +149,7 @@ impl @http.BodyStream for Prefetched with fn close(self) {
 
 ///|
 priv struct BackendBody {
-  reader : &@http.BodyStream
+  reader : &@mttp.BodyStream
   clock : &@rt.Clock?
   timer : &@rt.Timer?
   start : Int64
@@ -161,11 +161,11 @@ priv struct BackendBody {
 }
 
 ///|
-impl @http.BodyStream for BackendBody with fn read_some(self) {
+impl @mttp.BodyStream for BackendBody with fn read_some(self) {
   if self.closed {
     return None
   }
-  errdefer @http.BodyStream::close(self)
+  errdefer @mttp.BodyStream::close(self)
   let mut ms = self.idle
   if self.timeout is Some(total) && self.clock is Some(clock) {
     let elapsed = (clock.now_unix_ms() - self.start).max(0L)
@@ -180,7 +180,7 @@ impl @http.BodyStream for BackendBody with fn read_some(self) {
   if chunk is Some(bytes) {
     if self.cap is Some(limit) {
       if bytes.length() > limit - self.read {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=TooLarge(limit~),
           phase=Body,
           detail="in-process response exceeds limit",
@@ -189,13 +189,13 @@ impl @http.BodyStream for BackendBody with fn read_some(self) {
       self.read += bytes.length()
     }
   } else {
-    @http.BodyStream::close(self)
+    @mttp.BodyStream::close(self)
   }
   chunk
 }
 
 ///|
-impl @http.BodyStream for BackendBody with fn close(self) {
+impl @mttp.BodyStream for BackendBody with fn close(self) {
   if !self.closed {
     self.closed = true
     self.reader.close()

@@ -2,7 +2,7 @@
 test "cancelling a connection unwinds its handler and closes the request body" {
   let h = Harness::new()
   let cleaned = Ref(false)
-  let bodies : Array[@http.StreamBody] = []
+  let bodies : Array[@mttp.StreamBody] = []
   h.run(() => {
     let entered = h.coordination.signal()
     let (client, task) = h.serve(request => {
@@ -14,7 +14,7 @@ test "cancelling a connection unwinds its handler and closes the request body" {
       }
       entered.notify()
       h.driver.sleep(10000)
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     })
     client.send(post("/", "unread"))
     entered.wait()
@@ -26,7 +26,7 @@ test "cancelling a connection unwinds its handler and closes the request body" {
   assert_true(cleaned.val)
   assert_eq(bodies.length(), 1)
   let refused = try bodies[0].take() catch {
-    @http.TransportError(kind=Unreplayable, ..) => true
+    @mttp.TransportError(kind=Unreplayable, ..) => true
     _ => false
   } noraise {
     _ => false
@@ -41,10 +41,10 @@ test "cancellation while producing a response closes its stream" {
   let closes = Ref(0)
   h.run(() => {
     let (client, task) = h.serve(_ => {
-      @http.Response::new(
+      @mttp.Response::new(
         200,
         body=Stream(
-          @http.StreamBody::new(Stall::{
+          @mttp.StreamBody::new(Stall::{
             driver: h.driver,
             closes,
             step: 0,
@@ -68,7 +68,7 @@ test "cancellation while producing a response closes its stream" {
 test "a head read failure is reported in phase Head without an answer" {
   let h = Harness::new()
   let conn = @sim.ScriptedConn::new([
-    Failure(@http.TransportError(kind=Network, phase=Unknown, detail="reset")),
+    Failure(@mttp.TransportError(kind=Network, phase=Unknown, detail="reset")),
   ])
   h.run(() => ignore(h.serve_on(conn, reply("never")).wait()))
   assert_eq(h.errors.map(kind_phase), [(Network, Head)])
@@ -86,7 +86,7 @@ test "an invalid fallback authority is refused before the handler" {
       conn,
       _ => {
         called.val = true
-        @http.Response::new(200)
+        @mttp.Response::new(200)
       },
       clock=h.clock,
       timer=h.timer,

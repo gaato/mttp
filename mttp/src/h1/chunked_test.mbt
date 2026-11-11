@@ -19,7 +19,7 @@ test "chunked decoding handles every split and stops before pipelined bytes" {
     let decoder = @h1.ChunkedDecoder::new(@h1.Limits::default())
     let body = Buffer()
     let rest = Buffer()
-    let mut trailers = @http.Headers::empty()
+    let mut trailers = @mttp.Headers::empty()
     for bytes in chunks {
       let result = decoder.feed(bytes)
       for chunk in result.chunks {
@@ -104,7 +104,7 @@ test "chunk decoder rejects malformed sizes extensions delimiters and framing tr
     name in [
       "content-length", "transfer-encoding", "host", "connection", "trailer",
     ] {
-    refused(@http.encode_utf8("0\r\n" + name + ": x\r\n\r\n"), kind=Smuggling)
+    refused(@mttp.encode_utf8("0\r\n" + name + ": x\r\n\r\n"), kind=Smuggling)
   }
   let wire = b"A\r\n0123456789\r\n0\r\n\r\n"
   for end in 0..<wire.length() {

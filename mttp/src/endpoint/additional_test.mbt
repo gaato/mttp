@@ -62,7 +62,7 @@ test "definition verification checks all schemas route shapes and metadata" {
 
 ///|
 test "input lists basic authentication rest paths and server attributes roundtrip" {
-  let key : @http.AttributeKey[String] = @http.AttributeKey::new("local")
+  let key : @mttp.AttributeKey[String] = @mttp.AttributeKey::new("local")
   let input = @endpoint.Input::map4(
     @endpoint.paths("tail"),
     @endpoint.query_list("q", @schema.int),
@@ -103,7 +103,7 @@ test "input lists basic authentication rest paths and server attributes roundtri
       Ok(Ok("done")),
     )
     assert_eq(
-      decoded(@endpoint.paths("tail"), @http.Request::post("/"), captures={
+      decoded(@endpoint.paths("tail"), @mttp.Request::post("/"), captures={
         "tail": "",
       }),
       [],
@@ -129,7 +129,7 @@ test "default rejection lists field locations and security challenges" {
     .serve_public(_ => Ok(()))
   @driver.run_sync(() => {
     let response = server.dispatch(
-      @http.Request::post("/?q=x").header("h", "x").header("cookie", "c=x"),
+      @mttp.Request::post("/?q=x").header("h", "x").header("cookie", "c=x"),
       { "p": "x" },
       @endpoint.DispatchContext::new(),
     )
@@ -150,7 +150,7 @@ test "default rejection lists field locations and security challenges" {
         .security(security)
         .serve(_ => Ok(()), (_, _) => Ok(()))
         .dispatch(
-          @http.Request::post("/"),
+          @mttp.Request::post("/"),
           {},
           @endpoint.DispatchContext::new(),
         )
@@ -164,10 +164,10 @@ test "default rejection lists field locations and security challenges" {
       .post("/")
       .input(derived)
       .serve_public((_ : Unit) => Ok(()))
-      .dispatch(@http.Request::post("/"), {}, @endpoint.DispatchContext::new())
+      .dispatch(@mttp.Request::post("/"), {}, @endpoint.DispatchContext::new())
     assert_eq(response.status, 400)
     let error = @endpoint.FailureContext::new(
-      @http.Request::post("/"),
+      @mttp.Request::post("/"),
       server.doc(),
       [],
       @endpoint.Head,
@@ -259,7 +259,7 @@ test "external custom inputs use ready stages and all request sink setters" {
   @driver.run_sync(() => {
     assert_eq(
       server.dispatch(
-        @http.Request::post("/"),
+        @mttp.Request::post("/"),
         {},
         @endpoint.DispatchContext::new(),
       ).status,
@@ -309,9 +309,9 @@ test "same status declared errors decode in order while framework problems stay 
   let client = @client.Client::new(
     @client.from_handler(req => {
       if framework.val {
-        @http.Response::new(
+        @mttp.Response::new(
           404,
-          headers=@http.Headers::of([
+          headers=@mttp.Headers::of([
             ("content-type", "application/problem+json"),
           ]),
           body=Bytes(b"{}"),
@@ -340,9 +340,9 @@ test "SSE schema decoding refuses duplicate keys and excessive JSON nesting" {
   let response = Ref(b"data: {\"a\":1,\"a\":2}\n\n")
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(
+      @mttp.Response::new(
         200,
-        headers=@http.Headers::of([("content-type", "text/event-stream")]),
+        headers=@mttp.Headers::of([("content-type", "text/event-stream")]),
         body=Bytes(response.val),
       )
     }),
@@ -352,7 +352,7 @@ test "SSE schema decoding refuses duplicate keys and excessive JSON nesting" {
   let ep = @endpoint.endpoint.get("/").output(@endpoint.sse_out(@schema.jvalue))
   @driver.run_sync(() => {
     for text in ["{\"a\":1,\"a\":2}", "[".repeat(129) + "0" + "]".repeat(129)] {
-      response.val = @http.encode_utf8("data: " + text + "\n\n")
+      response.val = @mttp.encode_utf8("data: " + text + "\n\n")
       assert_true(
         ep.call_with(client, (), (), events => events.each(_ => ()))
         is Err(@client.Deserialization(_, ..)),

@@ -4,7 +4,7 @@ async test "abort after response creation closes the output stream and rejects f
   let source = OutputSource::{ reads: 0, closes: 0, }
   let probe = Probe::new()
   let adapter = fetch_handler(_ => {
-    @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+    @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
   })
   let reply = awaited(
     adapter(streaming_request([], controller.signal()), probe.callback()),
@@ -27,7 +27,7 @@ async test "lazy echo overflow is rejected before response headers and buffered 
   for echo in [true, false] {
     let probe = Probe::new()
     let adapter = fetch_handler(max_body_bytes=2, request => {
-      @http.Response::new(
+      @mttp.Response::new(
         200,
         body=if echo { request.body } else { Bytes(Bytes::make(65537, b'x')) },
       )
@@ -46,27 +46,27 @@ async test "lazy echo overflow is rejected before response headers and buffered 
 
 ///|
 priv struct CaughtInputOutput {
-  body : @http.Body
+  body : @mttp.Body
   fallback : Bool
   fail_output : Bool
-  failure : Ref[@http.TransportError?]
+  failure : Ref[@mttp.TransportError?]
   mut reads : Int32
   mut closes : Int32
 }
 
 ///|
-impl @http.BodyStream for CaughtInputOutput with fn read_some(self) {
+impl @mttp.BodyStream for CaughtInputOutput with fn read_some(self) {
   self.reads += 1
   if self.reads > 1 {
     return None
   }
   if self.body is Stream(cell) {
-    ignore(@http.read_bounded(cell.take(), 10)) catch {
+    ignore(@mttp.read_bounded(cell.take(), 10)) catch {
       error => self.failure.val = Some(error)
     }
   }
   if self.fail_output {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Network,
       phase=Body,
       detail="response producer failed",
@@ -80,7 +80,7 @@ impl @http.BodyStream for CaughtInputOutput with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for CaughtInputOutput with fn close(self) {
+impl @mttp.BodyStream for CaughtInputOutput with fn close(self) {
   self.closes += 1
 }
 
@@ -92,7 +92,7 @@ async fn caught_prefetch(
   fail_output~ : Bool = false,
 ) -> Unit {
   let probe = Probe::new()
-  let failure : Ref[@http.TransportError?] = Ref(None)
+  let failure : Ref[@mttp.TransportError?] = Ref(None)
   let source : Ref[CaughtInputOutput?] = Ref(None)
   let adapter = fetch_handler(max_body_bytes=2, request => {
     let output = CaughtInputOutput::{
@@ -104,7 +104,7 @@ async fn caught_prefetch(
       closes: 0,
     }
     source.val = Some(output)
-    @http.Response::new(201, body=Stream(@http.StreamBody::new(output)))
+    @mttp.Response::new(201, body=Stream(@mttp.StreamBody::new(output)))
   })
   let reply = awaited(adapter(request, probe.callback())).wait()
   let output = source.val.unwrap()
@@ -174,8 +174,8 @@ async test "late background scheduling cannot escape a settled host aggregate" {
   let schedule : Ref[((async () -> Unit) -> Unit)?] = Ref(None)
   let probe = Probe::new()
   let adapter = fetch_handler(request => {
-    schedule.val = request.attributes.get(@http.background)
-    @http.Response::new(204)
+    schedule.val = request.attributes.get(@mttp.background)
+    @mttp.Response::new(204)
   })
   ignore(
     awaited(adapter(make_request("GET", b"", []), probe.callback())).wait(),
@@ -193,7 +193,7 @@ async test "fetch suppresses HEAD and null-body statuses and releases output own
     let source = OutputSource::{ reads: 0, closes: 0, }
     let probe = Probe::new()
     let adapter = fetch_handler(_ => {
-      @http.Response::new(status, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(status, body=Stream(@mttp.StreamBody::new(source)))
     })
     let reply = awaited(
       adapter(
@@ -217,18 +217,18 @@ async test "fetch invalid response heads and negative configuration yield 500" {
     let adapter = fetch_handler(
       max_body_bytes=if mode == 2 { -1 } else { 10 },
       _ => {
-        @http.Response::new(
+        @mttp.Response::new(
           if mode == 0 {
             700
           } else {
             200
           },
           headers=if mode == 1 {
-            @http.Headers::of([("x-bad", "bad\r\nvalue")])
+            @mttp.Headers::of([("x-bad", "bad\r\nvalue")])
           } else {
-            @http.Headers::empty()
+            @mttp.Headers::empty()
           },
-          body=Stream(@http.StreamBody::new(source)),
+          body=Stream(@mttp.StreamBody::new(source)),
         )
       },
     )
@@ -245,11 +245,11 @@ async test "fetch length mismatches and malformed framing stay rejected when han
     let probe = Probe::new()
     let adapter = fetch_handler(request => {
       if request.body is Stream(stream) {
-        ignore(@http.read_bounded(stream.take(), 10)) catch {
+        ignore(@mttp.read_bounded(stream.take(), 10)) catch {
           _ => ()
         }
       }
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     })
     let reply = awaited(
       adapter(
@@ -278,7 +278,7 @@ async test "empty request chunks have a finite processing budget and large chunk
           _ => ()
         }
       }
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     })
     let chunks = if empty_count > 0 {
       FixedArray::make(empty_count, b"")
@@ -305,7 +305,7 @@ async test "already aborted requests still enter cleanup and settle the aggregat
   let entered = Ref(false)
   let adapter = fetch_handler(_ => {
     entered.val = true
-    @http.Response::new(200)
+    @mttp.Response::new(200)
   })
   let rejected = try {
     ignore(
@@ -365,11 +365,11 @@ async test "host read failure maps to 400 and cancellation releases an active re
       started.val = true
       changed.broadcast()
       if request.body is Stream(stream) {
-        ignore(@http.read_bounded(stream.take(), 10)) catch {
+        ignore(@mttp.read_bounded(stream.take(), 10)) catch {
           _ => ()
         }
       }
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     })
     let result = adapter(input.request(), probe.callback())
     while !started.val {

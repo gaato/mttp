@@ -1,8 +1,8 @@
 ///|
 test "100 Continue is sent only when the handler reads the body" {
-  let handler : @http.Handler = request => {
+  let handler : @mttp.Handler = request => {
     if request.headers.get("authorization") is None {
-      return @http.Response::new(401)
+      return @mttp.Response::new(401)
     }
     echo()(request)
   }
@@ -48,7 +48,7 @@ test "a full read ahead buffer is consumed before further body reads and preserv
     let upload = String::make(70000, 'x')
     let calls = Ref(0)
     let out = h.exchange(
-      @http.encode_utf8(post("/", upload) + get("/next")),
+      @mttp.encode_utf8(post("/", upload) + get("/next")),
       request => {
         calls.val += 1
         h.driver.sleep(10)
@@ -77,7 +77,7 @@ test "an HTTP/1.0 expectation of 100-continue is ignored" {
 test "no 100 Continue is owed for a request without a body" {
   let h = Harness::new()
   h.run(() => {
-    let (client, task) = h.serve(_ => @http.Response::new(204))
+    let (client, task) = h.serve(_ => @mttp.Response::new(204))
     client.send(get("/", fields="Expect: 100-continue\r\n"))
     let reply = client.expect()
     assert_eq(reply.status, 204)
@@ -117,7 +117,7 @@ test "an echoed request body keeps its failure status" {
     let h = Harness::new()
     h.run(() => {
       let (client, task) = h.serve(
-        request => @http.Response::new(200, body=request.body),
+        request => @mttp.Response::new(200, body=request.body),
         limits={
           ..@h1server.ServerLimits::default(),
           max_body_bytes: 3,
@@ -140,7 +140,7 @@ test "an echoed request body keeps its failure status" {
 test "a body the peer ends early is reported in phase Body" {
   let h = Harness::new()
   let out = h.exchange(
-    @http.encode_utf8(
+    @mttp.encode_utf8(
       "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 10\r\n\r\nabc",
     ),
     echo(),
@@ -152,18 +152,18 @@ test "a body the peer ends early is reported in phase Body" {
 ///|
 test "the request body is closed when the exchange ends" {
   let h = Harness::new()
-  let bodies : Array[@http.StreamBody] = []
-  let out = h.exchange(@http.encode_utf8(post("/", "abc") + get("/next")), request => {
+  let bodies : Array[@mttp.StreamBody] = []
+  let out = h.exchange(@mttp.encode_utf8(post("/", "abc") + get("/next")), request => {
     if request.body is Stream(stream) {
       bodies.push(stream)
     }
-    @http.Response::new(204)
+    @mttp.Response::new(204)
   })
   assert_eq(out.split("HTTP/1.1 204").count(), 3)
   assert_eq(bodies.length(), 1)
   // A body that was never taken cannot be taken after its exchange.
   try bodies[0].take() catch {
-    error => assert_true(error is @http.TransportError(kind=Unreplayable, ..))
+    error => assert_true(error is @mttp.TransportError(kind=Unreplayable, ..))
   } noraise {
     _ => fail("the body outlived its exchange")
   }
@@ -174,9 +174,9 @@ test "a body declared by Content-Length reports its length" {
   let h = Harness::new()
   let lengths = []
   ignore(
-    h.exchange(@http.encode_utf8(post("/", "hello") + get("/")), request => {
+    h.exchange(@mttp.encode_utf8(post("/", "hello") + get("/")), request => {
       lengths.push(request.body.length())
-      @http.Response::new(204)
+      @mttp.Response::new(204)
     }),
   )
   assert_eq(lengths, [Some(5L), Some(0L)])
@@ -190,22 +190,22 @@ test "a response producer cannot hide a request failure or reuse its connection"
       let calls = Ref(0)
       let close = if connection_close { "Connection: close\r\n" } else { "" }
       let out = h.exchange(
-        @http.encode_utf8(
+        @mttp.encode_utf8(
           "POST / HTTP/1.1\r\nHost: h\r\n\{close}Transfer-Encoding: chunked\r\n\r\nbad-chunk\r\n" +
           get("/never"),
         ),
         request => {
           calls.val += 1
           guard request.body is Stream(stream) else {
-            return @http.Response::new(500)
+            return @mttp.Response::new(500)
           }
           let reader = stream.take() catch {
-            _ => return @http.Response::new(500)
+            _ => return @mttp.Response::new(500)
           }
-          @http.Response::new(
+          @mttp.Response::new(
             200,
             body=Stream(
-              @http.StreamBody::new(Recovering::{ reader, prefix, step: 0, }),
+              @mttp.StreamBody::new(Recovering::{ reader, prefix, step: 0, }),
             ),
           )
         },
@@ -224,13 +224,13 @@ test "a response producer cannot hide a request failure or reuse its connection"
 ///|
 /// An application stream that catches a request read failure and continues.
 priv struct Recovering {
-  reader : &@http.BodyStream
+  reader : &@mttp.BodyStream
   prefix : Bool
   mut step : Int32
 }
 
 ///|
-impl @http.BodyStream for Recovering with fn read_some(self) {
+impl @mttp.BodyStream for Recovering with fn read_some(self) {
   self.step += 1
   if self.prefix && self.step == 1 {
     return Some(b"prefix")
@@ -243,7 +243,7 @@ impl @http.BodyStream for Recovering with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for Recovering with fn close(self) {
+impl @mttp.BodyStream for Recovering with fn close(self) {
   self.reader.close()
 }
 
@@ -251,9 +251,9 @@ impl @http.BodyStream for Recovering with fn close(self) {
 test "closing an acquired request source still lets the engine drain it" {
   let h = Harness::new()
   let errors = []
-  let out = h.exchange(@http.encode_utf8(post("/", "abc") + get("/next")), request => {
+  let out = h.exchange(@mttp.encode_utf8(post("/", "abc") + get("/next")), request => {
     if request.body is Stream(stream) {
-      let reader = stream.take() catch { _ => return @http.Response::new(500) }
+      let reader = stream.take() catch { _ => return @mttp.Response::new(500) }
       stream.close()
       ignore(
         reader.read_some() catch {
@@ -264,7 +264,7 @@ test "closing an acquired request source still lets the engine drain it" {
         },
       )
     }
-    @http.Response::new(204)
+    @mttp.Response::new(204)
   })
   assert_eq(out.split("HTTP/1.1 204").count(), 3)
   // The acquired reader detects a premature end of its declared length.

@@ -17,7 +17,7 @@ test "map3 preserves order and collects all missing inputs" {
     .raw()
   @driver.run_sync(() => {
     assert_eq(decoded(input, request), expected)
-    assert_eq(refused(input, @http.Request::post("/")).length(), 3)
+    assert_eq(refused(input, @mttp.Request::post("/")).length(), 3)
   })
 }
 
@@ -39,7 +39,7 @@ test "map4 preserves order and collects all missing inputs" {
     .raw()
   @driver.run_sync(() => {
     assert_eq(decoded(input, request), expected)
-    assert_eq(refused(input, @http.Request::post("/")).length(), 4)
+    assert_eq(refused(input, @mttp.Request::post("/")).length(), 4)
   })
 }
 
@@ -62,7 +62,7 @@ test "map5 preserves order and collects all missing inputs" {
     .raw()
   @driver.run_sync(() => {
     assert_eq(decoded(input, request), expected)
-    assert_eq(refused(input, @http.Request::post("/")).length(), 5)
+    assert_eq(refused(input, @mttp.Request::post("/")).length(), 5)
   })
 }
 
@@ -86,7 +86,7 @@ test "map6 preserves order and collects all missing inputs" {
     .raw()
   @driver.run_sync(() => {
     assert_eq(decoded(input, request), expected)
-    assert_eq(refused(input, @http.Request::post("/")).length(), 6)
+    assert_eq(refused(input, @mttp.Request::post("/")).length(), 6)
   })
 }
 
@@ -121,7 +121,7 @@ test "map7 preserves order and collects all missing inputs" {
     .raw()
   @driver.run_sync(() => {
     assert_eq(decoded(input, request), expected)
-    assert_eq(refused(input, @http.Request::post("/")).length(), 7)
+    assert_eq(refused(input, @mttp.Request::post("/")).length(), 7)
   })
 }
 
@@ -158,6 +158,6 @@ test "map8 preserves order and collects all missing inputs" {
     .raw()
   @driver.run_sync(() => {
     assert_eq(decoded(input, request), expected)
-    assert_eq(refused(input, @http.Request::post("/")).length(), 8)
+    assert_eq(refused(input, @mttp.Request::post("/")).length(), 8)
   })
 }

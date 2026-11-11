@@ -4,13 +4,13 @@ An HTTP/1.1 client connection engine over the `gaato/http/rt` ports. It
 keeps a pool of connections per origin, admits at most the configured number
 of active exchanges, reads every response head, chunk-size line and trailer
 section through the bounded `gaato/http/h1` codec, and puts each phase of an
-exchange under a deadline. `Client` implements `@http.Backend`, so a policy
+exchange under a deadline. `Client` implements `@mttp.Backend`, so a policy
 layer (retries, redirects, cookies, content decoding) wraps it without
 knowing it.
 
 > **Experimental.** The engine's settings and its reporting may still
 > change; an importer lists it in
-> `options("allow-experimental-packages": ["gaato/http/h1client"])`.
+> `options("allow-experimental-packages": ["gaato/mttp/h1client"])`.
 > [`gaato/http-async`](https://mooncakes.io/docs/gaato/http-async) wires it
 > to sockets, TLS and an event loop; most applications use that instead.
 
@@ -38,13 +38,13 @@ test "send a request and read the response" {
     },
   )
   driver.run(() => {
-    let response = client.send(@http.Request::get("http://example.test/"), {
+    let response = client.send(@mttp.Request::get("http://example.test/"), {
       timeout_ms: Some(30000),
       body: Exchange(max_bytes=1 << 20),
     })
     assert_eq(response.status, 200)
     guard response.body is Stream(body) else { fail("expected a body") }
-    assert_eq(@http.read_bounded(body.take(), 1 << 20), b"hello")
+    assert_eq(@mttp.read_bounded(body.take(), 1 << 20), b"hello")
     // Read to its end, the connection is parked for the next request.
     assert_eq(client.idle_connections(), 1)
     client.close()
@@ -78,7 +78,7 @@ test "send a request and read the response" {
   exchange with no unread bytes, and is handed only to a request with the
   same origin and User-Agent. A request on a reused connection that fails
   before any response byte arrived is resent once on a fresh connection, if
-  its body is replayable and it is idempotent (`@http.is_idempotent`); such
+  its body is replayable and it is idempotent (`@mttp.is_idempotent`); such
   a response carries the `stale_resend` attribute.
 - **Proxies.** `ClientConfig.proxy` names an HTTP proxy per scheme and a
   `NO_PROXY` list, as data: `ProxyConfig::from_env(lookup)` reads the usual

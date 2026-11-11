@@ -3,9 +3,9 @@ test "a read failure while the handler runs cancels it and closes the connection
   let h = Harness::new()
   let reset = h.coordination.signal()
   let conn = @sim.ScriptedConn::new([
-    Chunk(@http.encode_utf8(get("/"))),
+    Chunk(@mttp.encode_utf8(get("/"))),
     Wait(reset),
-    Failure(@http.TransportError(kind=Network, phase=Unknown, detail="reset")),
+    Failure(@mttp.TransportError(kind=Network, phase=Unknown, detail="reset")),
   ])
   let entered = Ref(false)
   let cleaned = Ref(false)
@@ -18,7 +18,7 @@ test "a read failure while the handler runs cancels it and closes the connection
       entered.val = true
       h.driver.sleep(1000)
       finished.val = true
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     })
     h.driver.sleep(10)
     assert_true(entered.val)
@@ -42,11 +42,11 @@ test "a reset cancels a handler that leaves a nonempty request body unread" {
       Chunk(b"POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 10\r\n\r\n"),
     ]
     if prefix != "" {
-      steps.push(Chunk(@http.encode_utf8(prefix)))
+      steps.push(Chunk(@mttp.encode_utf8(prefix)))
     }
     steps.push(Wait(reset))
     steps.push(
-      Failure(@http.TransportError(kind=Network, phase=Unknown, detail="reset")),
+      Failure(@mttp.TransportError(kind=Network, phase=Unknown, detail="reset")),
     )
     let conn = @sim.ScriptedConn::new(steps)
     let entered = Ref(false)
@@ -62,7 +62,7 @@ test "a reset cancels a handler that leaves a nonempty request body unread" {
           entered.val = true
           h.driver.sleep(1000)
           finished.val = true
-          @http.Response::new(200)
+          @mttp.Response::new(200)
         },
         limits={
           ..@h1server.ServerLimits::default(),
@@ -141,7 +141,7 @@ test "a full unread body read ahead stops at 64 KiB and the handler deadline can
             cleaned.val = true
           }
           h.driver.sleep(10000)
-          @http.Response::new(200)
+          @mttp.Response::new(200)
         },
         limits={
           ..@h1server.ServerLimits::default(),
@@ -176,7 +176,7 @@ test "clean EOF during unread body read ahead preserves a delayed response" {
   for consume in [false, true] {
     let h = Harness::new()
     let out = h.exchange(
-      @http.encode_utf8(post("/", "abc", fields="Connection: close\r\n")),
+      @mttp.encode_utf8(post("/", "abc", fields="Connection: close\r\n")),
       request => {
         // Read-ahead neither starts the lazy body deadline nor treats a
         // sending half-close as a reason to cancel the handler.
@@ -184,7 +184,7 @@ test "clean EOF during unread body read ahead preserves a delayed response" {
         if consume {
           echo()(request)
         } else {
-          @http.Response::new(204)
+          @mttp.Response::new(204)
         }
       },
       limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 5, },
@@ -206,11 +206,11 @@ test "a read failure in a body the handler reads fails that read" {
   let h = Harness::new()
   let conn = @sim.ScriptedConn::new([
     Chunk(
-      @http.encode_utf8(
+      @mttp.encode_utf8(
         "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 10\r\n\r\nab",
       ),
     ),
-    Failure(@http.TransportError(kind=Network, phase=Unknown, detail="reset")),
+    Failure(@mttp.TransportError(kind=Network, phase=Unknown, detail="reset")),
   ])
   let seen = []
   h.run(() => {
@@ -221,7 +221,7 @@ test "a read failure in a body the handler reads fails that read" {
           b""
         }
       }
-      @http.Response::new(200, body=Bytes(body))
+      @mttp.Response::new(200, body=Bytes(body))
     })
     ignore(task.wait())
   })
@@ -236,13 +236,13 @@ test "peer EOF keeps a delayed and streamed response" {
     let (client, task) = h.serve(
       request => {
         let body = body_of(request) catch {
-          _ => return @http.Response::new(400)
+          _ => return @mttp.Response::new(400)
         }
         // Suspend so that the peer monitor sees EOF before the response.
         h.driver.sleep(20)
-        @http.Response::new(
+        @mttp.Response::new(
           200,
-          body=Stream(@http.StreamBody::new(Pieces::new([body, b"!"]))),
+          body=Stream(@mttp.StreamBody::new(Pieces::new([body, b"!"]))),
         )
       },
       chunk_bytes=2,
@@ -264,7 +264,7 @@ test "a peer that went away leaves the write failure reported" {
   h.run(() => {
     let (client, task) = h.serve(_ => {
       h.driver.sleep(20)
-      @http.Response::new(200, body=Bytes(b"too late"))
+      @mttp.Response::new(200, body=Bytes(b"too late"))
     })
     client.send(get("/"))
     h.driver.sleep(5)

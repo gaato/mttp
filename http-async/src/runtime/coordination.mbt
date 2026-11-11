@@ -44,7 +44,7 @@ pub impl @rt.Coordination for RuntimeCoordination with fn supervise(
   primary~,
   monitor~,
 ) {
-  let failure : Ref[@http.TransportError?] = Ref(None)
+  let failure : Ref[@mttp.TransportError?] = Ref(None)
   let completed = Ref(false)
   @async.with_task_group(group => {
     let work = group.spawn(
@@ -75,9 +75,9 @@ pub impl @rt.Coordination for RuntimeCoordination with fn supervise(
       raise error
     }
   }) catch {
-    @http.TransportError(..) as error => raise error
+    @mttp.TransportError(..) as error => raise error
     error =>
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Network,
         phase=Unknown,
         detail=error.to_string(),

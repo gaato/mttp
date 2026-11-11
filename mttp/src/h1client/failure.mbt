@@ -3,15 +3,15 @@
 /// and its phase unless that is `Unknown`, a codec error is `Protocol`, and
 /// anything else a port raised is `Connect` while dialling and `Network`
 /// otherwise. Cancellation is not an `Error` and never reaches this.
-fn failure(phase : @http.Phase, error : Error) -> @http.TransportError {
+fn failure(phase : @mttp.Phase, error : Error) -> @mttp.TransportError {
   match error {
-    @http.TransportError(kind~, phase=Unknown, detail~) =>
-      @http.TransportError(kind~, phase~, detail~)
-    @http.TransportError(..) as error => error
+    @mttp.TransportError(kind~, phase=Unknown, detail~) =>
+      @mttp.TransportError(kind~, phase~, detail~)
+    @mttp.TransportError(..) as error => error
     @h1.ParseError(detail~, ..) =>
-      @http.TransportError(kind=Protocol, phase~, detail~)
+      @mttp.TransportError(kind=Protocol, phase~, detail~)
     _ =>
-      @http.TransportError(
+      @mttp.TransportError(
         kind=if phase == Dial { Connect } else { Network },
         phase~,
         detail=error.to_string(),
@@ -20,11 +20,11 @@ fn failure(phase : @http.Phase, error : Error) -> @http.TransportError {
 }
 
 ///|
-fn invalid(detail : String) -> @http.TransportError {
-  @http.TransportError(kind=Invalid, phase=Pool, detail~)
+fn invalid(detail : String) -> @mttp.TransportError {
+  @mttp.TransportError(kind=Invalid, phase=Pool, detail~)
 }
 
 ///|
-fn closed() -> @http.TransportError {
-  @http.TransportError(kind=Closed, phase=Pool, detail="client closed")
+fn closed() -> @mttp.TransportError {
+  @mttp.TransportError(kind=Closed, phase=Pool, detail="client closed")
 }

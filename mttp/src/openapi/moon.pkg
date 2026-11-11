@@ -1,5 +1,5 @@
 import {
-  "gaato/http",
+  "gaato/mttp",
   "gaato/mttp/schema",
   "gaato/mttp/endpoint",
   "gaato/mttp/apispec",
@@ -9,8 +9,8 @@ import {
 import {
   "moonbitlang/core/json",
   "moonbitlang/core/debug",
-  "gaato/http/driver",
-  "gaato/http/sim",
+  "gaato/mttp/driver",
+  "gaato/mttp/sim",
   "gaato/mttp/client",
   "gaato/mttp/router",
   "gaato/mttp/multipart",
@@ -21,7 +21,7 @@ options(
   "allow-experimental-packages": [
     "gaato/mttp/endpoint",
     "gaato/mttp/apispec",
-    "gaato/http/driver",
+    "gaato/mttp/driver",
     "gaato/mttp/router",
   ],
 )

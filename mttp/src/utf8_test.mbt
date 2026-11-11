@@ -9,7 +9,7 @@ fn lone_surrogates(text : String) -> String {
 ///|
 test "caller strings with lone surrogates encode with U+FFFD" {
   let text = lone_surrogates("a")
-  let request = @http.Request::post("/")
+  let request = @mttp.Request::post("/")
   let rows : Array[(String, Bytes, Bytes)] = [
     (
       "body_text",
@@ -55,7 +55,7 @@ test "Url::parse percent-encodes lone surrogates as U+FFFD" {
   ]
   for row in rows {
     let (label, text, expected) = row
-    let url = @http.Url::parse(text) catch { _ => fail("\{label}: refused") }
+    let url = @mttp.Url::parse(text) catch { _ => fail("\{label}: refused") }
     assert_eq(url.to_string(), expected, msg=label)
   }
 }
@@ -81,7 +81,7 @@ test "encode_utf8 writes each code point and lone surrogate" {
   ]
   for row in rows {
     let (label, units, expected) = row
-    assert_eq(@http.encode_utf8(String::from_array(units)), expected, msg=label)
+    assert_eq(@mttp.encode_utf8(String::from_array(units)), expected, msg=label)
   }
 }
 
@@ -99,6 +99,6 @@ test "encode_utf8 matches @utf8.encode on well-formed text" {
       code.unsafe_to_char()
     })
     let text = String::from_array(chars)
-    assert_eq(@http.encode_utf8(text), @utf8.encode(text), msg="trial \{trial}")
+    assert_eq(@mttp.encode_utf8(text), @utf8.encode(text), msg="trial \{trial}")
   }
 }

@@ -1,6 +1,6 @@
 ///|
 test "dynamic body outputs require a content type and cookie outputs require one named cookie" {
-  let response = Ref(@http.Response::new(200, body=Bytes(b"data")))
+  let response = Ref(@mttp.Response::new(200, body=Bytes(b"data")))
   let client = @client.Client::new(
     @client.from_fn((_, _) => response.val),
     @sim.FakeClock::new(),
@@ -15,7 +15,7 @@ test "dynamic body outputs require a content type and cookie outputs require one
     assert_true(refused)
     response.val = {
       ..response.val,
-      headers: @http.Headers::of([("content-type", "text/plain")]),
+      headers: @mttp.Headers::of([("content-type", "text/plain")]),
     }
     let refused = cookies.call(client, (), ())
       is Err(@client.Deserialization(_, ..))
@@ -34,7 +34,7 @@ test "streaming metadata roundtrips dynamic status cookies and typed header fail
   let server = ep.serve_public(_ => {
     Ok((((@endpoint.EventStream::from_array([7]), 202), "value; Secure"), 3))
   })
-  let headers = Ref(@http.Headers::empty())
+  let headers = Ref(@mttp.Headers::empty())
   let corrupt = Ref(false)
   let client = @client.Client::new(
     @client.from_fn((req, _) => {
@@ -74,7 +74,7 @@ test "streaming metadata roundtrips dynamic status cookies and typed header fail
         ],
         [("x-count", "bad"), ("set-cookie", "session=a")],
       ] {
-      headers.val = @http.Headers::of(
+      headers.val = @mttp.Headers::of(
         [("content-type", "text/event-stream"), ..fields],
       )
       let refused = ep.call_with(client, (), (), _ => ())
@@ -106,7 +106,7 @@ test "nested output projections preserve their inner selection and dynamic statu
       let response = ep
         .serve_public(_ => Ok(value))
         .dispatch(
-          @http.Request::get("/"),
+          @mttp.Request::get("/"),
           Map([]),
           @endpoint.DispatchContext::new(),
         )
@@ -128,9 +128,9 @@ test "buffered variants try matching decoders in order and reject unknown repres
   ])
   let ep = @endpoint.endpoint.get("/").output(output)
   let response = Ref(
-    @http.Response::new(
+    @mttp.Response::new(
       200,
-      headers=@http.Headers::of([("content-type", "application/json")]),
+      headers=@mttp.Headers::of([("content-type", "application/json")]),
       body=Bytes(b"1"),
     ),
   )
@@ -144,16 +144,16 @@ test "buffered variants try matching decoders in order and reject unknown repres
       ep.call_with(client, (), (), value => value + 1).unwrap().unwrap(),
       2,
     )
-    response.val = { ..response.val, body: @http.Bytes(b"bad"), }
+    response.val = { ..response.val, body: @mttp.Bytes(b"bad"), }
     let failed = ep.call(client, (), ()) is Err(@client.Deserialization(_, ..))
     assert_true(failed)
-    response.val = @http.Response::new(200)
+    response.val = @mttp.Response::new(200)
     let failed = ep.call(client, (), ()) is Err(@client.UnexpectedStatus(_, ..))
     assert_true(failed)
     let server = ep.serve_public(_ => Ok(12))
     assert_eq(
       server.dispatch(
-        @http.Request::get("/"),
+        @mttp.Request::get("/"),
         Map([]),
         @endpoint.DispatchContext::new(),
       ).status,
@@ -169,7 +169,7 @@ test "buffered variants try matching decoders in order and reject unknown repres
       .serve_public(_ => Ok(()))
     assert_eq(
       fixed.dispatch(
-        @http.Request::get("/"),
+        @mttp.Request::get("/"),
         Map([]),
         @endpoint.DispatchContext::new(),
       ).headers.get("x-fixed"),
@@ -185,9 +185,9 @@ test "typed response headers fail when absent or malformed" {
     .get("/")
     .output(@endpoint.text_out().and_header("x-int", @schema.int))
   let response = Ref(
-    @http.Response::new(
+    @mttp.Response::new(
       200,
-      headers=@http.Headers::of([("content-type", "text/plain")]),
+      headers=@mttp.Headers::of([("content-type", "text/plain")]),
       body=Bytes(b"text"),
     ),
   )
@@ -207,12 +207,12 @@ test "typed response headers fail when absent or malformed" {
       assert_true(failed)
     }
     let no_body = @endpoint.endpoint.get("/").output(@endpoint.no_content())
-    response.val = @http.Response::new(204)
+    response.val = @mttp.Response::new(204)
     no_body.call(client, (), ()).unwrap().unwrap()
     no_body.call_with(client, (), (), _ => ()).unwrap().unwrap()
-    response.val = @http.Response::new(
+    response.val = @mttp.Response::new(
       204,
-      headers=@http.Headers::of([("content-type", "text/plain")]),
+      headers=@mttp.Headers::of([("content-type", "text/plain")]),
     )
     let failed = no_body.call(client, (), ())
       is Err(@client.UnexpectedStatus(_, ..))
@@ -227,9 +227,9 @@ test "SSE malformed payloads and missing streaming headers close sources" {
     .get("/")
     .output(@endpoint.sse_out(@schema.jint).and_header("x-int", @schema.int))
   let response = Ref(
-    @http.Response::new(
+    @mttp.Response::new(
       200,
-      headers=@http.Headers::of([("content-type", "text/event-stream")]),
+      headers=@mttp.Headers::of([("content-type", "text/event-stream")]),
       body=Bytes(b"data: 1\n\n"),
     ),
   )
@@ -253,7 +253,7 @@ test "SSE malformed payloads and missing streaming headers close sources" {
     .unwrap()
     .unwrap()
     for bytes in [b"data: invalid\n\n", b"data: \"text\"\n\n"] {
-      response.val = { ..response.val, body: @http.Bytes(bytes), }
+      response.val = { ..response.val, body: @mttp.Bytes(bytes), }
       let failed = ep.call_with(client, (), (), value => value.0.each(_ => ()))
         is Err(@client.Deserialization(_, ..))
       assert_true(failed)
@@ -295,7 +295,7 @@ test "event streams close once after callbacks fail and custom event metadata is
     .serve_public(_ => Ok(@endpoint.EventStream::from_array([1])))
   @driver.run_sync(() => {
     let response = endpoint.dispatch(
-      @http.Request::get("/"),
+      @mttp.Request::get("/"),
       Map([]),
       @endpoint.DispatchContext::new(),
     )

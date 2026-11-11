@@ -2,13 +2,13 @@
 package "gaato/mttp/openapi"
 
 import {
-  "gaato/http",
+  "gaato/mttp",
   "gaato/mttp/apispec",
   "gaato/mttp/endpoint",
 }
 
 // Values
-pub fn check_documented(@apispec.OpenApi, String, @http.Method, Int32) -> String?
+pub fn check_documented(@apispec.OpenApi, String, @mttp.Method, Int32) -> String?
 
 pub fn check_references(@apispec.OpenApi) -> Array[String]
 

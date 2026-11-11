@@ -18,11 +18,11 @@ pub extend ListenError with @debug.Debug::{to_repr}
 /// Stop closes idle connections and the listener, lets active responses and
 /// background jobs finish for `limits.drain_ms`, then cancels and joins them.
 pub async fn serve(
-  handler : @http.Handler,
+  handler : @mttp.Handler,
   addr~ : String,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
   on_listen~ : (String) -> Unit = _ => (),
-  on_error~ : (@http.TransportError) -> Unit = _ => (),
+  on_error~ : (@mttp.TransportError) -> Unit = _ => (),
 ) -> Unit raise ListenError {
   limits.validate() catch {
     error => raise Config(error)
@@ -37,10 +37,10 @@ pub async fn serve(
 ///|
 async fn run_listener(
   listener : @socket.TcpServer,
-  handler : @http.Handler,
+  handler : @mttp.Handler,
   on_listen : (String) -> Unit,
   limits : @h1server.ServerLimits,
-  on_error : (@http.TransportError) -> Unit,
+  on_error : (@mttp.TransportError) -> Unit,
 ) -> Unit raise ListenError {
   let state = ServerState::new()
   let clock = @runtime.AsyncClock::new()
@@ -68,9 +68,9 @@ async fn run_listener(
                   error =>
                     on_error(
                       match error {
-                        @http.TransportError(..) as original => original
+                        @mttp.TransportError(..) as original => original
                         _ =>
-                          @http.TransportError(
+                          @mttp.TransportError(
                             kind=Network,
                             phase=Unknown,
                             detail="background job failed",
@@ -158,7 +158,7 @@ async fn run_listener(
                 ) catch {
                   _ =>
                     on_error(
-                      @http.TransportError(
+                      @mttp.TransportError(
                         kind=Invalid,
                         phase=Unknown,
                         detail="validated server limits refused",

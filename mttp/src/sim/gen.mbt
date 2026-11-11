@@ -81,12 +81,12 @@ pub fn gen_text() -> @qc.Generator[String] {
 /// Headers with duplicate and mixed-case names in order, at most 32 pairs,
 /// for lookup and replacement tests. The values are `gen_text`, so they are
 /// not valid on the wire.
-pub fn gen_headers() -> @qc.Generator[@http.Headers] {
+pub fn gen_headers() -> @qc.Generator[@mttp.Headers] {
   @qc.sized(size => {
     @qc.elements(["X-Test", "x-test", "Accept", "Set-Cookie"])
     .zip(gen_text().resize(4))
     .array_with_size(size.max(0).min(max_header_pairs))
-    .map(pairs => @http.Headers::of(pairs))
+    .map(pairs => @mttp.Headers::of(pairs))
   })
 }
 

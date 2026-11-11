@@ -19,14 +19,14 @@ priv struct TestDialer {
   dialed : Array[(String, Int32)]
   tls_hosts : Array[String]
   /// Raised by every TLS upgrade when set.
-  mut tls_failure : @http.TransportError?
+  mut tls_failure : @mttp.TransportError?
 }
 
 ///|
 impl @rt.Dialer for TestDialer with fn connect(self, host~, port~) {
   self.dialed.push((host, port))
   guard !self.queue.is_empty() else {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Connect,
       phase=Dial,
       detail="no prepared connection",
@@ -36,7 +36,7 @@ impl @rt.Dialer for TestDialer with fn connect(self, host~, port~) {
     Hand(conn) => conn
     Hang => {
       self.coordination.signal().wait()
-      raise @http.TransportError(kind=Connect, phase=Dial, detail="hung")
+      raise @mttp.TransportError(kind=Connect, phase=Dial, detail="hung")
     }
   }
 }
@@ -90,7 +90,7 @@ fn Harness::new(
 fn Harness::scripted(
   self : Harness,
   steps : Array[@sim.ReadStep],
-  write_error? : @http.TransportError,
+  write_error? : @mttp.TransportError,
 ) -> @sim.ScriptedConn {
   let conn = @sim.ScriptedConn::new(steps, write_error?)
   self.dialer.queue.push(Hand(conn))
@@ -142,25 +142,25 @@ fn Harness::finish(self : Harness) -> Unit raise {
 fn exchange(
   max_bytes~ : Int32 = 1 << 20,
   timeout_ms? : Int32,
-) -> @http.SendOptions {
+) -> @mttp.SendOptions {
   { timeout_ms, body: Exchange(max_bytes~), }
 }
 
 ///|
 /// The options of a streamed exchange.
-fn streaming(idle_ms? : Int32, timeout_ms? : Int32) -> @http.SendOptions {
+fn streaming(idle_ms? : Int32, timeout_ms? : Int32) -> @mttp.SendOptions {
   { timeout_ms, body: Stream(idle_ms~), }
 }
 
 ///|
 /// Reads a whole response body and closes the response.
-async fn body_of(response : @http.Response) -> Bytes {
+async fn body_of(response : @mttp.Response) -> Bytes {
   defer response.close()
   match response.body {
     Empty => b""
     Bytes(bytes) => bytes
-    Stream(stream) => @http.read_bounded(stream.take(), 64 << 20)
-    @http.Body::.. => fail("unexpected body kind")
+    Stream(stream) => @mttp.read_bounded(stream.take(), 64 << 20)
+    @mttp.Body::.. => fail("unexpected body kind")
   }
 }
 
@@ -168,16 +168,16 @@ async fn body_of(response : @http.Response) -> Bytes {
 /// Sends `request` and returns the whole body as text.
 async fn fetch(
   client : @h1client.Client,
-  request : @http.Request,
-  options~ : @http.SendOptions = exchange(),
+  request : @mttp.Request,
+  options~ : @mttp.SendOptions = exchange(),
 ) -> String {
   @utf8.decode(body_of(client.send(request, options)))
 }
 
 ///|
 /// A failure's kind and phase, for matching in expectations.
-fn kind_phase(error : Error) -> (@http.Kind, @http.Phase) raise {
-  guard error is @http.TransportError(kind~, phase~, ..) else {
+fn kind_phase(error : Error) -> (@mttp.Kind, @mttp.Phase) raise {
+  guard error is @mttp.TransportError(kind~, phase~, ..) else {
     fail("not a TransportError: \{error}")
   }
   (kind, phase)
@@ -186,7 +186,7 @@ fn kind_phase(error : Error) -> (@http.Kind, @http.Phase) raise {
 ///|
 /// Runs `f`, which must raise a TransportError, and returns its kind and
 /// phase.
-async fn failing(f : async () -> Unit) -> (@http.Kind, @http.Phase) {
+async fn failing(f : async () -> Unit) -> (@mttp.Kind, @mttp.Phase) {
   try f() catch {
     error => kind_phase(error)
   } noraise {
@@ -211,7 +211,7 @@ priv struct Peer {
 }
 
 ///|
-async fn Peer::fill(self : Peer) -> Bool raise @http.TransportError {
+async fn Peer::fill(self : Peer) -> Bool raise @mttp.TransportError {
   guard self.conn.read(max_len=65536) is Some(bytes) else { return false }
   self.pending = self.pending + bytes
   true
@@ -289,9 +289,9 @@ async fn Peer::serve(self : Peer, response : Bytes) -> Array[Received] {
 ///|
 /// The head of a response with `body`, framed by Content-Length.
 fn ok(body : String, status~ : Int32 = 200, fields~ : String = "") -> Bytes {
-  let payload = @http.encode_utf8(body)
-  @http.encode_utf8(
-    "HTTP/1.1 \{status} \{@http.reason_phrase(status)}\r\n\{fields}content-length: \{payload.length()}\r\n\r\n",
+  let payload = @mttp.encode_utf8(body)
+  @mttp.encode_utf8(
+    "HTTP/1.1 \{status} \{@mttp.reason_phrase(status)}\r\n\{fields}content-length: \{payload.length()}\r\n\r\n",
   ) +
   payload
 }

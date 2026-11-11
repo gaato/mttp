@@ -7,7 +7,7 @@
 /// ```mbt check
 /// test {
 ///   let lone = String::from_array([(0xD800).unsafe_to_char()])
-///   assert_eq(@http.encode_utf8("é" + lone), b"\xC3\xA9\xEF\xBF\xBD")
+///   assert_eq(@mttp.encode_utf8("é" + lone), b"\xC3\xA9\xEF\xBF\xBD")
 /// }
 /// ```
 pub fn encode_utf8(text : String) -> Bytes {

@@ -1,6 +1,6 @@
 import {
-  "gaato/http/rt",
-  "gaato/http",
+  "gaato/mttp/rt",
+  "gaato/mttp",
   "moonbitlang/core/async",
   "moonbitlang/core/async/semaphore",
   "moonbitlang/core/async/cond_var",
@@ -8,7 +8,7 @@ import {
 
 import {
   "moonbitlang/core/async/aqueue",
-  "gaato/http/sim",
+  "gaato/mttp/sim",
   "moonbitlang/core/async/cond_var",
 } for "test"
 

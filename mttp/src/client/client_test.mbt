@@ -5,19 +5,19 @@ test "backend wrappers validate and close once" {
   let backend = @client.from_fn(
     (_, _) => {
       calls += 1
-      @http.Response::new(204)
+      @mttp.Response::new(204)
     },
     on_close=() => closes += 1,
   )
   @driver.run_sync(() => {
     assert_eq(
-      backend.send(@http.Request::get("/"), @http.SendOptions::default()).status,
+      backend.send(@mttp.Request::get("/"), @mttp.SendOptions::default()).status,
       204,
     )
     let refused = try {
       let _ = backend.send(
-        @http.Request::get("/bad path"),
-        @http.SendOptions::default(),
+        @mttp.Request::get("/bad path"),
+        @mttp.SendOptions::default(),
       )
       false
     } catch {
@@ -25,13 +25,13 @@ test "backend wrappers validate and close once" {
     }
     assert_true(refused)
     let refused = try {
-      let _ = backend.send(@http.Request::get("/"), {
-        ..@http.SendOptions::default(),
+      let _ = backend.send(@mttp.Request::get("/"), {
+        ..@mttp.SendOptions::default(),
         body: Exchange(max_bytes=-1),
       })
       false
     } catch {
-      @http.TransportError(kind=Invalid, phase=Pool, ..) => true
+      @mttp.TransportError(kind=Invalid, phase=Pool, ..) => true
       _ => false
     }
     assert_true(refused)
@@ -39,12 +39,12 @@ test "backend wrappers validate and close once" {
     let source = @sim.Feed::bytes(@driver.Driver::new(), [b"x"])
     let refused = try {
       let _ = backend.send(
-        @http.Request::post("/").body_stream(source, length=-1L),
-        @http.SendOptions::default(),
+        @mttp.Request::post("/").body_stream(source, length=-1L),
+        @mttp.SendOptions::default(),
       )
       false
     } catch {
-      @http.TransportError(kind=Invalid, phase=Pool, ..) => true
+      @mttp.TransportError(kind=Invalid, phase=Pool, ..) => true
       _ => false
     }
     assert_true(refused)
@@ -56,13 +56,13 @@ test "backend wrappers validate and close once" {
   let refused = try {
     @driver.run_sync(() => {
       let _ = backend.send(
-        @http.Request::get("/"),
-        @http.SendOptions::default(),
+        @mttp.Request::get("/"),
+        @mttp.SendOptions::default(),
       )
     })
     false
   } catch {
-    @http.TransportError(kind=Closed, ..) => true
+    @mttp.TransportError(kind=Closed, ..) => true
     _ => false
   }
   assert_true(refused)
@@ -76,19 +76,19 @@ test "client merges defaults and per-field overrides" {
   let seen = []
   let backend = @client.from_fn((request, options) => {
     seen.push((request, options))
-    @http.Response::new(200, body=Bytes(b"ok"))
+    @mttp.Response::new(200, body=Bytes(b"ok"))
   })
   let client = @client.Client::new(
     backend,
     clock,
     base_url="https://h/v1",
-    headers=@http.Headers::of([("accept", "default"), ("x", "1"), ("x", "2")]),
+    headers=@mttp.Headers::of([("accept", "default"), ("x", "1"), ("x", "2")]),
     read_idle_ms=99,
     max_body_bytes=20,
   )
-  let key : @http.AttributeKey[Int32] = @http.AttributeKey::new("k")
+  let key : @mttp.AttributeKey[Int32] = @mttp.AttributeKey::new("k")
   let request = @client.ClientRequest::new(
-      @http.Request::post("/items").header("accept", "own"),
+      @mttp.Request::post("/items").header("accept", "own"),
       @client.as_bytes(),
     )
     .timeout_ms(30)
@@ -115,7 +115,7 @@ test "head selection runs once and any-status permits rejection statuses" {
   let mut choices = 0
   let heads = []
   let client = @client.Client::new(
-    @client.from_handler(_ => @http.Response::new(404, body=Bytes(b"missing"))),
+    @client.from_handler(_ => @mttp.Response::new(404, body=Bytes(b"missing"))),
     @sim.SimClock::new(d),
   )
   let reader = @client.from_head(head => {
@@ -124,7 +124,7 @@ test "head selection runs once and any-status permits rejection statuses" {
     @client.as_string().any_status()
   }).map_with_head((body, head) => "\{head.status}:\{body.unwrap()}")
   let result = d.run(() => {
-    client.send(@client.request(@http.Request::get("/")).response(reader))
+    client.send(@client.request(@mttp.Request::get("/")).response(reader))
   })
   assert_eq(result.body, "404:missing")
   assert_eq(choices, 1)
@@ -139,7 +139,7 @@ test "unexpected statuses retain at most one MiB and close streams" {
   ])
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(503, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(503, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
   )
@@ -161,11 +161,11 @@ test "JSON readers classify syntax UTF-8 and type failures" {
   let clock = @sim.FakeClock::new()
   for bytes in [b"not json", b"\xff", b"\"wrong type\""] {
     let client = @client.Client::new(
-      @client.from_handler(_ => @http.Response::new(200, body=Bytes(bytes))),
+      @client.from_handler(_ => @mttp.Response::new(200, body=Bytes(bytes))),
       clock,
     )
     let request : @client.ClientRequest[Result[Int32, @client.ResponseFailure]] = @client.request(
-      @http.Request::get("/"),
+      @mttp.Request::get("/"),
     ).response(@client.as_json())
     let failed = match @driver.run_sync(() => client.send(request)).body {
       Err(@client.Deserialization(head, body~, ..) as error) => {
@@ -179,13 +179,13 @@ test "JSON readers classify syntax UTF-8 and type failures" {
     assert_true(failed)
   }
   let client = @client.Client::new(
-    @client.from_handler(_ => @http.Response::new(200, body=Bytes(b"42"))),
+    @client.from_handler(_ => @mttp.Response::new(200, body=Bytes(b"42"))),
     clock,
   )
   assert_eq(
     @driver.run_sync(() => {
       client.send(
-        @client.request(@http.Request::get("/")).response(
+        @client.request(@mttp.Request::get("/")).response(
           @client.as_json_value(),
         ),
       )
@@ -193,7 +193,7 @@ test "JSON readers classify syntax UTF-8 and type failures" {
     Ok(Json::number(42)),
   )
   let request : @client.ClientRequest[Result[Int32, @client.ResponseFailure]] = @client.request(
-    @http.Request::get("/"),
+    @mttp.Request::get("/"),
   ).response(@client.as_json())
   assert_eq(@driver.run_sync(() => client.send(request)).body, Ok(42))
 }
@@ -206,12 +206,12 @@ test "stream callbacks close on error and streaming plans are sent as Stream" {
   let client = @client.Client::new(
     @client.from_fn((_, options) => {
       deadlines.push(options.body)
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
   )
   let request : @client.StreamRequest[Result[Unit, @client.ResponseFailure]] = @client.request(
-    @http.Request::get("/"),
+    @mttp.Request::get("/"),
   ).response(
     @client.as_stream((_, stream) => {
       assert_eq(stream.read_some(), Some(b"data"))
@@ -238,12 +238,12 @@ test "SSE stops before a protocol sentinel and closes" {
   ])
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
   )
   let events = []
-  let request = @client.request(@http.Request::get("/")).response(
+  let request = @client.request(@mttp.Request::get("/")).response(
     @client.as_sse(event => events.push(event.data), stop=event => {
       event.data == "[DONE]"
     }),
@@ -261,7 +261,7 @@ test "fallback timer bounds slow backends and nonpositive attempts never send" {
     @client.from_fn((_, _) => {
       sent += 1
       d.sleep(20)
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     }),
     @sim.SimClock::new(d),
     timer=@sim.SimTimer::new(d),
@@ -269,11 +269,11 @@ test "fallback timer bounds slow backends and nonpositive attempts never send" {
   for limit in [0, -1, 5] {
     let failed = try {
       let _ = d.run(() => {
-        client.send(@client.request(@http.Request::get("/")).timeout_ms(limit))
+        client.send(@client.request(@mttp.Request::get("/")).timeout_ms(limit))
       })
       false
     } catch {
-      @http.TransportError(kind=Timeout(..), ..) => true
+      @mttp.TransportError(kind=Timeout(..), ..) => true
       _ => false
     }
     assert_true(failed)
@@ -294,7 +294,7 @@ test "an SSE overflow behind a delivered event is raised without another read" {
   ])
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
   )
@@ -303,7 +303,7 @@ test "an SSE overflow behind a delivered event is raised without another read" {
     ignore(
       d.run(() => {
         client.send(
-          @client.request(@http.Request::get("/")).response(
+          @client.request(@mttp.Request::get("/")).response(
             @client.as_sse(event => events.push(event.data), max_event_bytes=16),
           ),
         )
@@ -311,7 +311,7 @@ test "an SSE overflow behind a delivered event is raised without another read" {
     )
     None
   } catch {
-    @http.TransportError(kind~, phase~, ..) => Some((kind, phase))
+    @mttp.TransportError(kind~, phase~, ..) => Some((kind, phase))
     error => raise error
   }
   assert_eq(failure, Some((TooLarge(limit=16), Body)))

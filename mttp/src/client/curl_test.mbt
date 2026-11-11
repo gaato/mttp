@@ -1,7 +1,7 @@
 ///|
 test "curl diagnostics quote shell syntax and redact sensitive headers" {
   let request = @client.request(
-    @http.Request::get("https://example.test/?q='$(cmd)")
+    @mttp.Request::get("https://example.test/?q='$(cmd)")
     .header("AUTHORIZATION", "secret")
     .header("Cookie", "private")
     .header("x-name", "a'b"),
@@ -16,12 +16,12 @@ test "curl diagnostics quote shell syntax and redact sensitive headers" {
     .contains("'x-name: <redacted>'"),
   )
   assert_false(
-    @client.request(@http.Request::get("http://user:secret@example.test/"))
+    @client.request(@mttp.Request::get("http://user:secret@example.test/"))
     .to_curl()
     .contains("secret"),
   )
   assert_true(
-    @client.request(@http.Request::get("http://["))
+    @client.request(@mttp.Request::get("http://["))
     .to_curl()
     .contains("--url 'http://['"),
   )
@@ -30,7 +30,7 @@ test "curl diagnostics quote shell syntax and redact sensitive headers" {
 ///|
 test "curl diagnostics preserve binary bytes without opening a data filename" {
   let request = @client.request(
-    @http.Request::post("/").body_bytes(b"@\x00\xff'\n"),
+    @mttp.Request::post("/").body_bytes(b"@\x00\xff'\n"),
   )
   assert_eq(
     request.to_curl(),
@@ -42,7 +42,7 @@ test "curl diagnostics preserve binary bytes without opening a data filename" {
   )
   assert_eq(
     @client.request(
-      @http.Request::post("/").body_bytes(b"", content_type="custom/type"),
+      @mttp.Request::post("/").body_bytes(b"", content_type="custom/type"),
     ).to_curl(),
     "printf '%b' '' | curl --globoff --request 'POST' --header 'content-type: custom/type' --url '/' --data-binary @-",
   )
@@ -52,9 +52,9 @@ test "curl diagnostics preserve binary bytes without opening a data filename" {
 test "curl diagnostics never invoke factories or consume streams" {
   let driver = @driver.Driver::new()
   let source = @sim.Feed::bytes(driver, [b"payload"])
-  let request = @client.request(@http.Request::post("/").body_stream(source))
+  let request = @client.request(@mttp.Request::post("/").body_stream(source))
   assert_true(request.to_curl().has_suffix("# streaming body omitted"))
   let factory = request.body_fn(() => abort("diagnostics called body factory"))
   assert_true(factory.to_curl().has_suffix("# body factory omitted"))
-  @driver.run_sync(() => assert_eq(@http.read_bounded(source, 7), b"payload"))
+  @driver.run_sync(() => assert_eq(@mttp.read_bounded(source, 7), b"payload"))
 }

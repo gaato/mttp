@@ -1,7 +1,6 @@
-// The only import is gaato/http: gaato/mttp depends on it and
-// moonbitlang/core, so every package builds and tests on wasm-gc, wasm, js
-// and native, and a consumer pulls no runtime, codec or crypto module into
-// its graph. scripts/architecture_gate.mbtx enforces this from
+// gaato/mttp has no imports: it depends only on moonbitlang/core, so every
+// package builds and tests on wasm-gc, wasm, js and native, and a consumer
+// pulls no runtime, codec or crypto module into its graph. scripts/architecture_gate.mbtx enforces this from
 // scripts/modules.tsv.
 
 name = "gaato/mttp"
@@ -21,7 +20,3 @@ description = "HTTP for MoonBit in the style of sttp, on top of gaato/http: a cl
 source = "src"
 
 preferred_target = "wasm-gc"
-
-import {
-  "gaato/http@0.6.0",
-}

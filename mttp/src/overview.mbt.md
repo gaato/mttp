@@ -54,7 +54,7 @@ request and supplies the chunks.
 ///|
 test "an upload and an event stream" {
   let request = @multipart.body(
-    @http.Request::post("https://example.com/upload"),
+    @mttp.Request::post("https://example.com/upload"),
     [@multipart.Part::json("meta", { "draft": true })],
     boundary=@multipart.make_boundary(() => 0.25),
   )

@@ -10,13 +10,13 @@
 /// on its way, so that a failure before it can still be answered.
 async fn Session::write_response(
   self : Session,
-  response : @http.Response,
+  response : @mttp.Response,
   source : RequestBody,
-  meth : @http.Method,
+  meth : @mttp.Method,
   version : @h1.Version,
   close : Bool,
   sent : Ref[Bool],
-) -> Bool raise @http.TransportError {
+) -> Bool raise @mttp.TransportError {
   defer response.close()
   let status = response.status
   if status < 200 || status > 599 {
@@ -36,7 +36,7 @@ async fn Session::write_response(
         None if version == Http10 => UntilClose
         None => Chunked
       }
-    @http.Body::.. => raise invalid_response("unsupported response body")
+    @mttp.Body::.. => raise invalid_response("unsupported response body")
   }
   let close = close || framing is UntilClose
   let headers = if close {
@@ -104,16 +104,16 @@ async fn Session::write_response(
 }
 
 ///|
-fn invalid_response(detail : String) -> @http.TransportError {
-  @http.TransportError(kind=Invalid, phase=Head, detail~)
+fn invalid_response(detail : String) -> @mttp.TransportError {
+  @mttp.TransportError(kind=Invalid, phase=Head, detail~)
 }
 
 ///|
 /// The next piece of a streamed response, within the body deadline.
 async fn Session::produce(
   self : Session,
-  reader : &@http.BodyStream,
-) -> Bytes? raise @http.TransportError {
+  reader : &@mttp.BodyStream,
+) -> Bytes? raise @mttp.TransportError {
   let limit = self.limits.body_timeout_ms
   within(
     self.wire.timer,

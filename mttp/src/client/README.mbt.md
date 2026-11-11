@@ -1,7 +1,7 @@
 # gaato/mttp/client
 
 The HTTP client of gaato/mttp: a description of what to send and how to read
-the answer, and a `Client` that sends it through any `@http.Backend` with
+the answer, and a `Client` that sends it through any `@mttp.Backend` with
 defaults, admission, deadlines, decoded-body limits and retries. It does no
 I/O itself; `gaato/http-async` provides the backends that do, and
 `gaato/mttp/testing` the stubs.
@@ -15,7 +15,7 @@ The decoder's `Err(final_value)` reaches the retry decision immediately; its
 retry decisions. The callback runs once and its exceptions remain effects.
 This is the endpoint interpreter's bridge for buffered `call_with` outputs.
 
-A `RequestPlan[T, M]` pairs an `@http.Request` with a `ResponsePlan[T, M]`,
+A `RequestPlan[T, M]` pairs an `@mttp.Request` with a `ResponsePlan[T, M]`,
 which says how to turn the response into a `T`. The mode `M` says when the
 body is read:
 
@@ -63,7 +63,7 @@ construct tokens with `Admission::new(bucket, sequence=...)` and inspect
 `bucket()` / `sequence()` on release. Tokens belong to their issuing limiter;
 implementations must ignore duplicate releases and bound outstanding identities.
 
-Each attempt maps the plan onto the `@http.SendOptions` the backend gets:
+Each attempt maps the plan onto the `@mttp.SendOptions` the backend gets:
 
 | Plan | `body` | The Client's reader |
 |---|---|---|
@@ -82,9 +82,9 @@ test "retry a 503 and read JSON" {
   let backend = @client.from_fn((_, _) => {
     calls += 1
     if calls == 1 {
-      @http.Response::new(503)
+      @mttp.Response::new(503)
     } else {
-      @http.Response::new(200, body=Bytes(b"{\"id\":7}"))
+      @mttp.Response::new(200, body=Bytes(b"{\"id\":7}"))
     }
   })
   let client = @client.Client::new(
@@ -115,7 +115,7 @@ wrapper:
   `redirect_history` and `final_url`. Keep retries above it; a transport
   failure on a later hop never reads as unsent, since the first request was
   answered.
-- `from_fn` and `from_handler` turn a function or an `@http.Handler` into a
+- `from_fn` and `from_handler` turn a function or an `@mttp.Handler` into a
   backend that validates what it is given.
 
 ## Helpers

@@ -32,7 +32,7 @@ test "Timeouts gives the head and the body the read limit" {
     write: Some(4),
     read: Some(5),
   }
-  let phases : Array[@http.Phase] = [Pool, Dial, Write, Head, Body, Unknown]
+  let phases : Array[@mttp.Phase] = [Pool, Dial, Write, Head, Body, Unknown]
   assert_eq(phases.map(phase => limits.of(phase)), [
     Some(2),
     Some(3),

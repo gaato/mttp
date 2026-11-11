@@ -74,7 +74,7 @@ fn captures(
         let builder = StringBuilder()
         for part in path[i:] {
           builder.write_char('/')
-          builder.write_string(@http.percent_encode(part))
+          builder.write_string(@mttp.percent_encode(part))
         }
         values[name] = builder.to_string()
       }
@@ -109,7 +109,7 @@ fn more_specific(a : Array[@endpoint.Seg], b : Array[@endpoint.Seg]) -> Bool {
 }
 
 ///|
-fn discard(body : @http.Body) -> Unit {
+fn discard(body : @mttp.Body) -> Unit {
   if body is Stream(stream) {
     stream.close()
   }
@@ -118,11 +118,11 @@ fn discard(body : @http.Body) -> Unit {
 ///|
 async fn Router::route(
   self : Router,
-  request : @http.Request,
-) -> @http.Response noraise {
+  request : @mttp.Request,
+) -> @mttp.Response noraise {
   let path = try {
     request.validate()
-    let url = @http.Url::parse(request.url)
+    let url = @mttp.Url::parse(request.url)
     if url.path != "" &&
       url.path != "/" &&
       url.path
@@ -162,7 +162,7 @@ async fn Router::route(
   }
   let wanted = if request.meth is Head &&
     !candidates.iter().any(c => c.0.doc().meth is Some(Head)) {
-    @http.Get
+    @mttp.Get
   } else {
     request.meth
   }
@@ -171,7 +171,7 @@ async fn Router::route(
       return endpoint.dispatch(request, params, self.context)
     }
   }
-  let allowed : Array[@http.Method] = []
+  let allowed : Array[@mttp.Method] = []
   for (endpoint, _) in candidates {
     if endpoint.doc().meth is Some(meth) {
       if !allowed.contains(meth) {
@@ -186,9 +186,9 @@ async fn Router::route(
     allowed.push(Options)
   }
   if request.meth is Options {
-    return @http.Response::new(
+    return @mttp.Response::new(
       204,
-      headers=@http.Headers::of([
+      headers=@mttp.Headers::of([
         ("allow", allowed.map(m => m.to_string()).join(", ")),
       ]),
     )
@@ -201,8 +201,8 @@ async fn Router::route(
 /// closes any body, including bodies returned by rejection middleware.
 pub async fn Router::dispatch(
   self : Router,
-  request : @http.Request,
-) -> @http.Response noraise {
+  request : @mttp.Request,
+) -> @mttp.Response noraise {
   if self.closed {
     discard(request.body)
     return head_response(request, problem(503, "Service Unavailable"))
@@ -213,7 +213,7 @@ pub async fn Router::dispatch(
       return head_response(request, problem(400, "Bad Request"))
     }
   }
-  let mut next : @http.Handler = req => {
+  let mut next : @mttp.Handler = req => {
     with_owned_request(req, req => self.route(req))
   }
   for i = self.options.middleware.length() - 1; i >= 0; i = i - 1 {
@@ -221,7 +221,7 @@ pub async fn Router::dispatch(
     let inner = next
     next = req => {
       with_owned_request(req, req => {
-        let produced : Ref[@http.Response?] = Ref(None)
+        let produced : Ref[@mttp.Response?] = Ref(None)
         errdefer (if produced.val is Some(response) { response.close() })
         let response = middleware(req, forwarded => {
           // A taken stream belongs to the middleware's reader or lazy wrapper.
@@ -246,7 +246,7 @@ pub async fn Router::dispatch(
 
 ///|
 /// Creates a handler for transport adapters.
-pub fn Router::handler(self : Router) -> @http.Handler {
+pub fn Router::handler(self : Router) -> @mttp.Handler {
   request => self.dispatch(request)
 }
 
@@ -264,19 +264,19 @@ pub fn Router::close(self : Router) -> Unit {
 
 ///|
 /// Closes the router through the Backend interface.
-pub impl @http.Backend for Router with fn close(self) {
+pub impl @mttp.Backend for Router with fn close(self) {
   self.close()
 }
 
 ///|
 /// Sends an in-process request with the Backend contract.
-pub extend Router with @http.Backend::{send}
+pub extend Router with @mttp.Backend::{send}
 
 ///|
 fn head_response(
-  request : @http.Request,
-  response : @http.Response,
-) -> @http.Response {
+  request : @mttp.Request,
+  response : @mttp.Response,
+) -> @mttp.Response {
   if request.meth is Head {
     response.close()
     { ..response, body: Empty, }

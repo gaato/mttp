@@ -86,7 +86,7 @@ test "a handler past handler_timeout_ms is cancelled and answered with 504" {
           cleaned.val = true
         }
         h.driver.sleep(10000)
-        @http.Response::new(200)
+        @mttp.Response::new(200)
       },
       limits={
         ..@h1server.ServerLimits::default(),
@@ -111,7 +111,7 @@ test "a handler that finishes within its budget keeps its response" {
     let (client, task) = h.serve(
       _ => {
         h.driver.sleep(4)
-        @http.Response::new(204)
+        @mttp.Response::new(204)
       },
       limits={
         ..@h1server.ServerLimits::default(),
@@ -134,13 +134,13 @@ test "consumer pauses count against an unfinished body but not a completed EOF" 
     let seen = []
     let pieces : Array[Bytes?] = []
     let out = h.exchange(
-      @http.encode_utf8(post("/", if complete { "x" } else { "xy" })),
+      @mttp.encode_utf8(post("/", if complete { "x" } else { "xy" })),
       request => {
         guard request.body is Stream(stream) else {
-          return @http.Response::new(500)
+          return @mttp.Response::new(500)
         }
         let reader = stream.take() catch {
-          _ => return @http.Response::new(500)
+          _ => return @mttp.Response::new(500)
         }
         pieces.push(reader.read_some() catch { _ => None })
         h.driver.sleep(10)
@@ -151,7 +151,7 @@ test "consumer pauses count against an unfinished body but not a completed EOF" 
           }
         }
         pieces.push(next)
-        @http.Response::new(204)
+        @mttp.Response::new(204)
       },
       limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 5, },
       chunk_bytes=1,
@@ -188,7 +188,7 @@ test "an unread body drain has a deadline and reports its failure" {
 test "a peer that stops reading is cut off by the write deadline" {
   let h = Harness::new()
   let conn = Stalled::{
-    reads: @sim.ScriptedConn::new([Chunk(@http.encode_utf8(get("/")))]),
+    reads: @sim.ScriptedConn::new([Chunk(@mttp.encode_utf8(get("/")))]),
     stuck: h.coordination.signal(),
     writes: 0,
     closed: false,
@@ -219,10 +219,10 @@ test "an independent first response producer timeout is 500 with an unread reque
     h.run(() => {
       let (client, task) = h.serve(
         _ => {
-          @http.Response::new(
+          @mttp.Response::new(
             200,
             body=Stream(
-              @http.StreamBody::new(Stall::{
+              @mttp.StreamBody::new(Stall::{
                 driver: h.driver,
                 closes,
                 step: 1,
@@ -255,15 +255,15 @@ test "a response timeout after a successful partial input pull is a producer fai
     let (client, task) = h.serve(
       request => {
         guard request.body is Stream(stream) else {
-          return @http.Response::new(500)
+          return @mttp.Response::new(500)
         }
         let reader = stream.take() catch {
-          _ => return @http.Response::new(500)
+          _ => return @mttp.Response::new(500)
         }
-        @http.Response::new(
+        @mttp.Response::new(
           200,
           body=Stream(
-            @http.StreamBody::new(InputThenStall::{
+            @mttp.StreamBody::new(InputThenStall::{
               driver: h.driver,
               reader,
               closes,
@@ -287,20 +287,20 @@ test "a response timeout after a successful partial input pull is a producer fai
 ///|
 priv struct InputThenStall {
   driver : @driver.Driver
-  reader : &@http.BodyStream
+  reader : &@mttp.BodyStream
   closes : Ref[Int32]
   mut closed : Bool
 }
 
 ///|
-impl @http.BodyStream for InputThenStall with fn read_some(self) {
+impl @mttp.BodyStream for InputThenStall with fn read_some(self) {
   ignore(self.reader.read_some())
   self.driver.sleep(100000)
   None
 }
 
 ///|
-impl @http.BodyStream for InputThenStall with fn close(self) {
+impl @mttp.BodyStream for InputThenStall with fn close(self) {
   if !self.closed {
     self.closed = true
     self.reader.close()
@@ -315,10 +315,10 @@ test "a response producer that stalls is cut off after body_timeout_ms" {
   h.run(() => {
     let (client, task) = h.serve(
       _ => {
-        @http.Response::new(
+        @mttp.Response::new(
           200,
           body=Stream(
-            @http.StreamBody::new(Stall::{
+            @mttp.StreamBody::new(Stall::{
               driver: h.driver,
               closes,
               step: 0,
@@ -351,7 +351,7 @@ priv struct Stall {
 }
 
 ///|
-impl @http.BodyStream for Stall with fn read_some(self) {
+impl @mttp.BodyStream for Stall with fn read_some(self) {
   self.step += 1
   if self.step == 1 {
     return Some(b"first")
@@ -361,7 +361,7 @@ impl @http.BodyStream for Stall with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for Stall with fn close(self) {
+impl @mttp.BodyStream for Stall with fn close(self) {
   if !self.closed {
     self.closed = true
     self.closes.val += 1

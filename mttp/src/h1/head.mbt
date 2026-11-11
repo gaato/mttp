@@ -209,7 +209,7 @@ fn head_lines(
   head : BytesView,
   limits : Limits,
   skip_leading_crlf~ : Bool,
-) -> (String, @http.Headers) raise ParseError {
+) -> (String, @mttp.Headers) raise ParseError {
   guard scan_head(head, max=limits.max_head_bytes, skip_leading_crlf~)
     is Some(end) &&
     end == head.length() else {
@@ -235,7 +235,7 @@ fn head_lines(
     }
     pairs.push(field(line))
   }
-  (first.to_owned(), @http.Headers::of(pairs))
+  (first.to_owned(), @mttp.Headers::of(pairs))
 }
 
 ///|
@@ -257,7 +257,7 @@ fn version(text : StringView) -> Version raise ParseError {
 /// (RFC 9112, section 6.1), and an HTTP/1.0 peer may frame it differently.
 fn check_version_framing(
   v : Version,
-  headers : @http.Headers,
+  headers : @mttp.Headers,
 ) -> Unit raise ParseError {
   if v == Http10 && headers.contains("transfer-encoding") {
     raise ParseError(kind=Smuggling, detail="Transfer-Encoding on HTTP/1.0")
@@ -297,7 +297,7 @@ pub fn parse_request_head(
     raise malformed("invalid request target")
   }
   let version = version(v)
-  let meth = @http.Method::parse(meth.to_owned())
+  let meth = @mttp.Method::parse(meth.to_owned())
   let target = target.to_owned()
   validate_target(meth, target)
   check_version_framing(version, headers)
@@ -320,7 +320,7 @@ fn validate_host(host : String) -> Unit raise ParseError {
     .any(c => c <= ' ' || c >= '\u{7f}' || "/\\@?#,".contains_char(c)) {
     raise malformed("invalid Host")
   }
-  let parsed = @http.Url::parse("http://" + host) catch {
+  let parsed = @mttp.Url::parse("http://" + host) catch {
     _ => raise malformed("invalid Host")
   }
   if parsed.host is (None | Some("")) {
@@ -333,7 +333,7 @@ fn validate_host(host : String) -> Unit raise ParseError {
 /// 3.2): authority-form only for CONNECT, asterisk-form only for OPTIONS,
 /// otherwise origin-form or an absolute http(s) URL without userinfo.
 fn validate_target(
-  meth : @http.Method,
+  meth : @mttp.Method,
   target : String,
 ) -> Unit raise ParseError {
   if target.contains("\\") {
@@ -344,7 +344,7 @@ fn validate_target(
       raise malformed("CONNECT requires authority-form")
     }
     // An unknown scheme keeps every explicit port, including HTTP's 80.
-    let url = @http.Url::parse("connect://" + target) catch {
+    let url = @mttp.Url::parse("connect://" + target) catch {
       _ => raise malformed("invalid CONNECT authority")
     }
     if url.host is (None | Some("")) || url.port is None {
@@ -355,7 +355,7 @@ fn validate_target(
       raise malformed("asterisk-form requires OPTIONS")
     }
   } else if !target.has_prefix("/") {
-    let url = @http.Url::parse(target) catch {
+    let url = @mttp.Url::parse(target) catch {
       _ => raise malformed("invalid absolute target")
     }
     if !(url.scheme is Some("http" | "https")) ||

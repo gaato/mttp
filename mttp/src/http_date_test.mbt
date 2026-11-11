@@ -1,17 +1,17 @@
 ///|
 test "IMF-fixdate is read in UTC" {
   assert_eq(
-    @http.parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT", now_unix_ms=0L),
+    @mttp.parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT", now_unix_ms=0L),
     Some(784111777000L),
   )
   assert_eq(
-    @http.parse_http_date("Thu, 01 Jan 1970 00:00:00 GMT", now_unix_ms=0L),
+    @mttp.parse_http_date("Thu, 01 Jan 1970 00:00:00 GMT", now_unix_ms=0L),
     Some(0L),
   )
   // The clock places only rfc850-date's year; any clock reads IMF-fixdate.
   for now in [-9223372036854775808L, -1L, 0L, 9223372036854775807L] {
     assert_eq(
-      @http.parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT", now_unix_ms=now),
+      @mttp.parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT", now_unix_ms=now),
       Some(784111777000L),
     )
   }
@@ -41,14 +41,14 @@ test "Gregorian leap years and month boundaries" {
       ("Mon, 01 Mar 2100 00:00:00 GMT", 4107542400000L),
     ] {
     assert_eq(
-      @http.parse_http_date(date, now_unix_ms=0L),
+      @mttp.parse_http_date(date, now_unix_ms=0L),
       Some(epoch),
       msg=date,
     )
   }
   // Leap-second syntax is accepted as the following Unix second.
   assert_eq(
-    @http.parse_http_date("Sat, 31 Dec 2016 23:59:60 GMT", now_unix_ms=0L),
+    @mttp.parse_http_date("Sat, 31 Dec 2016 23:59:60 GMT", now_unix_ms=0L),
     Some(1483228800000L),
   )
 }
@@ -62,7 +62,7 @@ test "the obsolete rfc850-date and asctime-date are accepted" {
       "Sunday, 06-Nov-94 08:49:37 GMT", "Sun Nov  6 08:49:37 1994", "Sun Nov 06 08:49:37 1994",
     ] {
     assert_eq(
-      @http.parse_http_date(date, now_unix_ms=now),
+      @mttp.parse_http_date(date, now_unix_ms=now),
       Some(784111777000L),
       msg=date,
     )
@@ -82,16 +82,16 @@ test "a two-digit year more than 50 years ahead is from the century before" {
       ("Thursday, 01-Jan-70 00:00:00 GMT", None),
       ("Friday, 01-Jan-77 00:00:00 GMT", None),
     ] {
-    assert_eq(@http.parse_http_date(date, now_unix_ms=now), expected, msg=date)
+    assert_eq(@mttp.parse_http_date(date, now_unix_ms=now), expected, msg=date)
   }
   // A clock before 1970 is in 1969, so 68 is 1968, whose 1 January was a
   // Monday.
   assert_eq(
-    @http.parse_http_date("Monday, 01-Jan-68 00:00:00 GMT", now_unix_ms=-1L),
+    @mttp.parse_http_date("Monday, 01-Jan-68 00:00:00 GMT", now_unix_ms=-1L),
     Some(-63158400000L),
   )
   assert_eq(
-    @http.parse_http_date(
+    @mttp.parse_http_date(
       "Tuesday, 08-Nov-94 08:49:37 GMT",
       now_unix_ms=784111777000L,
     ),
@@ -109,7 +109,7 @@ test "malformed obsolete dates are rejected" {
       "Sun Nov  6 08:49:37 1994 GMT", "sun Nov  6 08:49:37 1994", "Sun Nov  6 08:49:37 94",
       "Mon Nov  6 08:49:37 1994", "Sun Nov 6  08:49:37 1994", "Sun Nov  6 08:49 37 1994",
     ] {
-    assert_eq(@http.parse_http_date(date, now_unix_ms=0L), None, msg=date)
+    assert_eq(@mttp.parse_http_date(date, now_unix_ms=0L), None, msg=date)
   }
 }
 
@@ -125,7 +125,7 @@ test "invalid dates and inconsistent weekday are rejected" {
       "Thu, 29 Feb 2024 00-00:00 GMT", "Thu, 29 Feb 2024 00:00:00 GMT extra", " Sun, 06 Nov 1994 08:49:37 GMT",
       "🌙🌙🌙🌙🌙🌙🌙🌙🌙🌙🌙🌙🌙abc",
     ] {
-    assert_eq(@http.parse_http_date(date, now_unix_ms=0L), None, msg=date)
+    assert_eq(@mttp.parse_http_date(date, now_unix_ms=0L), None, msg=date)
   }
 }
 
@@ -149,7 +149,7 @@ test "the fifty-year cutoff compares the whole date, not the year" {
       ("Wednesday, 21-Oct-76 00:00:00 GMT", Some(3370464000000L)),
       ("Thursday, 21-Oct-76 00:00:00 GMT", None),
     ] {
-    assert_eq(@http.parse_http_date(date, now_unix_ms=now), expected, msg=date)
+    assert_eq(@mttp.parse_http_date(date, now_unix_ms=now), expected, msg=date)
   }
 }
 
@@ -169,6 +169,6 @@ test "a two-digit year may name the next century" {
       ("Sunday, 01-Jan-40 00:00:01 GMT", Some(2208988801000L)),
       ("Friday, 01-Jan-40 00:00:01 GMT", None),
     ] {
-    assert_eq(@http.parse_http_date(date, now_unix_ms=now), expected, msg=date)
+    assert_eq(@mttp.parse_http_date(date, now_unix_ms=now), expected, msg=date)
   }
 }

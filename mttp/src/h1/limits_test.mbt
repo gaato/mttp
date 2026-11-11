@@ -3,7 +3,7 @@
 /// with `suffix` at the end.
 fn padded(prefix : String, total : Int32, suffix : String) -> Bytes {
   let fill = total - prefix.length() - suffix.length()
-  @http.encode_utf8(prefix + "a".repeat(fill) + suffix)
+  @mttp.encode_utf8(prefix + "a".repeat(fill) + suffix)
 }
 
 ///|
@@ -63,7 +63,7 @@ test "empty lines before a request line count against the head limit" {
     let expected = if total == limit { None } else { Some(@h1.HeadTooLarge) }
     let crlfs = (total - request.length()) / 2
     let padding = if (total - request.length()) % 2 == 0 { "" } else { "a" }
-    let wire = @http.encode_utf8(
+    let wire = @mttp.encode_utf8(
       "\r\n".repeat(crlfs) + "GET /\{padding} HTTP/1.1\r\nHost: h\r\n\r\n",
     )
     assert_eq(wire.length(), total)
@@ -73,7 +73,7 @@ test "empty lines before a request line count against the head limit" {
   }
   // Empty lines alone, never followed by a request line, stop at the limit.
   let decoder = @h1.HeadDecoder::new(skip_leading_crlf=true)
-  let flood = @http.encode_utf8("\r\n".repeat(limit / 2))
+  let flood = @mttp.encode_utf8("\r\n".repeat(limit / 2))
   assert_eq(decoder.feed(flood).consumed, limit)
   assert_eq(
     kind_of(() => ignore(decoder.feed(b"\r\n"))),
@@ -82,10 +82,10 @@ test "empty lines before a request line count against the head limit" {
   // The same boundary at every split, with a smaller limit.
   let limits = { ..@h1.Limits::default(), max_head_bytes: 64, }
   let request = "GET /a HTTP/1.1\r\nHost: h\r\n\r\n"
-  let at_limit = @http.encode_utf8("\r\n".repeat(18) + request)
+  let at_limit = @mttp.encode_utf8("\r\n".repeat(18) + request)
   assert_eq(at_limit.length(), 64)
   assert_eq(request_refusal(at_limit, limits~), None)
-  let past_limit = @http.encode_utf8(
+  let past_limit = @mttp.encode_utf8(
     "\r\n".repeat(18) + "GET /ab HTTP/1.1\r\nHost: h\r\n\r\n",
   )
   assert_eq(request_refusal(past_limit, limits~), Some(@h1.HeadTooLarge))
@@ -101,7 +101,7 @@ test "head field limit accepts 100 fields and refuses 101" {
       head.write_string("X-\{i}: v\r\n")
     }
     head.write_string("\r\n")
-    let wire = @http.encode_utf8(head.to_string())
+    let wire = @mttp.encode_utf8(head.to_string())
     let expected = if count == 100 { None } else { Some(@h1.HeadTooLarge) }
     assert_eq(kind_of(() => ignore(@h1.parse_request_head(wire))), expected)
   }
@@ -114,7 +114,7 @@ test "chunk size line limit accepts 4 KiB and refuses one byte more" {
   for total in [limit, limit + 1] {
     let expected = if total == limit { None } else { Some(@h1.HeadTooLarge) }
     // An extension and a run of leading zeros each make a long size line.
-    let zeros = @http.encode_utf8("0".repeat(total - 3) + "1\r\n")
+    let zeros = @mttp.encode_utf8("0".repeat(total - 3) + "1\r\n")
     for line in [padded("1;", total, "\r\n"), zeros] {
       assert_eq(line.length(), total)
       let decoder = @h1.ChunkedDecoder::new(@h1.Limits::default())
@@ -124,10 +124,10 @@ test "chunk size line limit accepts 4 KiB and refuses one byte more" {
   let limits = { ..@h1.Limits::default(), max_chunk_line_bytes: 16, }
   let head = "POST / HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n"
   let body = "1;" + "x".repeat(12) + "\r\na\r\n0\r\n\r\n"
-  assert_eq(request_refusal(@http.encode_utf8(head + body), limits~), None)
+  assert_eq(request_refusal(@mttp.encode_utf8(head + body), limits~), None)
   let body = "1;" + "x".repeat(13) + "\r\na\r\n0\r\n\r\n"
   assert_eq(
-    request_refusal(@http.encode_utf8(head + body), limits~),
+    request_refusal(@mttp.encode_utf8(head + body), limits~),
     Some(HeadTooLarge),
   )
 }
@@ -172,7 +172,7 @@ test "trailer field limit accepts 100 fields and refuses 101" {
     let expected = if count == 100 { None } else { Some(@h1.HeadTooLarge) }
     assert_eq(
       kind_of(() => {
-        let result = decoder.feed(@http.encode_utf8(trailers.to_string()))
+        let result = decoder.feed(@mttp.encode_utf8(trailers.to_string()))
         assert_eq(result.trailers.length(), count)
         decoder.finish()
       }),

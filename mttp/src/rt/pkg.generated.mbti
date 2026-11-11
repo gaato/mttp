@@ -1,8 +1,8 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/http/rt"
+package "gaato/mttp/rt"
 
 import {
-  "gaato/http",
+  "gaato/mttp",
 }
 
 // Values
@@ -21,19 +21,19 @@ pub(open) trait Clock {
 }
 
 pub(open) trait Conn {
-  async fn read(Self, max_len~ : Int32) -> Bytes? raise @http.TransportError
-  async fn write(Self, Bytes) -> Unit raise @http.TransportError
+  async fn read(Self, max_len~ : Int32) -> Bytes? raise @mttp.TransportError
+  async fn write(Self, Bytes) -> Unit raise @mttp.TransportError
   fn close(Self) -> Unit
 }
 
 pub(open) trait Coordination {
   fn signal(Self) -> &Signal
-  async fn supervise(Self, primary~ : async () -> Unit raise @http.TransportError, monitor~ : async () -> Unit raise @http.TransportError) -> Unit raise @http.TransportError
+  async fn supervise(Self, primary~ : async () -> Unit raise @mttp.TransportError, monitor~ : async () -> Unit raise @mttp.TransportError) -> Unit raise @mttp.TransportError
 }
 
 pub(open) trait Dialer {
-  async fn connect(Self, host~ : String, port~ : Int32) -> &Conn raise @http.TransportError
-  async fn start_tls(Self, &Conn, host~ : String) -> &Conn raise @http.TransportError
+  async fn connect(Self, host~ : String, port~ : Int32) -> &Conn raise @mttp.TransportError
+  async fn start_tls(Self, &Conn, host~ : String) -> &Conn raise @mttp.TransportError
 }
 
 pub(open) trait Gate {

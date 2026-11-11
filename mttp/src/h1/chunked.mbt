@@ -21,7 +21,7 @@ pub struct Decoded {
   /// Whether the last chunk and the trailer section ended.
   done : Bool
   /// Trailer fields, names lowercased, duplicates retained.
-  trailers : @http.Headers
+  trailers : @mttp.Headers
   /// How many bytes of this feed belong to the body.
   consumed : Int32
 }
@@ -242,7 +242,7 @@ pub fn ChunkedDecoder::feed(
   {
     chunks,
     done: self.state is Done,
-    trailers: @http.Headers::of(self.trailers),
+    trailers: @mttp.Headers::of(self.trailers),
     consumed: i,
   }
 }

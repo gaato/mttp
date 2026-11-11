@@ -6,8 +6,8 @@
 /// Each request reaches `handler` with an absolute URL made of `scheme`
 /// (`http` or `https`, the scheme the connection was accepted under), the
 /// `Host` field and the target; an HTTP/1.0 request without `Host` uses
-/// `authority`. With `peer`, the request carries it as `@http.remote_addr`;
-/// with `background`, as `@http.background`, so the handler can start work
+/// `authority`. With `peer`, the request carries it as `@mttp.remote_addr`;
+/// with `background`, as `@mttp.background`, so the handler can start work
 /// that outlives the response on the caller's scheduler. Without one, no
 /// `background` attribute is advertised.
 ///
@@ -49,7 +49,7 @@
 ///       @h1server.serve_conn(
 ///         server,
 ///         request => {
-///           @http.Response::new(200, body=Bytes(@http.encode_utf8(request.url)))
+///           @mttp.Response::new(200, body=Bytes(@mttp.encode_utf8(request.url)))
 ///         },
 ///         clock=@sim.SimClock::new(driver),
 ///         timer=@sim.SimTimer::new(driver),
@@ -72,7 +72,7 @@
 /// ```
 pub async fn serve_conn(
   conn : &@rt.Conn,
-  handler : @http.Handler,
+  handler : @mttp.Handler,
   clock~ : &@rt.Clock,
   timer~ : &@rt.Timer,
   coordination~ : &@rt.Coordination,
@@ -80,7 +80,7 @@ pub async fn serve_conn(
   limits~ : ServerLimits = ServerLimits::default(),
   peer? : String,
   authority~ : String = "localhost",
-  on_error~ : (@http.TransportError) -> Unit = _ => (),
+  on_error~ : (@mttp.TransportError) -> Unit = _ => (),
   stopping~ : () -> Bool = () => false,
   background? : (async () -> Unit) -> Unit,
 ) -> Unit raise ServerConfigError {
@@ -88,7 +88,7 @@ pub async fn serve_conn(
   limits.validate()
   if scheme != "http" && scheme != "https" {
     on_error(
-      @http.TransportError(
+      @mttp.TransportError(
         kind=Invalid,
         phase=Head,
         detail="the server scheme must be http or https",

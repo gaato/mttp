@@ -1,7 +1,7 @@
 import {
   "moonbitlang/core/async",
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/rt",
   "moonbitlang/core/async/io",
   "moonbitlang/core/async/socket",
   "moonbitlang/core/async/tls",

@@ -2,7 +2,7 @@
 test "quoted relation unescapes backslashes" {
   assert_eq(
     @client.parse_link_next(
-      @http.Headers::of([("link", "</next>; rel=\"ne\\xt\"")]),
+      @mttp.Headers::of([("link", "</next>; rel=\"ne\\xt\"")]),
     ),
     Some("/next"),
   )
@@ -10,7 +10,7 @@ test "quoted relation unescapes backslashes" {
 
 ///|
 test "parse_link_next handles repeated values comma URLs and relation forms" {
-  let mut headers = @http.Headers::empty()
+  let mut headers = @mttp.Headers::empty()
   assert_eq(@client.parse_link_next(headers), None)
   headers = headers.add("Link", "<https://api.test/prev>; rel=prev")
   headers = headers.add(
@@ -20,11 +20,11 @@ test "parse_link_next handles repeated values comma URLs and relation forms" {
     @client.parse_link_next(headers),
     Some("https://api.test/items?a=1,2"),
   )
-  let unquoted = @http.Headers::of([
+  let unquoted = @mttp.Headers::of([
     ("link", "<cursor-1>; REL=next, <cursor-2>; rel=last"),
   ])
   assert_eq(@client.parse_link_next(unquoted), Some("cursor-1"))
-  let escaped = @http.Headers::of([
+  let escaped = @mttp.Headers::of([
     (
       "link", "<ignored>; title=\"x\\\";y\"; rel=prev, <chosen>; rel=\"NEXT last\"",
     ),
@@ -32,7 +32,7 @@ test "parse_link_next handles repeated values comma URLs and relation forms" {
   assert_eq(@client.parse_link_next(escaped), Some("chosen"))
   assert_eq(
     @client.parse_link_next(
-      @http.Headers::of([("link", "not-a-link; rel=next")]),
+      @mttp.Headers::of([("link", "not-a-link; rel=next")]),
     ),
     None,
   )
@@ -41,11 +41,11 @@ test "parse_link_next handles repeated values comma URLs and relation forms" {
 ///|
 test "only the first rel parameter of a link value counts" {
   // RFC 8288 §3.3: occurrences after the first MUST be ignored.
-  let later_next = @http.Headers::of([
+  let later_next = @mttp.Headers::of([
     ("link", "<skipped>; rel=prev; rel=next, <chosen>; rel=next"),
   ])
   assert_eq(@client.parse_link_next(later_next), Some("chosen"))
-  let first_next = @http.Headers::of([
+  let first_next = @mttp.Headers::of([
     ("link", "<chosen>; title=x; rel=next; rel=prev"),
   ])
   assert_eq(@client.parse_link_next(first_next), Some("chosen"))

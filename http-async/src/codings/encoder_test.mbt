@@ -8,12 +8,12 @@ priv struct EncoderSource {
 }
 
 ///|
-impl @http.BodyStream for EncoderSource with fn read_some(self) {
+impl @mttp.BodyStream for EncoderSource with fn read_some(self) {
   if self.wait {
     self.driver.sleep(1000)
   }
   if self.fail {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Network,
       phase=Body,
       detail="upstream failed",
@@ -28,7 +28,7 @@ impl @http.BodyStream for EncoderSource with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for EncoderSource with fn close(self) {
+impl @mttp.BodyStream for EncoderSource with fn close(self) {
   self.closes.val += 1
 }
 
@@ -37,8 +37,8 @@ test "encoded bodies close upstream on EOF failure and cancellation" {
   let driver = @driver.Driver::new(auto_advance=false)
   for (wait, should_fail) in [(false, false), (false, true), (true, false)] {
     let closes = Ref(0)
-    let source = @http.Body::Stream(
-      @http.StreamBody::new(EncoderSource::{
+    let source = @mttp.Body::Stream(
+      @mttp.StreamBody::new(EncoderSource::{
         driver,
         closes,
         wait,
@@ -58,7 +58,7 @@ test "encoded bodies close upstream on EOF failure and cancellation" {
           }
           false
         } catch {
-          @http.TransportError(kind=Network, ..) => true
+          @mttp.TransportError(kind=Network, ..) => true
           error => raise error
         }
         assert_eq(failed, should_fail)
@@ -79,7 +79,7 @@ test "encoded bodies close upstream on EOF failure and cancellation" {
 test "encoded buffered bodies decode incrementally and explicit close is lazy" {
   let driver = @driver.Driver::new()
   driver.run(() => {
-    for body in [@http.Empty, @http.Bytes(b"hello")] {
+    for body in [@mttp.Empty, @mttp.Bytes(b"hello")] {
       guard @codings.encode_body(body, Gzip) is Stream(stream) else {
         fail("expected stream")
       }
@@ -93,8 +93,8 @@ test "encoded buffered bodies decode incrementally and explicit close is lazy" {
       assert_eq(out.to_bytes(), body.as_bytes().unwrap_or(b""))
     }
     let closes = Ref(0)
-    let source = @http.Body::Stream(
-      @http.StreamBody::new(EncoderSource::{
+    let source = @mttp.Body::Stream(
+      @mttp.StreamBody::new(EncoderSource::{
         driver,
         closes,
         wait: true,
@@ -175,7 +175,7 @@ test "encoder refuses overwrite premature end unsupported coding and input after
       action()
       false
     } catch {
-      @http.TransportError(kind=Invalid, ..) => true
+      @mttp.TransportError(kind=Invalid, ..) => true
       _ => false
     }
     assert_true(refused)
@@ -188,7 +188,7 @@ test "encoder refuses overwrite premature end unsupported coding and input after
     encoder.feed(b"late")
     false
   } catch {
-    @http.TransportError(kind=Invalid, ..) => true
+    @mttp.TransportError(kind=Invalid, ..) => true
     _ => false
   }
   assert_true(refused)

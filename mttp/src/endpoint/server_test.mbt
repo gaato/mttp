@@ -23,17 +23,17 @@ test "security runs before input rejection and malformed credentials are refused
   let stages = []
   let ctx = @endpoint.DispatchContext::new(decode_failure=f => {
     stages.push(f.stage)
-    @http.Response::new(400)
+    @mttp.Response::new(400)
   })
   @driver.run_sync(() => {
-    let request = @http.Request::post("/items").header(
+    let request = @mttp.Request::post("/items").header(
       "Authorization", "bEaReR  token",
     )
     assert_eq(ep.dispatch(request, Map([]), ctx).status, 400)
     assert_eq(authenticated.val, 1)
     assert_eq(stages, [@endpoint.Head])
     for value in ["Bearer ", "Bearer a b", "Basic abc"] {
-      let request = @http.Request::post("/items").header("authorization", value)
+      let request = @mttp.Request::post("/items").header("authorization", value)
       assert_eq(ep.dispatch(request, Map([]), ctx).status, 400)
     }
     let request = request.header("authorization", "Bearer other")
@@ -56,7 +56,7 @@ test "body media type is exact and raw security body is encoded" {
   let server = ep.serve_public(text => Ok(text))
   @driver.run_sync(() => {
     for content_type in ["text/plain junk", "text/plainx", "application/json"] {
-      let request = @http.Request::post("/text")
+      let request = @mttp.Request::post("/text")
         .header("content-type", content_type)
         .body_bytes(b"hello")
       assert_eq(
@@ -64,7 +64,7 @@ test "body media type is exact and raw security body is encoded" {
         415,
       )
     }
-    let request = @http.Request::post("/text")
+    let request = @mttp.Request::post("/text")
       .header("content-type", "Text/Plain ; charset=utf-8")
       .body_bytes(b"hello")
     let response = server.dispatch(
@@ -73,12 +73,12 @@ test "body media type is exact and raw security body is encoded" {
       @endpoint.DispatchContext::new(),
     )
     assert_eq(response.status, 200)
-    assert_eq(response.body, @http.Bytes(b"hello"))
+    assert_eq(response.body, @mttp.Bytes(b"hello"))
     assert_eq(response.attributes.get(@endpoint.route_template), Some("/text"))
   })
   let signed = @endpoint.endpoint.post("/signed").security(@endpoint.raw_body())
   assert_eq(
     signed.request(b"signed bytes", ()).raw().body,
-    @http.Bytes(b"signed bytes"),
+    @mttp.Bytes(b"signed bytes"),
   )
 }

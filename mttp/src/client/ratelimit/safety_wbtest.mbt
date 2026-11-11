@@ -2,7 +2,7 @@
 // WindowLimiter release has no suspension points, so cleanup completes even
 // during cancellation. Unexpected failures are checked by the gate assertions.
 async fn release_slot(limiter : WindowLimiter, bucket : String) -> Unit noraise {
-  limiter.respond(bucket, status=0, headers=@http.Headers::empty()) catch {
+  limiter.respond(bucket, status=0, headers=@mttp.Headers::empty()) catch {
     _ => ()
   }
 }
@@ -27,7 +27,7 @@ test "cancelled gate and reset waiters consume no global admission" {
     limiter.respond(
       "a",
       status=429,
-      headers=@http.Headers::of([("retry-after", "1")]),
+      headers=@mttp.Headers::of([("retry-after", "1")]),
     )
     let sleeping = d.spawn(() => limiter.admit("a", global_exempt=false))
     d.sleep(10)
@@ -61,13 +61,13 @@ test "FIFO gate handoff cancellation lets cleanup release the slot" {
       d.pause()
     })
     d.pause()
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
     waiter.cancel()
     assert_false(waiter.wait())
     assert_true(acquired.val)
     assert_eq(gate.available(), 1)
     limiter.admit("a", global_exempt=true)
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
   })
 }
 
@@ -95,7 +95,7 @@ test "group FIFO survives a cancelled middle waiter and paces in order" {
     d.pause()
     tasks[1].cancel()
     assert_false(tasks[1].wait())
-    limiter.respond("first", status=0, headers=@http.Headers::empty())
+    limiter.respond("first", status=0, headers=@mttp.Headers::empty())
     assert_true(tasks[0].wait())
     assert_true(tasks[2].wait())
     assert_eq(order, [("second", 20L), ("third", 40L)])
@@ -123,7 +123,7 @@ test "a global block learned during a gate wait is rechecked at admission" {
     limiter.respond(
       "a",
       status=429,
-      headers=@http.Headers::of([("retry-after-ms", "50")]),
+      headers=@mttp.Headers::of([("retry-after-ms", "50")]),
     )
     assert_true(task.wait())
     assert_eq(admitted.val, 50L)
@@ -142,7 +142,7 @@ test "bucket waits cannot reserve a global slot in an earlier window" {
     limiter.respond(
       "a",
       status=429,
-      headers=@http.Headers::of([("retry-after-ms", "200")]),
+      headers=@mttp.Headers::of([("retry-after-ms", "200")]),
     )
     limiter.admit("a", global_exempt=false)
     limiter.admit("b", global_exempt=false)
@@ -165,7 +165,7 @@ test "a Timer cancelling admission leaves bucket remaining and pace untouched" {
     limiter.respond(
       "a",
       status=200,
-      headers=@http.Headers::of([("remaining", "2"), ("reset", "1")]),
+      headers=@mttp.Headers::of([("remaining", "2"), ("reset", "1")]),
     )
     let timer = @sim.SimTimer::new(d)
     assert_false(
@@ -177,7 +177,7 @@ test "a Timer cancelling admission leaves bucket remaining and pace untouched" {
     )
     assert_eq(limiter.state("a").map(s => s.remaining), Some(2))
     limiter.admit("a", global_exempt=false)
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
     assert_eq(d.now(), 100L)
     assert_eq(limiter.state("a").map(s => s.remaining), Some(1))
     assert_eq(d.pending_timers(), 0)
@@ -196,10 +196,10 @@ test "Client uses rate_limit_bucket and global_exempt attributes" {
     limiter.respond(
       "write",
       status=429,
-      headers=@http.Headers::of([("retry-after-ms", "20")]),
+      headers=@mttp.Headers::of([("retry-after-ms", "20")]),
     )
     let client = @client.Client::new(
-      @client.from_fn((_, _) => @http.Response::new(200)),
+      @client.from_fn((_, _) => @mttp.Response::new(200)),
       clock,
       limiter~,
     )

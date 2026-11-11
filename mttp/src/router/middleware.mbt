@@ -27,7 +27,7 @@ fn diagnostic_id() -> String {
 /// Stream consumption and cancellations before a response are not logged.
 pub fn access_log(
   clock : &@rt.Clock,
-  sink : (@http.RequestHead, @http.Response, Int64) -> Unit,
+  sink : (@mttp.RequestHead, @mttp.Response, Int64) -> Unit,
 ) -> Middleware {
   (request, next) => {
     let start = clock.now_unix_ms()

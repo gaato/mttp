@@ -4,8 +4,8 @@ fn counts(limiter : WindowLimiter, bucket : String) -> (Int32, Int32)? {
 }
 
 ///|
-fn headers(remaining : String, reset_after : String) -> @http.Headers {
-  @http.Headers::of([("remaining", remaining), ("reset-after", reset_after)])
+fn headers(remaining : String, reset_after : String) -> @mttp.Headers {
+  @mttp.Headers::of([("remaining", remaining), ("reset-after", reset_after)])
 }
 
 ///|
@@ -74,7 +74,7 @@ test "a released gate admits the next caller before it is forgotten" {
   assert_eq(order, ["first released", "second admitted"])
   assert_eq(counts(limiter, "a"), Some((1, 0)))
   run_now(d, () => {
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
   })
   assert_eq(counts(limiter, "a"), None)
   assert_true(made[0].free)
@@ -84,12 +84,12 @@ test "a released gate admits the next caller before it is forgotten" {
   assert_eq(made.length(), 2)
   assert_false(third.is_done())
   run_now(d, () => {
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
   })
   made[1].run_woken()
   assert_true(third.is_done())
   run_now(d, () => {
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
   })
   assert_eq(limiter.gates.length(), 0)
 }
@@ -114,13 +114,13 @@ test "a cancelled waiter leaves the holder's gate intact and nothing behind" {
   made[0].cancel_oldest()
   assert_true(next.is_cancelled())
   run_now(d, () => {
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
   })
   made[0].run_woken()
   assert_true(last.is_done())
   assert_eq(counts(limiter, "a"), Some((1, 0)))
   run_now(d, () => {
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
   })
   assert_eq(limiter.gates.length(), 0)
   assert_true(made[0].free)
@@ -198,7 +198,7 @@ test "responses without rate-limit headers still sweep expired states" {
       limiter.respond("burst-\{i}", status=200, headers=headers("1", "1"))
     }
     clock.advance(61_000)
-    limiter.respond("plain", status=200, headers=@http.Headers::empty())
+    limiter.respond("plain", status=200, headers=@mttp.Headers::empty())
   })
   assert_eq(limiter.states.length(), 0)
 }
@@ -265,7 +265,7 @@ test "a response cannot push a bucket's reset or the global block past an hour" 
       ),
     )
     run_now(d, () => {
-      limiter.respond("a", status~, headers=@http.Headers::of(pairs))
+      limiter.respond("a", status~, headers=@mttp.Headers::of(pairs))
     })
     assert_eq(
       limiter.state("a").map(state => state.reset_at_unix_ms),
@@ -288,7 +288,7 @@ test "an account-wide 429 cannot block past an hour" {
     limiter.respond(
       "a",
       status=429,
-      headers=@http.Headers::of([("retry-after", "2000000")]),
+      headers=@mttp.Headers::of([("retry-after", "2000000")]),
     )
   })
   assert_eq(limiter.global_blocked_until, Some(1000L + 3_600_000L))
@@ -380,8 +380,8 @@ fn keyed_headers(
   key : String,
   remaining : String,
   reset_after : String,
-) -> @http.Headers {
-  @http.Headers::of([
+) -> @mttp.Headers {
+  @mttp.Headers::of([
     ("key", key),
     ("remaining", remaining),
     ("reset-after", reset_after),
@@ -389,7 +389,7 @@ fn keyed_headers(
 }
 
 ///|
-fn header_key(_bucket : String, headers : @http.Headers) -> String? {
+fn header_key(_bucket : String, headers : @mttp.Headers) -> String? {
   headers.get("key")
 }
 
@@ -537,7 +537,7 @@ test "a sweep retains live aliases and drops pace deadlines already passed" {
   )
   run_now(d, () => {
     limiter.admit("paced-old", global_exempt=true)
-    limiter.respond("paced-old", status=0, headers=@http.Headers::empty())
+    limiter.respond("paced-old", status=0, headers=@mttp.Headers::empty())
     limiter.respond("a", status=200, headers=keyed_headers("k1", "1", "1"))
     limiter.respond("b", status=200, headers=keyed_headers("k2", "1", "120"))
   })
@@ -546,7 +546,7 @@ test "a sweep retains live aliases and drops pace deadlines already passed" {
   clock.advance(61_000)
   run_now(d, () => {
     limiter.admit("paced-new", global_exempt=true)
-    limiter.respond("paced-new", status=200, headers=@http.Headers::empty())
+    limiter.respond("paced-new", status=200, headers=@mttp.Headers::empty())
   })
   assert_eq(limiter.states.length(), 1)
   assert_true(limiter.states.get("k2") is Some(_))
@@ -579,7 +579,7 @@ test "one-off aliased and paced buckets keep the maps bounded" {
           headers=keyed_headers("key-\{i}", "4", "0.05"),
         )
       catch {
-        @http.TransportError(kind=TooLarge(limit=4096), phase=Unknown, ..) =>
+        @mttp.TransportError(kind=TooLarge(limit=4096), phase=Unknown, ..) =>
           assert_true(i >= 4096)
         _ => fail("unexpected alias capacity error")
       } noraise {
@@ -641,6 +641,6 @@ test "scope supersedes global_block, which keeps its old meaning alone" {
   ]
   for row in rows {
     let (label, limiter, expected) = row
-    assert_eq((limiter.scope)(429, @http.Headers::empty()), expected, msg=label)
+    assert_eq((limiter.scope)(429, @mttp.Headers::empty()), expected, msg=label)
   }
 }

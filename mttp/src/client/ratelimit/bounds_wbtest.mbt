@@ -6,22 +6,22 @@ test "state maps accept 4096 live entries and refuse the next until eviction" {
       Some({ remaining: 0, reset_at_unix_ms: now + 1000L, })
     })
     for i in 0..<4096 {
-      limiter.respond("b\{i}", status=200, headers=@http.Headers::empty())
+      limiter.respond("b\{i}", status=200, headers=@mttp.Headers::empty())
     }
     assert_eq(limiter.states.length(), 4096)
     try
-      limiter.respond("overflow", status=200, headers=@http.Headers::empty())
+      limiter.respond("overflow", status=200, headers=@mttp.Headers::empty())
     catch {
-      @http.TransportError(kind=TooLarge(limit=4096), phase=Unknown, ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=4096), phase=Unknown, ..) => ()
       _ => fail("wrong capacity error")
     } noraise {
       _ => fail("accepted overflow")
     }
     assert_eq(limiter.states.length(), 4096)
     // Updating an existing key remains possible at capacity.
-    limiter.respond("b0", status=200, headers=@http.Headers::empty())
+    limiter.respond("b0", status=200, headers=@mttp.Headers::empty())
     clock.advance(1000)
-    limiter.respond("after", status=200, headers=@http.Headers::empty())
+    limiter.respond("after", status=200, headers=@mttp.Headers::empty())
     assert_eq(limiter.states.length(), 1)
   })
 }
@@ -36,21 +36,21 @@ test "aliases expire even while their shared server window keeps refreshing" {
       server_key=(_, _) => Some("shared"),
     )
     for i in 0..<4096 {
-      limiter.respond("b\{i}", status=200, headers=@http.Headers::empty())
+      limiter.respond("b\{i}", status=200, headers=@mttp.Headers::empty())
     }
     assert_eq(limiter.aliases.length(), 4096)
     try
-      limiter.respond("overflow", status=200, headers=@http.Headers::empty())
+      limiter.respond("overflow", status=200, headers=@mttp.Headers::empty())
     catch {
-      @http.TransportError(kind=TooLarge(limit=4096), ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=4096), ..) => ()
       _ => fail("wrong alias capacity error")
     } noraise {
       _ => fail("accepted alias overflow")
     }
     clock.advance(3_599_999)
-    limiter.respond("b0", status=200, headers=@http.Headers::empty())
+    limiter.respond("b0", status=200, headers=@mttp.Headers::empty())
     clock.advance(1)
-    limiter.respond("new", status=200, headers=@http.Headers::empty())
+    limiter.respond("new", status=200, headers=@mttp.Headers::empty())
     assert_eq(limiter.aliases.length(), 2)
     // Expired aliases detach with the live shared quota as their fallback.
     assert_eq(limiter.states.length(), 4096)
@@ -78,20 +78,20 @@ test "pace deadlines and active group gates refuse a 4097th live key" {
         limiter.admit("b\{i}", global_exempt=false)
       }
       try limiter.admit("overflow", global_exempt=false) catch {
-        @http.TransportError(kind=TooLarge(limit=4096), ..) => ()
+        @mttp.TransportError(kind=TooLarge(limit=4096), ..) => ()
         _ => fail("wrong admission capacity error")
       } noraise {
         _ => fail("accepted admission overflow")
       }
       for i in 0..<4096 {
-        limiter.respond("b\{i}", status=0, headers=@http.Headers::empty())
+        limiter.respond("b\{i}", status=0, headers=@mttp.Headers::empty())
       }
       if gated {
         assert_eq(limiter.gates.length(), 0)
       }
       clock.advance(1000)
       limiter.admit("after", global_exempt=false)
-      limiter.respond("after", status=0, headers=@http.Headers::empty())
+      limiter.respond("after", status=0, headers=@mttp.Headers::empty())
     }
   })
 }
@@ -107,10 +107,10 @@ test "a recording failure releases the held gate and preserves other state" {
       gate=() => gate,
     )
     for i in 0..<4096 {
-      limiter.respond("b\{i}", status=200, headers=@http.Headers::empty())
+      limiter.respond("b\{i}", status=200, headers=@mttp.Headers::empty())
     }
     let refused = limiter.acquire("overflow", global_exempt=false)
-    limiter.release(refused, status=200, headers=@http.Headers::empty()) catch {
+    limiter.release(refused, status=200, headers=@mttp.Headers::empty()) catch {
       _ => ()
     }
     assert_eq(gate.available(), 1)
@@ -120,11 +120,11 @@ test "a recording failure releases the held gate and preserves other state" {
     limiter.release(
       refused,
       status=429,
-      headers=@http.Headers::of([("retry-after", "60")]),
+      headers=@mttp.Headers::of([("retry-after", "60")]),
     )
     assert_eq(gate.available(), 0)
     assert_eq(limiter.admissions.length(), 1)
-    limiter.release(next, status=0, headers=@http.Headers::empty())
+    limiter.release(next, status=0, headers=@mttp.Headers::empty())
     assert_eq(gate.available(), 1)
   })
 }
@@ -140,7 +140,7 @@ test "fallback server waits are capped at exactly one hour" {
         scope=(_, _) => scope,
         default_retry_after_ms=3_600_001,
       )
-      limiter.respond("a", status=429, headers=@http.Headers::empty())
+      limiter.respond("a", status=429, headers=@mttp.Headers::empty())
       limiter.admit("a", global_exempt=false)
       assert_eq(clock.slept(), [3_600_000])
     }
@@ -156,7 +156,7 @@ test "ignored responses cannot remap a bucket or consume alias space" {
       server_key=(_, _) => Some("other"),
       scope=(_, _) => Ignore,
     )
-    limiter.respond("a", status=429, headers=@http.Headers::empty())
+    limiter.respond("a", status=429, headers=@mttp.Headers::empty())
     assert_eq(limiter.aliases.length(), 0)
     assert_eq(limiter.states.length(), 0)
   })
@@ -184,7 +184,7 @@ test "backward wall steps preserve relative bucket global and pace waits" {
         limiter.respond(
           "a",
           status=429,
-          headers=@http.Headers::of([("retry-after-ms", "100")]),
+          headers=@mttp.Headers::of([("retry-after-ms", "100")]),
         )
       } else {
         limiter.admit("a", global_exempt=false)
@@ -233,7 +233,7 @@ test "overlapping sleeps across wall rollback advance elapsed time only once" {
       limiter.respond(
         bucket,
         status=429,
-        headers=@http.Headers::of([("retry-after-ms", "100")]),
+        headers=@mttp.Headers::of([("retry-after-ms", "100")]),
       )
       tasks.push(d.spawn(() => limiter.admit(bucket, global_exempt=false)))
     }
@@ -259,7 +259,7 @@ test "a server key without reset headers still aliases an existing shared window
     limiter.respond(
       "first",
       status=200,
-      headers=@http.Headers::of([
+      headers=@mttp.Headers::of([
         ("key", "shared"),
         ("left", "0"),
         ("reset", "1"),
@@ -268,7 +268,7 @@ test "a server key without reset headers still aliases an existing shared window
     limiter.respond(
       "second",
       status=200,
-      headers=@http.Headers::of([("key", "shared")]),
+      headers=@mttp.Headers::of([("key", "shared")]),
     )
     limiter.admit("second", global_exempt=false)
     assert_eq(clock.slept(), [1000])
@@ -286,7 +286,7 @@ test "outstanding tokens are bounded and every release outcome reclaims them" {
       limiter.admit("b\{i}", global_exempt=false)
     }
     try limiter.admit("overflow", global_exempt=false) catch {
-      @http.TransportError(kind=TooLarge(limit=4096), phase=Pool, ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=4096), phase=Pool, ..) => ()
       _ => fail("wrong admission capacity error")
     } noraise {
       _ => fail("accepted admission overflow")
@@ -294,20 +294,20 @@ test "outstanding tokens are bounded and every release outcome reclaims them" {
     assert_eq(limiter.admissions.length(), 4096)
     // Each request needs an identity, including requests for existing buckets.
     try limiter.admit("b0", global_exempt=false) catch {
-      @http.TransportError(kind=TooLarge(limit=4096), phase=Pool, ..) => ()
+      @mttp.TransportError(kind=TooLarge(limit=4096), phase=Pool, ..) => ()
       _ => fail("wrong token capacity error")
     } noraise {
       _ => fail("accepted an extra token for an existing bucket")
     }
-    limiter.respond("b0", status=429, headers=@http.Headers::empty())
+    limiter.respond("b0", status=429, headers=@mttp.Headers::empty())
     assert_eq(limiter.admissions.length(), 4095)
     limiter.admit("b0", global_exempt=false)
     for i in 0..<4096 {
-      limiter.respond("b\{i}", status=0, headers=@http.Headers::empty())
+      limiter.respond("b\{i}", status=0, headers=@mttp.Headers::empty())
     }
     assert_eq(limiter.admissions.length(), 0)
     limiter.admit("after", global_exempt=false)
-    limiter.respond("after", status=200, headers=@http.Headers::empty())
+    limiter.respond("after", status=200, headers=@mttp.Headers::empty())
     assert_eq(limiter.admissions.length(), 0)
   })
 }
@@ -324,10 +324,10 @@ test "sequence exhaustion refuses before quota and releases the acquired gate" {
       global={ limit: 2, window_ms: 1000, },
     )
     let first = limiter.acquire("a", global_exempt=false)
-    limiter.release(first, status=200, headers=@http.Headers::empty())
+    limiter.release(first, status=200, headers=@mttp.Headers::empty())
     limiter.sequence = 9223372036854775807L
     try limiter.acquire("a", global_exempt=false) catch {
-      @http.TransportError(kind=Invalid, phase=Pool, ..) => ()
+      @mttp.TransportError(kind=Invalid, phase=Pool, ..) => ()
       _ => fail("wrong sequence exhaustion error")
     } noraise {
       _ => fail("sequence wrapped")

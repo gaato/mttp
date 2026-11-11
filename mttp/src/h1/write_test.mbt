@@ -1,6 +1,6 @@
 ///|
 test "wire writers retain duplicate fields and replace framing consistently" {
-  let fields = @http.Headers::of([
+  let fields = @mttp.Headers::of([
     ("set-cookie", "a=1"),
     ("set-cookie", "b=2"),
     ("x", "ÿ"),
@@ -34,14 +34,14 @@ test "wire writers retain duplicate fields and replace framing consistently" {
   }
   assert_eq(
     @h1.parse_response_head(
-      @h1.write_response_head(204, @http.Headers::empty(), NoBody, Http10),
+      @h1.write_response_head(204, @mttp.Headers::empty(), NoBody, Http10),
     ).version,
     Http10,
   )
   let request = @h1.write_request_head(
     Post,
     "/path?q=1",
-    @http.Headers::of([("host", "h")]),
+    @mttp.Headers::of([("host", "h")]),
     Length(2),
     Http11,
   )
@@ -58,7 +58,7 @@ test "wire writers retain duplicate fields and replace framing consistently" {
 test "writers reject invalid framing fields and request targets" {
   for framing in [@h1.Framing::Length(-1), Chunked] {
     try
-      @h1.write_response_head(200, @http.Headers::empty(), framing, Http10)
+      @h1.write_response_head(200, @mttp.Headers::empty(), framing, Http10)
     catch {
       @h1.ParseError(..) => ()
     } noraise {
@@ -67,7 +67,7 @@ test "writers reject invalid framing fields and request targets" {
   }
   for status in [99, 600, 101, 204] {
     try
-      @h1.write_response_head(status, @http.Headers::empty(), Length(1), Http11)
+      @h1.write_response_head(status, @mttp.Headers::empty(), Length(1), Http11)
     catch {
       @h1.ParseError(kind=Malformed, ..) => ()
       _ => fail("wrong status error")
@@ -83,7 +83,7 @@ test "writers reject invalid framing fields and request targets" {
       ("content-length", "a\u{00}b"),
     ] {
     try
-      @h1.write_response_head(200, @http.Headers::of([pair]), NoBody, Http11)
+      @h1.write_response_head(200, @mttp.Headers::of([pair]), NoBody, Http11)
     catch {
       @h1.ParseError(kind=Malformed, ..) => ()
       _ => fail("wrong header error")
@@ -96,7 +96,7 @@ test "writers reject invalid framing fields and request targets" {
       @h1.write_request_head(
         Get,
         "/bad target",
-        @http.Headers::of([("host", "h")]),
+        @mttp.Headers::of([("host", "h")]),
         framing,
         Http11,
       )
@@ -115,7 +115,7 @@ test "writers reject invalid framing fields and request targets" {
 /// whenever the response cannot have a body.
 fn read_back(
   status : Int32,
-  meth : @http.Method,
+  meth : @mttp.Method,
   framing : @h1.Framing,
 ) -> @h1.Framing {
   let no_body = meth == Head ||
@@ -139,7 +139,7 @@ test "every written response head reads back with the framing it was written wit
     Chunked,
     UntilClose,
   ]
-  let methods : Array[@http.Method] = [Get, Head, Post, Connect]
+  let methods : Array[@mttp.Method] = [Get, Head, Post, Connect]
   for status in 100..<=599 {
     for framing in framings {
       for v in [@h1.Version::Http10, Http11] {
@@ -156,7 +156,7 @@ test "every written response head reads back with the framing it was written wit
           let case = "\{status} \{@debug.to_string(framing)} \{@debug.to_string(v)} \{meth}"
           let head = @h1.write_response_head(
             status,
-            @http.Headers::empty(),
+            @mttp.Headers::empty(),
             framing,
             v,
             meth~,
@@ -188,14 +188,14 @@ test "every written response head reads back with the framing it was written wit
 
 ///|
 test "a written request without a body declares an empty one only when the method expects content" {
-  let host = @http.Headers::of([("host", "h")])
-  for meth in [@http.Method::Post, Put, Patch] {
+  let host = @mttp.Headers::of([("host", "h")])
+  for meth in [@mttp.Method::Post, Put, Patch] {
     let head = @h1.write_request_head(meth, "/", host, NoBody, Http11)
     let parsed = @h1.parse_request_head(head)
     assert_eq(parsed.headers.get_all("content-length"), ["0"])
     assert_eq(@h1.request_framing(parsed.headers), Length(0))
   }
-  for meth in [@http.Method::Get, Head, Delete, Options, Trace, Other("PURGE")] {
+  for meth in [@mttp.Method::Get, Head, Delete, Options, Trace, Other("PURGE")] {
     let head = @h1.write_request_head(meth, "/", host, NoBody, Http11)
     let parsed = @h1.parse_request_head(head)
     assert_eq(parsed.headers.get("content-length"), None)

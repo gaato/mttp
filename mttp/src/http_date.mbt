@@ -9,10 +9,10 @@
 /// ```mbt check
 /// test {
 ///   assert_eq(
-///     @http.parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT", now_unix_ms=0L),
+///     @mttp.parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT", now_unix_ms=0L),
 ///     Some(784111777000L),
 ///   )
-///   assert_eq(@http.parse_http_date("06 Nov 1994", now_unix_ms=0L), None)
+///   assert_eq(@mttp.parse_http_date("06 Nov 1994", now_unix_ms=0L), None)
 /// }
 /// ```
 pub fn parse_http_date(s : String, now_unix_ms~ : Int64) -> Int64? {

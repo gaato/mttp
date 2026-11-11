@@ -62,7 +62,7 @@ test "overlapping candidates reuse one bounded body in output then error declara
         }
         @schema.text_body.decode(bytes)
       },
-      @http.encode_utf8,
+      @mttp.encode_utf8,
       @schema.string.schema(),
     )
   }
@@ -90,10 +90,10 @@ test "overlapping candidates reuse one bounded body in output then error declara
     @client.from_fn((_, _) => {
       let feed = @sim.Feed::bytes(d, [b"de", b"nied"])
       feeds.push(feed)
-      @http.Response::new(
+      @mttp.Response::new(
         400,
-        headers=@http.Headers::of([("content-type", "text/plain")]),
-        body=Stream(@http.StreamBody::new(feed)),
+        headers=@mttp.Headers::of([("content-type", "text/plain")]),
+        body=Stream(@mttp.StreamBody::new(feed)),
       )
     }),
     @sim.FakeClock::new(),
@@ -127,7 +127,7 @@ test "all overlapping decoders failing preserve output failure and bounded diagn
     @schema.BodyCodec::new(
       "text/plain",
       _ => raise @schema.DecodeFailure(kind=Malformed, message=name),
-      (value : String) => @http.encode_utf8(value),
+      (value : String) => @mttp.encode_utf8(value),
       @schema.string.schema(),
     )
   }
@@ -137,9 +137,9 @@ test "all overlapping decoders failing preserve output failure and bounded diagn
     .errors(@endpoint.json_out(failed("error"), status=400))
   let client = @client.Client::new(
     @client.from_fn((_, _) => {
-      @http.Response::new(
+      @mttp.Response::new(
         400,
-        headers=@http.Headers::of([("content-type", "text/plain")]),
+        headers=@mttp.Headers::of([("content-type", "text/plain")]),
         body=Bytes(Bytes::make(1048577, b'x')),
       )
     }),
@@ -174,10 +174,10 @@ test "overlapping candidate buffering refuses one byte past the response limit" 
     @client.from_fn((_, _) => {
       let feed = @sim.Feed::bytes(d, [b"\"den", b"ied\""])
       feeds.push(feed)
-      @http.Response::new(
+      @mttp.Response::new(
         400,
-        headers=@http.Headers::of([("content-type", "application/json")]),
-        body=Stream(@http.StreamBody::new(feed)),
+        headers=@mttp.Headers::of([("content-type", "application/json")]),
+        body=Stream(@mttp.StreamBody::new(feed)),
       )
     }),
     @sim.FakeClock::new(),
@@ -196,7 +196,7 @@ test "overlapping candidate buffering refuses one byte past the response limit" 
         )
         fail("oversized response accepted")
       } catch {
-        @http.TransportError(kind=TooLarge(limit~), ..) => assert_eq(limit, 7)
+        @mttp.TransportError(kind=TooLarge(limit~), ..) => assert_eq(limit, 7)
         error => raise error
       }
     }

@@ -1,14 +1,14 @@
 ///|
 priv struct FnBackend {
-  send : async (@http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError
+  send : async (@mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
   on_close : (() -> Unit)?
   mut closed : Bool
 }
 
 ///|
-impl @http.Backend for FnBackend with fn send(self, request, options) {
+impl @mttp.Backend for FnBackend with fn send(self, request, options) {
   if self.closed {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Closed,
       phase=Pool,
       detail="backend is closed",
@@ -20,7 +20,7 @@ impl @http.Backend for FnBackend with fn send(self, request, options) {
 }
 
 ///|
-impl @http.Backend for FnBackend with fn close(self) {
+impl @mttp.Backend for FnBackend with fn close(self) {
   if !self.closed {
     self.closed = true
     if self.on_close is Some(close) {
@@ -39,9 +39,9 @@ impl @http.Backend for FnBackend with fn close(self) {
 /// contract: it closes a request stream it takes and leaves the response
 /// body to the caller.
 pub fn from_fn(
-  send : async (@http.Request, @http.SendOptions) -> @http.Response raise @http.TransportError,
+  send : async (@mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError,
   on_close? : () -> Unit,
-) -> &@http.Backend {
+) -> &@mttp.Backend {
   FnBackend::{ send, on_close, closed: false, }
 }
 
@@ -49,7 +49,7 @@ pub fn from_fn(
 /// Runs an in-process handler as a backend, through `from_fn`. The handler
 /// does no waiting on `SendOptions`; a `Client` with a Timer still bounds
 /// each attempt with its own deadline.
-pub fn from_handler(handler : @http.Handler) -> &@http.Backend {
+pub fn from_handler(handler : @mttp.Handler) -> &@mttp.Backend {
   from_fn((request, _) => handler(request))
 }
 
@@ -62,10 +62,10 @@ pub fn from_handler(handler : @http.Handler) -> &@http.Backend {
 pub(all) enum ResponseFailure {
   /// The status was rejected. `body` keeps at most `max_error_body` bytes of
   /// the response body, for diagnostics.
-  UnexpectedStatus(@http.ResponseHead, body~ : Bytes)
+  UnexpectedStatus(@mttp.ResponseHead, body~ : Bytes)
   /// The body could not be decoded. `body` keeps at most `max_error_body`
   /// bytes of it.
-  Deserialization(@http.ResponseHead, message~ : String, body~ : Bytes)
+  Deserialization(@mttp.ResponseHead, message~ : String, body~ : Bytes)
 }
 
 ///|
@@ -78,7 +78,7 @@ pub extend ResponseFailure with Eq::{equal, not_equal}
 
 ///|
 /// Returns the received response metadata.
-pub fn ResponseFailure::head(self : ResponseFailure) -> @http.ResponseHead {
+pub fn ResponseFailure::head(self : ResponseFailure) -> @mttp.ResponseHead {
   match self {
     UnexpectedStatus(head, ..) | Deserialization(head, ..) => head
   }

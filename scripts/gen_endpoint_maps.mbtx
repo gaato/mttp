@@ -47,7 +47,7 @@ async fn main {
     tests.write_string("  let input = @endpoint.Input::map\{size}(\{inputs.join(", ")}, (\{values.join(", ")}) => [\{values.join(", ")}], values => (\{tuple}))\n")
     tests.write_string("  let expected = [\{Array::makei(size, i => (i + 10).to_string()).join(", ")}]\n")
     tests.write_string("  let request = @endpoint.endpoint.post(\"/\").input(input).request((), expected).raw()\n")
-    tests.write_string("  @driver.run_sync(() => {\n    assert_eq(decoded(input, request), expected)\n    assert_eq(refused(input, @http.Request::post(\"/\")).length(), \{size})\n  })\n}\n\n")
+    tests.write_string("  @driver.run_sync(() => {\n    assert_eq(decoded(input, request), expected)\n    assert_eq(refused(input, @mttp.Request::post(\"/\")).length(), \{size})\n  })\n}\n\n")
   }
   emit("mttp/src/endpoint/maps_test.mbt", tests.to_string(), check)
 }

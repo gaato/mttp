@@ -81,7 +81,7 @@ test "scripted reads bound chunks persist failures and wake on close" {
   let driver = @driver.Driver::new()
   let coordination = @sim.SimCoordination::new(driver)
   driver.run(() => {
-    let fault = @http.TransportError(
+    let fault = @mttp.TransportError(
       kind=Network,
       phase=Unknown,
       detail="injected",
@@ -98,7 +98,7 @@ test "scripted reads bound chunks persist failures and wake on close" {
         ignore(connection.read(max_len=1))
         false
       } catch {
-        @http.TransportError(detail="injected", ..) => true
+        @mttp.TransportError(detail="injected", ..) => true
         _ => false
       }
       assert_true(failed)
@@ -129,7 +129,7 @@ test "scripted reads bound chunks persist failures and wake on close" {
         ignore(bad.read(max_len=0))
         false
       } catch {
-        @http.TransportError(kind=Invalid, ..) => true
+        @mttp.TransportError(kind=Invalid, ..) => true
         _ => false
       }
       assert_true(invalid)
@@ -138,7 +138,7 @@ test "scripted reads bound chunks persist failures and wake on close" {
         bad.write(b"x")
         false
       } catch {
-        @http.TransportError(kind=Network, ..) => true
+        @mttp.TransportError(kind=Network, ..) => true
         _ => false
       }
       assert_true(invalid)
@@ -148,7 +148,7 @@ test "scripted reads bound chunks persist failures and wake on close" {
       fail_write.write(b"x")
       false
     } catch {
-      @http.TransportError(detail="injected", ..) => true
+      @mttp.TransportError(detail="injected", ..) => true
       _ => false
     }
     assert_true(failed)
@@ -157,7 +157,7 @@ test "scripted reads bound chunks persist failures and wake on close" {
       ignore(left.read(max_len=0))
       false
     } catch {
-      @http.TransportError(kind=Invalid, ..) => true
+      @mttp.TransportError(kind=Invalid, ..) => true
       _ => false
     }
     assert_true(invalid)
@@ -166,7 +166,7 @@ test "scripted reads bound chunks persist failures and wake on close" {
       left.write(b"x")
       false
     } catch {
-      @http.TransportError(kind=Network, ..) => true
+      @mttp.TransportError(kind=Network, ..) => true
       _ => false
     }
     assert_true(failed)
@@ -175,7 +175,7 @@ test "scripted reads bound chunks persist failures and wake on close" {
       ignore(@sim.ScriptedDialer::new([]).connect(host="x", port=80))
       false
     } catch {
-      @http.TransportError(kind=Connect, phase=Dial, ..) => true
+      @mttp.TransportError(kind=Connect, phase=Dial, ..) => true
       _ => false
     }
     assert_true(failed)
@@ -195,7 +195,7 @@ test "scripted dialer hands out connections in order and records upgrades" {
     let b = dialer.connect(host="origin.test", port=443)
     assert_eq(b.read(max_len=8), Some(b"two"))
     try dialer.connect(host="third.test", port=80) catch {
-      @http.TransportError(kind~, phase~, ..) => {
+      @mttp.TransportError(kind~, phase~, ..) => {
         assert_eq(kind, Connect)
         assert_eq(phase, Dial)
       }

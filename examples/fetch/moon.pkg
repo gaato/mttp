@@ -1,5 +1,5 @@
 import {
-  "gaato/http",
+  "gaato/mttp",
   "gaato/http-async/fetch",
 }
 

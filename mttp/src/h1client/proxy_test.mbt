@@ -12,7 +12,7 @@ test "a forward proxy gets the absolute target and only its own credentials" {
   )
   let conn = h.scripted([Chunk(ok("ok"))])
   h.run(() => {
-    let request = @http.Request::get("http://destination.test/path?q=1#ignored").header(
+    let request = @mttp.Request::get("http://destination.test/path?q=1#ignored").header(
       "proxy-authorization", "wrong-credential",
     )
     assert_eq(fetch(h.client, request), "ok")
@@ -35,7 +35,7 @@ test "a direct request never carries the caller's Proxy-Authorization" {
   )
   let conn = h.scripted([Chunk(ok("ok"))])
   h.run(() => {
-    let request = @http.Request::get("http://direct.test/").header(
+    let request = @mttp.Request::get("http://direct.test/").header(
       "proxy-authorization", "private",
     )
     assert_eq(fetch(h.client, request), "ok")
@@ -54,7 +54,7 @@ test "https requests go through a CONNECT tunnel with TLS end to end" {
       Chunk(ok("inside")),
     ])
     h.run(() => {
-      let request = @http.Request::get("https://origin.test/secret")
+      let request = @mttp.Request::get("https://origin.test/secret")
         .header("user-agent", "tunnel-test")
         .bearer("origin-only")
       assert_eq(fetch(h.client, request), "inside")
@@ -90,7 +90,7 @@ test "https requests go through a CONNECT tunnel with TLS end to end" {
 
 ///|
 test "CONNECT refusals, malformed answers and excess bytes fail in phase Dial" {
-  let rows : Array[(Bytes, @http.Kind)] = [
+  let rows : Array[(Bytes, @mttp.Kind)] = [
     (b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n", Proxy(status=407)),
     (
       b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n",
@@ -110,7 +110,7 @@ test "CONNECT refusals, malformed answers and excess bytes fail in phase Dial" {
     let conn = h.scripted([Chunk(wire), Eof])
     h.run(() => {
       let error = failing(() => {
-        ignore(fetch(h.client, @http.Request::get("https://origin.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("https://origin.test/")))
       })
       assert_eq(error, (expected, Dial), msg="\{wire}")
       h.finish()
@@ -125,12 +125,12 @@ test "CONNECT refusals, malformed answers and excess bytes fail in phase Dial" {
   )
   let conn = h.scripted([Chunk(b"HTTP/1.1 200 OK\r\n\r\n")])
   h.dialer.tls_failure = Some(
-    @http.TransportError(kind=Connect, phase=Dial, detail="bad certificate"),
+    @mttp.TransportError(kind=Connect, phase=Dial, detail="bad certificate"),
   )
   h.run(() => {
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("https://origin.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("https://origin.test/")))
       }),
       (Connect, Dial),
     )
@@ -152,7 +152,7 @@ test "the proxy's CONNECT answer is read within the head limits" {
     )
     h.run(() => {
       let result = Ok(
-        fetch(h.client, @http.Request::get("https://origin.test/")),
+        fetch(h.client, @mttp.Request::get("https://origin.test/")),
       ) catch {
         error => Err(kind_phase(error))
       }
@@ -183,7 +183,7 @@ test "the proxy's CONNECT answer is read within the head limits" {
     )
     h.run(() => {
       let result = Ok(
-        fetch(h.client, @http.Request::get("https://origin.test/")),
+        fetch(h.client, @mttp.Request::get("https://origin.test/")),
       ) catch {
         error => Err(kind_phase(error))
       }
@@ -208,7 +208,7 @@ test "a CONNECT the caller sends keeps its authority through a forward proxy" {
   let conn = h.scripted([Chunk(b"HTTP/1.1 200 Connection Established\r\n\r\n")])
   h.run(() => {
     let response = h.client.send(
-      @http.Request::new(Connect, "http://destination.test:80"),
+      @mttp.Request::new(Connect, "http://destination.test:80"),
       exchange(),
     )
     assert_eq(response.status, 200)
@@ -247,11 +247,11 @@ test "NO_PROXY routes direct and proxied requests on distinct reusable connectio
     ]
     for _ in 0..<2 {
       assert_eq(
-        fetch(h.client, @http.Request::get("http://remote.test/")),
+        fetch(h.client, @mttp.Request::get("http://remote.test/")),
         "via proxy",
       )
       assert_eq(
-        fetch(h.client, @http.Request::get("http://local.test/")),
+        fetch(h.client, @mttp.Request::get("http://local.test/")),
         "direct",
       )
     }
@@ -277,12 +277,12 @@ test "an unusable proxy setting fails before any dial" {
   h.run(() => {
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("http://a.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://a.test/")))
       }),
       (Protocol, Pool),
     )
     // The other scheme has no proxy and goes direct.
-    assert_eq(fetch(h.client, @http.Request::get("https://a.test/")), "direct")
+    assert_eq(fetch(h.client, @mttp.Request::get("https://a.test/")), "direct")
     h.finish()
   })
   assert_eq(h.dialer.dialed, [("a.test", 443)])

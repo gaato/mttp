@@ -54,9 +54,9 @@ pub fn append_query(url : String, name : String, value : String) -> String {
 ///
 /// ```mbt check
 /// test {
-///   let base = @http.Url::parse("HTTPS://Example.COM:443/a/b?x=1")
+///   let base = @mttp.Url::parse("HTTPS://Example.COM:443/a/b?x=1")
 ///   assert_eq(base.to_string(), "https://example.com/a/b?x=1")
-///   let next = base.resolve(@http.Url::parse("../c d"))
+///   let next = base.resolve(@mttp.Url::parse("../c d"))
 ///   assert_eq(next.to_string(), "https://example.com/c%20d")
 /// }
 /// ```
@@ -253,9 +253,9 @@ pub fn Url::without_fragment(self : Url) -> Url {
 ///
 /// ```mbt check
 /// test {
-///   let base = @http.Url::parse("http://a/b/c/d;p?q")
-///   assert_eq(base.resolve(@http.Url::parse("../g")).to_string(), "http://a/b/g")
-///   assert_eq(base.resolve(@http.Url::parse("//g")).to_string(), "http://g")
+///   let base = @mttp.Url::parse("http://a/b/c/d;p?q")
+///   assert_eq(base.resolve(@mttp.Url::parse("../g")).to_string(), "http://a/b/g")
+///   assert_eq(base.resolve(@mttp.Url::parse("//g")).to_string(), "http://g")
 /// }
 /// ```
 pub fn Url::resolve(self : Url, reference : Url) -> Url {
@@ -307,7 +307,7 @@ pub fn Url::query_params(self : Url) -> Array[(String, String)] {
 ///
 /// ```mbt check
 /// test {
-///   let url = @http.Url::parse("https://h/p?a=1#top")
+///   let url = @mttp.Url::parse("https://h/p?a=1#top")
 ///   let next = url.append_query_params([("b", "x y"), ("a", "2")])
 ///   assert_eq(next.to_string(), "https://h/p?a=1&b=x%20y&a=2#top")
 /// }
@@ -344,7 +344,7 @@ pub fn Url::append_query_params(
 ///
 /// ```mbt check
 /// test {
-///   let url = @http.Url::parse("https://h/p?page=1&q=a+b&page=2")
+///   let url = @mttp.Url::parse("https://h/p?page=1&q=a+b&page=2")
 ///   let next = url.merge_query_params([("page", "3")])
 ///   assert_eq(next.to_string(), "https://h/p?q=a+b&page=3")
 /// }

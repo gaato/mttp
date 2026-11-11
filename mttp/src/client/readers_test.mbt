@@ -7,18 +7,18 @@ test "the default body limit is 64 MiB and is sent as the wire cap" {
   let client = @client.Client::new(
     @client.from_fn((_, options) => {
       seen.push(options)
-      @http.Response::new(200)
+      @mttp.Response::new(200)
     }),
     @sim.FakeClock::new(),
   )
   ignore(@driver.run_sync(() => client.send(@client.get("/"))))
-  assert_eq(seen, [@http.SendOptions::default()])
+  assert_eq(seen, [@mttp.SendOptions::default()])
   assert_eq(seen[0].body, Exchange(max_bytes=64 * 1024 * 1024))
 }
 
 ///|
-impl @http.Backend for EmptyBackend with fn send(_, _, _) {
-  @http.Response::new(200)
+impl @mttp.Backend for EmptyBackend with fn send(_, _, _) {
+  @mttp.Response::new(200)
 }
 
 ///|
@@ -39,14 +39,14 @@ test "completed timer callbacks transfer and close streams even at expiry" {
   let source = @sim.Feed::bytes(d, [b"data"])
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
     timer=CompletedAtDeadlineTimer::{ },
   )
   let reply = d.run(() => {
     client.send(
-      @client.request(@http.Request::get("/"))
+      @client.request(@mttp.Request::get("/"))
       .timeout_ms(10)
       .response(@client.as_stream((_, stream) => stream.read_some())),
     )
@@ -65,22 +65,22 @@ test "byte readers enforce bounds for all body variants" {
   let d = @driver.Driver::new()
   let source = @sim.Feed::bytes(d, [b"ab"])
   assert_eq(
-    d.run(() => @client.read_body(Stream(@http.StreamBody::new(source)), 2)),
+    d.run(() => @client.read_body(Stream(@mttp.StreamBody::new(source)), 2)),
     b"ab",
   )
   assert_eq(source.closes(), 1)
   assert_eq(d.run(() => @client.read_body(Empty, 0)), b"")
   for
     body in [
-      @http.Body::Empty,
+      @mttp.Body::Empty,
       Bytes(b""),
-      Stream(@http.StreamBody::new(@sim.Feed::bytes(d, []))),
+      Stream(@mttp.StreamBody::new(@sim.Feed::bytes(d, []))),
     ] {
     let rejected = try {
       let _ = d.run(() => @client.read_body(body, -1))
       false
     } catch {
-      @http.TransportError(kind=Invalid, ..) => true
+      @mttp.TransportError(kind=Invalid, ..) => true
       error => raise error
     }
     assert_true(rejected)
@@ -89,7 +89,7 @@ test "byte readers enforce bounds for all body variants" {
     let _ = d.run(() => @client.read_body(Bytes(b"ab"), 1))
     false
   } catch {
-    @http.TransportError(kind=TooLarge(limit=1), ..) => true
+    @mttp.TransportError(kind=TooLarge(limit=1), ..) => true
     error => raise error
   }
   assert_true(rejected)
@@ -98,9 +98,9 @@ test "byte readers enforce bounds for all body variants" {
 ///|
 test "streaming readers adapt memory bodies with sticky EOF" {
   let clock = @sim.FakeClock::new()
-  for body in [@http.Body::Empty, Bytes(b""), Bytes(b"data")] {
+  for body in [@mttp.Body::Empty, Bytes(b""), Bytes(b"data")] {
     let client = @client.Client::new(
-      @client.from_handler(_ => @http.Response::new(200, body~)),
+      @client.from_handler(_ => @mttp.Response::new(200, body~)),
       clock,
     )
     let reader = @client.as_stream((_, stream) => {
@@ -111,7 +111,7 @@ test "streaming readers adapt memory bodies with sticky EOF" {
       first
     })
     let result = @driver.run_sync(() => {
-      client.send(@client.request(@http.Request::get("/")).response(reader))
+      client.send(@client.request(@mttp.Request::get("/")).response(reader))
     })
     assert_eq(
       result.body,
@@ -126,25 +126,25 @@ test "ignore body closes without consuming it and any_status accepts errors" {
   let source = @sim.Feed::bytes(d, [b"unread"])
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
   )
   let _ = d.run(() => {
     client.send(
-      @client.request(@http.Request::get("/")).response(@client.ignore_body()),
+      @client.request(@mttp.Request::get("/")).response(@client.ignore_body()),
     )
   })
   assert_eq(source.reads(), 0)
   assert_eq(source.closes(), 1)
   let client = @client.Client::new(
-    @client.from_handler(_ => @http.Response::new(404, body=Bytes(b"missing"))),
+    @client.from_handler(_ => @mttp.Response::new(404, body=Bytes(b"missing"))),
     @sim.FakeClock::new(),
   )
   assert_eq(
     @driver.run_sync(() => {
       client.send(
-        @client.request(@http.Request::get("/")).response(
+        @client.request(@mttp.Request::get("/")).response(
           @client.as_string().any_status(),
         ),
       )
@@ -155,9 +155,9 @@ test "ignore body closes without consuming it and any_status accepts errors" {
 
 ///|
 test "error bodies include empty and buffered responses" {
-  for body in [@http.Body::Empty, Bytes(b"bad")] {
+  for body in [@mttp.Body::Empty, Bytes(b"bad")] {
     let client = @client.Client::new(
-      @client.from_handler(_ => @http.Response::new(400, body~)),
+      @client.from_handler(_ => @mttp.Response::new(400, body~)),
       @sim.FakeClock::new(),
     )
     let rejected = match
@@ -171,7 +171,7 @@ test "error bodies include empty and buffered responses" {
     assert_true(rejected)
   }
   let client = @client.Client::new(
-    @client.from_handler(_ => @http.Response::new(200, body=Bytes(b"invalid"))),
+    @client.from_handler(_ => @mttp.Response::new(200, body=Bytes(b"invalid"))),
     @sim.FakeClock::new(),
   )
   let rejected = @driver.run_sync(() => {
@@ -185,14 +185,14 @@ test "error bodies include empty and buffered responses" {
 test "SSE reader consumes EOF and discards an unfinished final event" {
   let client = @client.Client::new(
     @client.from_handler(_ => {
-      @http.Response::new(200, body=Bytes(b"data: one\n\ndata: unfinished"))
+      @mttp.Response::new(200, body=Bytes(b"data: one\n\ndata: unfinished"))
     }),
     @sim.FakeClock::new(),
   )
   let events = []
   let _ = @driver.run_sync(() => {
     client.send(
-      @client.request(@http.Request::get("/")).response(
+      @client.request(@mttp.Request::get("/")).response(
         @client.as_sse(event => events.push(event.data)),
       ),
     )
@@ -206,7 +206,7 @@ test "fallback handles completion errors and a broken timer contract" {
   let clock = @sim.SimClock::new(d)
   for status in [200, 500] {
     let client = @client.Client::new(
-      @client.from_handler(_ => @http.Response::new(status)),
+      @client.from_handler(_ => @mttp.Response::new(status)),
       clock,
       timer=@sim.SimTimer::new(d),
     )
@@ -218,11 +218,11 @@ test "fallback handles completion errors and a broken timer contract" {
   })
   let rejected = try {
     let _ = d.run(() => {
-      client.send(@client.request(@http.Request::get("/")).timeout_ms(1))
+      client.send(@client.request(@mttp.Request::get("/")).timeout_ms(1))
     })
     false
   } catch {
-    @http.TransportError(kind=Protocol, ..) => true
+    @mttp.TransportError(kind=Protocol, ..) => true
     error => raise error
   }
   assert_true(rejected)
@@ -247,7 +247,7 @@ test "fallback handles completion errors and a broken timer contract" {
 ///|
 test "reject refuses even a successful status, with a bounded excerpt" {
   let client = @client.Client::new(
-    @client.from_handler(_ => @http.Response::new(200, body=Bytes(b"html"))),
+    @client.from_handler(_ => @mttp.Response::new(200, body=Bytes(b"html"))),
     @sim.FakeClock::new(),
   )
   let plan : @client.ResponseAs[Result[String, @client.ResponseFailure]] = @client.from_head(head => {
@@ -259,7 +259,7 @@ test "reject refuses even a successful status, with a bounded excerpt" {
     },
   )
   let reply = @driver.run_sync(() => {
-    client.send(@client.request(@http.Request::get("/")).response(plan))
+    client.send(@client.request(@mttp.Request::get("/")).response(plan))
   })
   guard reply.body is Err(UnexpectedStatus(head, body~)) else {
     fail("expected a rejection")
@@ -277,11 +277,11 @@ test "late returned response is closed and option attributes stay independent" {
     @client.from_fn((_, options) => {
       options_seen.push(options)
       d.sleep(10)
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     }),
     @sim.SimClock::new(d),
   )
-  let request = @client.request(@http.Request::get("/"))
+  let request = @client.request(@mttp.Request::get("/"))
     .response(@client.as_stream((_, stream) => stream.read_some()))
     .timeout_ms(5)
     .read_idle_ms(7)
@@ -292,7 +292,7 @@ test "late returned response is closed and option attributes stay independent" {
     let _ = d.run(() => client.send(request))
     false
   } catch {
-    @http.TransportError(kind=Timeout(..), ..) => true
+    @mttp.TransportError(kind=Timeout(..), ..) => true
     error => raise error
   }
   assert_true(rejected)

@@ -1,7 +1,7 @@
 ///|
 test "headers normalize names and preserve pair order and multiple values" {
   let input = [("X-A", "one"), ("X-B", "two"), ("x-a", "three")]
-  let mut headers = @http.Headers::of(input)
+  let mut headers = @mttp.Headers::of(input)
   input.clear()
   assert_eq(headers.length(), 3)
   assert_eq(headers.get("X-A"), Some("one"))
@@ -17,15 +17,15 @@ test "headers normalize names and preserve pair order and multiple values" {
   let visited = []
   headers.each((name, value) => visited.push((name, value)))
   assert_eq(visited, expected)
-  assert_eq(headers, @http.Headers::of(expected))
-  assert_true(headers != @http.Headers::of([("X-A", "one")]))
+  assert_eq(headers, @mttp.Headers::of(expected))
+  assert_true(headers != @mttp.Headers::of([("X-A", "one")]))
   headers = headers.add("X-B", "four")
   assert_eq(headers.iter().to_array(), [..expected, ("x-b", "four")])
 }
 
 ///|
 test "set replaces all values in place and remove removes all values" {
-  let mut headers = @http.Headers::of([
+  let mut headers = @mttp.Headers::of([
     ("A", "1"),
     ("B", "2"),
     ("a", "3"),
@@ -47,7 +47,7 @@ test "set replaces all values in place and remove removes all values" {
     ("c", "4"),
     ("d", "5"),
   ])
-  let mut empty = @http.Headers::empty()
+  let mut empty = @mttp.Headers::empty()
   assert_eq(empty.length(), 0)
   empty = empty.remove("absent")
   empty = empty.set("NEW", "value")

@@ -139,7 +139,7 @@ extern "js" fn check_bodyless_lambda(
 async test "bodyless Lambda POST reaches the model as Body Empty and present empty stays streamed" {
   check_bodyless_lambda(
     fetch_handler(request => {
-      @http.Response::new(if request.body is Empty { 204 } else { 200 })
+      @mttp.Response::new(if request.body is Empty { 204 } else { 200 })
     }),
   ).wait()
 }
@@ -195,7 +195,7 @@ async test "all host shims preserve caught prefetch input failures" {
           closes: 0,
         }
         sources.push(source)
-        @http.Response::new(201, body=Stream(@http.StreamBody::new(source)))
+        @mttp.Response::new(201, body=Stream(@mttp.StreamBody::new(source)))
       }),
     ).wait()
     assert_eq(sources.length(), 14)

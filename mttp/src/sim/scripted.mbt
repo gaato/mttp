@@ -8,7 +8,7 @@ pub(all) enum ReadStep {
   /// Permanent EOF.
   Eof
   /// A failure raised by this and every later read, until close.
-  Failure(@http.TransportError)
+  Failure(@mttp.TransportError)
   /// Blocks the read until the signal is notified or the connection closes;
   /// a point where a test can cancel the reader or let a deadline expire.
   Wait(&@rt.Signal)
@@ -22,8 +22,8 @@ pub struct ScriptedConn {
   priv mut pending : Bytes
   priv mut ended : Bool
   priv mut closed : Bool
-  priv mut failure : @http.TransportError?
-  priv write_failure : @http.TransportError?
+  priv mut failure : @mttp.TransportError?
+  priv write_failure : @mttp.TransportError?
   priv mut blocked : &@rt.Signal?
   priv writes : Array[Bytes]
   priv mut close_count : Int32
@@ -47,7 +47,7 @@ pub struct ScriptedConn {
 /// ```
 pub fn ScriptedConn::new(
   steps : Array[ReadStep],
-  write_error? : @http.TransportError,
+  write_error? : @mttp.TransportError,
 ) -> ScriptedConn {
   {
     steps: steps.copy(),
@@ -80,7 +80,7 @@ pub fn ScriptedConn::closes(self : ScriptedConn) -> Int32 {
 /// cancellable waits. A nonpositive `max_len` raises `Invalid`.
 pub impl @rt.Conn for ScriptedConn with fn read(self, max_len~) {
   if max_len <= 0 {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Unknown,
       detail="nonpositive read size",
@@ -123,7 +123,7 @@ pub impl @rt.Conn for ScriptedConn with fn read(self, max_len~) {
 /// `Network` after close.
 pub impl @rt.Conn for ScriptedConn with fn write(self, bytes) {
   if self.closed {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Network,
       phase=Write,
       detail="connection closed",
@@ -189,7 +189,7 @@ pub fn ScriptedDialer::tls_hosts(self : ScriptedDialer) -> Array[String] {
 pub impl @rt.Dialer for ScriptedDialer with fn connect(self, host~, port~) {
   self.addresses.push((host, port))
   if self.connections.is_empty() {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Connect,
       phase=Dial,
       detail="no scripted connection",

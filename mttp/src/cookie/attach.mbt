@@ -3,8 +3,8 @@
 /// already supplied one. Returns a copy and leaves the original unchanged.
 pub fn CookieJar::attach(
   self : CookieJar,
-  request : @http.Request,
-) -> @http.Request {
+  request : @mttp.Request,
+) -> @mttp.Request {
   if request.headers.contains("cookie") {
     return request
   }

@@ -51,7 +51,7 @@ pub fn[T] ClientRequest::to_curl(
       ),
     )
   }
-  let parsed = Some(@http.Url::parse(request.url)) catch { _ => None }
+  let parsed = Some(@mttp.Url::parse(request.url)) catch { _ => None }
   let url = match parsed {
     Some(url) if url.userinfo is Some(_) => "<URL userinfo redacted>"
     _ => request.url
@@ -78,7 +78,7 @@ pub fn[T] ClientRequest::to_curl(
           comment = " # byte body omitted"
         }
       Stream(_) => comment = " # streaming body omitted"
-      @http.Body::.. => comment = " # unsupported body omitted"
+      @mttp.Body::.. => comment = " # unsupported body omitted"
     }
   }
   prefix + args.join(" ") + comment

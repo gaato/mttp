@@ -22,9 +22,9 @@ priv struct Target {
 /// Validates `request` and parses its URL. A relative URL, a scheme other
 /// than http and https, a URL without a host or with userinfo is refused
 /// with `Invalid` in phase Pool. The fragment is never sent.
-fn target(request : @http.Request) -> Target raise @http.TransportError {
+fn target(request : @mttp.Request) -> Target raise @mttp.TransportError {
   request.validate()
-  let url = @http.Url::parse(request.url) catch {
+  let url = @mttp.Url::parse(request.url) catch {
     _ => raise invalid("invalid URL")
   }
   guard url.scheme is Some("http" | "https" as scheme) &&

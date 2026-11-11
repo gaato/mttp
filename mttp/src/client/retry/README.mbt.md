@@ -35,10 +35,10 @@ test "a rate-limited POST waits as the server asks" {
       zero_means_backoff: false,
     },
   }
-  let post = @http.Request::post("https://api.example/messages").head()
+  let post = @mttp.Request::post("https://api.example/messages").head()
   let limited = @retry.Response(
     status=429,
-    headers=@http.Headers::of([("Retry-After", "2")]),
+    headers=@mttp.Headers::of([("Retry-After", "2")]),
   )
   let decide = attempt => {
     rule.decide(

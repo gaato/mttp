@@ -4,11 +4,11 @@
 /// `Content-Length: 0` when `empty_length`: where a recipient would
 /// otherwise read until close, or where the method anticipates content.
 fn wire_fields(
-  headers : @http.Headers,
+  headers : @mttp.Headers,
   framing : Framing,
   v : Version,
   empty_length~ : Bool,
-) -> @http.Headers raise ParseError {
+) -> @mttp.Headers raise ParseError {
   // Fields replaced below are validated too: a framing override must not
   // hide a malformed value the caller supplied.
   for (name, value) in headers.iter() {
@@ -48,11 +48,11 @@ fn version_text(v : Version) -> String {
 ///|
 /// Writes the start line and the fields; values are written as Latin-1
 /// octets, the inverse of the parser's decoding.
-fn head_bytes(start : String, headers : @http.Headers) -> Bytes {
+fn head_bytes(start : String, headers : @mttp.Headers) -> Bytes {
   let buffer = Buffer()
-  buffer.write_bytes(@http.encode_utf8(start + "\r\n"))
+  buffer.write_bytes(@mttp.encode_utf8(start + "\r\n"))
   for (name, value) in headers.iter() {
-    buffer.write_bytes(@http.encode_utf8(name + ": "))
+    buffer.write_bytes(@mttp.encode_utf8(name + ": "))
     for c in value {
       buffer.write_byte(c.to_int().to_byte())
     }
@@ -86,7 +86,7 @@ fn head_bytes(start : String, headers : @http.Headers) -> Bytes {
 /// test {
 ///   let head = @h1.write_response_head(
 ///     200,
-///     @http.Headers::of([("Content-Type", "text/plain")]),
+///     @mttp.Headers::of([("Content-Type", "text/plain")]),
 ///     Length(5),
 ///     Http11,
 ///   )
@@ -95,14 +95,14 @@ fn head_bytes(start : String, headers : @http.Headers) -> Bytes {
 ///   )
 ///   let empty = @h1.write_response_head(
 ///     200,
-///     @http.Headers::empty(),
+///     @mttp.Headers::empty(),
 ///     NoBody,
 ///     Http11,
 ///   )
 ///   assert_eq(empty, b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")
 ///   let none = @h1.write_response_head(
 ///     204,
-///     @http.Headers::empty(),
+///     @mttp.Headers::empty(),
 ///     NoBody,
 ///     Http11,
 ///   )
@@ -111,10 +111,10 @@ fn head_bytes(start : String, headers : @http.Headers) -> Bytes {
 /// ```
 pub fn write_response_head(
   status : Int32,
-  headers : @http.Headers,
+  headers : @mttp.Headers,
   framing : Framing,
   v : Version,
-  meth~ : @http.Method = Get,
+  meth~ : @mttp.Method = Get,
 ) -> Bytes raise ParseError {
   if status < 100 || status > 599 {
     raise malformed("invalid status code")
@@ -134,7 +134,7 @@ pub fn write_response_head(
     empty_length=!has_no_body(status, meth),
   )
   head_bytes(
-    "\{version_text(v)} \{status} \{@http.reason_phrase(status)}",
+    "\{version_text(v)} \{status} \{@mttp.reason_phrase(status)}",
     headers,
   )
 }
@@ -153,7 +153,7 @@ pub fn write_response_head(
 ///   let head = @h1.write_request_head(
 ///     Post,
 ///     "/items",
-///     @http.Headers::of([("Host", "example.com")]),
+///     @mttp.Headers::of([("Host", "example.com")]),
 ///     Chunked,
 ///     Http11,
 ///   )
@@ -163,9 +163,9 @@ pub fn write_response_head(
 /// }
 /// ```
 pub fn write_request_head(
-  meth : @http.Method,
+  meth : @mttp.Method,
   target : String,
-  headers : @http.Headers,
+  headers : @mttp.Headers,
   framing : Framing,
   v : Version,
 ) -> Bytes raise ParseError {
@@ -200,7 +200,7 @@ pub fn write_request_head(
 pub fn encode_chunk(bytes : BytesView) -> Bytes {
   let buffer = Buffer()
   buffer.write_bytes(
-    @http.encode_utf8(bytes.length().to_string(radix=16) + "\r\n"),
+    @mttp.encode_utf8(bytes.length().to_string(radix=16) + "\r\n"),
   )
   buffer.write_bytesview(bytes)
   buffer.write_bytes(b"\r\n")

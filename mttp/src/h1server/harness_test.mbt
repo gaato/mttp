@@ -10,7 +10,7 @@ priv struct Harness {
   clock : &@rt.Clock
   timer : &@rt.Timer
   /// What the engine reported, in order.
-  errors : Array[@http.TransportError]
+  errors : Array[@mttp.TransportError]
   /// How often each served connection was closed, in serving order.
   closes : Array[() -> Int32]
 }
@@ -53,7 +53,7 @@ fn Harness::run(self : Harness, f : async () -> Unit) -> Unit raise {
 fn Harness::serve_on(
   self : Harness,
   conn : &@rt.Conn,
-  handler : @http.Handler,
+  handler : @mttp.Handler,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
   scheme~ : String = "http",
   peer? : String,
@@ -82,7 +82,7 @@ fn Harness::serve_on(
 /// the other end.
 fn Harness::serve(
   self : Harness,
-  handler : @http.Handler,
+  handler : @mttp.Handler,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
   chunk_bytes~ : Int32 = 65536,
   scheme~ : String = "http",
@@ -108,7 +108,7 @@ fn Harness::serve(
 fn Harness::exchange(
   self : Harness,
   bytes : Bytes,
-  handler : @http.Handler,
+  handler : @mttp.Handler,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
   chunk_bytes~ : Int32 = 65536,
 ) -> String raise {
@@ -135,7 +135,7 @@ priv struct Client {
 /// One response as the client read it.
 priv struct Reply {
   status : Int32
-  headers : @http.Headers
+  headers : @mttp.Headers
   body : Bytes
 }
 
@@ -148,13 +148,13 @@ async fn Client::fill(self : Client) -> Bool {
 
 ///|
 async fn Client::send(self : Client, text : String) -> Unit {
-  self.conn.write(@http.encode_utf8(text))
+  self.conn.write(@mttp.encode_utf8(text))
 }
 
 ///|
 /// Reads the next response to a request of `meth`, or `None` at EOF before
 /// one. An informational response is returned on its own.
-async fn Client::response(self : Client, meth~ : @http.Method = Get) -> Reply? {
+async fn Client::response(self : Client, meth~ : @mttp.Method = Get) -> Reply? {
   let decoder = @h1.HeadDecoder::new()
   let mut raw = b""
   for ;; {
@@ -213,7 +213,7 @@ async fn Client::response(self : Client, meth~ : @http.Method = Get) -> Reply? {
 
 ///|
 /// Reads the next response, which must be there.
-async fn Client::expect(self : Client, meth~ : @http.Method = Get) -> Reply {
+async fn Client::expect(self : Client, meth~ : @mttp.Method = Get) -> Reply {
   guard self.response(meth~) is Some(reply) else { fail("expected a response") }
   reply
 }
@@ -244,17 +244,17 @@ fn get(path : String, fields~ : String = "") -> String {
 ///|
 /// A POST with a Content-Length body.
 fn post(path : String, body : String, fields~ : String = "") -> String {
-  "POST \{path} HTTP/1.1\r\nHost: example.test\r\n\{fields}Content-Length: \{@http.encode_utf8(body).length()}\r\n\r\n\{body}"
+  "POST \{path} HTTP/1.1\r\nHost: example.test\r\n\{fields}Content-Length: \{@mttp.encode_utf8(body).length()}\r\n\r\n\{body}"
 }
 
 ///|
 /// Reads the whole request body, at most `limit` bytes.
 async fn body_of(
-  request : @http.Request,
+  request : @mttp.Request,
   limit~ : Int32 = 1 << 20,
-) -> Bytes raise @http.TransportError {
+) -> Bytes raise @mttp.TransportError {
   match request.body {
-    Stream(stream) => @http.read_bounded(stream.take(), limit)
+    Stream(stream) => @mttp.read_bounded(stream.take(), limit)
     Bytes(bytes) => bytes
     _ => b""
   }
@@ -262,24 +262,24 @@ async fn body_of(
 
 ///|
 /// A handler answering `status` with `text`.
-fn reply(text : String, status~ : Int32 = 200) -> @http.Handler {
-  _ => @http.Response::new(status, body=Bytes(@http.encode_utf8(text)))
+fn reply(text : String, status~ : Int32 = 200) -> @mttp.Handler {
+  _ => @mttp.Response::new(status, body=Bytes(@mttp.encode_utf8(text)))
 }
 
 ///|
 /// A handler echoing the request body it read, or `caught` when reading
 /// failed.
-fn echo() -> @http.Handler {
+fn echo() -> @mttp.Handler {
   request => {
     let body = body_of(request) catch { _ => b"caught" }
-    @http.Response::new(200, body=Bytes(body))
+    @mttp.Response::new(200, body=Bytes(body))
   }
 }
 
 ///|
 /// A failure's kind and phase, for matching in expectations.
-fn kind_phase(error : @http.TransportError) -> (@http.Kind, @http.Phase) {
-  let @http.TransportError(kind~, phase~, ..) = error
+fn kind_phase(error : @mttp.TransportError) -> (@mttp.Kind, @mttp.Phase) {
+  let @mttp.TransportError(kind~, phase~, ..) = error
   (kind, phase)
 }
 
@@ -288,7 +288,7 @@ fn kind_phase(error : @http.TransportError) -> (@http.Kind, @http.Phase) {
 /// ran out when set; counts its closes.
 priv struct Pieces {
   pieces : Array[Bytes]
-  failure : @http.TransportError?
+  failure : @mttp.TransportError?
   mut closes : Int32
   mut closed : Bool
 }
@@ -296,13 +296,13 @@ priv struct Pieces {
 ///|
 fn Pieces::new(
   pieces : Array[Bytes],
-  failure? : @http.TransportError,
+  failure? : @mttp.TransportError,
 ) -> Pieces {
   { pieces: pieces.copy(), failure, closes: 0, closed: false, }
 }
 
 ///|
-impl @http.BodyStream for Pieces with fn read_some(self) {
+impl @mttp.BodyStream for Pieces with fn read_some(self) {
   if self.closed {
     return None
   }
@@ -316,7 +316,7 @@ impl @http.BodyStream for Pieces with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for Pieces with fn close(self) {
+impl @mttp.BodyStream for Pieces with fn close(self) {
   if !self.closed {
     self.closed = true
     self.closes += 1
@@ -393,7 +393,7 @@ impl @rt.Conn for Stalled with fn write(self, _) {
   self.writes += 1
   self.stuck.wait()
   if self.closed {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Network,
       phase=Write,
       detail="closed while writing",

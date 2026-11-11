@@ -18,7 +18,7 @@ impl @rt.Conn for GatedConn with fn read(self, max_len~) {
 impl @rt.Conn for GatedConn with fn write(self, bytes) {
   if self.open_writes <= 0 {
     self.closed.wait()
-    raise @http.TransportError(kind=Network, phase=Write, detail="closed")
+    raise @mttp.TransportError(kind=Network, phase=Write, detail="closed")
   }
   self.open_writes -= 1
   self.writes.push(bytes)
@@ -42,7 +42,7 @@ test "an early final response stops a large in-memory upload" {
   }
   h.dialer.queue.push(Hand(conn))
   h.run(() => {
-    let request = @http.Request::post("http://example.test/").body_bytes(
+    let request = @mttp.Request::post("http://example.test/").body_bytes(
       Bytes::make(1 << 20, b'x'),
     )
     let response = h.client.send(request, exchange())
@@ -85,7 +85,7 @@ test "informational heads neither end an upload nor start the head limit" {
       ignore(peer.request())
     })
     let response = h.client.send(
-      @http.Request::post("http://example.test/").body_stream(feed),
+      @mttp.Request::post("http://example.test/").body_stream(feed),
       exchange(),
     )
     assert_eq(response.status, 204)
@@ -111,7 +111,7 @@ test "a slow upload producer is bounded by the write limit" {
       failing(() => {
         ignore(
           h.client.send(
-            @http.Request::post("http://example.test/").body_stream(feed),
+            @mttp.Request::post("http://example.test/").body_stream(feed),
             exchange(),
           ),
         )

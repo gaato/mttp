@@ -1,8 +1,8 @@
 ///|
 test "PATCH OPTIONS and Basic builders preserve request values" {
-  assert_eq(@http.Request::patch("/items").meth, Patch)
-  assert_eq(@http.Request::options("/items").meth, Options)
-  let original = @http.Request::get("/").bearer("old")
+  assert_eq(@mttp.Request::patch("/items").meth, Patch)
+  assert_eq(@mttp.Request::options("/items").meth, Options)
+  let original = @mttp.Request::get("/").bearer("old")
   let authenticated = original.basic("Aladdin", "open sesame")
   assert_eq(authenticated.headers.get_all("authorization"), [
     "Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==",
@@ -16,10 +16,10 @@ test "prefix URL joining preserves mixed-case absolute HTTP schemes" {
     absolute in [
       "HTTP://example.test/a", "Https://example.test/a", "hTtPs://example.test/a",
     ] {
-    assert_eq(@http.join_url("https://api.test/v1", absolute), absolute)
+    assert_eq(@mttp.join_url("https://api.test/v1", absolute), absolute)
   }
   assert_eq(
-    @http.join_url("https://api.test/v1", "/a"),
+    @mttp.join_url("https://api.test/v1", "/a"),
     "https://api.test/v1/a",
   )
 }

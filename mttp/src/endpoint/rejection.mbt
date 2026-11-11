@@ -36,22 +36,22 @@ fn problem(
   status : Int32,
   title : String,
   errors : Array[Json],
-) -> @http.Response {
+) -> @mttp.Response {
   let body : Json = {
     "type": "about:blank",
     "title": Json(title),
     "status": Json(status),
     "errors": Json::array(errors),
   }
-  @http.Response::new(
+  @mttp.Response::new(
     status,
-    headers=@http.Headers::of([("content-type", "application/problem+json")]),
-    body=Bytes(@http.encode_utf8(body.stringify())),
+    headers=@mttp.Headers::of([("content-type", "application/problem+json")]),
+    body=Bytes(@mttp.encode_utf8(body.stringify())),
   )
 }
 
 ///|
-fn default_failure(context : FailureContext) -> @http.Response {
+fn default_failure(context : FailureContext) -> @mttp.Response {
   let errors : Array[Json] = []
   let mut status = 400
   for f in context.failures {

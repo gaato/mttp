@@ -10,7 +10,7 @@ test "request target forms and HTTP version framing are unambiguous" {
       ("OPTIONS", "*"),
     ] {
     let parsed = @h1.parse_request_head(
-      @http.encode_utf8(meth + " " + target + " HTTP/1.1\r\nHost: h\r\n\r\n"),
+      @mttp.encode_utf8(meth + " " + target + " HTTP/1.1\r\nHost: h\r\n\r\n"),
     )
     assert_eq(parsed.target, target)
     let written = @h1.write_request_head(
@@ -41,7 +41,7 @@ test "request target forms and HTTP version framing are unambiguous" {
     ] {
     try
       @h1.parse_request_head(
-        @http.encode_utf8(meth + " " + target + " HTTP/1.1\r\nHost: h\r\n\r\n"),
+        @mttp.encode_utf8(meth + " " + target + " HTTP/1.1\r\nHost: h\r\n\r\n"),
       )
     catch {
       @h1.ParseError(kind=Malformed, ..) => ()

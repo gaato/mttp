@@ -107,9 +107,9 @@ async test "Web Requests preserve metadata environment cookies and body ownershi
     if request.attributes.get(env) is None {
       abort("environment lost")
     }
-    @http.Response::new(
+    @mttp.Response::new(
       201,
-      headers=@http.Headers::of([
+      headers=@mttp.Headers::of([
         ("set-cookie", "a=1; Path=/"),
         ("set-cookie", "b=2; Path=/"),
       ]),
@@ -134,7 +134,7 @@ async test "a bodyless Fetch POST remains absent rather than an EOF stream" {
     assert_true(request.body is Empty) catch {
       _ => abort("absent Fetch body became a stream")
     }
-    @http.Response::new(204)
+    @mttp.Response::new(204)
   })
   let absent = awaited(adapter(bodyless_request([]), Probe::new().callback())).wait()
   assert_eq(absent.status(), 204)
@@ -156,11 +156,11 @@ async test "fetch request ceilings reject declared and observed overflow despite
         let probe = Probe::new()
         let adapter = fetch_handler(max_body_bytes?=configured, request => {
           if request.body is Stream(stream) {
-            ignore(@http.read_bounded(stream.take(), ceiling + 1)) catch {
+            ignore(@mttp.read_bounded(stream.take(), ceiling + 1)) catch {
               _ => ()
             }
           }
-          @http.Response::new(200)
+          @mttp.Response::new(200)
         })
         let headers : FixedArray[FixedArray[String]] = if declared {
           [["content-length", size.to_string()]]
@@ -187,7 +187,7 @@ async test "background registration is synchronous and aggregate waits for all t
     let release = @cond_var.Cond()
     let finished = Ref(0)
     let adapter = fetch_handler(request => {
-      let schedule = request.attributes.get(@http.background).unwrap()
+      let schedule = request.attributes.get(@mttp.background).unwrap()
       schedule(() => {
         release.wait()
         finished.val += 1
@@ -199,7 +199,7 @@ async test "background registration is synchronous and aggregate waits for all t
           raise Failure("background failure")
         }
       })
-      @http.Response::new(204)
+      @mttp.Response::new(204)
     })
     let promise = adapter(make_request("GET", b"", []), probe.callback())
     assert_eq(probe.calls(), 1)
@@ -220,7 +220,7 @@ priv struct OutputSource {
 }
 
 ///|
-impl @http.BodyStream for OutputSource with fn read_some(self) {
+impl @mttp.BodyStream for OutputSource with fn read_some(self) {
   self.reads += 1
   if self.reads == 1 {
     Some(Bytes::make(131073, b'x'))
@@ -230,7 +230,7 @@ impl @http.BodyStream for OutputSource with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for OutputSource with fn close(self) {
+impl @mttp.BodyStream for OutputSource with fn close(self) {
   self.closes += 1
 }
 
@@ -240,7 +240,7 @@ async test "fetch response backpressure bounds chunks and closes sources on EOF 
     let source = OutputSource::{ reads: 0, closes: 0, }
     let probe = Probe::new()
     let adapter = fetch_handler(_ => {
-      @http.Response::new(200, body=Stream(@http.StreamBody::new(source)))
+      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(source)))
     })
     let reply = awaited(adapter(make_request("GET", b"", []), probe.callback())).wait()
     assert_eq(source.reads, 1)
@@ -266,7 +266,7 @@ async test "request abort cancels a blocked handler and settles its background r
     }
     started.broadcast()
     @cond_var.Cond().wait()
-    @http.Response::new(200)
+    @mttp.Response::new(200)
   })
   let promise = adapter(
     streaming_request([], controller.signal()),

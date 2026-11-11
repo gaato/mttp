@@ -1,10 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/http/sim"
+package "gaato/mttp/sim"
 
 import {
-  "gaato/http",
-  "gaato/http/driver",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/driver",
+  "gaato/mttp/rt",
   "moonbitlang/core/debug",
   "moonbitlang/core/quickcheck",
 }
@@ -12,9 +12,9 @@ import {
 // Values
 pub fn byte_chunks(Bytes) -> Array[Bytes]
 
-pub async fn check_backend_contract(() -> &@http.Backend, url? : String) -> Unit
+pub async fn check_backend_contract(() -> &@mttp.Backend, url? : String) -> Unit
 
-pub async fn check_body_stream_contract(() -> &@http.BodyStream, Bytes, max_reads? : Int32) -> Unit
+pub async fn check_body_stream_contract(() -> &@mttp.BodyStream, Bytes, max_reads? : Int32) -> Unit
 
 pub async fn check_conn(&@rt.Conn, &@rt.Conn, coordination~ : &@rt.Coordination, suspend~ : async () -> Unit noraise, shutdown_left? : () -> Unit) -> Unit
 
@@ -26,7 +26,7 @@ pub fn each_split(Bytes, (Bytes, Bytes) -> Unit raise?) -> Unit raise?
 
 pub fn gen_chunks(Bytes) -> @quickcheck.Generator[Array[Bytes]]
 
-pub fn gen_headers() -> @quickcheck.Generator[@http.Headers]
+pub fn gen_headers() -> @quickcheck.Generator[@mttp.Headers]
 
 pub fn gen_invalid_url() -> @quickcheck.Generator[String]
 
@@ -56,15 +56,15 @@ pub fn Feed::close(Self) -> Unit
 pub fn Feed::closes(Self) -> Int32
 pub fn Feed::is_closed(Self) -> Bool
 pub fn Feed::new(@driver.Driver, Array[FeedStep]) -> Self
-pub async fn Feed::read_some(Self) -> Bytes? raise @http.TransportError
+pub async fn Feed::read_some(Self) -> Bytes? raise @mttp.TransportError
 pub fn Feed::reads(Self) -> Int32
-pub impl @http.BodyStream for Feed
+pub impl @mttp.BodyStream for Feed
 
 #non_exhaustive
 pub(all) enum FeedStep {
   Chunk(Bytes)
   Wait(Int32)
-  Fail(@http.TransportError)
+  Fail(@mttp.TransportError)
   End
 }
 
@@ -72,7 +72,7 @@ pub(all) enum FeedStep {
 pub(all) enum ReadStep {
   Chunk(Bytes)
   Eof
-  Failure(@http.TransportError)
+  Failure(@mttp.TransportError)
   Wait(&@rt.Signal)
 }
 
@@ -81,19 +81,19 @@ pub struct ScriptedConn {
 }
 pub fn ScriptedConn::close(Self) -> Unit
 pub fn ScriptedConn::closes(Self) -> Int32
-pub fn ScriptedConn::new(Array[ReadStep], write_error? : @http.TransportError) -> Self
-pub async fn ScriptedConn::read(Self, max_len~ : Int32) -> Bytes? raise @http.TransportError
-pub async fn ScriptedConn::write(Self, Bytes) -> Unit raise @http.TransportError
+pub fn ScriptedConn::new(Array[ReadStep], write_error? : @mttp.TransportError) -> Self
+pub async fn ScriptedConn::read(Self, max_len~ : Int32) -> Bytes? raise @mttp.TransportError
+pub async fn ScriptedConn::write(Self, Bytes) -> Unit raise @mttp.TransportError
 pub fn ScriptedConn::written(Self) -> Array[Bytes]
 pub impl @rt.Conn for ScriptedConn
 
 pub struct ScriptedDialer {
   // private fields
 }
-pub async fn ScriptedDialer::connect(Self, host~ : String, port~ : Int32) -> &@rt.Conn raise @http.TransportError
+pub async fn ScriptedDialer::connect(Self, host~ : String, port~ : Int32) -> &@rt.Conn raise @mttp.TransportError
 pub fn ScriptedDialer::dialed(Self) -> Array[(String, Int32)]
 pub fn ScriptedDialer::new(Array[&@rt.Conn]) -> Self
-pub async fn ScriptedDialer::start_tls(Self, &@rt.Conn, host~ : String) -> &@rt.Conn raise @http.TransportError
+pub async fn ScriptedDialer::start_tls(Self, &@rt.Conn, host~ : String) -> &@rt.Conn raise @mttp.TransportError
 pub fn ScriptedDialer::tls_hosts(Self) -> Array[String]
 pub impl @rt.Dialer for ScriptedDialer
 
@@ -110,9 +110,9 @@ pub struct SimConn {
 }
 pub fn SimConn::close(Self) -> Unit
 pub fn SimConn::closes(Self) -> Int32
-pub async fn SimConn::read(Self, max_len~ : Int32) -> Bytes? raise @http.TransportError
+pub async fn SimConn::read(Self, max_len~ : Int32) -> Bytes? raise @mttp.TransportError
 pub fn SimConn::shutdown_write(Self) -> Unit
-pub async fn SimConn::write(Self, Bytes) -> Unit raise @http.TransportError
+pub async fn SimConn::write(Self, Bytes) -> Unit raise @mttp.TransportError
 pub impl @rt.Conn for SimConn
 
 pub struct SimCoordination {
@@ -120,7 +120,7 @@ pub struct SimCoordination {
 }
 pub fn SimCoordination::new(@driver.Driver) -> Self
 pub fn SimCoordination::signal(Self) -> &@rt.Signal
-pub async fn SimCoordination::supervise(Self, primary~ : async () -> Unit raise @http.TransportError, monitor~ : async () -> Unit raise @http.TransportError) -> Unit raise @http.TransportError
+pub async fn SimCoordination::supervise(Self, primary~ : async () -> Unit raise @mttp.TransportError, monitor~ : async () -> Unit raise @mttp.TransportError) -> Unit raise @mttp.TransportError
 pub impl @rt.Coordination for SimCoordination
 
 pub struct SimGate {

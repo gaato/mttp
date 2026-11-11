@@ -1,6 +1,6 @@
 ///|
 test "split generators preserve bytes and cover endpoints" {
-  let bytes = @http.encode_utf8("日本🙂")
+  let bytes = @mttp.encode_utf8("日本🙂")
   let offsets = []
   @sim.each_split(bytes, (a, b) => {
     let out = Buffer()
@@ -28,7 +28,7 @@ test "generated controls are refused and text generation is reproducible" {
   assert_eq(first, @sim.gen_text().samples(count=100, size=20, seed=42))
   for url in @sim.gen_invalid_url().samples(count=100, seed=42) {
     let refused = try {
-      @http.validate_url(url)
+      @mttp.validate_url(url)
       false
     } catch {
       _ => true

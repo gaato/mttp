@@ -129,14 +129,14 @@ pub extend Framing with @debug.Debug::{to_repr}
 #derive(Eq, Debug)
 pub struct ParsedRequest {
   /// The request method.
-  meth : @http.Method
+  meth : @mttp.Method
   /// The request target exactly as received: origin-form (`/a?b`),
   /// absolute-form, authority-form (CONNECT) or `*` (OPTIONS).
   target : String
   /// The wire version.
   version : Version
   /// The fields in order, names lowercased, duplicates retained.
-  headers : @http.Headers
+  headers : @mttp.Headers
 }
 
 ///|
@@ -157,7 +157,7 @@ pub struct ParsedResponse {
   /// The status code, 100 to 599.
   status : Int32
   /// The fields in order, names lowercased, duplicates retained.
-  headers : @http.Headers
+  headers : @mttp.Headers
 }
 
 ///|

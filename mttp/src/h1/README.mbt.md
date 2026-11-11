@@ -76,7 +76,7 @@ the body.
 test "write a chunked response" {
   let head = @h1.write_response_head(
     200,
-    @http.Headers::of([("Content-Type", "text/plain")]),
+    @mttp.Headers::of([("Content-Type", "text/plain")]),
     Chunked,
     Http11,
   )

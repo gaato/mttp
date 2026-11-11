@@ -10,7 +10,7 @@
 /// ```mbt check
 /// test {
 ///   assert_eq(
-///     @http.form_urlencode([("q", "a b&c"), ("lang", "日本")]),
+///     @mttp.form_urlencode([("q", "a b&c"), ("lang", "日本")]),
 ///     "q=a+b%26c&lang=%E6%97%A5%E6%9C%AC",
 ///   )
 /// }

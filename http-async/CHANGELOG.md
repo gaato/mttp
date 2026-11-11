@@ -7,6 +7,10 @@ never does.
 
 ## [Unreleased]
 
+### Changed
+
+- Depends on gaato/mttp, which now holds the vocabulary formerly in gaato/http.
+
 ## [0.6.0] - 2026-11-10
 
 ### Added

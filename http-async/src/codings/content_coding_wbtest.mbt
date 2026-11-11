@@ -4,7 +4,7 @@
 /// A plan as text: the codings undone, then what `Content-Encoding` keeps.
 fn plan_label(values : Array[String]) -> String {
   try coding_plan_fields(values) catch {
-    @http.TransportError(kind=Protocol, detail=message, ..) => message
+    @mttp.TransportError(kind=Protocol, detail=message, ..) => message
     error => "unexpected \{Repr(error)}"
   } noraise {
     plan => {
@@ -130,12 +130,12 @@ test "decode_head rewrites only a head it decodes" {
   ]
   for row in rows {
     let (label, pairs, expected) = row
-    let head : @http.ResponseHead = {
+    let head : @mttp.ResponseHead = {
       status: 200,
-      headers: @http.Headers::of(pairs),
+      headers: @mttp.Headers::of(pairs),
     }
     let outcome = try decode_head(head) catch {
-      @http.TransportError(kind=Protocol, detail=message, ..) => message
+      @mttp.TransportError(kind=Protocol, detail=message, ..) => message
       error => "unexpected \{Repr(error)}"
     } noraise {
       (head, decoder) => {

@@ -10,7 +10,7 @@ way on wasm-gc, wasm, js and native without an async runtime.
 > `%async.raise_cancellation_signal` and `%async.capture_cancellation`). Its
 > public API may break with any toolchain change, in any release, which is
 > why the package is marked experimental: an importer lists it in
-> `options("allow-experimental-packages": ["gaato/http/driver"])`. It is
+> `options("allow-experimental-packages": ["gaato/mttp/driver"])`. It is
 > test infrastructure; production packages do not import it.
 
 ## What it does

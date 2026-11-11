@@ -1,7 +1,7 @@
 import {
-  "gaato/http",
-  "gaato/http/rt",
-  "gaato/http/h1client",
+  "gaato/mttp",
+  "gaato/mttp/rt",
+  "gaato/mttp/h1client",
   "gaato/http-async" @http_async,
   "gaato/http-async/runtime",
 }
@@ -15,19 +15,19 @@ import {
 
 #cfg(target="js")
 import {
-  "gaato/http/h1",
+  "gaato/mttp/h1",
   "moonbitlang/core/async/js_async",
 }
 
 import {
-  "gaato/http/sim",
+  "gaato/mttp/sim",
   "moonbitlang/core/async",
 } for "test"
 
 #cfg(not(target="js"))
 import {
   "moonbitlang/core/encoding/utf8",
-  "gaato/http/h1server",
+  "gaato/mttp/h1server",
   "gaato/http-async/internal/socketconn",
   "moonbitlang/core/async/socket",
   "moonbitlang/core/async/tls",
@@ -37,8 +37,8 @@ supported_targets = "native+wasm+js"
 
 options(
   "allow-experimental-packages": [
-    "gaato/http/h1client",
-    "gaato/http/h1server",
+    "gaato/mttp/h1client",
+    "gaato/mttp/h1server",
     "moonbitlang/core/async",
     "moonbitlang/core/async/js_async",
     "moonbitlang/core/async/socket",

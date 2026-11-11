@@ -5,14 +5,14 @@
 /// own URL and stores cookies before the next hop. The jar does not enforce
 /// browser SameSite policy. Explicit Cookie headers take precedence.
 pub struct Cookies {
-  priv inner : &@http.Backend
+  priv inner : &@mttp.Backend
   priv jar : @cookie.CookieJar
   priv mut closed : Bool
 }
 
 ///|
 /// Wraps a backend with a caller-owned, clock-injected cookie jar.
-pub fn Cookies::new(inner : &@http.Backend, jar : @cookie.CookieJar) -> Cookies {
+pub fn Cookies::new(inner : &@mttp.Backend, jar : @cookie.CookieJar) -> Cookies {
   { inner, jar, closed: false, }
 }
 
@@ -23,12 +23,12 @@ pub fn Cookies::new(inner : &@http.Backend, jar : @cookie.CookieJar) -> Cookies 
 /// unchanged and closes the request body during unwind.
 pub async fn Cookies::send(
   self : Cookies,
-  request : @http.Request,
-  options : @http.SendOptions,
-) -> @http.Response raise @http.TransportError {
+  request : @mttp.Request,
+  options : @mttp.SendOptions,
+) -> @mttp.Response raise @mttp.TransportError {
   defer (if request.body is Stream(stream) { stream.close() })
   if self.closed {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Closed,
       phase=Pool,
       detail="cookie backend is closed",
@@ -54,12 +54,12 @@ pub fn Cookies::close(self : Cookies) -> Unit {
 
 ///|
 /// Sends through the shared backend interface.
-pub impl @http.Backend for Cookies with fn send(self, request, options) {
+pub impl @mttp.Backend for Cookies with fn send(self, request, options) {
   self.send(request, options)
 }
 
 ///|
 /// Closes through the shared backend interface.
-pub impl @http.Backend for Cookies with fn close(self) {
+pub impl @mttp.Backend for Cookies with fn close(self) {
   self.close()
 }

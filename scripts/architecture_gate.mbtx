@@ -21,11 +21,11 @@ import {
 ///   and names only packages the row's `experimental` column allows, each of
 ///   which the package imports. An entry marked `test:` may be imported by
 ///   the package's tests only.
-/// - `engine`: the connection engines (`http/src/h1client`,
-///   `http/src/h1server`) import no content coding: decoding is a wrapper
+/// - `engine`: the connection engines (`mttp/src/h1client`,
+///   `mttp/src/h1server`) import no content coding: decoding is a wrapper
 ///   around the engine, in gaato/http-async.
-/// - `host`: gaato/http declares no `extern` function.
-/// - `control`: `http/src/internal/control` holds pure state: no `async fn`,
+/// - `host`: gaato/mttp declares no `extern` function.
+/// - `control`: `mttp/src/internal/control` holds pure state: no `async fn`,
 ///   no `mut` field, no `Ref`, and no import of another gaato package.
 /// - `legacy-manifest`: no `moon.mod.json` or `moon.pkg.json`; the rules read
 ///   the current formats only.
@@ -45,10 +45,10 @@ let script_exemptions : Array[(String, String)] = []
 
 ///|
 /// The connection engines and the pure control package.
-let engine_dirs : Array[String] = ["http/src/h1client", "http/src/h1server"]
+let engine_dirs : Array[String] = ["mttp/src/h1client", "mttp/src/h1server"]
 
 ///|
-let control_dir : String = "http/src/internal/control"
+let control_dir : String = "mttp/src/internal/control"
 
 ///|
 let control_dirs : Array[String] = [
@@ -57,7 +57,7 @@ let control_dirs : Array[String] = [
 
 ///|
 /// Modules whose sources may not declare `extern` functions.
-let no_extern_modules : Array[String] = ["gaato/http"]
+let no_extern_modules : Array[String] = ["gaato/mttp"]
 
 ///|
 /// Path components and module names that mark a content coding.
@@ -594,11 +594,11 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
   let pkg = (dir : String, text : String) => (dir + "/moon.pkg", text)
   // Modules.
   rejects(
-    "an import block in gaato/http",
+    "an import block in gaato/mttp",
     [
       (
-        "http/moon.mod",
-        files.get("http/moon.mod").unwrap_or("") +
+        "mttp/moon.mod",
+        files.get("mttp/moon.mod").unwrap_or("") +
         "\nimport {\n  \"gaato/deflate@0.1.0\",\n}\n",
       ),
     ],
@@ -606,37 +606,32 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
   )
   rejects(
     "a moon.work member without a row",
-    [("moon.work", "members = [\"http\", \"__unlisted_selftest_member__\"]\n")],
+    [("moon.work", "members = [\"mttp\", \"__unlisted_selftest_member__\"]\n")],
     "module",
   )
   rejects(
     "a legacy package manifest",
-    [("http/src/x/moon.pkg.json", "{}")],
+    [("mttp/src/x/moon.pkg.json", "{}")],
     "legacy-manifest",
   )
   // Package imports.
   rejects(
-    "core/async in gaato/http",
-    [pkg("http/src/rt", "import {\n  \"moonbitlang/core/async\",\n}\n")],
+    "core/async in gaato/mttp",
+    [pkg("mttp/src/rt", "import {\n  \"moonbitlang/core/async\",\n}\n")],
     "import",
   )
   rejects(
-    "core/compress in gaato/http",
+    "core/compress in gaato/mttp",
     [
       pkg(
-        "http/src/rt", "import { \"moonbitlang/core/compress/gzip\" } for \"test\"\n",
+        "mttp/src/rt", "import { \"moonbitlang/core/compress/gzip\" } for \"test\"\n",
       ),
     ],
     "import",
   )
   rejects(
-    "gaato/mttp in gaato/http",
-    [pkg("http/src/rt", "import {\n  \"gaato/mttp/client\",\n} for \"test\"\n")],
-    "import",
-  )
-  rejects(
-    "gaato/http-async in gaato/http",
-    [pkg("http/src/rt", "import { \"gaato/http-async\" @a }\n")],
+    "gaato/http-async in gaato/mttp",
+    [pkg("mttp/src/rt", "import { \"gaato/http-async\" @a }\n")],
     "import",
   )
   rejects(
@@ -650,8 +645,8 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
     "import",
   )
   rejects(
-    "gaato/mttp in gaato/http-async",
-    [pkg("http-async/src/backend", "import {\n  \"gaato/mttp/client\",\n}\n")],
+    "gaato/mttp_digest in gaato/http-async",
+    [pkg("http-async/src/backend", "import {\n  \"gaato/mttp_digest\",\n}\n")],
     "import",
   )
   rejects(
@@ -668,14 +663,14 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
     ],
     "async-runtime",
   )
-  accepts("gaato/http importing its own packages and core", [
+  accepts("gaato/mttp importing its own packages and core", [
     pkg(
-      "http/src/h1client", "import {\n  \"gaato/http\",\n  \"gaato/http/rt\" @rt,\n  \"moonbitlang/core/json\",\n}\n",
+      "mttp/src/h1client", "import {\n  \"gaato/mttp\",\n  \"gaato/mttp/rt\" @rt,\n  \"moonbitlang/core/json\",\n}\n",
     ),
   ])
-  accepts("gaato/mttp importing gaato/http", [
+  accepts("gaato/mttp_digest importing gaato/mttp", [
     pkg(
-      "mttp/src/client", "import {\n  \"gaato/http\",\n  \"gaato/mttp/sse\",\n}\n",
+      "mttp_digest/src", "import {\n  \"gaato/mttp\",\n  \"gaato/mttp/client\",\n}\n",
     ),
   ])
   accepts("core/async in a script", [
@@ -686,20 +681,20 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
   // Engines and control.
   rejects(
     "an engine importing codings",
-    [pkg("http/src/h1server", "import {\n  \"gaato/http/codings\",\n}\n")],
+    [pkg("mttp/src/h1server", "import {\n  \"gaato/http-async/codings\",\n}\n")],
     "engine",
   )
   rejects(
-    "an extern function in gaato/http",
+    "an extern function in gaato/mttp",
     [
       (
-        "http/src/rt/clock.mbt", "///|\nextern \"js\" fn now() -> Double =\n  \"Date.now\"\n",
+        "mttp/src/rt/clock.mbt", "///|\nextern \"js\" fn now() -> Double =\n  \"Date.now\"\n",
       ),
     ],
     "host",
   )
   accepts("extern in a comment", [
-    ("http/src/rt/clock.mbt", "// extern \"js\" fn now() -> Double\n"),
+    ("mttp/src/rt/clock.mbt", "// extern \"js\" fn now() -> Double\n"),
   ])
   rejects(
     "an async fn in control",
@@ -732,7 +727,7 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
   )
   rejects(
     "control importing a gaato package",
-    [pkg(control_dir, "import {\n  \"gaato/http/rt\",\n}\n")],
+    [pkg(control_dir, "import {\n  \"gaato/mttp/rt\",\n}\n")],
     "control",
   )
   accepts("a local let mut and a test in control", [
@@ -768,7 +763,7 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
   )
   rejects(
     "an allow the row does not list",
-    [async_pkg("[\"moonbitlang/core/async\", \"gaato/http/sim\"]")],
+    [async_pkg("[\"moonbitlang/core/async\", \"gaato/mttp/sim\"]")],
     "experimental",
   )
   rejects(
@@ -781,10 +776,10 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
     "experimental",
   )
   rejects(
-    "core/async allowed in gaato/http",
+    "core/async allowed in gaato/mttp",
     [
       pkg(
-        "http/src/rt", "options(\"allow-experimental-packages\": [\"moonbitlang/core/async\"])\n",
+        "mttp/src/rt", "options(\"allow-experimental-packages\": [\"moonbitlang/core/async\"])\n",
       ),
     ],
     "experimental",
@@ -792,7 +787,7 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
   let mttp_pkg = (block : String) => {
     pkg(
       "mttp/src/client",
-      "import {\n  \"gaato/http/driver\",\n}\{block}\noptions(\"allow-experimental-packages\": [\"gaato/http/driver\"])\n",
+      "import {\n  \"gaato/mttp/h1client\",\n}\{block}\noptions(\"allow-experimental-packages\": [\"gaato/mttp/h1client\"])\n",
     )
   }
   accepts("a test-only experimental import in its tests", [

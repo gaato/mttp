@@ -5,7 +5,7 @@ fn[S, I, E, O, M] Endpoint::encode_request(
   self : Endpoint[S, I, E, O, M],
   security : S,
   input : I,
-) -> @http.Request raise @client.InvalidRequest {
+) -> @mttp.Request raise @client.InvalidRequest {
   let sink = RequestSink::new()
   (self.security.encode)(security, sink)
   (self.input.encode)(input, sink)
@@ -20,12 +20,12 @@ fn[S, I, E, O, M] Endpoint::encode_request(
         let value = sink.captures.get(name).unwrap_or("")
         reject_dot_segment(value)
         path_builder.write_char('/')
-        path_builder.write_string(@http.percent_encode(value))
+        path_builder.write_string(@mttp.percent_encode(value))
       }
       Rest(name) => {
         let value = sink.captures.get(name).unwrap_or("")
         for part in value.split("/") {
-          let decoded = @http.percent_decode(part.to_owned()) catch {
+          let decoded = @mttp.percent_decode(part.to_owned()) catch {
             _ =>
               raise @client.InvalidRequest(message="invalid rest path encoding")
           }
@@ -40,10 +40,10 @@ fn[S, I, E, O, M] Endpoint::encode_request(
   let url = if sink.query.is_empty() {
     path
   } else {
-    path + "?" + @http.form_urlencode(sink.query)
+    path + "?" + @mttp.form_urlencode(sink.query)
   }
-  let mut req : @http.Request = {
-    ..@http.Request::new(self.meth.unwrap_or(Get), url),
+  let mut req : @mttp.Request = {
+    ..@mttp.Request::new(self.meth.unwrap_or(Get), url),
     headers: sink.headers,
     body: sink.body,
   }
@@ -86,7 +86,7 @@ fn decode_failure(error : DecodeError) -> @client.ResponseFailure {
 /// If neither decodes, retain the output failure when there was one.
 fn[S, I, E, O, M] Endpoint::decode_reply(
   self : Endpoint[S, I, E, O, M],
-  head : @http.ResponseHead,
+  head : @mttp.ResponseHead,
   bytes : Bytes,
 ) -> Result[Result[O, E], @client.ResponseFailure] raise {
   let mut failure : DecodeError? = None

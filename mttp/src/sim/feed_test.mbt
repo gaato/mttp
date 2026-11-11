@@ -25,14 +25,14 @@ test "feed skips empties and has sticky EOF and idempotent close" {
 ///|
 test "feed virtual wait and injected failure" {
   let d = @driver.Driver::new()
-  let error = @http.TransportError(kind=Network, phase=Body, detail="injected")
+  let error = @mttp.TransportError(kind=Network, phase=Body, detail="injected")
   let feed = @sim.Feed::new(d, [Wait(10), Fail(error), Chunk(b"unreachable")])
   d.run(() => {
     let failed = try {
       let _ = feed.read_some()
       false
     } catch {
-      @http.TransportError(kind=Network, ..) => true
+      @mttp.TransportError(kind=Network, ..) => true
       _ => false
     }
     assert_true(failed)
@@ -48,7 +48,7 @@ test "feed cancellation releases a bounded reader" {
   let feed = @sim.Feed::new(d, [Wait(100), Chunk(b"late")])
   d.run(() => {
     let task = d.spawn(() => {
-      let _ = @http.read_bounded(feed, 4)
+      let _ = @mttp.read_bounded(feed, 4)
     })
     d.pause()
     task.cancel()

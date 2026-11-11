@@ -50,8 +50,8 @@ pub extend Streaming with ResponseMode::{fresh, may_stream}
 
 ///|
 priv struct Selected[T] {
-  read : async (@http.ResponseHead, @http.Body, Int32) -> T
-  prepare : (async (@http.ResponseHead, @http.Body, Int32) -> Selected[T])?
+  read : async (@mttp.ResponseHead, @mttp.Body, Int32) -> T
+  prepare : (async (@mttp.ResponseHead, @mttp.Body, Int32) -> Selected[T])?
   streaming : Bool
   excerpt : Bool
 }
@@ -60,7 +60,7 @@ priv struct Selected[T] {
 /// An immutable response description. Selection after the head arrives decides
 /// the actual lifetime; the marker describes possible streaming.
 pub struct ResponsePlan[T, M] {
-  priv select : (@http.ResponseHead, Bool) -> Selected[T]
+  priv select : (@mttp.ResponseHead, Bool) -> Selected[T]
   priv mode : M
   priv any_status : Bool
 }
@@ -77,7 +77,7 @@ pub type StreamResponseAs[T] = ResponsePlan[T, Streaming]
 /// Buffers any status within max_body_bytes, then invokes a custom decoder.
 /// The decoder sees immutable bytes, never ownership of the original stream.
 pub fn[T] ResponsePlan::new(
-  decode : (@http.ResponseHead, Bytes) -> T raise,
+  decode : (@mttp.ResponseHead, Bytes) -> T raise,
 ) -> ResponseAs[T] {
   {
     mode: Buffered::{ },
@@ -94,14 +94,14 @@ pub fn[T] ResponsePlan::new(
 ///|
 /// Buffers a body within the supplied byte limit and closes its stream.
 pub async fn read_body(
-  body : @http.Body,
+  body : @mttp.Body,
   limit : Int32,
-) -> Bytes raise @http.TransportError {
+) -> Bytes raise @mttp.TransportError {
   if limit < 0 {
     if body is Stream(stream) {
       stream.close()
     }
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Invalid,
       phase=Body,
       detail="negative body limit",
@@ -111,7 +111,7 @@ pub async fn read_body(
     Empty => b""
     Bytes(bytes) =>
       if bytes.length() > limit {
-        raise @http.TransportError(
+        raise @mttp.TransportError(
           kind=TooLarge(limit~),
           phase=Body,
           detail="body exceeds limit",
@@ -119,9 +119,9 @@ pub async fn read_body(
       } else {
         bytes
       }
-    Stream(stream) => @http.read_bounded(stream.take(), limit)
-    @http.Body::.. =>
-      raise @http.TransportError(
+    Stream(stream) => @mttp.read_bounded(stream.take(), limit)
+    @mttp.Body::.. =>
+      raise @mttp.TransportError(
         kind=Invalid,
         phase=Body,
         detail="unsupported body kind",
@@ -139,7 +139,7 @@ fn diagnostic_body(bytes : Bytes) -> Bytes {
 }
 
 ///|
-async fn error_excerpt(body : @http.Body) -> Bytes raise @http.TransportError {
+async fn error_excerpt(body : @mttp.Body) -> Bytes raise @mttp.TransportError {
   match body {
     Empty => b""
     Bytes(bytes) => diagnostic_body(bytes)
@@ -153,8 +153,8 @@ async fn error_excerpt(body : @http.Body) -> Bytes raise @http.TransportError {
       }
       out.to_bytes()
     }
-    @http.Body::.. =>
-      raise @http.TransportError(
+    @mttp.Body::.. =>
+      raise @mttp.TransportError(
         kind=Invalid,
         phase=Body,
         detail="unsupported body kind",
@@ -188,7 +188,7 @@ pub fn as_bytes() -> ResponseAs[Result[Bytes, ResponseFailure]] {
     mode: Buffered::{ },
     any_status: false,
     select: (head, any) => {
-      if !any && !@http.is_success(head.status) {
+      if !any && !@mttp.is_success(head.status) {
         rejected()
       } else {
         {
@@ -210,7 +210,7 @@ pub fn as_string() -> ResponseAs[Result[String, ResponseFailure]] {
 
 ///|
 fn json_value(
-  head : @http.ResponseHead,
+  head : @mttp.ResponseHead,
   bytes : Bytes,
 ) -> Result[Json, ResponseFailure] {
   Ok(@json.parse(@utf8.decode(bytes))) catch {
@@ -268,7 +268,7 @@ pub fn ignore_body() -> ResponseAs[Result[Unit, ResponseFailure]] {
     mode: Buffered::{ },
     any_status: false,
     select: (head, any) => {
-      if !any && !@http.is_success(head.status) {
+      if !any && !@mttp.is_success(head.status) {
         rejected()
       } else {
         {
@@ -293,19 +293,19 @@ priv struct MemoryStream {
 }
 
 ///|
-impl @http.BodyStream for MemoryStream with fn read_some(self) {
+impl @mttp.BodyStream for MemoryStream with fn read_some(self) {
   let bytes = self.bytes
   self.bytes = None
   bytes
 }
 
 ///|
-impl @http.BodyStream for MemoryStream with fn close(self) {
+impl @mttp.BodyStream for MemoryStream with fn close(self) {
   self.bytes = None
 }
 
 ///|
-fn stream_of(body : @http.Body) -> &@http.BodyStream raise @http.TransportError {
+fn stream_of(body : @mttp.Body) -> &@mttp.BodyStream raise @mttp.TransportError {
   match body {
     Stream(stream) => stream.take()
     Bytes(bytes) if !bytes.is_empty() => MemoryStream::{ bytes: Some(bytes), }
@@ -317,7 +317,7 @@ fn stream_of(body : @http.Body) -> &@http.BodyStream raise @http.TransportError 
 /// Hands a successful stream to a callback once, closing it on every exit.
 /// Rejected responses are buffered failure values before any handoff.
 pub fn[T] as_stream(
-  use_ : async (@http.ResponseHead, &@http.BodyStream) -> T,
+  use_ : async (@mttp.ResponseHead, &@mttp.BodyStream) -> T,
 ) -> StreamResponseAs[Result[T, ResponseFailure]] {
   ResponsePlan::stream((head, stream, _) => use_(head, stream))
 }
@@ -328,13 +328,13 @@ pub fn[T] as_stream(
 /// keep the decoded-byte limit the Client would have applied.
 /// Client owns cleanup and never retries once this interpreter starts.
 pub fn[T] ResponsePlan::stream(
-  use_ : async (@http.ResponseHead, &@http.BodyStream, Int32) -> T,
+  use_ : async (@mttp.ResponseHead, &@mttp.BodyStream, Int32) -> T,
 ) -> StreamResponseAs[Result[T, ResponseFailure]] {
   {
     mode: Streaming::{ },
     any_status: false,
     select: (head, any) => {
-      if !any && !@http.is_success(head.status) {
+      if !any && !@mttp.is_success(head.status) {
         rejected()
       } else {
         {
@@ -370,7 +370,7 @@ pub fn as_sse(
 ///|
 /// Selects once per head, preserving the selected branch's actual lifetime.
 pub fn[T, M : ResponseMode] from_head(
-  choose : (@http.ResponseHead) -> ResponsePlan[T, M],
+  choose : (@mttp.ResponseHead) -> ResponsePlan[T, M],
 ) -> ResponsePlan[T, M] {
   {
     mode: ResponseMode::fresh(),
@@ -411,7 +411,7 @@ pub fn[A, B, M] ResponsePlan::map(
 /// Transforms an interpreted value together with actual response metadata.
 pub fn[A, B, M] ResponsePlan::map_with_head(
   self : ResponsePlan[A, M],
-  f : (A, @http.ResponseHead) -> B raise,
+  f : (A, @mttp.ResponseHead) -> B raise,
 ) -> ResponsePlan[B, M] {
   {
     mode: self.mode,
@@ -423,7 +423,7 @@ pub fn[A, B, M] ResponsePlan::map_with_head(
 ///|
 fn[A, B] map_selected(
   selected : Selected[A],
-  f : (A, @http.ResponseHead) -> B raise,
+  f : (A, @mttp.ResponseHead) -> B raise,
 ) -> Selected[B] {
   {
     streaming: selected.streaming,
@@ -440,7 +440,7 @@ fn[A, B] map_selected(
 /// to a scoped callback after release and retry decisions. An Err is already
 /// the final value, so failures can be inspected before any callback starts.
 pub fn[A, T] ResponsePlan::prepared_stream(
-  decode : (@http.ResponseHead, Bytes) -> Result[A, T] raise,
+  decode : (@mttp.ResponseHead, Bytes) -> Result[A, T] raise,
   use_ : async (A) -> T,
 ) -> ResponsePlan[T, Streaming] {
   {

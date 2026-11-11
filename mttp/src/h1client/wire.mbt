@@ -29,7 +29,7 @@ async fn Wire::dial(
   host : String,
   port : Int32,
   secure : Bool,
-) -> Wire raise @http.TransportError {
+) -> Wire raise @mttp.TransportError {
   let wire = Wire::new(dialer.connect(host~, port~))
   errdefer wire.close()
   if secure {
@@ -52,7 +52,7 @@ fn Wire::close(self : Wire) -> Unit {
 async fn Wire::write(
   self : Wire,
   bytes : Bytes,
-) -> Unit raise @http.TransportError {
+) -> Unit raise @mttp.TransportError {
   self.conn.write(bytes)
 }
 
@@ -62,7 +62,7 @@ async fn Wire::write(
 async fn Wire::read(
   self : Wire,
   max_len : Int32,
-) -> Bytes? raise @http.TransportError {
+) -> Bytes? raise @mttp.TransportError {
   if !self.pending.is_empty() {
     let n = self.pending.length().min(max_len)
     let bytes = self.pending[:n].to_owned()
@@ -92,8 +92,8 @@ fn Wire::unread(self : Wire, bytes : BytesView) -> Unit {
 async fn Wire::head(
   self : Wire,
   limits : @h1.Limits,
-  phase~ : @http.Phase = Head,
-) -> @h1.ParsedResponse raise @http.TransportError {
+  phase~ : @mttp.Phase = Head,
+) -> @h1.ParsedResponse raise @mttp.TransportError {
   let decoder = @h1.HeadDecoder::new(max=limits.max_head_bytes)
   for ;; {
     // A read failure is this head's, whoever runs it: inside a phase
@@ -102,7 +102,7 @@ async fn Wire::head(
       error => raise failure(phase, error)
     }
     guard read is Some(bytes) else {
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Network,
         phase~,
         detail="EOF before the response head",
@@ -126,7 +126,7 @@ async fn Wire::send(
   self : Wire,
   bytes : BytesView,
   timer : PhaseTimer,
-) -> Unit raise @http.TransportError {
+) -> Unit raise @mttp.TransportError {
   for offset = 0; offset < bytes.length(); {
     let n = (bytes.length() - offset).min(io_bytes)
     let slice = bytes[offset:offset + n].to_owned()

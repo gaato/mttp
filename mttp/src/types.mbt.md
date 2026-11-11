@@ -30,14 +30,14 @@ Values are immutable: each builder returns a copy.
 ```mbt check
 ///|
 test "describe a request" {
-  let request = @http.Request::post("https://api.example.com/v1/items")
+  let request = @mttp.Request::post("https://api.example.com/v1/items")
     .query("dry_run", "true")
     .bearer("token")
     .body_json({ "name": "first" })
   assert_eq(request.url, "https://api.example.com/v1/items?dry_run=true")
   assert_eq(request.headers.get("content-type"), Some("application/json"))
-  assert_false(@http.is_idempotent(request))
-  let url = @http.Url::parse(request.url)
+  assert_false(@mttp.is_idempotent(request))
+  let url = @mttp.Url::parse(request.url)
   assert_eq(url.host, Some("api.example.com"))
   assert_eq(url.query_params(), [("dry_run", "true")])
 }
@@ -59,18 +59,18 @@ struct Canned {
 }
 
 ///|
-impl @http.Backend for Canned with fn send(self, request, options) {
+impl @mttp.Backend for Canned with fn send(self, request, options) {
   request.validate()
   options.validate()
-  @http.Response::new(self.status, body=Bytes(b"ok"))
+  @mttp.Response::new(self.status, body=Bytes(b"ok"))
 }
 
 ///|
 test "send through a backend" {
-  let backend : &@http.Backend = Canned::{ status: 200, }
+  let backend : &@mttp.Backend = Canned::{ status: 200, }
   // `send` is async; a plain test drives it on the experimental driver.
   let response = @driver.run_sync(() => {
-    backend.send(@http.Request::get("/ping"), @http.SendOptions::default())
+    backend.send(@mttp.Request::get("/ping"), @mttp.SendOptions::default())
   })
   assert_eq(response.status, 200)
   backend.close()
@@ -88,12 +88,12 @@ may send a body twice asks `Body::is_replayable` first.
 | `gaato/http/h1` | stable | The sans-IO HTTP/1.1 codec: bounded head and chunked decoders, strict head parsers returning `ParsedRequest` and `ParsedResponse`, body framing that refuses request smuggling, and wire writers |
 | `gaato/http/rt` | stable | The ports a runtime provides: `Clock`, `Timer`, `Gate`, `Conn`, `Dialer`, `Signal`, `Coordination`, and `default_random` |
 | `gaato/http/sim` | stable | In-memory doubles of the ports on the driver (`pair`, `ScriptedConn`, `FakeClock`, ...), the shared contract checks every port implementation passes, and property-test generators. Test infrastructure |
-| `gaato/http/h1client` | experimental | The HTTP/1.1 client connection engine over the `rt` ports: a per-origin connection pool, connection caps, bounded heads and bodies, per-phase deadlines and HTTP proxies (CONNECT tunnels, NO_PROXY), as an `@http.Backend` |
+| `gaato/http/h1client` | experimental | The HTTP/1.1 client connection engine over the `rt` ports: a per-origin connection pool, connection caps, bounded heads and bodies, per-phase deadlines and HTTP proxies (CONNECT tunnels, NO_PROXY), as an `@mttp.Backend` |
 | `gaato/http/h1server` | experimental | The HTTP/1.1 server connection engine over the `rt` ports: `serve_conn` owns one accepted connection, with bounded heads, bodies, read-ahead, draining and phase deadlines |
 | `gaato/http/driver` | experimental | A deterministic task driver with virtual time and `run_sync`, so async code is tested with plain `test` blocks on every target. It is built on compiler intrinsics and may break with a toolchain change |
 
 An experimental package is imported by listing it, as in
-`options("allow-experimental-packages": ["gaato/http/driver"])` in the
+`options("allow-experimental-packages": ["gaato/mttp/driver"])` in the
 importer's `moon.pkg`.
 
 The root package's default alias `@http` is also that of

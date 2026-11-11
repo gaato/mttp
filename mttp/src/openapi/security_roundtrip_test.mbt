@@ -43,8 +43,8 @@ test "every security scheme round trips and documents its real wire location" {
     )
     let response = dispatch(server, ep.request(value, ()).raw())
     assert_eq(response.status, 200)
-    assert_eq(response.body, @http.Body::Bytes(b"ok"))
-    let missing = dispatch(server, @http.Request::post("/secure"))
+    assert_eq(response.body, @mttp.Body::Bytes(b"ok"))
+    let missing = dispatch(server, @mttp.Request::post("/secure"))
     assert_eq(missing.status, 401)
     assert_eq(@openapi.check_documented(spec, "/secure", Post, 401), None)
     if kind == "signature" {

@@ -1,7 +1,7 @@
 ///|
 /// A wire request, response description and per-request options.
 pub struct RequestPlan[T, M] {
-  priv raw : @http.Request
+  priv raw : @mttp.Request
   priv response_as : ResponsePlan[T, M]
   priv body_factory : (() -> Bytes)?
   priv timeout : Int32?
@@ -22,7 +22,7 @@ pub type StreamRequest[T] = RequestPlan[T, Streaming]
 ///|
 /// Pairs a wire request with its response interpretation.
 pub fn[T, M] RequestPlan::new(
-  raw : @http.Request,
+  raw : @mttp.Request,
   response_as : ResponsePlan[T, M],
 ) -> RequestPlan[T, M] {
   {
@@ -135,7 +135,7 @@ pub fn[T, M] RequestPlan::max_body_bytes(
 /// Adds typed local metadata to a copy.
 pub fn[T, A, M] RequestPlan::attribute(
   self : RequestPlan[T, M],
-  key : @http.AttributeKey[A],
+  key : @mttp.AttributeKey[A],
   value : A,
 ) -> RequestPlan[T, M] {
   { ..self, raw: self.raw.attribute(key, value), }
@@ -143,14 +143,14 @@ pub fn[T, A, M] RequestPlan::attribute(
 
 ///|
 /// Returns the wire request before client defaults are applied.
-pub fn[T, M] RequestPlan::raw(self : RequestPlan[T, M]) -> @http.Request {
+pub fn[T, M] RequestPlan::raw(self : RequestPlan[T, M]) -> @mttp.Request {
   self.raw
 }
 
 ///|
 /// The request with this plan's redirect override as the `redirect_limit`
 /// attribute, which `FollowRedirects` reads.
-fn[T, M] RequestPlan::wire(self : RequestPlan[T, M]) -> @http.Request {
+fn[T, M] RequestPlan::wire(self : RequestPlan[T, M]) -> @mttp.Request {
   match (self.redirects, self.hops) {
     (Some(false), _) => self.raw.attribute(redirect_limit, 0)
     (_, Some(max)) => self.raw.attribute(redirect_limit, max.max(0))
@@ -212,27 +212,27 @@ pub async fn[T, M : ResponseMode] RequestPlan::send(
 /// A decoded response, preserving the actual HTTP and request metadata.
 pub(all) struct Reply[T] {
   status : Int32
-  headers : @http.Headers
+  headers : @mttp.Headers
   body : T
-  request : @http.RequestHead
-  attributes : @http.Attributes
+  request : @mttp.RequestHead
+  attributes : @mttp.Attributes
 }
 
 ///|
 /// An explicit local admission bucket; absent metadata selects "default".
-pub let rate_limit_bucket : @http.AttributeKey[String] = @http.AttributeKey::new(
+pub let rate_limit_bucket : @mttp.AttributeKey[String] = @mttp.AttributeKey::new(
   "rate_limit_bucket",
 )
 
 ///|
 /// Whether the request bypasses global admission limits.
-pub let global_exempt : @http.AttributeKey[Bool] = @http.AttributeKey::new(
+pub let global_exempt : @mttp.AttributeKey[Bool] = @mttp.AttributeKey::new(
   "global_exempt",
 )
 
 ///|
 /// The endpoint operation identifier, independent of admission buckets.
-pub let operation_id : @http.AttributeKey[String] = @http.AttributeKey::new(
+pub let operation_id : @mttp.AttributeKey[String] = @mttp.AttributeKey::new(
   "operation_id",
 )
 
@@ -242,18 +242,18 @@ pub let operation_id : @http.AttributeKey[String] = @http.AttributeKey::new(
 /// of `FollowRedirects`), which reads it from the request's attributes. 0 (or
 /// less) follows no redirect and returns the 3xx response as it is.
 /// `RequestPlan::follow_redirects` and `max_redirects` set it.
-pub let redirect_limit : @http.AttributeKey[Int32] = @http.AttributeKey::new(
+pub let redirect_limit : @mttp.AttributeKey[Int32] = @mttp.AttributeKey::new(
   "redirect_limit",
 )
 
 ///|
 /// Creates a GET request with the default Result-valued string reader.
 pub fn get(url : String) -> ClientRequest[Result[String, ResponseFailure]] {
-  request(@http.Request::get(url))
+  request(@mttp.Request::get(url))
 }
 
 ///|
 /// Creates a POST request with the default Result-valued string reader.
 pub fn post(url : String) -> ClientRequest[Result[String, ResponseFailure]] {
-  request(@http.Request::post(url))
+  request(@mttp.Request::post(url))
 }

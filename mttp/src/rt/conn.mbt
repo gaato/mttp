@@ -13,9 +13,9 @@ pub(open) trait Conn {
   /// Reads a nonempty chunk of at most `max_len` bytes, or `None` at EOF.
   /// EOF is permanent and ends only the read half: writes may continue.
   /// A cancelled read finishes its cleanup before the next read begins.
-  async fn read(Self, max_len~ : Int32) -> Bytes? raise @http.TransportError
+  async fn read(Self, max_len~ : Int32) -> Bytes? raise @mttp.TransportError
   /// Writes all of `bytes`, or raises. A write after `close` raises.
-  async fn write(Self, Bytes) -> Unit raise @http.TransportError
+  async fn write(Self, Bytes) -> Unit raise @mttp.TransportError
   /// Closes both halves and wakes pending operations. Idempotent.
   fn close(Self) -> Unit
 }
@@ -25,11 +25,11 @@ pub(open) trait Conn {
 /// TLS type.
 pub(open) trait Dialer {
   /// Connects to `host` on `port`.
-  async fn connect(Self, host~ : String, port~ : Int32) -> &Conn raise @http.TransportError
+  async fn connect(Self, host~ : String, port~ : Int32) -> &Conn raise @mttp.TransportError
   /// Starts a TLS client session for `host` over `conn`, which may itself be
   /// a tunnel. A successful upgrade owns `conn`; after a failed one the
   /// caller still owns `conn` and closes it.
-  async fn start_tls(Self, &Conn, host~ : String) -> &Conn raise @http.TransportError
+  async fn start_tls(Self, &Conn, host~ : String) -> &Conn raise @mttp.TransportError
 }
 
 ///|
@@ -55,7 +55,7 @@ pub(open) trait Coordination {
   /// cancels both and propagates once both have unwound.
   async fn supervise(
     Self,
-    primary~ : async () -> Unit raise @http.TransportError,
-    monitor~ : async () -> Unit raise @http.TransportError,
-  ) -> Unit raise @http.TransportError
+    primary~ : async () -> Unit raise @mttp.TransportError,
+    monitor~ : async () -> Unit raise @mttp.TransportError,
+  ) -> Unit raise @mttp.TransportError
 }

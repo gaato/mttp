@@ -1,14 +1,14 @@
 import {
-  "gaato/http",
-  "gaato/http/rt",
-  "gaato/http/h1",
-  "gaato/http/internal/control",
+  "gaato/mttp",
+  "gaato/mttp/rt",
+  "gaato/mttp/h1",
+  "gaato/mttp/internal/control",
   "moonbitlang/core/debug",
 }
 
 import {
-  "gaato/http/driver",
-  "gaato/http/sim",
+  "gaato/mttp/driver",
+  "gaato/mttp/sim",
   "moonbitlang/core/encoding/utf8",
 } for "test"
 
@@ -20,5 +20,5 @@ import {
 
 options(
   experimental: true,
-  "allow-experimental-packages": [ "gaato/http/driver" ],
+  "allow-experimental-packages": [ "gaato/mttp/driver" ],
 )

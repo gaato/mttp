@@ -1,12 +1,12 @@
 import {
-  "gaato/http",
+  "gaato/mttp",
   "moonbitlang/core/env",
 }
 
 import {
-  "gaato/http/driver",
+  "gaato/mttp/driver",
 } for "test"
 
 options(
-  "allow-experimental-packages": [ "gaato/http/driver" ],
+  "allow-experimental-packages": [ "gaato/mttp/driver" ],
 )

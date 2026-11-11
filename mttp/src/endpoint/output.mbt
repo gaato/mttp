@@ -11,9 +11,9 @@ pub struct Variant[T] {
   priv headers : Array[String]
   priv header_schemas : Map[String, @schema.Schema]
   priv description : String
-  priv encode : (T) -> (@http.Headers, @http.Body)
-  priv decode_bytes : ((@http.ResponseHead, Bytes) -> T raise)?
-  priv decode_stream : (async (@http.ResponseHead, &@http.BodyStream) -> T)?
+  priv encode : (T) -> (@mttp.Headers, @mttp.Body)
+  priv decode_bytes : ((@mttp.ResponseHead, Bytes) -> T raise)?
+  priv decode_stream : (async (@mttp.ResponseHead, &@mttp.BodyStream) -> T)?
 }
 
 ///|
@@ -69,7 +69,7 @@ pub fn[T] json_variant(
     description,
     encode: v => {
       (
-        @http.Headers::of([("content-type", media_type)]),
+        @mttp.Headers::of([("content-type", media_type)]),
         Bytes(codec.encode(v)),
       )
     },
@@ -100,7 +100,7 @@ pub fn empty_variant(
     headers: [],
     header_schemas: {},
     description,
-    encode: _ => (@http.Headers::empty(), Empty),
+    encode: _ => (@mttp.Headers::empty(), Empty),
     decode_bytes: Some((_, _) => ()),
     decode_stream: None,
   }
@@ -139,7 +139,7 @@ pub fn[A, T] Variant::contramap(
     encode: t => {
       match project(t) {
         Some(a) => (self.encode)(a)
-        None => (@http.Headers::empty(), Empty)
+        None => (@mttp.Headers::empty(), Empty)
       }
     },
     decode_bytes: match self.decode_bytes {
@@ -278,7 +278,7 @@ pub fn[T, M] Out::docs(self : Out[T, M]) -> Array[VariantDoc] {
 }
 
 ///|
-fn[T, M] Out::encode(self : Out[T, M], v : T) -> @http.Response? {
+fn[T, M] Out::encode(self : Out[T, M], v : T) -> @mttp.Response? {
   for variant in self.variants {
     if (variant.matches)(v) {
       let status = match variant.status_of {
@@ -291,9 +291,9 @@ fn[T, M] Out::encode(self : Out[T, M], v : T) -> @http.Response? {
       let (headers, body) = (variant.encode)(v)
       if status == 204 || status == 304 {
         discard(body)
-        return Some(@http.Response::new(status, headers~))
+        return Some(@mttp.Response::new(status, headers~))
       }
-      return Some(@http.Response::new(status, headers~, body~))
+      return Some(@mttp.Response::new(status, headers~, body~))
     }
   }
   None
@@ -315,7 +315,7 @@ fn media_matches(variant_media : String?, ct : String?) -> Bool {
 /// status are tried in turn (SC-04).
 fn[T, M] Out::for_head(
   self : Out[T, M],
-  head : @http.ResponseHead,
+  head : @mttp.ResponseHead,
 ) -> Array[Variant[T]] {
   let ct = head.headers.get("content-type")
   self.variants.filter(v => {
@@ -329,7 +329,7 @@ fn[T, M] Out::for_head(
 /// when every candidate failed.
 fn[T, M] Out::decode_bytes(
   self : Out[T, M],
-  head : @http.ResponseHead,
+  head : @mttp.ResponseHead,
   body : Bytes,
 ) -> T? raise {
   let candidates = self.for_head(head)
@@ -436,14 +436,14 @@ priv struct EventBody {
 }
 
 ///|
-impl @http.BodyStream for EventBody with fn read_some(self) {
+impl @mttp.BodyStream for EventBody with fn read_some(self) {
   if self.done {
     return None
   }
-  errdefer @http.BodyStream::close(self)
+  errdefer @mttp.BodyStream::close(self)
   let next = (self.pull)() catch {
     _ =>
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Protocol,
         phase=Body,
         detail="event source failed",
@@ -460,7 +460,7 @@ impl @http.BodyStream for EventBody with fn read_some(self) {
 }
 
 ///|
-impl @http.BodyStream for EventBody with fn close(self) {
+impl @mttp.BodyStream for EventBody with fn close(self) {
   if !self.done {
     self.done = true
     (self.close_)()
@@ -510,7 +510,7 @@ pub fn[T] sse_out(
     header_schemas: {},
     description: "event stream",
     encode: es => {
-      let body : &@http.BodyStream = EventBody::{
+      let body : &@mttp.BodyStream = EventBody::{
         pull: () => {
           match es.next_event() {
             None => None
@@ -533,8 +533,8 @@ pub fn[T] sse_out(
         done: false,
       }
       (
-        @http.Headers::of([("content-type", "text/event-stream")]),
-        Stream(@http.StreamBody::new(body)),
+        @mttp.Headers::of([("content-type", "text/event-stream")]),
+        Stream(@mttp.StreamBody::new(body)),
       )
     },
     decode_bytes: None,
@@ -546,7 +546,7 @@ pub fn[T] sse_out(
             None => None
             Some(event) =>
               Some(
-                codec.body().decode(@http.encode_utf8(event.data)) catch {
+                codec.body().decode(@mttp.encode_utf8(event.data)) catch {
                   failure =>
                     raise DecodeError(h, message=failure.message(), body=b"")
                 },
@@ -577,5 +577,5 @@ fn no_errors() -> Out[NoError, @client.Buffered] {
 ///|
 #derive(Debug)
 priv suberror DecodeError {
-  DecodeError(@http.ResponseHead, message~ : String, body~ : Bytes)
+  DecodeError(@mttp.ResponseHead, message~ : String, body~ : Bytes)
 }

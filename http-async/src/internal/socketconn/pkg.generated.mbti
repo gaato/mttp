@@ -2,8 +2,8 @@
 package "gaato/http-async/internal/socketconn"
 
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/rt",
   "moonbitlang/core/async/socket",
   "moonbitlang/core/async/tls",
 }
@@ -13,7 +13,7 @@ pub fn from_tcp(@socket.Tcp) -> &@rt.Conn
 
 pub fn from_tls(@tls.Tls, &@rt.Conn) -> &@rt.Conn
 
-pub fn transport_error(Error) -> @http.TransportError
+pub fn transport_error(Error) -> @mttp.TransportError
 
 // Errors
 

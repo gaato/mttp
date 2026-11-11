@@ -21,7 +21,7 @@ deflate, Brotli and zstd and lazily decodes bounded slices. A request that
 supplies `Accept-Encoding` opts out: its returned body and coding headers
 are unchanged. `SendOptions` pass through unchanged, so byte limits in the
 engine count wire bytes before decoding. Bound decoded bytes separately
-with `@http.read_bounded`. Reading to EOF permits connection reuse; closing
+with `@mttp.read_bounded`. Reading to EOF permits connection reuse; closing
 early discards the connection.
 
 With no `config`, proxy variables are captured from the process environment

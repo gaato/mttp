@@ -6,7 +6,7 @@ struct Message {
   head : Bytes
   framing : @h1.Framing
   body : Bytes
-  trailers : @http.Headers
+  trailers : @mttp.Headers
   rest : Bytes
 }
 
@@ -41,7 +41,7 @@ fn read_message(
     let framing = framing(head)
     let body = Buffer()
     let rest = Buffer()
-    let mut trailers = @http.Headers::empty()
+    let mut trailers = @mttp.Headers::empty()
     match framing {
       Chunked => {
         let chunked = @h1.ChunkedDecoder::new(limits)
@@ -95,7 +95,7 @@ fn read_request(
 /// Reads a response to `meth` the way the client engine does.
 fn read_response(
   pieces : Array[Bytes],
-  meth~ : @http.Method = Get,
+  meth~ : @mttp.Method = Get,
   limits~ : @h1.Limits = @h1.Limits::default(),
 ) -> Result[Message, @h1.ParseKind] raise {
   read_message(pieces, limits, skip_leading_crlf=false, head => {
@@ -120,7 +120,7 @@ fn request_refusal(
 /// The kind a response to `meth` is refused with, whole and at every split.
 fn response_refusal(
   wire : Bytes,
-  meth~ : @http.Method = Get,
+  meth~ : @mttp.Method = Get,
 ) -> @h1.ParseKind? raise {
   match check_splits(wire, pieces => read_response(pieces, meth~)) {
     Err(kind) => Some(kind)

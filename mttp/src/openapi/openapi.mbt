@@ -188,7 +188,7 @@ pub fn to_openapi(
         variant.media_type.map(@endpoint.media_type_token)
       }
       let description = if variant.description.is_empty() {
-        @http.reason_phrase(variant.status)
+        @mttp.reason_phrase(variant.status)
       } else {
         variant.description
       }
@@ -223,7 +223,7 @@ pub fn to_openapi(
       add_response(
         responses,
         status.to_string(),
-        @http.reason_phrase(status),
+        @mttp.reason_phrase(status),
         Some("application/problem+json"),
         Some({ "$ref": "#/components/schemas/Problem" }),
         None,
@@ -338,7 +338,7 @@ pub fn docs_endpoint(
 pub fn check_documented(
   spec : @apispec.OpenApi,
   template : String,
-  meth : @http.Method,
+  meth : @mttp.Method,
   status : Int32,
 ) -> String? {
   let path = @endpoint.encoded_path_template(template)

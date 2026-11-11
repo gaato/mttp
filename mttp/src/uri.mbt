@@ -202,7 +202,7 @@ pub extend Trusted with UriPart::{write_uri}
 ///   let id = "a/b"
 ///   let q : String? = None
 ///   assert_eq(
-///     @http.uri(b => b <+ "https://example.test/\{id}?q=\{q}&n=\{3}"),
+///     @mttp.uri(b => b <+ "https://example.test/\{id}?q=\{q}&n=\{3}"),
 ///     "https://example.test/a%2Fb?n=3",
 ///   )
 /// }

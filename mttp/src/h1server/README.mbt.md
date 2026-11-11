@@ -2,13 +2,13 @@
 
 An HTTP/1.1 server connection engine over the `gaato/http/rt` ports.
 `serve_conn` serves the requests of one accepted connection with an
-`@http.Handler`. Every head, chunk-size line and trailer section is read
+`@mttp.Handler`. Every head, chunk-size line and trailer section is read
 through the bounded `gaato/http/h1` codec. Head and body operations have
 deadlines; a handler deadline is optional.
 
 > **Experimental.** The engine's settings and its reporting may still
 > change; an importer lists it in
-> `options("allow-experimental-packages": ["gaato/http/h1server"])`.
+> `options("allow-experimental-packages": ["gaato/mttp/h1server"])`.
 > [`gaato/http-async`](https://mooncakes.io/docs/gaato/http-async) wires it
 > to sockets, TLS and an event loop; most applications use that instead.
 
@@ -31,7 +31,7 @@ test "serve a request" {
         server,
         request => {
           let greeting = "hello from " + request.url
-          @http.Response::new(200, body=Bytes(@http.encode_utf8(greeting)))
+          @mttp.Response::new(200, body=Bytes(@mttp.encode_utf8(greeting)))
         },
         clock=@sim.SimClock::new(driver),
         timer=@sim.SimTimer::new(driver),
@@ -90,7 +90,7 @@ test "serve a request" {
   the handler's response with its own status, even when the handler caught
   it. An invalid response or a producer failure before the head becomes
   500; failures after the head close the connection. Failures reach `on_error` as an
-  `@http.TransportError`. `@http.Handler` is `noraise`; applications handle
+  `@mttp.TransportError`. `@mttp.Handler` is `noraise`; applications handle
   their own exceptions before returning a response.
 - **Peers.** `100 Continue` is sent when the handler first reads the body. A
   read failure while the handler runs cancels it, including while its body

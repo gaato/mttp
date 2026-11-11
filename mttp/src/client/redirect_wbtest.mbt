@@ -83,8 +83,8 @@ fn kept(
   to : String,
   drop_body~ : Bool = false,
   credential_headers~ : Array[String] = RedirectConfig::default().credential_headers,
-) -> Array[String] raise @http.UrlError {
-  let headers = @http.Headers::of([
+) -> Array[String] raise @mttp.UrlError {
+  let headers = @mttp.Headers::of([
     ("Authorization", "Bearer t"),
     ("Cookie", "c=1"),
     ("Proxy-Authorization", "Basic p"),
@@ -100,8 +100,8 @@ fn kept(
   ])
   redirect_headers(
     headers,
-    from=@http.Url::parse(from),
-    to=@http.Url::parse(to),
+    from=@mttp.Url::parse(from),
+    to=@mttp.Url::parse(to),
     drop_body~,
     credential_headers~,
   )
@@ -179,14 +179,14 @@ test "redirect_headers strips credentials across origins and body headers on GET
 
 ///|
 fn plan(
-  request : @http.Request,
+  request : @mttp.Request,
   status : Int32,
   location? : String,
   followed~ : Int32 = 0,
   max_redirects~ : Int32 = 10,
   allow_downgrade~ : Bool = false,
 ) -> String {
-  let mut headers = @http.Headers::empty()
+  let mut headers = @mttp.Headers::empty()
   if location is Some(location) {
     headers = headers.set("Location", location)
   }
@@ -215,7 +215,7 @@ fn plan(
         Bytes(bytes) => @utf8.decode_lossy(bytes)
         Stream(_) if physical_equal(next.body, request.body) => "<same stream>"
         Stream(_) => "<other stream>"
-        @http.Body::.. => "<unsupported body>"
+        @mttp.Body::.. => "<unsupported body>"
       }
       let headers = next.headers.iter().map(pair => pair.0).collect()
       "\{next.meth} \{next.url} \{body} [\{headers.join(", ")}]"
@@ -225,7 +225,7 @@ fn plan(
 
 ///|
 test "plan_redirect decides each hop" {
-  let post = @http.Request::post("https://h/a?q#f")
+  let post = @mttp.Request::post("https://h/a?q#f")
     .header("Content-Type", "text/plain")
     .header("Authorization", "Bearer t")
     .body_text("data")
@@ -273,7 +273,7 @@ test "plan_redirect decides each hop" {
     assert_eq(case.0, case.1)
   }
   // A GET with a body keeps it on 303, as Fetch does.
-  let get = @http.Request::get("https://h/a").body_text("x")
+  let get = @mttp.Request::get("https://h/a").body_text("x")
   assert_eq(plan(get, 303, location="/b"), "GET https://h/b x [content-type]")
 }
 
@@ -282,19 +282,19 @@ test "plan_redirect decides each hop" {
 priv struct Unread {}
 
 ///|
-impl @http.BodyStream for Unread with fn read_some(_) {
+impl @mttp.BodyStream for Unread with fn read_some(_) {
   None
 }
 
 ///|
-impl @http.BodyStream for Unread with fn close(_) {
+impl @mttp.BodyStream for Unread with fn close(_) {
   ()
 }
 
 ///|
 test "plan_redirect refuses to resend a stream body that was sent" {
   let fresh = (http_method : String) => {
-    @http.Request::new(@http.Method::parse(http_method), "https://h/a").body_stream(
+    @mttp.Request::new(@mttp.Method::parse(http_method), "https://h/a").body_stream(
       Unread::{ },
       length=0,
     )

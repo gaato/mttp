@@ -27,7 +27,7 @@ test "an exchange survives every fragmentation of the peer's bytes" {
         assert_true(seen[0].raw.has_prefix(b"GET / HTTP/1.1\r\n"))
       })
       assert_eq(
-        fetch(h.client, @http.Request::get("http://example.test")),
+        fetch(h.client, @mttp.Request::get("http://example.test")),
         "body",
       )
       assert_eq(h.client.idle_connections(), 1)
@@ -51,7 +51,7 @@ test "completed responses park their connection for the next request" {
     })
     for _ in 0..<3 {
       let response = h.client.send(
-        @http.Request::get("http://example.test/ping"),
+        @mttp.Request::get("http://example.test/ping"),
         exchange(),
       )
       assert_eq(h.client.idle_connections(), 0)
@@ -74,7 +74,7 @@ test "chunked bodies consume trailers and informational heads before reuse" {
     h.run(() => {
       let server = h.driver.spawn(() => ignore(peer.serve(wire)))
       let response = h.client.send(
-        @http.Request::get("http://example.test/"),
+        @mttp.Request::get("http://example.test/"),
         exchange(),
       )
       assert_eq(response.status, 200)
@@ -97,7 +97,7 @@ test "short or malformed bodies fail in phase Body and discard the connection" {
     let conn = h.scripted([Chunk(wire), Eof])
     h.run(() => {
       let outcome = failing(() => {
-        ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
       })
       assert_eq(outcome, (Protocol, Body))
       assert_eq(h.client.idle_connections(), 0)
@@ -118,7 +118,7 @@ test "close-delimited and explicitly closed responses are never parked" {
     let conn = h.scripted([Chunk(wire), Eof])
     h.run(() => {
       assert_eq(
-        fetch(h.client, @http.Request::get("http://example.test/")),
+        fetch(h.client, @mttp.Request::get("http://example.test/")),
         "abc",
       )
       assert_eq(h.client.idle_connections(), 0)
@@ -134,7 +134,7 @@ test "close-delimited and explicitly closed responses are never parked" {
   ])
   h.run(() => {
     let response = h.client.send(
-      @http.Request::get("http://example.test/"),
+      @mttp.Request::get("http://example.test/"),
       exchange(),
     )
     guard response.body is Stream(body) else { fail("expected a stream") }
@@ -150,7 +150,7 @@ test "close-delimited and explicitly closed responses are never parked" {
 
 ///|
 test "no-body framing and connection tokens follow the method and protocol" {
-  let rows : Array[(@http.Method, Bytes, Bool)] = [
+  let rows : Array[(@mttp.Method, Bytes, Bool)] = [
     (Head, b"HTTP/1.1 200 OK\r\nContent-Length: 900\r\n\r\n", true),
     (Get, b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n", true),
     (Get, b"HTTP/1.1 304 Not Modified\r\nContent-Length: 12\r\n\r\n", true),
@@ -170,7 +170,7 @@ test "no-body framing and connection tokens follow the method and protocol" {
     let conn = h.scripted([Chunk(wire)])
     h.run(() => {
       let response = h.client.send(
-        @http.Request::new(meth, "http://example.test/"),
+        @mttp.Request::new(meth, "http://example.test/"),
         exchange(),
       )
       assert_eq(response.body, Empty)
@@ -191,33 +191,33 @@ test "no-body framing and connection tokens follow the method and protocol" {
 
 ///|
 test "the request head carries the origin-form target and a Host field" {
-  let rows : Array[(@http.Request, String)] = [
+  let rows : Array[(@mttp.Request, String)] = [
     (
-      @http.Request::get("http://example.test"),
+      @mttp.Request::get("http://example.test"),
       "GET / HTTP/1.1\r\nhost: example.test\r\n\r\n",
     ),
     (
-      @http.Request::get("https://example.test:8443/a/b?c=d&e#frag"),
+      @mttp.Request::get("https://example.test:8443/a/b?c=d&e#frag"),
       "GET /a/b?c=d&e HTTP/1.1\r\nhost: example.test:8443\r\n\r\n",
     ),
     (
-      @http.Request::get("http://[::1]:8080/").header("user-agent", "t/1"),
+      @mttp.Request::get("http://[::1]:8080/").header("user-agent", "t/1"),
       "GET / HTTP/1.1\r\nuser-agent: t/1\r\nhost: [::1]:8080\r\n\r\n",
     ),
     (
-      @http.Request::get("http://example.test/").header("Host", "other.test"),
+      @mttp.Request::get("http://example.test/").header("Host", "other.test"),
       "GET / HTTP/1.1\r\nhost: other.test\r\n\r\n",
     ),
     (
-      @http.Request::post("http://example.test/"),
+      @mttp.Request::post("http://example.test/"),
       "POST / HTTP/1.1\r\nhost: example.test\r\ncontent-length: 0\r\n\r\n",
     ),
     (
-      @http.Request::delete("http://example.test/x"),
+      @mttp.Request::delete("http://example.test/x"),
       "DELETE /x HTTP/1.1\r\nhost: example.test\r\n\r\n",
     ),
     (
-      @http.Request::put("http://example.test/").body_bytes(b"hi"),
+      @mttp.Request::put("http://example.test/").body_bytes(b"hi"),
       "PUT / HTTP/1.1\r\nhost: example.test\r\ncontent-length: 2\r\n\r\nhi",
     ),
   ]
@@ -234,7 +234,7 @@ test "the request head carries the origin-form target and a Host field" {
   let h = Harness::new()
   ignore(h.scripted([Chunk(b"HTTP/1.1 204 No Content\r\n\r\n")]))
   h.run(() => {
-    h.client.send(@http.Request::get("https://[::1]/"), exchange()).close()
+    h.client.send(@mttp.Request::get("https://[::1]/"), exchange()).close()
     h.finish()
   })
   assert_eq(h.dialer.dialed, [("::1", 443)])
@@ -251,7 +251,7 @@ test "raw content codings pass through untouched" {
   ])
   h.run(() => {
     let response = h.client.send(
-      @http.Request::get("http://example.test/"),
+      @mttp.Request::get("http://example.test/"),
       exchange(),
     )
     assert_eq(response.headers.get("content-encoding"), Some("gzip"))
@@ -275,7 +275,7 @@ test "invalid requests and settings are refused before any dial" {
     let h = Harness::new()
     h.run(() => {
       assert_eq(
-        failing(() => ignore(fetch(h.client, @http.Request::get(url)))),
+        failing(() => ignore(fetch(h.client, @mttp.Request::get(url)))),
         (Invalid, Pool),
         msg=url,
       )
@@ -283,14 +283,14 @@ test "invalid requests and settings are refused before any dial" {
     assert_eq(h.dialer.dialed, [], msg=url)
   }
   let invalid = [
-    @http.Request::get("http://example.test/").header("host", "bad\u{7f}"),
-    @http.Request::get("http://example.test/").header("x-name", "日本"),
+    @mttp.Request::get("http://example.test/").header("host", "bad\u{7f}"),
+    @mttp.Request::get("http://example.test/").header("x-name", "日本"),
     // Valid fields, but not a valid HTTP/1.1 head.
-    @http.Request::get("http://example.test/").header("host", "bad host"),
-    @http.Request::get("http://example.test/")
+    @mttp.Request::get("http://example.test/").header("host", "bad host"),
+    @mttp.Request::get("http://example.test/")
     .header("host", "a.test")
     .header("host", "b.test"),
-    @http.Request::new(Other("BAD METHOD"), "http://example.test/"),
+    @mttp.Request::new(Other("BAD METHOD"), "http://example.test/"),
   ]
   for request in invalid {
     let h = Harness::new()
@@ -309,7 +309,7 @@ test "invalid requests and settings are refused before any dial" {
   h.run(() => {
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
       }),
       (Invalid, Pool),
     )
@@ -322,7 +322,7 @@ test "close refuses later sends and closes parked connections" {
   let h = Harness::new()
   let conn = h.scripted([Chunk(ok("x"))])
   h.run(() => {
-    assert_eq(fetch(h.client, @http.Request::get("http://example.test/")), "x")
+    assert_eq(fetch(h.client, @mttp.Request::get("http://example.test/")), "x")
     assert_eq(h.client.idle_connections(), 1)
     h.client.close()
     h.client.close()
@@ -330,7 +330,7 @@ test "close refuses later sends and closes parked connections" {
     assert_eq(h.client.idle_connections(), 0)
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
       }),
       (Closed, Pool),
     )
@@ -344,7 +344,7 @@ test "a response in flight at close finishes and then closes its connection" {
   let conn = h.scripted([Chunk(ok("abc"))])
   h.run(() => {
     let response = h.client.send(
-      @http.Request::get("http://example.test/"),
+      @mttp.Request::get("http://example.test/"),
       exchange(),
     )
     h.client.close()
@@ -364,7 +364,7 @@ test "at most 16 informational heads precede the final one" {
     ignore(h.scripted([Chunk(informational + ok("done"))]))
     h.run(() => {
       let result = Ok(
-        fetch(h.client, @http.Request::get("http://example.test/")),
+        fetch(h.client, @mttp.Request::get("http://example.test/")),
       ) catch {
         error => Err(kind_phase(error))
       }
@@ -394,7 +394,7 @@ test "unframeable responses and port failures are reported in their phase" {
     h.run(() => {
       assert_eq(
         failing(() => {
-          ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+          ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
         }),
         (Protocol, Head),
       )
@@ -406,13 +406,13 @@ test "unframeable responses and port failures are reported in their phase" {
   let h = Harness::new()
   ignore(
     h.scripted([
-      Failure(@http.TransportError(kind=Network, phase=Unknown, detail="reset")),
+      Failure(@mttp.TransportError(kind=Network, phase=Unknown, detail="reset")),
     ]),
   )
   h.run(() => {
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("http://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
       }),
       (Network, Head),
     )
@@ -422,12 +422,12 @@ test "unframeable responses and port failures are reported in their phase" {
   let h = Harness::new()
   let conn = h.scripted([])
   h.dialer.tls_failure = Some(
-    @http.TransportError(kind=Connect, phase=Dial, detail="bad certificate"),
+    @mttp.TransportError(kind=Connect, phase=Dial, detail="bad certificate"),
   )
   h.run(() => {
     assert_eq(
       failing(() => {
-        ignore(fetch(h.client, @http.Request::get("https://example.test/")))
+        ignore(fetch(h.client, @mttp.Request::get("https://example.test/")))
       }),
       (Connect, Dial),
     )

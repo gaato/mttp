@@ -29,27 +29,27 @@ fn response(
   status : Int32,
   pairs : Array[(String, String)],
 ) -> @retry.AttemptOutcome {
-  Response(status~, headers=@http.Headers::of(pairs))
+  Response(status~, headers=@mttp.Headers::of(pairs))
 }
 
 ///|
 struct Empty {}
 
 ///|
-impl @http.BodyStream for Empty with fn read_some(_) {
+impl @mttp.BodyStream for Empty with fn read_some(_) {
   None
 }
 
 ///|
-impl @http.BodyStream for Empty with fn close(_) {
+impl @mttp.BodyStream for Empty with fn close(_) {
   ()
 }
 
 ///|
 test "decide covers every step in order" {
   let r = rule()
-  let get = @http.Request::get("/")
-  let post = @http.Request::post("/")
+  let get = @mttp.Request::get("/")
+  let post = @mttp.Request::post("/")
   let keyed = post.header("Idempotency-Key", "k-1")
   let fresh_stream = post.body_stream(Empty::{ })
   let sent_stream = post.body_stream(Empty::{ })
@@ -266,7 +266,7 @@ test "decide covers every step in order" {
       decide_request(
         r,
         response(409, []),
-        @http.Request::put("/"),
+        @mttp.Request::put("/"),
         attempt=0,
         random=0.0,
       ),
@@ -277,7 +277,7 @@ test "decide covers every step in order" {
       decide_request(
         r,
         response(409, []),
-        @http.Request::new(Other("pAtCh"), "/"),
+        @mttp.Request::new(Other("pAtCh"), "/"),
         attempt=0,
         random=0.0,
       ),
@@ -853,7 +853,7 @@ test "decide passes random to the backoff" {
     ..rule(),
     backoff: { base_ms: 1000, max_ms: 30000, jitter: Full, },
   }
-  let get = @http.Request::get("/")
+  let get = @mttp.Request::get("/")
   assert_eq(
     decide_request(r, response(503, []), get, attempt=1, random=0.25),
     Wait(500),
@@ -863,7 +863,7 @@ test "decide passes random to the backoff" {
 ///|
 test "outcome debug representation" {
   let outcome = @retry.Failure(
-    @http.TransportError(kind=Connect, phase=Dial, detail="refused"),
+    @mttp.TransportError(kind=Connect, phase=Dial, detail="refused"),
   )
   debug_inspect(
     outcome,
@@ -875,7 +875,7 @@ test "outcome debug representation" {
 fn decide_request(
   rule : @retry.RetryRule,
   outcome : @retry.AttemptOutcome,
-  request : @http.Request,
+  request : @mttp.Request,
   attempt~ : Int32,
   random~ : Double,
   now_unix_ms? : Int64,
@@ -892,7 +892,7 @@ fn decide_request(
     now_unix_ms?,
     remaining_ms?,
     server_delay_ms?,
-    idempotent=idempotent.unwrap_or_else(() => @http.is_idempotent(request)),
+    idempotent=idempotent.unwrap_or_else(() => @mttp.is_idempotent(request)),
     replayable=replayable.unwrap_or_else(() => request.body.is_replayable()),
   )
 }

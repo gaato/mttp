@@ -20,8 +20,8 @@ test "parked connections are reused per origin and User-Agent" {
     ]
     let get = (url : String, agent : String?) => {
       match agent {
-        Some(agent) => @http.Request::get(url).header("user-agent", agent)
-        None => @http.Request::get(url)
+        Some(agent) => @mttp.Request::get(url).header("user-agent", agent)
+        None => @mttp.Request::get(url)
       }
     }
     let answers = []
@@ -62,7 +62,7 @@ test "an idle connection expires after idle_max_ms" {
   let second = h.peer()
   h.run(() => {
     let servers = [serving(h, first, "1"), serving(h, second, "2")]
-    let request = @http.Request::get("http://example.test/")
+    let request = @mttp.Request::get("http://example.test/")
     assert_eq(fetch(h.client, request), "1")
     h.driver.sleep(99)
     assert_eq(fetch(h.client, request), "1")
@@ -93,7 +93,7 @@ fn park_many(
   h.run(() => {
     let responses = []
     for url in urls {
-      responses.push(h.client.send(@http.Request::get(url), exchange()))
+      responses.push(h.client.send(@mttp.Request::get(url), exchange()))
     }
     for response in responses {
       ignore(body_of(response))
@@ -153,10 +153,10 @@ test "active connection caps queue requests until a slot frees" {
   let peer = h.peer()
   h.run(() => {
     let server = serving(h, peer, "ok")
-    let first = h.client.send(@http.Request::get("http://a.test/"), exchange())
+    let first = h.client.send(@mttp.Request::get("http://a.test/"), exchange())
     let mut answer = ""
     let queued = h.driver.spawn(() => {
-      answer = fetch(h.client, @http.Request::get("http://a.test/"))
+      answer = fetch(h.client, @mttp.Request::get("http://a.test/"))
     })
     h.driver.pause()
     assert_true(queued.is_parked())
@@ -182,14 +182,14 @@ test "per-origin caps queue only their own origin and caps below 1 count as 1" {
   ignore(h.scripted([Chunk(ok("b"))]))
   h.run(() => {
     let server = serving(h, a, "a")
-    let held = h.client.send(@http.Request::get("http://a.test/"), exchange())
+    let held = h.client.send(@mttp.Request::get("http://a.test/"), exchange())
     let mut done = false
     let queued = h.driver.spawn(() => {
-      ignore(fetch(h.client, @http.Request::get("http://a.test/")))
+      ignore(fetch(h.client, @mttp.Request::get("http://a.test/")))
       done = true
     })
     // Another origin is not held up.
-    assert_eq(fetch(h.client, @http.Request::get("http://b.test/")), "b")
+    assert_eq(fetch(h.client, @mttp.Request::get("http://b.test/")), "b")
     h.driver.pause()
     assert_false(done)
     assert_true(queued.is_parked())
@@ -213,12 +213,12 @@ test "a queued request leaves no slot behind on timeout, close or cancellation" 
     let peer = h.peer()
     h.run(() => {
       let server = serving(h, peer, "held")
-      let held = h.client.send(@http.Request::get("http://a.test/"), exchange())
+      let held = h.client.send(@mttp.Request::get("http://a.test/"), exchange())
       let mut outcome = None
       let queued = h.driver.spawn(() => {
         outcome = Some(
           failing(() => {
-            ignore(fetch(h.client, @http.Request::get("http://a.test/")))
+            ignore(fetch(h.client, @mttp.Request::get("http://a.test/")))
           }),
         )
       })
@@ -240,7 +240,7 @@ test "a queued request leaves no slot behind on timeout, close or cancellation" 
       assert_eq(body_of(held), b"held")
       if mode != 1 {
         // The slot is free again: the next request reuses the connection.
-        assert_eq(fetch(h.client, @http.Request::get("http://a.test/")), "held")
+        assert_eq(fetch(h.client, @mttp.Request::get("http://a.test/")), "held")
       }
       h.finish()
       ignore(server.wait())
@@ -257,12 +257,12 @@ test "closing the client while a slot is granted prevents a new dial" {
   })
   ignore(h.scripted([Chunk(ok("held"))]))
   h.run(() => {
-    let held = h.client.send(@http.Request::get("http://a.test/"), exchange())
+    let held = h.client.send(@mttp.Request::get("http://a.test/"), exchange())
     let mut outcome = None
     let queued = h.driver.spawn(() => {
       outcome = Some(
         failing(() => {
-          ignore(fetch(h.client, @http.Request::get("http://b.test/")))
+          ignore(fetch(h.client, @mttp.Request::get("http://b.test/")))
         }),
       )
     })

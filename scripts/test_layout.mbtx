@@ -14,17 +14,17 @@ import {
 ///   (`scripts/modules.tsv`). On wasm-gc an async test is not run; drive
 ///   async code with `@driver.run_sync` or a `Driver` from a plain `test`.
 /// - `async-intrinsic`: a `"%async...` intrinsic is declared only in
-///   `http/src/driver/intrinsics.mbt`, anywhere in the repository, so a
+///   `mttp/src/driver/intrinsics.mbt`, anywhere in the repository, so a
 ///   toolchain change to the intrinsics touches one file.
 /// - `testing-import`: a production package does not import a testing
-///   package (`gaato/http/driver`, `gaato/http/sim`, `gaato/mttp/testing`,
+///   package (`gaato/mttp/driver`, `gaato/mttp/sim`, `gaato/mttp/testing`,
 ///   the packages below them, and any package with a `testkit` path
 ///   component); its black-box tests may, under `for "test"`.
 /// - `wbtest-testing-import`: no package imports a testing package for its
 ///   white-box tests (`for "wbtest"`); such a test is a black-box test.
 /// - `clock`: no wall-clock or global-randomness read (`@env.now`,
 ///   `@env.rand`, under whatever alias the package gives moonbitlang/core/env)
-///   in gaato/http or gaato/mttp, tests included. A labelled argument's
+///   in gaato/mttp, tests included. A labelled argument's
 ///   default is the injection point itself and passes.
 ///
 /// Deliberate exceptions live in `scripts/test_layout.allow`, one
@@ -36,12 +36,12 @@ import {
 
 ///|
 /// The one file allowed to declare `%async` intrinsics.
-let intrinsics_file : String = "http/src/driver/intrinsics.mbt"
+let intrinsics_file : String = "mttp/src/driver/intrinsics.mbt"
 
 ///|
 /// Testing packages: these and the packages below them.
 let testing_roots : Array[String] = [
-  "gaato/http/driver", "gaato/http/sim", "gaato/mttp/testing",
+  "gaato/mttp/driver", "gaato/mttp/sim", "gaato/mttp/testing",
 ]
 
 ///|
@@ -50,7 +50,7 @@ let testing_component : String = "testkit"
 
 ///|
 /// Module directories whose sources may not read the clock or randomness.
-let clock_free_dirs : Array[String] = ["http", "mttp"]
+let clock_free_dirs : Array[String] = ["mttp"]
 
 ///|
 /// The rule names allow entries may use.
@@ -482,24 +482,21 @@ fn run_self_test(repo : Repo, allow : String) -> Unit raise {
   // async test: in a four-target module it fails, in a test or a doc block
   // alike; in a comment, a runtime module or outside the modules it passes.
   let async_test = "///|\nasync test \"x\" {\n  ()\n}\n"
-  must_fail("async test in gaato/http", () => {
-    audit(with_file("http/src/x/x_test.mbt", async_test), allow)
-  })
   must_fail("async test in gaato/mttp", () => {
     audit(with_file("mttp/src/x/x_test.mbt", async_test), allow)
   })
   must_fail("async test in a doc block", () => {
     audit(with_file("mttp_digest/src/overview.mbt.md", async_test), allow)
   })
-  audit(with_file("http/src/x/x_test.mbt", "// async test \"x\" {\n"), allow)
+  audit(with_file("mttp/src/x/x_test.mbt", "// async test \"x\" {\n"), allow)
   audit(with_file("http-async/src/x/x_test.mbt", async_test), allow)
   audit(with_file("scratch/src/x/x_test.mbt", async_test), allow)
-  audit(with_file("http/src/x/x_test.mbt", "///|\ntest \"x\" {\n}\n"), allow)
+  audit(with_file("mttp/src/x/x_test.mbt", "///|\ntest \"x\" {\n}\n"), allow)
   // %async: only the driver's intrinsics file declares it, in any module.
   let intrinsic = "///|\nfn suspend() -> Unit = \"%async.suspend\"\n"
   audit(with_file(intrinsics_file, intrinsic), allow)
-  must_fail("an intrinsic in gaato/http", () => {
-    audit(with_file("http/src/x/x.mbt", intrinsic), allow)
+  must_fail("an intrinsic in gaato/mttp", () => {
+    audit(with_file("mttp/src/x/x.mbt", intrinsic), allow)
   })
   must_fail("an intrinsic in gaato/http-async", () => {
     audit(with_file("http-async/src/x/x.mbt", intrinsic), allow)
@@ -507,13 +504,13 @@ fn run_self_test(repo : Repo, allow : String) -> Unit raise {
   must_fail("an intrinsic outside the modules", () => {
     audit(with_file("scratch/x.mbt", intrinsic), allow)
   })
-  audit(with_file("http/src/x/x.mbt", "/// \"%async.suspend\"\n"), allow)
+  audit(with_file("mttp/src/x/x.mbt", "/// \"%async.suspend\"\n"), allow)
   // Testing packages: production code may not import them, its black-box
   // tests may, white-box tests may not; testing packages may import each
   // other.
   for
     testing in [
-      "gaato/http/driver", "gaato/http/sim", "gaato/http/sim/feed", "gaato/mttp/testing",
+      "gaato/mttp/driver", "gaato/mttp/sim", "gaato/mttp/sim/feed", "gaato/mttp/testing",
       "gaato/mttp/testing/conn", "gaato/mttp/endpoint/testkit",
     ] {
     must_fail("production import of \{testing}", () => {
@@ -547,32 +544,32 @@ fn run_self_test(repo : Repo, allow : String) -> Unit raise {
   }
   audit(
     with_package(
-      "http/src/sim", "import {\n  \"gaato/http/rt\",\n  \"gaato/http/driver\",\n}\n",
+      "mttp/src/sim", "import {\n  \"gaato/mttp/rt\",\n  \"gaato/mttp/driver\",\n}\n",
     ),
     allow,
   )
   audit(
-    with_package("http/src/simulator", "import {\n  \"gaato/http/rt\",\n}\n"),
+    with_package("mttp/src/simulator", "import {\n  \"gaato/mttp/rt\",\n}\n"),
     allow,
   )
   audit(
-    with_package("mttp/src/client", "import {\n  \"gaato/http/simple\",\n}\n"),
+    with_package("mttp/src/client", "import {\n  \"gaato/mttp/simple\",\n}\n"),
     allow,
   )
   must_fail("a white-box testing import in a testing package", () => {
     audit(
       with_package(
-        "mttp/src/testing/feed", "import {\n  \"gaato/http/driver\",\n} for \"wbtest\"\n",
+        "mttp/src/testing/feed", "import {\n  \"gaato/mttp/driver\",\n} for \"wbtest\"\n",
       ),
       allow,
     )
   })
   // Clock: real time and randomness fail under any alias, in library code
   // and tests, but not as an injection default, in a comment, as a longer
-  // name, or outside gaato/http and gaato/mttp.
+  // name, or outside gaato/mttp.
   let now = "///|\nfn f() -> UInt64 {\n  @env.now()\n}\n"
-  must_fail("@env.now in gaato/http", () => {
-    audit(with_file("http/src/x/x.mbt", now), allow)
+  must_fail("@env.now in gaato/mttp", () => {
+    audit(with_file("mttp/src/x/x.mbt", now), allow)
   })
   must_fail("@env.now in a gaato/mttp test", () => {
     audit(with_file("mttp/src/x/x_test.mbt", now), allow)

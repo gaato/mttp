@@ -1,27 +1,27 @@
 ///|
 test "URL encoding matches generated helpers" {
-  assert_eq(@http.percent_encode("a b/c~é"), "a%20b%2Fc~%C3%A9")
-  assert_eq(@http.percent_encode_path("a b/c~é"), "a%20b/c~%C3%A9")
-  assert_eq(@http.percent_encode(""), "")
-  assert_eq(@http.percent_encode_path(""), "")
-  assert_eq(@http.percent_encode("AZaz09-._~%?#"), "AZaz09-._~%25%3F%23")
-  assert_eq(@http.append_query("/p", "a b", "é/"), "/p?a%20b=%C3%A9%2F")
-  assert_eq(@http.append_query("/p?x=1", "", ""), "/p?x=1&=")
-  assert_eq(@http.append_query("/p?", "a", "b"), "/p?&a=b")
+  assert_eq(@mttp.percent_encode("a b/c~é"), "a%20b%2Fc~%C3%A9")
+  assert_eq(@mttp.percent_encode_path("a b/c~é"), "a%20b/c~%C3%A9")
+  assert_eq(@mttp.percent_encode(""), "")
+  assert_eq(@mttp.percent_encode_path(""), "")
+  assert_eq(@mttp.percent_encode("AZaz09-._~%?#"), "AZaz09-._~%25%3F%23")
+  assert_eq(@mttp.append_query("/p", "a b", "é/"), "/p?a%20b=%C3%A9%2F")
+  assert_eq(@mttp.append_query("/p?x=1", "", ""), "/p?x=1&=")
+  assert_eq(@mttp.append_query("/p?", "a", "b"), "/p?&a=b")
 }
 
 ///|
 test "URL encoding of slashes, sub-delimiters and astral characters" {
-  assert_eq(@http.percent_encode_path("/"), "/")
-  assert_eq(@http.percent_encode_path("//a//"), "//a//")
-  assert_eq(@http.percent_encode("!*'()"), "%21%2A%27%28%29")
-  assert_eq(@http.percent_encode("😀"), "%F0%9F%98%80")
+  assert_eq(@mttp.percent_encode_path("/"), "/")
+  assert_eq(@mttp.percent_encode_path("//a//"), "//a//")
+  assert_eq(@mttp.percent_encode("!*'()"), "%21%2A%27%28%29")
+  assert_eq(@mttp.percent_encode("😀"), "%F0%9F%98%80")
 }
 
 ///|
-fn resolved(reference : String) -> String raise @http.UrlError {
-  @http.Url::parse("http://a/b/c/d;p?q")
-  .resolve(@http.Url::parse(reference))
+fn resolved(reference : String) -> String raise @mttp.UrlError {
+  @mttp.Url::parse("http://a/b/c/d;p?q")
+  .resolve(@mttp.Url::parse(reference))
   .to_string()
 }
 
@@ -79,13 +79,13 @@ test "the 42 reference resolution examples of RFC 3986 §5.4" {
     assert_eq((case.0, resolved(case.0)), case)
   }
   // §5.2.3: a base with an authority and an empty path merges as if it were `/`.
-  let bare = @http.Url::parse("http://a")
-  assert_eq(bare.resolve(@http.Url::parse("g")).to_string(), "http://a/g")
+  let bare = @mttp.Url::parse("http://a")
+  assert_eq(bare.resolve(@mttp.Url::parse("g")).to_string(), "http://a/g")
 }
 
 ///|
 test "a URL comes apart into its RFC 3986 components" {
-  let url = @http.Url::parse("https://leo:pw@example.test:8443/a/b?x=1#top")
+  let url = @mttp.Url::parse("https://leo:pw@example.test:8443/a/b?x=1#top")
   assert_eq(url.scheme, Some("https"))
   assert_eq(url.userinfo, Some("leo:pw"))
   assert_eq(url.host, Some("example.test"))
@@ -94,50 +94,50 @@ test "a URL comes apart into its RFC 3986 components" {
   assert_eq(url.query, Some("x=1"))
   assert_eq(url.fragment, Some("top"))
   // Empty is not absent: the delimiter is there either way.
-  assert_eq(@http.Url::parse("http://h/p?").query, Some(""))
-  assert_eq(@http.Url::parse("http://h/p").query, None)
-  assert_eq(@http.Url::parse("http://h/p#").fragment, Some(""))
-  assert_eq(@http.Url::parse("mailto:leo@example.test").host, None)
-  assert_eq(@http.Url::parse("file:///tmp/x").host, Some(""))
+  assert_eq(@mttp.Url::parse("http://h/p?").query, Some(""))
+  assert_eq(@mttp.Url::parse("http://h/p").query, None)
+  assert_eq(@mttp.Url::parse("http://h/p#").fragment, Some(""))
+  assert_eq(@mttp.Url::parse("mailto:leo@example.test").host, None)
+  assert_eq(@mttp.Url::parse("file:///tmp/x").host, Some(""))
   // A colon makes a scheme only after a letter-led name.
-  assert_eq(@http.Url::parse("a+b-c.d:x").scheme, Some("a+b-c.d"))
-  assert_eq(@http.Url::parse("2026:a").scheme, None)
-  assert_eq(@http.Url::parse("a/b:c").scheme, None)
+  assert_eq(@mttp.Url::parse("a+b-c.d:x").scheme, Some("a+b-c.d"))
+  assert_eq(@mttp.Url::parse("2026:a").scheme, None)
+  assert_eq(@mttp.Url::parse("a/b:c").scheme, None)
   // The last at-sign divides the userinfo from the host.
-  let url = @http.Url::parse("http://a@b@host/p")
+  let url = @mttp.Url::parse("http://a@b@host/p")
   assert_eq(url.userinfo, Some("a%40b"))
   assert_eq(url.host, Some("host"))
-  assert_eq(@http.Url::parse("http://h:/p").port, None)
-  assert_eq(@http.Url::parse("http://h:0/p").port, Some(0))
+  assert_eq(@mttp.Url::parse("http://h:/p").port, None)
+  assert_eq(@mttp.Url::parse("http://h:0/p").port, Some(0))
 }
 
 ///|
 test "IPv6 literals are validated, lower-cased and bracketed again" {
-  let url = @http.Url::parse("http://[2001:DB8::1]:8080/p")
+  let url = @mttp.Url::parse("http://[2001:DB8::1]:8080/p")
   assert_eq(url.host, Some("2001:db8::1"))
   assert_eq(url.port, Some(8080))
   assert_eq(url.to_string(), "http://[2001:db8::1]:8080/p")
   // RFC 5952's canonical form, so equal addresses serialise and compare alike.
-  let long = @http.Url::parse("http://[2001:0DB8:0:0:0:0:0:0001]:80/p")
+  let long = @mttp.Url::parse("http://[2001:0DB8:0:0:0:0:0:0001]:80/p")
   assert_eq(long.to_string(), "http://[2001:db8::1]/p")
-  assert_true(long.same_origin(@http.Url::parse("http://[2001:db8::1]/")))
-  assert_false(long.same_origin(@http.Url::parse("http://[2001:db8::2]/")))
+  assert_true(long.same_origin(@mttp.Url::parse("http://[2001:db8::1]/")))
+  assert_false(long.same_origin(@mttp.Url::parse("http://[2001:db8::2]/")))
   // A dotted-quad tail is serialized in hex, as WHATWG URL does, so the
   // spellings of one address are one origin.
-  let mapped = @http.Url::parse("http://[0:0:0:0:0:ffff:192.0.2.1]/")
+  let mapped = @mttp.Url::parse("http://[0:0:0:0:0:ffff:192.0.2.1]/")
   assert_eq(mapped.host, Some("::ffff:c000:201"))
   assert_eq(mapped.to_string(), "http://[::ffff:c000:201]/")
   assert_true(
-    @http.Url::parse("http://[::ffff:192.0.2.1]/").same_origin(
-      @http.Url::parse("http://[::ffff:c000:201]/"),
+    @mttp.Url::parse("http://[::ffff:192.0.2.1]/").same_origin(
+      @mttp.Url::parse("http://[::ffff:c000:201]/"),
     ),
   )
   assert_eq(
-    @http.Url::parse("http://[1:2:3:4:5:6:1.2.3.4]/").host,
+    @mttp.Url::parse("http://[1:2:3:4:5:6:1.2.3.4]/").host,
     Some("1:2:3:4:5:6:102:304"),
   )
   for literal in ["::", "::1", "1:2:3:4:5:6:7:8", "1::8", "::ffff:c000:201"] {
-    assert_eq(@http.Url::parse("http://[" + literal + "]/").host, Some(literal))
+    assert_eq(@mttp.Url::parse("http://[" + literal + "]/").host, Some(literal))
   }
   for
     literal in [
@@ -151,7 +151,7 @@ test "IPv6 literals are validated, lower-cased and bracketed again" {
 
 ///|
 fn refusal(text : String) -> String {
-  try @http.Url::parse(text) catch {
+  try @mttp.Url::parse(text) catch {
     Invalid(reason) => reason
   } noraise {
     url => "parsed as " + url.to_string()
@@ -175,9 +175,9 @@ test "malformed authorities are refused with a reason" {
   for case in cases {
     assert_eq((case.0, refusal(case.0)), case)
   }
-  assert_eq(@http.Url::parse("http://h:65535/").port, Some(65535))
+  assert_eq(@mttp.Url::parse("http://h:65535/").port, Some(65535))
   assert_eq(
-    @http.Url::parse("http://xn--bcher-kva.example/").host,
+    @mttp.Url::parse("http://xn--bcher-kva.example/").host,
     Some("xn--bcher-kva.example"),
   )
 }
@@ -209,29 +209,29 @@ test "parsing normalises scheme, host, default ports, escapes and dots" {
     ("a:b/../c", "a:/c"),
   ]
   for case in cases {
-    assert_eq((case.0, @http.Url::parse(case.0).to_string()), case)
+    assert_eq((case.0, @mttp.Url::parse(case.0).to_string()), case)
   }
 }
 
 ///|
 test "serialisation keeps paths that look like an authority or a scheme" {
   // A path starting `//` without an authority gets WHATWG's `/.` prefix.
-  let url = @http.Url::parse("a:/b").resolve(@http.Url::parse("..//c"))
+  let url = @mttp.Url::parse("a:/b").resolve(@mttp.Url::parse("..//c"))
   assert_eq(url.path, "//c")
   assert_eq(url.to_string(), "a:/.//c")
-  assert_eq(@http.Url::parse(url.to_string()), url)
+  assert_eq(@mttp.Url::parse(url.to_string()), url)
   // A relative path whose first segment has a colon gets `./`.
-  let relative = @http.Url::parse("x/y").resolve(@http.Url::parse("a:b"))
+  let relative = @mttp.Url::parse("x/y").resolve(@mttp.Url::parse("a:b"))
   assert_eq(relative.to_string(), "a:b")
-  let colon = @http.Url::parse("./a:b")
+  let colon = @mttp.Url::parse("./a:b")
   assert_eq(colon.path, "./a:b")
-  let base = @http.Url::parse("rel")
-  assert_eq(base.resolve(@http.Url::parse("./a:b")).to_string(), "./a:b")
+  let base = @mttp.Url::parse("rel")
+  assert_eq(base.resolve(@mttp.Url::parse("./a:b")).to_string(), "./a:b")
 }
 
 ///|
 test "origins compare scheme, host and port with defaults" {
-  let url = @http.Url::parse
+  let url = @mttp.Url::parse
   assert_true(url("http://h/a").same_origin(url("HTTP://H:80/b?c")))
   assert_true(url("https://h:8443/").same_origin(url("https://h:8443/x")))
   assert_false(url("http://h/").same_origin(url("https://h/")))
@@ -254,7 +254,7 @@ test "origins compare scheme, host and port with defaults" {
 
 ///|
 test "query params decode as form data and append or merge as encoded pairs" {
-  let url = @http.Url::parse("https://h/p?a=1&b=x+y%20z&&c&a=%E2%82%AC&d=%zz#f")
+  let url = @mttp.Url::parse("https://h/p?a=1&b=x+y%20z&&c&a=%E2%82%AC&d=%zz#f")
   assert_eq(url.query_params(), [
     ("a", "1"),
     ("b", "x y z"),
@@ -262,44 +262,44 @@ test "query params decode as form data and append or merge as encoded pairs" {
     ("a", "€"),
     ("d", "%zz"),
   ])
-  assert_eq(@http.Url::parse("https://h/p").query_params(), [])
-  assert_eq(@http.Url::parse("https://h/p?").query_params(), [])
-  let append = @http.Url::append_query_params
+  assert_eq(@mttp.Url::parse("https://h/p").query_params(), [])
+  assert_eq(@mttp.Url::parse("https://h/p?").query_params(), [])
+  let append = @mttp.Url::append_query_params
   assert_eq(
-    append(@http.Url::parse("https://h/p"), [("a b", "é/")]).to_string(),
+    append(@mttp.Url::parse("https://h/p"), [("a b", "é/")]).to_string(),
     "https://h/p?a%20b=%C3%A9%2F",
   )
   assert_eq(
-    append(@http.Url::parse("https://h/p?"), [("a", "1")]).to_string(),
+    append(@mttp.Url::parse("https://h/p?"), [("a", "1")]).to_string(),
     "https://h/p?a=1",
   )
   assert_eq(
-    append(@http.Url::parse("https://h/p?x&"), [("a", "1")]).to_string(),
+    append(@mttp.Url::parse("https://h/p?x&"), [("a", "1")]).to_string(),
     "https://h/p?x&a=1",
   )
   assert_eq(
-    append(@http.Url::parse("https://h/p?x"), []).to_string(),
+    append(@mttp.Url::parse("https://h/p?x"), []).to_string(),
     "https://h/p?x",
   )
-  let merge = @http.Url::merge_query_params
+  let merge = @mttp.Url::merge_query_params
   assert_eq(
     merge(url, [("a", "2"), ("e", "3"), ("a", "4")]).to_string(),
     "https://h/p?b=x+y%20z&c&d=%zz&a=2&e=3&a=4#f",
   )
   assert_eq(
-    merge(@http.Url::parse("https://h/p?a+b=1"), [("a b", "2")]).to_string(),
+    merge(@mttp.Url::parse("https://h/p?a+b=1"), [("a b", "2")]).to_string(),
     "https://h/p?a%20b=2",
   )
   assert_eq(
-    merge(@http.Url::parse("https://h/p?a=1"), [("a", "2")]).to_string(),
+    merge(@mttp.Url::parse("https://h/p?a=1"), [("a", "2")]).to_string(),
     "https://h/p?a=2",
   )
   assert_eq(
-    merge(@http.Url::parse("https://h/p"), [("a", "2")]).to_string(),
+    merge(@mttp.Url::parse("https://h/p"), [("a", "2")]).to_string(),
     "https://h/p?a=2",
   )
   assert_eq(
-    merge(@http.Url::parse("https://h/p?a=1"), []).to_string(),
+    merge(@mttp.Url::parse("https://h/p?a=1"), []).to_string(),
     "https://h/p?a=1",
   )
 }
@@ -312,9 +312,9 @@ test "normalised URLs round-trip through parse and serialise" {
       "http:g", "g:h", "mailto:leo@example.test", "file:///tmp/x", "http://h", "http://h?q",
       "http://h#f", "//g/x", "?y", "#s", "", "../g", "./a:b", "a:/.//c",
     ] {
-    let url = @http.Url::parse(text)
+    let url = @mttp.Url::parse(text)
     assert_eq(url.to_string(), text)
-    assert_eq(@http.Url::parse(url.to_string()), url)
+    assert_eq(@mttp.Url::parse(url.to_string()), url)
   }
 }
 
@@ -382,16 +382,16 @@ test "property: a resolved reference parses back to itself" {
       pick(rand, ["a", "Example.COM:443", "[::1]:80", "u@h"]) +
       random_path(rand, true) +
       pick(rand, ["", "?q", "?a=1"])
-    let base = @http.Url::parse(base_text)
+    let base = @mttp.Url::parse(base_text)
     let reference_text = random_reference(rand)
-    let reference = @http.Url::parse(reference_text)
+    let reference = @mttp.Url::parse(reference_text)
     let result = base.resolve(reference)
     let text = result.to_string()
     assert_eq(
-      (base_text, reference_text, @http.Url::parse(text)),
+      (base_text, reference_text, @mttp.Url::parse(text)),
       (base_text, reference_text, result),
     )
-    assert_eq(@http.Url::parse(text).to_string(), text)
+    assert_eq(@mttp.Url::parse(text).to_string(), text)
     // Resolving again changes nothing: the result has no dot segments left.
     assert_eq(base.resolve(result), result)
   }

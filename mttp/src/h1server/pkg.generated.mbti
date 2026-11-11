@@ -1,14 +1,14 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/http/h1server"
+package "gaato/mttp/h1server"
 
 import {
-  "gaato/http",
-  "gaato/http/rt",
+  "gaato/mttp",
+  "gaato/mttp/rt",
   "moonbitlang/core/debug",
 }
 
 // Values
-pub async fn serve_conn(&@rt.Conn, async (@http.Request) -> @http.Response noraise, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, scheme~ : String, limits? : ServerLimits, peer? : String, authority? : String, on_error? : (@http.TransportError) -> Unit, stopping? : () -> Bool, background? : (async () -> Unit) -> Unit) -> Unit raise ServerConfigError
+pub async fn serve_conn(&@rt.Conn, async (@mttp.Request) -> @mttp.Response noraise, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, scheme~ : String, limits? : ServerLimits, peer? : String, authority? : String, on_error? : (@mttp.TransportError) -> Unit, stopping? : () -> Bool, background? : (async () -> Unit) -> Unit) -> Unit raise ServerConfigError
 
 // Errors
 #derive(@debug.Debug)

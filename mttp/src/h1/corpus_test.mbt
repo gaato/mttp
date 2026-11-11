@@ -519,7 +519,7 @@ test "accepted requests read identically at every split" {
 ///|
 test "accepted responses read identically at every split" {
   // (name, request method, wire, framing, body, rest)
-  let cases : Array[(String, @http.Method, Bytes, @h1.Framing, Bytes, Bytes)] = [
+  let cases : Array[(String, @mttp.Method, Bytes, @h1.Framing, Bytes, Bytes)] = [
     (
       "no reason phrase",
       Get,

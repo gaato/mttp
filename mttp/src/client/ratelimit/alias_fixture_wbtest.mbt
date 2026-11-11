@@ -19,7 +19,7 @@ test "Retry-After overrides an existing quota deadline in the same window" {
       )
       limiter.admit("a", global_exempt=false)
       assert_eq(clock.slept(), [1000])
-      limiter.respond("a", status=0, headers=@http.Headers::empty())
+      limiter.respond("a", status=0, headers=@mttp.Headers::empty())
     }
   })
 }
@@ -54,7 +54,7 @@ test "learning changing and removing an alias preserve an active block" {
           )
           limiter.admit("a", global_exempt=false)
           assert_eq(clock.slept(), [1500])
-          limiter.respond("a", status=0, headers=@http.Headers::empty())
+          limiter.respond("a", status=0, headers=@mttp.Headers::empty())
         }
       }
     }
@@ -83,11 +83,11 @@ test "alias transitions preserve lower quota with and without parsed headers" {
             headers=if parsed {
               quota("9", "60").set("key", next)
             } else {
-              @http.Headers::of([("key", next)])
+              @mttp.Headers::of([("key", next)])
             },
           )
           assert_eq(limiter.state("a").map(s => s.remaining), Some(1))
-          limiter.release(consumed, status=0, headers=@http.Headers::empty())
+          limiter.release(consumed, status=0, headers=@mttp.Headers::empty())
         }
       }
     }
@@ -113,7 +113,7 @@ test "an alias merge preserves constraints at both source and destination" {
     )
     assert_eq(limiter.state("a").map(s => s.remaining), Some(1))
     limiter.admit("a", global_exempt=false)
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
     assert_eq(limiter.state("peer").map(s => s.remaining), Some(0))
   })
 }
@@ -133,16 +133,16 @@ test "a stale destination Retry-After cannot expire live transferred quota" {
     limiter.respond(
       "a",
       status=200,
-      headers=@http.Headers::of([("key", "shared")]),
+      headers=@mttp.Headers::of([("key", "shared")]),
     )
     assert_eq(
       limiter.state("a"),
       Some({ remaining: 1, reset_at_unix_ms: 60000L, }),
     )
     limiter.admit("a", global_exempt=false)
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
     limiter.admit("a", global_exempt=false)
     assert_eq(clock.slept(), [58000])
-    limiter.respond("a", status=0, headers=@http.Headers::empty())
+    limiter.respond("a", status=0, headers=@mttp.Headers::empty())
   })
 }

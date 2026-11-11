@@ -93,7 +93,7 @@ fn Slots::stop(self : Slots) -> Unit {
 ///|
 /// Waits until the ticket is granted; a refusal raises `Closed` in phase
 /// Pool.
-async fn Ticket::wait(self : Ticket) -> Unit raise @http.TransportError {
+async fn Ticket::wait(self : Ticket) -> Unit raise @mttp.TransportError {
   while self.state is Waiting {
     self.signal.wait()
   }
@@ -110,7 +110,7 @@ async fn Slots::acquire(
   self : Slots,
   origin : String,
   timer : PhaseTimer,
-) -> Unit raise @http.TransportError {
+) -> Unit raise @mttp.TransportError {
   let ticket = self.enqueue(origin)
   errdefer self.abandon(ticket)
   if ticket.state is Refused {

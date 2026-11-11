@@ -1,34 +1,34 @@
 ///|
 priv struct DecodedBody {
-  read : async () -> Bytes? raise @http.TransportError
+  read : async () -> Bytes? raise @mttp.TransportError
   close_ : () -> Unit
   decoder : ContentDecoder
   mut closed : Bool
 }
 
 ///|
-impl @http.BodyStream for DecodedBody with fn read_some(self) {
+impl @mttp.BodyStream for DecodedBody with fn read_some(self) {
   if self.closed {
     return None
   }
-  errdefer @http.BodyStream::close(self)
+  errdefer @mttp.BodyStream::close(self)
   let bytes = read_decoded(() => (self.read)(), Some(self.decoder)) catch {
-    @http.TransportError(..) as error => raise error
+    @mttp.TransportError(..) as error => raise error
     _ =>
-      raise @http.TransportError(
+      raise @mttp.TransportError(
         kind=Protocol,
         phase=Body,
         detail="content decoding failed",
       )
   }
   if bytes is None {
-    @http.BodyStream::close(self)
+    @mttp.BodyStream::close(self)
   }
   bytes
 }
 
 ///|
-impl @http.BodyStream for DecodedBody with fn close(self) {
+impl @mttp.BodyStream for DecodedBody with fn close(self) {
   if !self.closed {
     self.closed = true
     (self.close_)()
@@ -45,26 +45,26 @@ impl @http.BodyStream for DecodedBody with fn close(self) {
 /// passed unchanged: the inner engine bounds wire bytes, readers bound decoded
 /// bytes. Each decoded slice is at most 64 KiB.
 pub struct Decompress {
-  priv inner : &@http.Backend
+  priv inner : &@mttp.Backend
   priv mut closed : Bool
 }
 
 ///|
 /// Wraps inner, transferring backend closure to this wrapper.
-pub fn Decompress::new(inner : &@http.Backend) -> Decompress {
+pub fn Decompress::new(inner : &@mttp.Backend) -> Decompress {
   { inner, closed: false, }
 }
 
 ///|
 /// Makes the Backend operations available as methods.
-pub extend Decompress with @http.Backend::{send, close}
+pub extend Decompress with @mttp.Backend::{send, close}
 
 ///|
 /// Validates before delegating, then transfers the received body to a lazy
 /// decoded stream when this wrapper negotiated its encoding.
-pub impl @http.Backend for Decompress with fn send(self, request, options) {
+pub impl @mttp.Backend for Decompress with fn send(self, request, options) {
   if self.closed {
-    raise @http.TransportError(kind=Closed, phase=Pool, detail="backend closed")
+    raise @mttp.TransportError(kind=Closed, phase=Pool, detail="backend closed")
   }
   request.validate()
   options.validate()
@@ -86,7 +86,7 @@ pub impl @http.Backend for Decompress with fn send(self, request, options) {
     ..response,
     headers: head.headers,
     body: Stream(
-      @http.StreamBody::new(DecodedBody::{
+      @mttp.StreamBody::new(DecodedBody::{
         read,
         close_,
         decoder,
@@ -98,7 +98,7 @@ pub impl @http.Backend for Decompress with fn send(self, request, options) {
 
 ///|
 /// Closes the inner backend exactly once and refuses subsequent sends.
-pub impl @http.Backend for Decompress with fn close(self) {
+pub impl @mttp.Backend for Decompress with fn close(self) {
   if !self.closed {
     self.closed = true
     self.inner.close()

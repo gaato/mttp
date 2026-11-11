@@ -10,9 +10,9 @@ priv enum HeadOutcome {
   /// byte of a request arrived: the connection closes without an answer.
   Idle
   /// The head is refused: answer with `status` and close.
-  Refuse(status~ : Int32, error~ : @http.TransportError)
+  Refuse(status~ : Int32, error~ : @mttp.TransportError)
   /// Reading failed: close without an answer.
-  Lost(@http.TransportError)
+  Lost(@mttp.TransportError)
 }
 
 ///|
@@ -80,7 +80,7 @@ fn refuse_head(error : @h1.ParseError, limits : ServerLimits) -> HeadOutcome {
     HeadTooLarge =>
       Refuse(
         status=431,
-        error=@http.TransportError(
+        error=@mttp.TransportError(
           kind=TooLarge(limit=limits.max_header_bytes),
           phase=Head,
           detail~,
@@ -89,12 +89,12 @@ fn refuse_head(error : @h1.ParseError, limits : ServerLimits) -> HeadOutcome {
     Unsupported =>
       Refuse(
         status=505,
-        error=@http.TransportError(kind=Protocol, phase=Head, detail~),
+        error=@mttp.TransportError(kind=Protocol, phase=Head, detail~),
       )
     _ =>
       Refuse(
         status=400,
-        error=@http.TransportError(kind=Protocol, phase=Head, detail~),
+        error=@mttp.TransportError(kind=Protocol, phase=Head, detail~),
       )
   }
 }
@@ -114,10 +114,10 @@ fn framing_status(kind : @h1.ParseKind) -> Int32 {
 /// The status that answers a request body failure: 413 past the body limit,
 /// 408 past its deadline, 400 for anything else (bad chunk framing, a chunk
 /// line or trailers past their limits, early EOF).
-fn body_status(error : @http.TransportError) -> Int32 {
+fn body_status(error : @mttp.TransportError) -> Int32 {
   match error {
-    @http.TransportError(kind=TooLarge(..), ..) => 413
-    @http.TransportError(kind=Timeout(..), ..) => 408
+    @mttp.TransportError(kind=TooLarge(..), ..) => 413
+    @mttp.TransportError(kind=Timeout(..), ..) => 408
     _ => 400
   }
 }

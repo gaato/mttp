@@ -17,7 +17,7 @@ async fn WindowLimiter::respond(
   self : WindowLimiter,
   bucket : String,
   status~ : Int32,
-  headers~ : @http.Headers,
+  headers~ : @mttp.Headers,
 ) -> Unit {
   let mut admission : @client.Admission? = None
   for sequence, active in self.admissions {

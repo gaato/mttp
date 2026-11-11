@@ -40,7 +40,7 @@ fn stored_expiry(date : String, expected : Int64?) -> Int64? {
   }
   let jar = @jar.CookieJar::new(@mock.FakeClock::new(start_unix_ms=now))
   jar.store(
-    @http.Headers::of([("Set-Cookie", "a=b; Expires=" + date)]),
+    @mttp.Headers::of([("Set-Cookie", "a=b; Expires=" + date)]),
     "http://home.example.org/",
   )
   jar.iter().next().unwrap().expires_ms

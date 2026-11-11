@@ -8,10 +8,10 @@
 let shapes : Array[String] = ["none", "small", "large", "streamed"]
 
 ///|
-fn shaped(h : Harness, shape : String) -> @http.Request {
-  let post = @http.Request::post("http://example.test/")
+fn shaped(h : Harness, shape : String) -> @mttp.Request {
+  let post = @mttp.Request::post("http://example.test/")
   match shape {
-    "none" => @http.Request::get("http://example.test/")
+    "none" => @mttp.Request::get("http://example.test/")
     "small" => post.body_bytes(b"small")
     "large" => post.body_bytes(Bytes::make(200000, b'x'))
     _ => post.body_stream(@sim.Feed::bytes(h.driver, [b"a", b"b"]))
@@ -20,17 +20,17 @@ fn shaped(h : Harness, shape : String) -> @http.Request {
 
 ///|
 /// A failure without a phase, as a port may raise one.
-fn unphased(kind : @http.Kind) -> @http.TransportError {
-  @http.TransportError(kind~, phase=Unknown, detail="injected")
+fn unphased(kind : @mttp.Kind) -> @mttp.TransportError {
+  @mttp.TransportError(kind~, phase=Unknown, detail="injected")
 }
 
 ///|
 /// Sends `request` and reads the whole body: its text, or the failure.
 async fn attempt(
   h : Harness,
-  request : @http.Request,
-  options : @http.SendOptions,
-) -> Result[String, (@http.Kind, @http.Phase)] {
+  request : @mttp.Request,
+  options : @mttp.SendOptions,
+) -> Result[String, (@mttp.Kind, @mttp.Phase)] {
   Ok(fetch(h.client, request, options~)) catch {
     error => Err(kind_phase(error))
   }
@@ -38,10 +38,10 @@ async fn attempt(
 
 ///|
 test "a port failure reports the same phase on every path" {
-  let kinds : Array[@http.Kind] = [Network, Protocol]
+  let kinds : Array[@mttp.Kind] = [Network, Protocol]
   let modes = [exchange(), streaming()]
   // (where the failure is injected, the phase it must report)
-  let points : Array[(String, @http.Phase)] = [
+  let points : Array[(String, @mttp.Phase)] = [
     ("head read", Head),
     ("body read", Body),
     ("write", Write),
@@ -81,20 +81,20 @@ test "a port failure reports the same phase on every path" {
 
 ///|
 test "a failure on a reused connection reports the same phase on every path" {
-  for kind in [@http.Kind::Network, Protocol] {
+  for kind in [@mttp.Kind::Network, Protocol] {
     for shape in shapes {
       let h = Harness::new()
       h.run(() => {
         ignore(h.scripted([Chunk(ok("old")), Failure(unphased(kind))]))
         assert_eq(
-          fetch(h.client, @http.Request::get("http://example.test/")),
+          fetch(h.client, @mttp.Request::get("http://example.test/")),
           "old",
         )
         ignore(h.scripted([Chunk(ok("new"))]))
         let result = attempt(h, shaped(h, shape), exchange())
         // Only a replayable, idempotent request is resent, and only after
         // a network failure; every other failure keeps its phase.
-        let expected : Result[String, (@http.Kind, @http.Phase)] = if shape ==
+        let expected : Result[String, (@mttp.Kind, @mttp.Phase)] = if shape ==
           "none" &&
           kind == Network {
           Ok("new")
@@ -111,9 +111,9 @@ test "a failure on a reused connection reports the same phase on every path" {
 ///|
 test "a failure on the way to a proxy reports the same phase on every path" {
   let modes = [exchange(), streaming()]
-  for kind in [@http.Kind::Network, Protocol] {
+  for kind in [@mttp.Kind::Network, Protocol] {
     // (the scheme, where the failure is injected, the phase to report)
-    let points : Array[(String, String, @http.Phase)] = [
+    let points : Array[(String, String, @mttp.Phase)] = [
       ("https", "CONNECT answer", Dial),
       ("https", "CONNECT write", Dial),
       ("http", "forwarded head", Head),

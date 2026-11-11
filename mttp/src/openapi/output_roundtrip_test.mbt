@@ -78,7 +78,7 @@ test "dynamic output status and media describe the actual buffered and streamed 
   )
   assert_eq(
     (response.status, response.headers.get("content-type"), response.body),
-    (202, Some("application/custom"), @http.Body::Bytes(b"data")),
+    (202, Some("application/custom"), @mttp.Body::Bytes(b"data")),
   )
   let op = project(ep.doc()).paths["/dynamic"].operations["get"]
   assert_true(op.responses["default"].content.contains("*/*"))
@@ -90,7 +90,7 @@ test "dynamic output status and media describe the actual buffered and streamed 
   let response = dispatch(
     ep.serve_public(_ => {
       Ok(
-        (Some("text/custom"), @http.Body::Stream(@http.StreamBody::new(source))),
+        (Some("text/custom"), @mttp.Body::Stream(@mttp.StreamBody::new(source))),
       )
     }),
     ep.request((), ()).raw(),

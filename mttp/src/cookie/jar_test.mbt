@@ -1,6 +1,6 @@
 ///|
-fn set_cookies(values : Array[String]) -> @http.Headers {
-  @http.Headers::of(values.map(value => ("Set-Cookie", value)))
+fn set_cookies(values : Array[String]) -> @mttp.Headers {
+  @mttp.Headers::of(values.map(value => ("Set-Cookie", value)))
 }
 
 ///|
@@ -67,13 +67,13 @@ test "clear, clear_domain, clear_session and remove_expired remove what they nam
 test "attach adds the jar's Cookie header unless the request has one" {
   let jar = @cookie.CookieJar::new(@sim.FakeClock::new())
   jar.store(set_cookies(["sid=1"]), "https://a.example/")
-  let plain = @http.Request::get("https://a.example/x")
+  let plain = @mttp.Request::get("https://a.example/x")
   let attached = jar.attach(plain)
   assert_eq(attached.headers.get_all("cookie"), ["sid=1"])
   assert_eq(plain.headers.length(), 0)
   let explicit = plain.header("COOKIE", "mine=2")
   assert_eq(jar.attach(explicit).headers.get_all("cookie"), ["mine=2"])
-  let elsewhere = @http.Request::get("https://b.example/")
+  let elsewhere = @mttp.Request::get("https://b.example/")
   assert_eq(jar.attach(elsewhere).headers.length(), 0)
-  assert_eq(jar.attach(@http.Request::get("/relative")).headers.length(), 0)
+  assert_eq(jar.attach(@mttp.Request::get("/relative")).headers.length(), 0)
 }

@@ -7,7 +7,7 @@ pub(all) enum FeedStep {
   /// A virtual sleep of this many milliseconds on the Feed's Driver.
   Wait(Int32)
   /// A failure raised once; later reads return EOF.
-  Fail(@http.TransportError)
+  Fail(@mttp.TransportError)
   /// EOF; the steps after it are never played.
   End
 }
@@ -33,7 +33,7 @@ pub struct Feed {
 /// test {
 ///   let d = @driver.Driver::new()
 ///   let feed = @sim.Feed::new(d, [Chunk(b"he"), Wait(10), Chunk(b"llo")])
-///   let body = d.run(() => @http.read_bounded(feed, 16))
+///   let body = d.run(() => @mttp.read_bounded(feed, 16))
 ///   assert_eq(body, b"hello")
 ///   assert_eq(d.now(), 10L)
 ///   assert_eq(feed.closes(), 1)
@@ -87,7 +87,7 @@ pub fn Feed::is_closed(self : Feed) -> Bool {
 ///|
 /// Plays the script up to the next nonempty chunk, failure or EOF. A close
 /// during a wait ends the read with EOF.
-pub impl @http.BodyStream for Feed with fn read_some(self) {
+pub impl @mttp.BodyStream for Feed with fn read_some(self) {
   self.reads += 1
   if self.closed || self.ended {
     return None
@@ -122,7 +122,7 @@ pub impl @http.BodyStream for Feed with fn read_some(self) {
 
 ///|
 /// Closes the stream once; later reads return EOF.
-pub impl @http.BodyStream for Feed with fn close(self) {
+pub impl @mttp.BodyStream for Feed with fn close(self) {
   if !self.closed {
     self.closed = true
     self.closes += 1
@@ -131,4 +131,4 @@ pub impl @http.BodyStream for Feed with fn close(self) {
 
 ///|
 /// The stream operations as methods of the double.
-pub extend Feed with @http.BodyStream::{read_some, close}
+pub extend Feed with @mttp.BodyStream::{read_some, close}

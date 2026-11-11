@@ -17,7 +17,7 @@ priv struct Exchanged {
 /// taken with its first piece read.
 priv enum Upload {
   Bytes(Bytes)
-  Stream(&@http.BodyStream, Bytes?)
+  Stream(&@mttp.BodyStream, Bytes?)
 }
 
 ///|
@@ -31,7 +31,7 @@ async fn exchange(
   timer : PhaseTimer,
   limits : @h1.Limits,
   coordination : &@rt.Coordination,
-) -> Exchanged raise @http.TransportError {
+) -> Exchanged raise @mttp.TransportError {
   match upload {
     Bytes(bytes) if head.length() + bytes.length() <= io_bytes => {
       timer.run(Write, () => wire.write(head + bytes))
@@ -103,14 +103,14 @@ async fn upload(
 async fn final_head(
   wire : Wire,
   limits : @h1.Limits,
-) -> @h1.ParsedResponse raise @http.TransportError {
+) -> @h1.ParsedResponse raise @mttp.TransportError {
   for _ in 0..<17 {
     let head = wire.head(limits)
     if head.status >= 200 || head.status == 101 {
       return head
     }
   }
-  raise @http.TransportError(
+  raise @mttp.TransportError(
     kind=Protocol,
     phase=Head,
     detail="too many informational responses",
@@ -121,20 +121,20 @@ async fn final_head(
 /// A request body stream that failed while it was uploaded, with its own
 /// error.
 priv suberror ProducerFailed {
-  ProducerFailed(@http.TransportError)
+  ProducerFailed(@mttp.TransportError)
 }
 
 ///|
 /// Why an upload ended early: its body stream failed, or the connection.
 priv enum UploadFailure {
-  Producer(@http.TransportError)
-  Connection(@http.TransportError)
+  Producer(@mttp.TransportError)
+  Connection(@mttp.TransportError)
 }
 
 ///|
 /// The two halves of a concurrent exchange, as each finished.
 priv struct Duplex {
-  mut head : Result[@h1.ParsedResponse, @http.TransportError]?
+  mut head : Result[@h1.ParsedResponse, @mttp.TransportError]?
   mut sent : Result[Unit, UploadFailure]?
   changed : &@rt.Signal
   head_ready : &@rt.Signal
@@ -157,7 +157,7 @@ async fn duplex(
   timer : PhaseTimer,
   limits : @h1.Limits,
   coordination : &@rt.Coordination,
-) -> Exchanged raise @http.TransportError {
+) -> Exchanged raise @mttp.TransportError {
   let state = Duplex::{
     head: None,
     sent: None,
@@ -218,7 +218,7 @@ async fn duplex(
   )
   // The primary returns only once a final head arrived.
   guard state.head is Some(Ok(response)) else {
-    raise @http.TransportError(
+    raise @mttp.TransportError(
       kind=Protocol,
       phase=Head,
       detail="the exchange ended without a response head",
@@ -232,8 +232,8 @@ async fn duplex(
 /// when it had one, since the read failed only because the peer went.
 fn Duplex::reported(
   self : Duplex,
-  error : @http.TransportError,
-) -> @http.TransportError {
+  error : @mttp.TransportError,
+) -> @mttp.TransportError {
   match self.sent {
     Some(Err(Connection(write_error))) => write_error
     _ => error
@@ -241,7 +241,7 @@ fn Duplex::reported(
 }
 
 ///|
-fn kind_of(error : @http.TransportError) -> @http.Kind {
-  let @http.TransportError(kind~, ..) = error
+fn kind_of(error : @mttp.TransportError) -> @mttp.Kind {
+  let @mttp.TransportError(kind~, ..) = error
   kind
 }

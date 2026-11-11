@@ -14,7 +14,7 @@
 ///     remaining="x-ratelimit-remaining",
 ///     reset_unix_seconds="x-ratelimit-reset",
 ///   )
-///   let headers = @http.Headers::of([
+///   let headers = @mttp.Headers::of([
 ///     ("X-RateLimit-Remaining", "4999"),
 ///     ("X-RateLimit-Reset", "1700000060"),
 ///   ])
@@ -28,7 +28,7 @@ pub fn rate_limit_headers(
   remaining~ : String,
   reset_after_seconds? : String,
   reset_unix_seconds? : String,
-) -> (@http.Headers, Int64) -> RateLimitState? {
+) -> (@mttp.Headers, Int64) -> RateLimitState? {
   (headers, now) => {
     guard headers.get(remaining) is Some(raw_remaining) else { return None }
     guard parse_nonnegative_int(raw_remaining) is Some(left) else {

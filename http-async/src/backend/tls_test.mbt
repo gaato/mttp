@@ -34,7 +34,7 @@ async fn test_tls(tcp : @socket.Tcp) -> @tls.Tls {
 
 ///|
 async fn with_tls_server(
-  handler : @http.Handler,
+  handler : @mttp.Handler,
   action : async (String) -> Unit,
 ) -> Unit {
   @async.with_timeout(5000, () => {
@@ -66,7 +66,7 @@ async fn with_tls_server(
 
 ///|
 async test "socket TLS custom roots insecure mode and verification failures use root Trust" {
-  with_tls_server(_ => @http.Response::new(200, body=Bytes(b"secured")), url => {
+  with_tls_server(_ => @mttp.Response::new(200, body=Bytes(b"secured")), url => {
     for
       trust in [
         @http_async.Trust::PemFile("src/conn/testdata/localhost.pem"),
@@ -79,7 +79,7 @@ async test "socket TLS custom roots insecure mode and verification failures use 
       defer backend.close()
       assert_eq(
         body(
-          backend.send(@http.Request::get(url), @http.SendOptions::default()),
+          backend.send(@mttp.Request::get(url), @mttp.SendOptions::default()),
         ),
         b"secured",
       )
@@ -91,9 +91,9 @@ async test "socket TLS custom roots insecure mode and verification failures use 
       )
       defer backend.close()
       try
-        backend.send(@http.Request::get(url), @http.SendOptions::default())
+        backend.send(@mttp.Request::get(url), @mttp.SendOptions::default())
       catch {
-        @http.TransportError(kind=Connect, phase=Dial, ..) => ()
+        @mttp.TransportError(kind=Connect, phase=Dial, ..) => ()
         error => raise error
       } noraise {
         _ => fail("TLS verification was bypassed")
@@ -129,10 +129,10 @@ async test "socket CONNECT tunnels verified TLS through plain and TLS proxies" {
   with_tls_server(
     request => {
       origin_auth.val = request.headers.contains("proxy-authorization")
-      @http.Response::new(200, body=Bytes(b"tunnel"))
+      @mttp.Response::new(200, body=Bytes(b"tunnel"))
     },
     url => {
-      let origin = @http.Url::parse(url)
+      let origin = @mttp.Url::parse(url)
       for secure in [false, true] {
         let proxy = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
         defer proxy.close()
@@ -183,8 +183,8 @@ async test "socket CONNECT tunnels verified TLS through plain and TLS proxies" {
           assert_eq(
             body(
               backend.send(
-                @http.Request::get(url),
-                @http.SendOptions::default(),
+                @mttp.Request::get(url),
+                @mttp.SendOptions::default(),
               ),
             ),
             b"tunnel",
@@ -220,11 +220,11 @@ async test "socket TLS handshake deadline stays in Dial and leaves no idle conne
     defer backend.close()
     try
       backend.send(
-        @http.Request::get("https://localhost:\{listener.addr.port()}"),
-        @http.SendOptions::default(),
+        @mttp.Request::get("https://localhost:\{listener.addr.port()}"),
+        @mttp.SendOptions::default(),
       )
     catch {
-      @http.TransportError(kind=Timeout(ms=30), phase=Dial, ..) => ()
+      @mttp.TransportError(kind=Timeout(ms=30), phase=Dial, ..) => ()
       error => raise error
     } noraise {
       _ => fail("stalled TLS handshake succeeded")
@@ -236,12 +236,12 @@ async test "socket TLS handshake deadline stays in Dial and leaves no idle conne
 
 ///|
 async test "socket proxy forwarding and NO_PROXY select separate routes" {
-  with_server(_ => @http.Response::new(200, body=Bytes(b"origin")), (origin, _) => {
+  with_server(_ => @mttp.Response::new(200, body=Bytes(b"origin")), (origin, _) => {
     let target = Ref("")
     with_server(
       request => {
         target.val = request.url
-        @http.Response::new(200, body=Bytes(b"proxy"))
+        @mttp.Response::new(200, body=Bytes(b"proxy"))
       },
       (proxy, _) => {
         let backend = new_backend(config={
@@ -256,8 +256,8 @@ async test "socket proxy forwarding and NO_PROXY select separate routes" {
         assert_eq(
           body(
             backend.send(
-              @http.Request::get(origin),
-              @http.SendOptions::default(),
+              @mttp.Request::get(origin),
+              @mttp.SendOptions::default(),
             ),
           ),
           b"origin",
@@ -265,8 +265,8 @@ async test "socket proxy forwarding and NO_PROXY select separate routes" {
         assert_eq(
           body(
             backend.send(
-              @http.Request::get("http://remote.invalid/path?q=1"),
-              @http.SendOptions::default(),
+              @mttp.Request::get("http://remote.invalid/path?q=1"),
+              @mttp.SendOptions::default(),
             ),
           ),
           b"proxy",
@@ -295,7 +295,7 @@ async test "socket default reads process proxy environment once and explicit con
   for name in names {
     @env.unset_env_var(name)
   }
-  with_server(_ => @http.Response::new(200, body=Bytes(b"env proxy")), (url, _) => {
+  with_server(_ => @mttp.Response::new(200, body=Bytes(b"env proxy")), (url, _) => {
     @env.set_env_var("http_proxy", url)
     let backend = @backend.AsyncBackend::new()
     defer backend.close()
@@ -303,8 +303,8 @@ async test "socket default reads process proxy environment once and explicit con
     assert_eq(
       body(
         backend.send(
-          @http.Request::get("http://origin.invalid/"),
-          @http.SendOptions::default(),
+          @mttp.Request::get("http://origin.invalid/"),
+          @mttp.SendOptions::default(),
         ),
       ),
       b"env proxy",
@@ -312,7 +312,7 @@ async test "socket default reads process proxy environment once and explicit con
     let direct = new_backend()
     defer direct.close()
     assert_eq(
-      body(direct.send(@http.Request::get(url), @http.SendOptions::default())),
+      body(direct.send(@mttp.Request::get(url), @mttp.SendOptions::default())),
       b"env proxy",
     )
   })

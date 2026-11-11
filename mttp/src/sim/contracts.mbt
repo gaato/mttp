@@ -13,14 +13,14 @@ fn violation(check : String, rule : String) -> Failure {
 
 ///|
 /// The sentinel a check raises from a monitor, to recognise it again.
-fn sentinel(check : String, step : String) -> @http.TransportError {
-  @http.TransportError(kind=Protocol, phase=Unknown, detail="\{check}: \{step}")
+fn sentinel(check : String, step : String) -> @mttp.TransportError {
+  @mttp.TransportError(kind=Protocol, phase=Unknown, detail="\{check}: \{step}")
 }
 
 ///|
 /// Whether `error` is the sentinel made with `detail`.
-fn is_sentinel(error : @http.TransportError, detail : String) -> Bool {
-  let @http.TransportError(detail=actual, ..) = error
+fn is_sentinel(error : @mttp.TransportError, detail : String) -> Bool {
+  let @mttp.TransportError(detail=actual, ..) = error
   actual == detail
 }
 
@@ -100,8 +100,8 @@ pub async fn check_coordination_contract(
     )
     false
   } catch {
-    @http.TransportError(_) as error if is_sentinel(error, detail) => true
-    @http.TransportError(_) =>
+    @mttp.TransportError(_) as error if is_sentinel(error, detail) => true
+    @mttp.TransportError(_) =>
       raise violation(check, "a monitor failure was replaced by another error")
   }
   if !raised {
@@ -131,8 +131,8 @@ pub async fn check_coordination_contract(
     )
     false
   } catch {
-    @http.TransportError(_) as error if is_sentinel(error, detail) => true
-    @http.TransportError(_) =>
+    @mttp.TransportError(_) as error if is_sentinel(error, detail) => true
+    @mttp.TransportError(_) =>
       raise violation(check, "a primary failure was replaced by another error")
   }
   if !raised {
@@ -151,7 +151,7 @@ pub async fn check_coordination_contract(
     returned.wait()
     raise sentinel(check, "late monitor failure")
   }) catch {
-    @http.TransportError(_) =>
+    @mttp.TransportError(_) =>
       raise violation(
         check, "a monitor failure after primary finished must be ignored",
       )
@@ -191,8 +191,8 @@ pub async fn check_coordination_contract(
     )
     false
   } catch {
-    @http.TransportError(_) as error if is_sentinel(error, detail) => true
-    @http.TransportError(_) =>
+    @mttp.TransportError(_) as error if is_sentinel(error, detail) => true
+    @mttp.TransportError(_) =>
       raise violation(
         check, "the outer monitor's failure was replaced by another error",
       )
@@ -214,7 +214,7 @@ async fn read_exactly(
   conn : &@rt.Conn,
   want : Int32,
   max_len~ : Int32,
-) -> (Bytes, String?) raise @http.TransportError {
+) -> (Bytes, String?) raise @mttp.TransportError {
   let out = Buffer()
   while out.length() < want {
     match conn.read(max_len~) {
@@ -345,7 +345,7 @@ pub async fn check_conn(
       raise sentinel(check, "cancel the read")
     },
   ) catch {
-    @http.TransportError(_) as error if is_sentinel(error, detail) => ()
+    @mttp.TransportError(_) as error if is_sentinel(error, detail) => ()
     _ => raise violation(check, "a pending read raised instead of waiting")
   }
   if returned.val {
@@ -397,7 +397,7 @@ pub async fn check_conn(
 /// EOF, idempotent close and EOF after close. A stream that has not ended
 /// within `max_reads` reads fails the check instead of keeping it running.
 pub async fn check_body_stream_contract(
-  make : () -> &@http.BodyStream,
+  make : () -> &@mttp.BodyStream,
   expected : Bytes,
   max_reads~ : Int32 = 1024,
 ) -> Unit {
@@ -442,12 +442,12 @@ pub async fn check_body_stream_contract(
 priv struct Unread {}
 
 ///|
-impl @http.BodyStream for Unread with fn read_some(_) {
+impl @mttp.BodyStream for Unread with fn read_some(_) {
   None
 }
 
 ///|
-impl @http.BodyStream for Unread with fn close(_) {
+impl @mttp.BodyStream for Unread with fn close(_) {
   ()
 }
 
@@ -456,16 +456,16 @@ impl @http.BodyStream for Unread with fn close(_) {
 /// phase Pool, so unsent.
 async fn expect_refusal(
   check : String,
-  backend : &@http.Backend,
+  backend : &@mttp.Backend,
   label : String,
-  request : @http.Request,
-  options : @http.SendOptions,
-  kind : @http.Kind,
+  request : @mttp.Request,
+  options : @mttp.SendOptions,
+  kind : @mttp.Kind,
 ) -> Unit {
   let response = backend.send(request, options) catch {
-    @http.TransportError(kind=actual, phase=Pool, ..) if actual == kind =>
+    @mttp.TransportError(kind=actual, phase=Pool, ..) if actual == kind =>
       return
-    @http.TransportError(kind=actual, phase~, ..) =>
+    @mttp.TransportError(kind=actual, phase~, ..) =>
       raise violation(
         check,
         "\{label} raised \{@debug.to_string(actual)} in \{@debug.to_string(phase)}; want \{@debug.to_string(kind)} in Pool",
@@ -487,22 +487,22 @@ async fn expect_refusal(
 /// connection reuse need configured peers and belong to each backend's own
 /// suite.
 pub async fn check_backend_contract(
-  make : () -> &@http.Backend,
+  make : () -> &@mttp.Backend,
   url~ : String = "https://example.test/",
 ) -> Unit {
   let check = "check_backend_contract"
   let backend = make()
   defer backend.close()
-  let options = @http.SendOptions::default()
-  let get = @http.Request::get(url)
+  let options = @mttp.SendOptions::default()
+  let get = @mttp.Request::get(url)
   let requests = [
-    ("an invalid method", @http.Request::new(Other("BAD METHOD"), url)),
-    ("a URL with CRLF", @http.Request::get(url + "\r\n")),
+    ("an invalid method", @mttp.Request::new(Other("BAD METHOD"), url)),
+    ("a URL with CRLF", @mttp.Request::get(url + "\r\n")),
     ("a header value with LF", get.header("x-test", "one\ntwo")),
     ("a header name with a space", get.header("bad name", "value")),
     (
       "a stream declaring a negative length",
-      @http.Request::post(url).body_stream(Unread::{ }, length=-1L),
+      @mttp.Request::post(url).body_stream(Unread::{ }, length=-1L),
     ),
   ]
   for item in requests {

@@ -2,7 +2,7 @@
 // Literal text is decoded route data, not an already-escaped URL fragment.
 // Share its wire encoding between client requests and documented templates.
 fn encoded_literal_segment(text : String) -> String {
-  "/" + @http.percent_encode(text)
+  "/" + @mttp.percent_encode(text)
 }
 
 ///|

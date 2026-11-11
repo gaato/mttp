@@ -1,7 +1,7 @@
 ///|
 /// Resolves Content-Length and Transfer-Encoding, or `None` when neither is
 /// present (RFC 9112, section 6).
-fn framing_fields(headers : @http.Headers) -> Framing? raise ParseError {
+fn framing_fields(headers : @mttp.Headers) -> Framing? raise ParseError {
   let lengths = headers.get_all("content-length")
   let encodings = headers.get_all("transfer-encoding")
   if !lengths.is_empty() && !encodings.is_empty() {
@@ -70,7 +70,7 @@ fn content_length(value : String) -> Int64 raise ParseError {
 ///
 /// ```mbt check
 /// test {
-///   let chunked = @http.Headers::of([("Transfer-Encoding", "chunked")])
+///   let chunked = @mttp.Headers::of([("Transfer-Encoding", "chunked")])
 ///   assert_eq(@h1.request_framing(chunked), Chunked)
 ///   let both = chunked.add("Content-Length", "5")
 ///   try @h1.request_framing(both) catch {
@@ -80,7 +80,7 @@ fn content_length(value : String) -> Int64 raise ParseError {
 ///   }
 /// }
 /// ```
-pub fn request_framing(headers : @http.Headers) -> Framing raise ParseError {
+pub fn request_framing(headers : @mttp.Headers) -> Framing raise ParseError {
   framing_fields(headers).unwrap_or(NoBody)
 }
 
@@ -91,9 +91,9 @@ pub fn request_framing(headers : @http.Headers) -> Framing raise ParseError {
 /// `NoBody`, and a response with neither field reads `UntilClose`. After a
 /// successful CONNECT the caller hands the remaining bytes to the tunnel.
 pub fn response_framing(
-  headers : @http.Headers,
+  headers : @mttp.Headers,
   status~ : Int32,
-  meth~ : @http.Method = Get,
+  meth~ : @mttp.Method = Get,
 ) -> Framing raise ParseError {
   let framing = framing_fields(headers)
   if has_no_body(status, meth) {
@@ -106,7 +106,7 @@ pub fn response_framing(
 /// Whether a response never has a body, whatever its fields say (RFC 9112,
 /// section 6.3): a response to HEAD, a 1xx, 204 or 304, and a 2xx to
 /// CONNECT.
-fn has_no_body(status : Int32, meth : @http.Method) -> Bool {
+fn has_no_body(status : Int32, meth : @mttp.Method) -> Bool {
   meth == Head ||
   status / 100 == 1 ||
   status == 204 ||
