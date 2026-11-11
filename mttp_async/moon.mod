@@ -1,6 +1,6 @@
-name = "gaato/http-async"
+name = "gaato/mttp_async"
 
-version = "0.6.0"
+version = "0.1.0"
 
 license = "Apache-2.0"
 
@@ -8,9 +8,9 @@ readme = "README.md"
 
 repository = "https://github.com/gaato/mttp"
 
-keywords = [ "http", "async", "client", "server", "fetch" ]
+keywords = [ "http", "client", "server", "retry", "openapi", "async" ]
 
-description = "moonbitlang/core/async adapters for gaato/http: TCP and TLS connections, a client backend, a server listener, content codings and a JS fetch backend."
+description = "HTTP for MoonBit apps that outgrow the built-in client: one module with a ready client (retries with a budget, deadlines, redirects, decompression) and a server, on moonbitlang/core/async for native, wasm and js. Libraries depend on gaato/mttp instead."
 
 source = "src"
 

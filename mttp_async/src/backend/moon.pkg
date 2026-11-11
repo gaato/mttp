@@ -2,14 +2,14 @@ import {
   "gaato/mttp",
   "gaato/mttp/rt",
   "gaato/mttp/h1client",
-  "gaato/http-async" @http_async,
-  "gaato/http-async/runtime",
+  "gaato/mttp_async/trust" @http_async,
+  "gaato/mttp_async/runtime",
 }
 
 #cfg(not(target="js"))
 import {
-  "gaato/http-async/conn",
-  "gaato/http-async/codings",
+  "gaato/mttp_async/conn",
+  "gaato/mttp_async/codings",
   "moonbitlang/core/env",
 }
 
@@ -28,7 +28,7 @@ import {
 import {
   "moonbitlang/core/encoding/utf8",
   "gaato/mttp/h1server",
-  "gaato/http-async/internal/socketconn",
+  "gaato/mttp_async/internal/socketconn",
   "moonbitlang/core/async/socket",
   "moonbitlang/core/async/tls",
 } for "test"

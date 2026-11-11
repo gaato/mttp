@@ -1,11 +1,11 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/http-async/backend"
+package "gaato/mttp_async/backend"
 
 import {
-  "gaato/http-async",
   "gaato/mttp",
   "gaato/mttp/h1client",
   "gaato/mttp/rt",
+  "gaato/mttp_async/trust",
 }
 
 // Values
@@ -18,7 +18,7 @@ pub struct AsyncBackend {
 }
 pub fn AsyncBackend::close(Self) -> Unit
 pub fn AsyncBackend::idle_connections(Self) -> Int32
-pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust? : @http-async.Trust, clock? : &@rt.Clock, timer? : &@rt.Timer) -> Self
+pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust? : @trust.Trust, clock? : &@rt.Clock, timer? : &@rt.Timer) -> Self
 pub async fn AsyncBackend::send(Self, @mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError
 pub impl @mttp.Backend for AsyncBackend
 

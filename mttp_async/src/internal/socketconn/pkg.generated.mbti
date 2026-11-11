@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/http-async/internal/socketconn"
+package "gaato/mttp_async/internal/socketconn"
 
 import {
   "gaato/mttp",

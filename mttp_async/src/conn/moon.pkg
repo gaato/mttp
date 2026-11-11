@@ -1,8 +1,8 @@
 import {
-  "gaato/http-async" @http_async,
+  "gaato/mttp_async/trust" @http_async,
   "gaato/mttp",
   "gaato/mttp/rt",
-  "gaato/http-async/internal/socketconn",
+  "gaato/mttp_async/internal/socketconn",
   "moonbitlang/core/async/io",
   "moonbitlang/core/async/socket",
   "moonbitlang/core/async/tls",
@@ -10,7 +10,7 @@ import {
 
 import {
   "gaato/mttp/sim",
-  "gaato/http-async/runtime",
+  "gaato/mttp_async/runtime",
   "moonbitlang/core/async",
 } for "test"
 

@@ -28,7 +28,7 @@ driver does; the package itself does not need the experimental opt-in.
 `check_conn`, `check_coordination_contract`, `check_body_stream_contract` and
 `check_backend_contract` check the rules of the repository's `CONTRACT.md`
 (https://github.com/gaato/mttp/blob/main/CONTRACT.md) on any implementation:
-the doubles here pass them in this package's tests, and gaato/http-async's
+the doubles here pass them in this package's tests, and gaato/mttp_async's
 runtime adapters pass the same checks. Each raises `Failure` naming the first
 rule it saw broken.
 

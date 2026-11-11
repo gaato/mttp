@@ -154,7 +154,7 @@ pub fn transport_error(error : Error) -> @mttp.TransportError {
 }
 
 ///|
-/// Accepted sockets cross the runtime boundary only inside http-async.
+/// Accepted sockets cross the runtime boundary only inside mttp_async.
 pub fn from_tcp(tcp : @socket.Tcp) -> &@rt.Conn {
   SocketConn::{
     reader: tcp,

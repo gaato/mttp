@@ -46,7 +46,7 @@ the opaque environment is then available through the `env` attribute. Other
 hosts leave it absent. The association uses a WeakMap and does not modify the
 Request object.
 
-See the [host adapters](https://github.com/gaato/mttp/tree/main/http-async/hosts)
+See the [host adapters](https://github.com/gaato/mttp/tree/main/mttp_async/hosts)
 for Workers, Fastly, Vercel, Node, Deno, Bun and Lambda Function URLs. Lambda
 passes `undefined` for absent or null event bodies, preserving `Body::Empty`;
 a present empty string remains a body stream. The behavior

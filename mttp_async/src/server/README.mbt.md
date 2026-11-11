@@ -47,6 +47,6 @@ even after the response ends; retained schedulers do nothing after shutdown.
 Applications own the number and duration of jobs they schedule.
 
 The listener's immutable lifecycle decisions live in
-`http-async/internal/control`, with separate resource tables in this adapter.
+`mttp_async/internal/control`, with separate resource tables in this adapter.
 MoonBit's module visibility prevents importing `http/internal/control` here;
 the listener uses the same transition rules and snapshot tests locally.

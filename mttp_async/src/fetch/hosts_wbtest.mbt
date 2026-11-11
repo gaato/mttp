@@ -4,7 +4,7 @@ extern "js" fn check_hosts() -> @js_async.Promise[Unit] =
   #|   const {resolve} = await import('node:path');
   #|   const {pathToFileURL} = await import('node:url');
   #|   const {existsSync} = await import('node:fs');
-  #|   const root = existsSync(resolve('hosts/adapters.mjs')) ? resolve('hosts') : resolve('http-async/hosts');
+  #|   const root = existsSync(resolve('hosts/adapters.mjs')) ? resolve('hosts') : resolve('mttp_async/hosts');
   #|   const {workers, fastly, vercel, deno, bun, node} = await import(pathToFileURL(resolve(root, 'adapters.mjs')).href);
   #|   const {lambda} = await import(pathToFileURL(resolve(root, 'lambda.mjs')).href);
   #|   const check = (condition, message) => { if (!condition) throw new Error(message); };
@@ -123,7 +123,7 @@ extern "js" fn check_bodyless_lambda(
   #|   const {resolve} = await import('node:path');
   #|   const {pathToFileURL} = await import('node:url');
   #|   const {existsSync} = await import('node:fs');
-  #|   const root = existsSync(resolve('hosts/lambda.mjs')) ? resolve('hosts') : resolve('http-async/hosts');
+  #|   const root = existsSync(resolve('hosts/lambda.mjs')) ? resolve('hosts') : resolve('mttp_async/hosts');
   #|   const {lambda} = await import(pathToFileURL(resolve(root, 'lambda.mjs')).href);
   #|   const entry = lambda(adapter);
   #|   const event = {headers: {}, rawPath: '/', requestContext: {domainName: 'example.test', http: {method: 'POST'}}};
@@ -152,7 +152,7 @@ extern "js" fn check_prefetch_hosts(
   #|   const {resolve} = await import('node:path');
   #|   const {pathToFileURL} = await import('node:url');
   #|   const {existsSync} = await import('node:fs');
-  #|   const root = existsSync(resolve('hosts/adapters.mjs')) ? resolve('hosts') : resolve('http-async/hosts');
+  #|   const root = existsSync(resolve('hosts/adapters.mjs')) ? resolve('hosts') : resolve('mttp_async/hosts');
   #|   const {workers, fastly, vercel, node, deno, bun} = await import(pathToFileURL(resolve(root, 'adapters.mjs')).href);
   #|   const {lambda} = await import(pathToFileURL(resolve(root, 'lambda.mjs')).href);
   #|   for (const [body, headers, expected] of [['abc', {}, 413], ['x', {'content-length': '0'}, 400]]) {

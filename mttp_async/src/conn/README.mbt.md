@@ -16,7 +16,7 @@ test "choose TLS trust without exposing a runtime type" {
 }
 ```
 
-`Trust` is defined in the cross-target `gaato/http-async` root package.
+`Trust` is defined in the cross-target `gaato/mttp_async` root package.
 `Trust::System` is the default and uses system certificate roots.
 `Trust::Insecure` disables verification. `Trust::PemFile(path)` trusts exactly
 the certificates in that PEM file, **replacing** system roots, matching core's

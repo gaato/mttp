@@ -1,10 +1,10 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/http-async/conn"
+package "gaato/mttp_async/conn"
 
 import {
-  "gaato/http-async",
   "gaato/mttp",
   "gaato/mttp/rt",
+  "gaato/mttp_async/trust",
 }
 
 // Values
@@ -16,7 +16,7 @@ pub struct TcpDialer {
   // private fields
 }
 pub async fn TcpDialer::connect(Self, host~ : String, port~ : Int32) -> &@rt.Conn raise @mttp.TransportError
-pub fn TcpDialer::new(trust? : @http-async.Trust) -> Self
+pub fn TcpDialer::new(trust? : @trust.Trust) -> Self
 pub async fn TcpDialer::start_tls(Self, &@rt.Conn, host~ : String) -> &@rt.Conn raise @mttp.TransportError
 pub impl @rt.Dialer for TcpDialer
 

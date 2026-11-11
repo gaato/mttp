@@ -30,7 +30,7 @@ used verbatim, including `ProxyConfig::none()` to disable environment
 proxies. To combine custom settings with environment proxy lookup, set
 `proxy: @h1client.ProxyConfig::from_env(@env.get_env_var)` in the config.
 The engine handles proxy authentication, CONNECT and NO_PROXY. `trust`
-accepts the root package's `gaato/http-async.Trust`, defaulting to `System`.
+accepts the root package's `gaato/mttp_async.Trust`, defaulting to `System`.
 `PemFile` replaces system roots; combine roots in that file when necessary.
 
 The optional `clock` and `timer` arguments accept `gaato/http/rt` ports on

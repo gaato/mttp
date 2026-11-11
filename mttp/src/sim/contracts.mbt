@@ -1,5 +1,5 @@
 // The shared contract checks of CONTRACT.md. Each runs against the doubles
-// of this package and against gaato/http-async's adapters, so a rule is
+// of this package and against gaato/mttp_async's adapters, so a rule is
 // tested the same way on both sides. A check raises `Failure` naming the
 // first rule it saw broken; an unexpected `TransportError` from the code
 // under test propagates as it is. The checks use only the ports, so they run

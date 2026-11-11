@@ -1,5 +1,5 @@
 // Generated using `moon info`, DON'T EDIT IT
-package "gaato/http-async/runtime"
+package "gaato/mttp_async/runtime"
 
 import {
   "gaato/mttp",

@@ -1,26 +1,18 @@
 ///|
-async fn main {
+fn main {
   let args = @env.args()
   guard args.length() == 2 else {
     println("usage: get <url>")
     @env.exit(2)
   }
-  let backend = @backend.AsyncBackend::new()
-  defer backend.close()
-  let response = backend.send(@mttp.Request::get(args[1]), {
-    timeout_ms: Some(30000),
-    body: Exchange(max_bytes=64 * 1024 * 1024),
+  @mttp_async.run(async fn() {
+    let client = @mttp_async.client()
+    defer client.close()
+    let reply = client.send(@mttp_async.get(args[1]))
+    println("status: \{reply.status}")
+    match reply.body {
+      Ok(text) => println(text)
+      Err(_) => println("no text body: the request did not succeed")
+    }
   })
-  defer response.close()
-  println("status: \{response.status}")
-  for (name, value) in response.headers.iter() {
-    println("\{name}: \{value}")
-  }
-  let length = match response.body {
-    Empty => 0
-    Bytes(bytes) => bytes.length()
-    Stream(cell) => @mttp.read_bounded(cell.take(), 64 * 1024 * 1024).length()
-    @mttp.Body::.. => abort("unsupported body kind")
-  }
-  println("decoded body length: \{length}")
 }
