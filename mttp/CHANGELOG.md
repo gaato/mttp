@@ -84,7 +84,9 @@ never does.
   reconnect. `h1server.serve_conn` cuts such a stream once `stopping` holds,
   also while its producer waits (asking `stopping` every 250 ms then): it
   closes the body, ends a chunked body with its last chunk and closes the
-  connection. `endpoint.sse_out` sets it on the responses it builds.
+  connection. Its producer is not bound by `body_timeout_ms`, so an event
+  stream may stay silent until its next event; writes to the client keep
+  that deadline. `endpoint.sse_out` sets it on the responses it builds.
 - `Router::must`: `Router::new` for definitions known to be right, such as a
   top-level `let` in an app or a JavaScript entry, where an error cannot be
   raised; a definition problem aborts with the problems.

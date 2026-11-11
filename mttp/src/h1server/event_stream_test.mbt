@@ -74,3 +74,39 @@ test "the head of an event stream is sent before its producer gives an event" {
   assert_eq(head.headers.get("content-type"), Some("text/event-stream"))
   assert_eq(h.errors.length(), 0)
 }
+
+///|
+test "an event stream silent longer than body_timeout_ms still delivers its next event" {
+  let h = Harness::new()
+  let pulls = Ref(0)
+  let events = @endpoint.endpoint
+    .get("/events")
+    .output(@endpoint.sse_out(@schema.jint))
+    .serve_public(_ => {
+      Ok(
+        @endpoint.EventStream::from_pull(
+          () => {
+            pulls.val += 1
+            if pulls.val == 1 {
+              // A slow upstream: ten body deadlines without an event.
+              h.driver.sleep(300)
+              Some(1)
+            } else {
+              None
+            }
+          },
+          () => (),
+        ),
+      )
+    })
+  let out = h.exchange(
+    @mttp.encode_utf8(get("/events")),
+    request => {
+      events.dispatch(request, Map([]), @endpoint.DispatchContext::new())
+    },
+    limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 30, },
+  )
+  assert_true(out.has_prefix("HTTP/1.1 200 "))
+  assert_true(out.has_suffix("3\r\n:\n\n\r\n9\r\ndata: 1\n\n\r\n0\r\n\r\n"))
+  assert_eq(h.errors.length(), 0)
+}

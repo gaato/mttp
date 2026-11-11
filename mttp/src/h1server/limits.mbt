@@ -19,9 +19,10 @@ pub(all) struct ServerLimits {
   /// Waiting for a request head and reading it, from the end of the
   /// previous exchange (or the start of the connection). At least 1.
   header_timeout_ms : Int32
-  /// Reading one request body, from its first pull to its end, and each
-  /// write of the response and each read of a streamed response body. At
-  /// least 1.
+  /// Reading one request body, from its first pull to its end, each write
+  /// of the response, and each read of a streamed response body unless the
+  /// response sets `@mttp.close_on_shutdown` (an event stream waits for its
+  /// next event for any time; shutdown ends it). At least 1.
   body_timeout_ms : Int32
   /// One request head, the start line, empty lines before it and the final
   /// CRLF CRLF included. At least 1.

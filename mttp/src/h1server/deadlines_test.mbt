@@ -367,3 +367,81 @@ impl @mttp.BodyStream for Stall with fn close(self) {
     self.closes.val += 1
   }
 }
+
+///|
+/// A response stream that gives `first`, stays silent for `quiet_ms`, then
+/// gives `second` and ends.
+priv struct Quiet {
+  driver : @driver.Driver
+  quiet_ms : Int32
+  mut step : Int32
+}
+
+///|
+impl @mttp.BodyStream for Quiet with fn read_some(self) {
+  self.step += 1
+  match self.step {
+    1 => Some(b"first")
+    2 => {
+      self.driver.sleep(self.quiet_ms)
+      Some(b"second")
+    }
+    _ => None
+  }
+}
+
+///|
+impl @mttp.BodyStream for Quiet with fn close(_) {
+  ()
+}
+
+///|
+/// Serves one GET answered with a `Quiet` stream, silent for 100 ms under a
+/// 30 ms body deadline, and returns what the client read.
+fn Harness::quiet_reply(self : Harness, marked~ : Bool) -> String raise {
+  let mut out = ""
+  self.run(() => {
+    let (client, task) = self.serve(
+      _ => {
+        let body : @mttp.Body = Stream(
+          @mttp.StreamBody::new(Quiet::{
+            driver: self.driver,
+            quiet_ms: 100,
+            step: 0,
+          }),
+        )
+        if marked {
+          cut_at_shutdown(body)
+        } else {
+          @mttp.Response::new(200, body~)
+        }
+      },
+      limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 30, },
+    )
+    client.send(get("/"))
+    client.conn.shutdown_write()
+    out = client.rest()
+    ignore(task.wait())
+    client.conn.close()
+  })
+  out
+}
+
+///|
+test "a close_on_shutdown stream may stay silent longer than body_timeout_ms" {
+  let h = Harness::new()
+  let out = h.quiet_reply(marked=true)
+  // An event stream waits for its next event; shutdown, not the body
+  // deadline, ends it.
+  assert_true(out.has_prefix("HTTP/1.1 200 "))
+  assert_true(out.has_suffix("5\r\nfirst\r\n6\r\nsecond\r\n0\r\n\r\n"))
+  assert_eq(h.errors.length(), 0)
+}
+
+///|
+test "an unmarked stream silent longer than body_timeout_ms is cut off" {
+  let h = Harness::new()
+  let out = h.quiet_reply(marked=false)
+  assert_true(out.has_suffix("5\r\nfirst\r\n"))
+  assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
+}

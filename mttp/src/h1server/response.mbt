@@ -2,9 +2,10 @@
 // method (`write_response_head` with `meth~` keeps HEAD, 204 and 304
 // bodiless), a stream's first read before the head so a failing producer can
 // still be answered with 500, and every write sliced to 64 KiB under the
-// body deadline. A stream marked `@mttp.close_on_shutdown` is cut once
-// `stopping` holds: it is no longer pulled, and the response ends where the
-// stream had reached.
+// body deadline. A stream marked `@mttp.close_on_shutdown` is long-lived by
+// design: its producer may stay silent for any time, since shutdown, not the
+// body deadline, ends it. It is cut once `stopping` holds: it is no longer
+// pulled, and the response ends where the stream had reached.
 
 ///|
 /// Writes `response` to a request of `meth` and closes its body; `true` when
@@ -129,40 +130,40 @@ fn invalid_response(detail : String) -> @mttp.TransportError {
 let shutdown_poll_ms : Int32 = 250
 
 ///|
-/// The next piece of a streamed response, within the body deadline. With
-/// `cut`, `None` also once `stopping` holds, before the pull or while it
-/// waits (the pull is cancelled then), and `stopped` records it.
+/// The next piece of a streamed response. Without `cut`, within the body
+/// deadline. With `cut`, the pull may wait for any time (an event stream
+/// stays silent until it has an event; writes to the client keep their
+/// deadline), and it gives `None` once `stopping` holds, before the pull or
+/// while it waits (the pull is cancelled then), and `stopped` records it.
 async fn Session::produce(
   self : Session,
   reader : &@mttp.BodyStream,
   cut~ : Bool,
   stopped~ : Ref[Bool],
 ) -> Bytes? raise @mttp.TransportError {
-  let limit = self.limits.body_timeout_ms
-  let expired = timeout(limit, Body, "the response body producer")
   if !cut {
+    let limit = self.limits.body_timeout_ms
+    let expired = timeout(limit, Body, "the response body producer")
     return within(self.wire.timer, limit, expired, () => reader.read_some())
   }
   if (self.stopping)() {
     stopped.val = true
     return None
   }
-  within(self.wire.timer, limit, expired, () => {
-    let mut next = None
-    self.coordination.supervise(primary=() => next = reader.read_some(), monitor=() => {
-      while !(self.stopping)() {
-        self.clock.sleep(shutdown_poll_ms)
-      }
-      stopped.val = true
-      // Cancels the pull; never leaves `produce`.
-      raise @mttp.TransportError(
-        kind=Closed,
-        phase=Body,
-        detail="the server is shutting down",
-      )
-    }) catch {
-      error => if stopped.val { return None } else { raise error }
+  let mut next = None
+  self.coordination.supervise(primary=() => next = reader.read_some(), monitor=() => {
+    while !(self.stopping)() {
+      self.clock.sleep(shutdown_poll_ms)
     }
-    next
-  })
+    stopped.val = true
+    // Cancels the pull; never leaves `produce`.
+    raise @mttp.TransportError(
+      kind=Closed,
+      phase=Body,
+      detail="the server is shutting down",
+    )
+  }) catch {
+    error => if stopped.val { return None } else { raise error }
+  }
+  next
 }

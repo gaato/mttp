@@ -45,6 +45,14 @@ second), its `close` runs once, a chunked body ends with its last chunk and
 the connection closes. Its clients reconnect, as event-stream clients do.
 `endpoint.sse_out` and `sse_body_out` set it on the responses they build.
 
+Such a stream may also stay silent for as long as it likes: the wait for its
+next piece is not bounded by `body_timeout_ms`, so an event stream fed by a
+slow upstream (an LLM, a queue) keeps its connection. Each write to the
+client still has that deadline, so a client that stops reading is dropped.
+The server sends no heartbeat of its own. Behind a reverse proxy, the proxy's
+read timeout (nginx's `proxy_read_timeout`, 60 s by default) still closes an
+idle stream; an app that needs to stay under it sends an event periodically.
+
 The listener sets `SO_REUSEADDR`, as Go and Node do, so a restart (a systemd
 `Restart=`, a deploy) binds again while the previous process's connections
 are still in TIME-WAIT. On Linux it never lets a second listener take a port

@@ -82,8 +82,12 @@ test "serve a request" {
   (504). A timeout before the response head is 408 only when a request-body
   pull was in progress or already failed; an independent response producer
   timing out becomes 500 and reaches `on_error`, even with an unread body.
-  A response stream that pauses longer than `body_timeout_ms` ends
-  its connection, so long-polling handlers raise that limit.
+  A response stream that pauses longer than `body_timeout_ms` ends its
+  connection, unless the response sets `@mttp.close_on_shutdown` (every
+  event stream from `endpoint.sse_out` does): such a stream may stay silent
+  for any time, since shutdown ends it, while each write to the client
+  keeps the deadline, so a client that stops reading is still dropped.
+  Other long-polling handlers raise the limit.
 - **Failures.** Before a response head is written, a body failure replaces
   the handler's response with its own status, even when the handler caught
   it. An invalid response or a producer failure before the head becomes
