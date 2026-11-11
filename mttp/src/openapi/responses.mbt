@@ -10,12 +10,44 @@ let problem_schema : Json = {
 }
 
 ///|
+/// The Media Type Object member that holds the schema of each item of a
+/// sequential media type. OpenAPI 3.2 names it `itemSchema`; the OpenAPI
+/// Initiative registers this extension for documents of earlier versions.
+/// Moving the documents to 3.2 renames this member.
+let item_schema_extension = "x-oai-itemSchema"
+
+///|
+/// Items of a representation without an item schema are unconstrained, so
+/// the union keeps an item schema only when both sides have one.
+fn union_item_schemas(old : Json?, new : Json?) -> Json? {
+  match (old, new) {
+    (Some(old), Some(new)) if old == new => Some(old)
+    (Some(old), Some(new)) => Some({ "anyOf": [old, new] })
+    _ => None
+  }
+}
+
+///|
+fn with_item_schema(
+  media : @apispec.MediaTypeObject,
+  item_schema : Json?,
+) -> @apispec.MediaTypeObject {
+  let extensions = media.extensions.copy()
+  match item_schema {
+    Some(item_schema) => extensions[item_schema_extension] = item_schema
+    None => extensions.remove(item_schema_extension)
+  }
+  { ..media, extensions, }
+}
+
+///|
 fn add_response(
   responses : Map[String, @apispec.ResponseObject],
   key : String,
   description : String,
   media : String?,
   schema : Json?,
+  item_schema : Json?,
   headers : Map[String, @apispec.HeaderObject],
 ) -> Unit {
   let existing = responses.get(key)
@@ -24,12 +56,23 @@ fn add_response(
   if media is Some(media) {
     let schema = schema.unwrap_or({})
     content[media] = match content.get(media) {
-      None => @apispec.MediaTypeObject::new(schema~)
-      Some(old) if old.schema == Some(schema) => old
+      None =>
+        with_item_schema(@apispec.MediaTypeObject::new(schema~), item_schema)
       Some(old) =>
-        @apispec.MediaTypeObject::new(schema={
-          "anyOf": [old.schema.unwrap_or({}), schema],
-        })
+        with_item_schema(
+          {
+            ..old,
+            schema: if old.schema == Some(schema) {
+              old.schema
+            } else {
+              Some({ "anyOf": [old.schema.unwrap_or({}), schema] })
+            },
+          },
+          union_item_schemas(
+            old.extensions.get(item_schema_extension),
+            item_schema,
+          ),
+        )
     }
   }
   let merged = previous.headers.copy()
@@ -70,17 +113,26 @@ fn merge_wildcard_content(
       // encoder can also produce those media types, so retain its schema in
       // each specific entry instead of losing it to OpenAPI's selection.
       for media, content in response.content.copy() {
-        if media != "*/*" && content.schema != wildcard.schema {
-          response.content[media] = {
-            ..content,
-            schema: Some({
-              "anyOf": [
-                content.schema.unwrap_or({}),
-                wildcard.schema.unwrap_or({}),
-              ],
-            }),
-          }
+        if media == "*/*" {
+          continue
         }
+        let schema = if content.schema == wildcard.schema {
+          content.schema
+        } else {
+          Some({
+            "anyOf": [
+              content.schema.unwrap_or({}),
+              wildcard.schema.unwrap_or({}),
+            ],
+          })
+        }
+        response.content[media] = with_item_schema(
+          { ..content, schema, },
+          union_item_schemas(
+            content.extensions.get(item_schema_extension),
+            wildcard.extensions.get(item_schema_extension),
+          ),
+        )
       }
     }
   }

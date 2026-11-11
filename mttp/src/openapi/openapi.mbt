@@ -193,6 +193,7 @@ pub fn to_openapi(
         variant.description
       }
       let schema = variant.schema.map(s => s.reference(schemas))
+      let item_schema = variant.item_schema.map(s => s.reference(schemas))
       for key in keys {
         let bodyless = key == "204" || key == "304"
         add_response(
@@ -209,6 +210,11 @@ pub fn to_openapi(
           } else {
             schema
           },
+          if bodyless {
+            None
+          } else {
+            item_schema
+          },
           headers,
         )
       }
@@ -220,6 +226,7 @@ pub fn to_openapi(
         @http.reason_phrase(status),
         Some("application/problem+json"),
         Some({ "$ref": "#/components/schemas/Problem" }),
+        None,
         {},
       )
     }

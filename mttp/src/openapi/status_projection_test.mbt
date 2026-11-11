@@ -615,10 +615,11 @@ test "dynamic SSE status projects wire schemas and closes suppressed streams" {
       )
       assert_eq(
         selected.content["text/event-stream"].schema,
-        Some({
-          "type": "string",
-          "x-mttp-sse-data-schema": @schema.jint.schema().json,
-        }),
+        Some({ "type": "string" }),
+      )
+      assert_eq(
+        selected.content["text/event-stream"].extensions.get("x-oai-itemSchema"),
+        Some(sse_item_schema(@schema.jint.schema().json)),
       )
       assert_eq(
         selected.content.contains("application/problem+json"),

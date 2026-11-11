@@ -43,6 +43,7 @@ Made by the user on 2026-11-08. They supersede the 2026-10-24 rows marked † in
 | PRs | **PR #2 is superseded** by a stack of PRs from `main`, each ≲ 5k lines and passing every gate on its own (§7.1). They merge after the gates pass and the Codex review findings are resolved. PR #2 is closed with a link to the stack; its branch stays as the reference. Nothing is published from the PRs; publishing is a separate, owner-approved train (§8.2). | §0.2 "PRs" (kept in spirit) |
 | Rewrite or keep | Chosen per component by quality, from "move as is" to "rewrite" (§7.2). Starting from zero is allowed where the reference is weak. | — |
 | Toolchain | 0.10.20+65efd5b93, pinned. The `%async` intrinsics used by the Driver exist in 0.10.20 and are confined to one file (§5.6). | §5.6 toolchain pins |
+| OpenAPI version | (2026-11-11) **3.1 now, ready for 3.2.** Code generators cannot read 3.2 yet: openapi-generator's parser, swagger-parser 2.1.48, rejects a 3.2 document, and Redoc reads up to 3.1. A document other languages cannot generate clients from loses the point of one definition for server, client and docs. Ready for 3.2 means each sequential item is already described in 3.2's shape: an SSE event is `x-oai-itemSchema` (the OpenAPI Initiative's registered extension for `itemSchema` before 3.2) with string `event`/`data`/`id`, integer `retry` and the JSON payload as `contentSchema` of `data`. Moving to 3.2 renames that member to `itemSchema` and changes the version field. | P-11 (3.1-only needs-user-input), the OpenAPI half of open question 2 (§12), `x-mttp-sse-data-schema` |
 
 ### 0.2 Original decisions (2026-10-24)
 
@@ -820,10 +821,10 @@ Projection rules (verified in `wf3/rev` unless marked):
 | Framework statuses | Default router policy adds 400, 404, 405 and 500 per endpoint as `application/problem+json` with `$ref: #/components/schemas/Problem`, plus 401 for security-stage Auth atoms, 413 for body consumers and 415 for typed bodies. Ordinary-input Auth failures use 400. Framework representations merge with declared fixed and dynamic variants; a declared 404 and the router's 404 share one response. Custom response policies must document any additional representations themselves. |
 | Schemas | Component schemas are the union of every `defs`. (new) Two different definitions under one name are refused, and every `$ref` must resolve (conformance check). |
 | Response headers | `Variant::and_header`/`fixed_header` names appear under `responses.<status>.headers`. Differing header schemas use `anyOf`; a header is required only when every merged representation of that status, including framework problems, supplies it. Otherwise an omitted header would incorrectly invalidate a real response. |
-| Wire schemas | Fixed headers include their constant values. SSE is a framed string with the JSON payload schema under `x-mttp-sse-data-schema` (including checked references), rather than pretending the entire wire body is a JSON value. Form fields admit scalar or repeated string values. Response Content-Type comes from the representation, since OpenAPI ignores it as a Header Object. |
+| Wire schemas | Fixed headers include their constant values. SSE is a framed string (`schema`) whose events are described one by one in OpenAPI 3.2's item shape under the Media Type Object's `x-oai-itemSchema` (§0.1, references checked), rather than pretending the entire wire body is a JSON value. Item schemas of one media type merge with `anyOf`; a representation without one (a dynamic media type, for example) leaves the items unconstrained, so the merge drops it. Form fields admit scalar or repeated string values. Response Content-Type comes from the representation, since OpenAPI ignores it as a Header Object. |
 | Security | All Auth atoms of one security input form **one** requirement object (AND). An all-optional security input adds `{}`. (new) `any_of` groups give OR; OAuth2 (flows, scopes, required scopes) and OpenIdConnect are added later. |
 | Signatures | A `signature_header` atom is a required header parameter, never an invented scheme type. |
-| Version | OpenAPI 3.1 only **[needs-user-input]**. |
+| Version | OpenAPI 3.1, ready for 3.2 (§0.1). |
 
 
 ### 4.10 driver, sim, testing and endpoint/testkit
@@ -1403,7 +1404,7 @@ The log of 2026-10-24, with statuses updated by §0.1. Ids are kept so that §10
 | P-08 | Client interpreter on `Client`: selection by (status, media type); reject inside the attempt; relative targets; sync half internal. | proposed | I-02, I-03, I-04, S-07; verified. |
 | P-09 | Router-as-Backend isolates attributes; `testkit.when_endpoint` with async raising respond; one checker. | proposed | I-09, I-10, SC-17, S-04g; verified. |
 | P-10 | Schema with `defs`/`$ref`, `recursive`, `tagged`, objectN up to 8; ECMA `pattern` translator. | proposed (translator needs-prototype) | SC-01, SC-11 verified; SC-02. |
-| P-11 | apispec/openapi at v0.4; merge rules; AND security; signatures as header parameters; OpenAPI 3.1 only. | proposed (3.1-only needs-user-input) | I-15, SC-04, SC-05; verified. |
+| P-11 | apispec/openapi at v0.4; merge rules; AND security; signatures as header parameters; OpenAPI 3.1 only. | proposed (version decided in §0.1) | I-15, SC-04, SC-05; verified. |
 | P-12 | Codegen: tools/gen (Python) phase 1 now; mttp-gen dropped until a consumer exists. | proposed | S-07, R-11. |
 | P-13 | Header outputs (`and_header`, `fixed_header`); `and_status`, `set_cookie` at v0.3; WWW-Authenticate on declared 401s. | proposed | SC-03, CM-13; header output verified. |
 | T-01 | `run_sync` in one file; its package allows `unused_async`. | decided: `run_sync` lives in `gaato/http/driver` (§4.10) | S-14; verified. |
@@ -1598,5 +1599,5 @@ Answered: Q1–Q4, Q6–Q8, Q11 and Q12 in §0.2; Q3 again, Q5, Q6, Q14, Q15 and
 Still open:
 
 1. **SDK phase 2.** Should openai, anthropic and github emit Endpoint values after phase 1? Proposed: decide after the train; no SDK emits endpoints before then.
-2. **Protocols.** OpenAPI 3.1 only and no AsyncAPI (proposed)? HTTP/1.1 only is settled (no ALPN, F67).
+2. **Protocols.** No AsyncAPI (proposed)? The OpenAPI version is decided in §0.1; HTTP/1.1 only is settled (no ALPN, F67).
 3. **Upstream reports** about core/async/http (head bound, CL+TE rejection, status lines without a reason phrase): an external operation, handled separately, after checking overlap with the earlier async reports.

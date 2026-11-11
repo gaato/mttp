@@ -135,7 +135,7 @@ test "typed output headers and separate Set-Cookie fields match the projected he
 }
 
 ///|
-test "SSE documents the framed string separately from the JSON event payload" {
+test "SSE documents the framed string and each event in the OpenAPI 3.2 item shape" {
   let codec = @schema.object1(
     "AuditEvent",
     @schema.field("value", @schema.jint, (n : Int32) => n),
@@ -157,12 +157,11 @@ test "SSE documents the framed string separately from the JSON event payload" {
     assert_true(reply.body is Ok(Ok(_)))
   })
   assert_eq(values, [1, 2])
+  let media = spec.paths["/events"].operations["get"].responses["200"].content["text/event-stream"]
+  assert_eq(media.schema, Some({ "type": "string" }))
   assert_eq(
-    spec.paths["/events"].operations["get"].responses["200"].content["text/event-stream"].schema,
-    Some({
-      "type": "string",
-      "x-mttp-sse-data-schema": { "$ref": "#/components/schemas/AuditEvent" },
-    }),
+    media.extensions.get("x-oai-itemSchema"),
+    Some(sse_item_schema({ "$ref": "#/components/schemas/AuditEvent" })),
   )
   assert_true(spec.components.schemas.contains("AuditEvent"))
   assert_eq(@openapi.check_references(spec), [])
@@ -187,4 +186,42 @@ test "SSE documents the framed string separately from the JSON event payload" {
   } noraise {
     _ => fail("SSE payload reference was not checked")
   }
+}
+
+///|
+/// The item schema OpenAPI 3.2 gives a text/event-stream event, with the
+/// JSON payload described as the content of the data string.
+fn sse_item_schema(payload : Json) -> Json {
+  {
+    "type": "object",
+    "required": ["data"],
+    "properties": {
+      "event": { "type": "string" },
+      "data": {
+        "type": "string",
+        "contentMediaType": "application/json",
+        "contentSchema": payload,
+      },
+      "id": { "type": "string" },
+      "retry": { "type": "integer", "minimum": 0 },
+    },
+  }
+}
+
+///|
+test "a dynamic media representation leaves SSE items unconstrained" {
+  let ep = @endpoint.endpoint
+    .get("/mixed")
+    .output(@endpoint.sse_out(@schema.jint))
+    .errors(@endpoint.body_out().and_status())
+  let content = project(ep.doc()).paths["/mixed"].operations["get"].responses["200"].content
+  // body_out can also send text/event-stream, with items of any shape.
+  assert_eq(
+    content["text/event-stream"].extensions.get("x-oai-itemSchema"),
+    None,
+  )
+  assert_eq(
+    content["text/event-stream"].schema,
+    Some({ "anyOf": [{ "type": "string" }, @schema.raw_bytes.schema().json] }),
+  )
 }

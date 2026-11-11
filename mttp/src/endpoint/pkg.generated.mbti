@@ -332,11 +332,12 @@ pub struct VariantDoc {
   dynamic_media : Bool
   media_type : String?
   schema : @schema.Schema?
+  item_schema : @schema.Schema?
   headers : Array[String]
   header_schemas : Map[String, @schema.Schema]
   description : String
 }
-pub fn VariantDoc::new(Int32, media_type? : String, schema? : @schema.Schema, headers? : Array[String], description? : String, header_schemas? : Map[String, @schema.Schema], dynamic_status? : Bool, dynamic_media? : Bool) -> Self
+pub fn VariantDoc::new(Int32, media_type? : String, schema? : @schema.Schema, item_schema? : @schema.Schema, headers? : Array[String], description? : String, header_schemas? : Map[String, @schema.Schema], dynamic_status? : Bool, dynamic_media? : Bool) -> Self
 
 // Type aliases
 
