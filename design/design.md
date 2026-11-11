@@ -696,9 +696,11 @@ pub fn[T, H] Variant::and_header(self : Variant[T], name : String, codec : @sche
 pub fn[T] one_of(variants : Array[Variant[T]]) -> Out[T, @client.Buffered]
 pub fn[T] json_out(codec : @schema.BodyCodec[T], status? : Int) -> Out[T, @client.Buffered]       // no_content, text_out, bytes_out
 pub fn stream_body_out(status? : Int) -> Out[(String?, @mttp.Body), @client.Buffered]              // content type computed per response
-pub fn[T] sse_out(codec : @schema.JsonCodec[T], to_event? : (T) -> @sse.SseEvent) -> Out[EventStream[T], @client.Streaming]
+pub fn[T] sse_out(codec : @schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]
 pub fn[T, H, M] Out::and_header(self : Out[T, M], name : String, codec : @schema.TextCodec[H]) -> Out[(T, H), M]   // and_status, set_cookie
-pub fn[T] EventStream::from_pull(next : async () -> T?, close : () -> Unit) -> EventStream[T]       // from_array, each, close
+pub fn[T] EventStream::from_pull(next : async () -> T?, close : () -> Unit) -> EventStream[T]       // from_array, each, each_item, next, next_item, close
+pub(all) struct SseMeta { id : String?; event : String; retry : Int? } derive(Eq, Debug)   // SseMeta::new(id?, event?, retry?)
+pub(all) struct SseItem[T] { data : T; id : String?; event : String; retry : Int? } derive(Eq, Debug)   // SseItem::new
 pub(all) struct NoError derive(Eq, Debug)
 
 // endpoints: builders never raise, so endpoints are top-level `pub let`s; the fifth parameter is the response mode
@@ -1091,7 +1093,7 @@ CI lists packages per target and **asserts the test count per package and target
 - **Containment.** Runtime API churn stays in mttp_async (its `internal/` adapters). Intrinsic churn stays in one file of `driver`.
 - **Evolution rules.**
   - **(a) Enums.** `#non_exhaustive` on Body, Method, Kind, Phase, BodyTiming, `@retry.Decision`, ResponseFailure, DecodeKind, AuthScheme, Location, FailureStage, h1 Framing, ParseKind, Version, Trust, DriverErrorKind, and any later enum that may grow.
-  - **(b) Structs.** Downstream code builds `pub(all)` structs through `::new`/`::default()` plus record update. Field sets frozen at release: Request, Response, RequestHead, ResponseHead, SendOptions, RetryContext, RetryPolicy, RedirectConfig, Attempt, Reply, SseEvent, multipart Part, RetryRule and its records, GlobalWindow, Pace, RateLimitState, Page, h1 Limits, ClientConfig, ServerLimits, DispatchContext, FailureContext, DefinitionProblem, InputFailure, Schema, Issue, ServerOptions, apispec records.
+  - **(b) Structs.** Downstream code builds `pub(all)` structs through `::new`/`::default()` plus record update. Field sets frozen at release: Request, Response, RequestHead, ResponseHead, SendOptions, RetryContext, RetryPolicy, RedirectConfig, Attempt, Reply, SseEvent, SseMeta, SseItem, multipart Part, RetryRule and its records, GlobalWindow, Pace, RateLimitState, Page, h1 Limits, ClientConfig, ServerLimits, DispatchContext, FailureContext, DefinitionProblem, InputFailure, Schema, Issue, ServerOptions, apispec records.
   - **Read-only instead of frozen.** ParsedRequest, ParsedResponse, Decoded, Atom, VariantDoc and EndpointDoc are read-only `pub`, so they can grow.
   - **(c) Suberrors.** A suberror that may grow takes the kind form: TransportError, DecodeFailure, ParseError, DriverError. Every other suberror is frozen at release: InvalidRequest, MultipartError, UnsupportedPattern, InputErrors, DefinitionError, ServerConfigError, ListenError, NoQuiescence.
   - **Opaque structs.** `Out`, `Variant`, `ResponsePlan`, `RequestPlan`, `Input`, `Staged`, `RequestSink`, the engines' `Client` and the Driver can change internally without breaking.

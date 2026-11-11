@@ -285,24 +285,25 @@ test "event streams close once after callbacks fail and custom event metadata is
   let endpoint = @endpoint.endpoint
     .get("/")
     .output(
-      @endpoint.sse_out(@schema.jint, to_event=value => @sse.SseEvent::{
-        event: "update",
-        data: value.to_string(),
-        id: Some("cursor"),
-        retry: Some(100),
+      @endpoint.sse_out(@schema.jstring, meta=value => {
+        if value == "a" {
+          @endpoint.SseMeta::new(id="cursor", event="update", retry=100)
+        } else {
+          @endpoint.SseMeta::new()
+        }
       }),
     )
-    .serve_public(_ => Ok(@endpoint.EventStream::from_array([1])))
+    .serve_public(_ => Ok(@endpoint.EventStream::from_array(["a", "b"])))
   @driver.run_sync(() => {
     let response = endpoint.dispatch(
       @mttp.Request::get("/"),
       Map([]),
       @endpoint.DispatchContext::new(),
     )
-    let bytes = @client.read_body(response.body, 1024)
-    let parser = @sse.SseParser::new()
-    let events = parser.feed(bytes)
-    assert_eq(events[0].id, Some("cursor"))
-    assert_eq(events[0].event, "update")
+    // The library writes the codec's JSON as data, beside the meta's fields.
+    assert_eq(
+      @client.read_body(response.body, 1024),
+      b"event: update\nid: cursor\nretry: 100\ndata: \"a\"\n\ndata: \"b\"\n\n",
+    )
   })
 }

@@ -97,6 +97,124 @@ test "SSE callback consumes events and closes exactly once" {
 }
 
 ///|
+test "SSE items carry each event's id and name, and next stops before the end" {
+  let pulls = Ref(0)
+  let closes = Ref(0)
+  let ep = @endpoint.endpoint
+    .get("/events")
+    .output(
+      @endpoint.sse_out(@schema.jint, meta=value => {
+        @endpoint.SseMeta::new(
+          id="\{value}",
+          event=if value % 2 == 0 { "even" } else { "" },
+          retry?=if value == 1 { Some(500) } else { None },
+        )
+      }),
+    )
+  // An endless producer: only an early stop ends this response.
+  let router = @router.Router::new([
+    ep.serve_public(_ => {
+      Ok(
+        @endpoint.EventStream::from_pull(
+          () => {
+            pulls.val += 1
+            Some(pulls.val)
+          },
+          () => closes.val += 1,
+        ),
+      )
+    }),
+  ])
+  let client = @client.Client::new(router, @sim.FakeClock::new())
+  @driver.run_sync(() => {
+    ep
+    .call_with(client, (), (), events => {
+      assert_eq(
+        events.next_item(),
+        Some(@endpoint.SseItem::new(1, id="1", retry=500)),
+      )
+      assert_eq(
+        events.next_item(),
+        Some(@endpoint.SseItem::new(2, id="2", event="even")),
+      )
+      assert_eq(events.next(), Some(3))
+      events.close()
+      assert_eq(events.next(), None)
+      assert_eq(events.next_item(), None)
+    })
+    .unwrap()
+    .unwrap()
+  })
+  assert_eq(pulls.val, 3)
+  assert_eq(closes.val, 1)
+  client.close()
+}
+
+///|
+test "a client resumes an SSE stream from the last event id it read" {
+  let closes = Ref(0)
+  let requested = []
+  let ep = @endpoint.endpoint
+    .get("/events")
+    .input(@endpoint.last_event_id())
+    .output(
+      @endpoint.sse_out(@schema.jint, meta=value => {
+        @endpoint.SseMeta::new(id="\{value}", event="tick")
+      }),
+    )
+  let router = @router.Router::new([
+    ep.serve_public(last => {
+      requested.push(last)
+      let next = Ref(
+        match last {
+          Some(id) => @schema.int.decode(id)
+          None => 0
+        },
+      )
+      Ok(
+        @endpoint.EventStream::from_pull(
+          () => {
+            if next.val < 4 {
+              next.val += 1
+              Some(next.val)
+            } else {
+              None
+            }
+          },
+          () => closes.val += 1,
+        ),
+      )
+    }),
+  ])
+  let client = @client.Client::new(router, @sim.FakeClock::new())
+  let items = []
+  @driver.run_sync(() => {
+    // The first connection reads two events and stops.
+    let last = ep
+      .call_with(client, (), None, events => {
+        ignore(events.next_item())
+        events.next_item().unwrap().id
+      })
+      .unwrap()
+      .unwrap()
+    assert_eq(last, Some("2"))
+    ep
+    .call_with(client, (), last, events => {
+      events.each_item(item => items.push(item))
+    })
+    .unwrap()
+    .unwrap()
+  })
+  assert_eq(requested, [None, Some("2")])
+  assert_eq(items, [
+    @endpoint.SseItem::new(3, id="3", event="tick"),
+    @endpoint.SseItem::new(4, id="4", event="tick"),
+  ])
+  assert_eq(closes.val, 2)
+  client.close()
+}
+
+///|
 test "custom inputs work from outside the endpoint package" {
   let input = @endpoint.Input::new(
     [@endpoint.Atom::new(Header, "x-custom", @schema.string.schema())],

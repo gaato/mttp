@@ -32,6 +32,12 @@ never does.
   definition problem, which the endpoint definition check reports as a
   `DefinitionError`, so validators compose in top-level definitions.
   `UnsupportedPattern` is no longer public.
+- `sse_out` takes `meta : (T) -> SseMeta` instead of
+  `to_event : (T) -> @sse.SseEvent`. The library always writes the codec's
+  JSON as an event's `data`, so setting an `id`, event name or `retry` no
+  longer means building the whole event; replace
+  `to_event=v => @sse.SseEvent::{ data: ..., id: Some(x), .. }` with
+  `meta=v => SseMeta::new(id=x)`.
 
 ### Added
 
@@ -51,6 +57,10 @@ never does.
   `ResponseFailure`, `DecodeFailure`, `DefinitionError`, `InputErrors`,
   `ServerConfigError`), so they interpolate as readable messages;
   `reason_phrase` covers every status code RFC 9110, 6585 and 7725 register.
+- `SseMeta`, `SseItem` and `EventStream::next`, `next_item` and `each_item`: a
+  client reads each typed event's `id`, event name and `retry` beside its
+  value, so it can resume with the `last_event_id()` input, and pulls events
+  one at a time, so it can stop before the end and `close` the stream.
 
 ## [0.1.0] - 2026-11-10
 
