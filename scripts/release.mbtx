@@ -22,8 +22,9 @@ let usage : String =
   #|are released together (design, section 5.8).
   #|
   #|  moon run scripts/release.mbtx -- bump <module> <version>
-  #|      set a module's version and every sibling import of it, and move its
-  #|      CHANGELOG [Unreleased] entries under <version> (local edit)
+  #|      set a module's version and its import in every moon.work member,
+  #|      and move its CHANGELOG [Unreleased] entries under <version>
+  #|      (local edit)
   #|  moon run scripts/release.mbtx -- note <module> <section> <text>
   #|      add "- <text>" under ### <section> of the module's [Unreleased]
   #|  moon run scripts/release.mbtx -- check
@@ -173,16 +174,50 @@ fn lexical(a : String, b : String) -> Int32 {
 }
 
 ///|
-/// The top-level directories with a moon.mod, as `*/moon.mod` lists them
-/// (bash sorts by the locale; this sorts by byte, which agrees for the
-/// lowercase ASCII names of this repository).
+/// The members of the workspace's `moon.work`, as written in its
+/// `members = [...]` list, without a leading `./` or a trailing `/`.
+async fn work_members() -> Array[String] {
+  guard is_file("moon.work") else {
+    die(
+      2, "release.mbtx: no moon.work; bump updates the imports of its members",
+    )
+  }
+  let source = read("moon.work")
+    .split("\n")
+    .filter(line => !line.trim().has_prefix("//"))
+    .map(line => line.to_owned())
+    .to_array()
+    .join("\n")
+  guard source.find("members") is Some(at) &&
+    source.clamped_view(start=at).find("[") is Some(open) &&
+    source.clamped_view(start=at).find("]") is Some(close) &&
+    open < close else {
+    die(2, "release.mbtx: moon.work has no members = [...] list")
+  }
+  let list = source.clamped_view(start=at + open + 1, end=at + close).to_owned()
+  // The pieces between quotes: odd pieces are the quoted member names.
+  let pieces = list.split("\"").map(s => s.to_owned()).to_array()
+  let out = []
+  for i = 1; i < pieces.length(); i = i + 2 {
+    let entry = pieces[i]
+    let entry = entry.strip_prefix("./").map(s => s.to_owned()).unwrap_or(entry)
+    out.push(entry.trim_end(chars="/").to_owned())
+  }
+  out
+}
+
+///|
+/// The moon.mod of every workspace member, in byte order, so that a bump
+/// reaches nested members such as examples/get as well as top-level ones.
+/// A member without a moon.mod stops the bump before anything is edited.
 async fn module_files() -> Array[String] {
   let out = []
-  for entry in @fs.readdir(".") {
+  for entry in work_members() {
     let path = "\{entry}/moon.mod"
-    if is_file(path) {
-      out.push(path)
+    guard is_file(path) else {
+      die(2, "release.mbtx: moon.work member \{entry} has no moon.mod")
     }
+    out.push(path)
   }
   out.sort_by(lexical)
   out
@@ -322,6 +357,8 @@ async fn changelog_note(dir : String, section : String, text : String) -> Unit {
 async fn bump(modules : Array[String], dir : String, version : String) -> Unit {
   require_release_module(modules, dir)
   let name = module_field(dir, "name")
+  // Before any edit, so a broken moon.work changes nothing.
+  let files = module_files()
   let own = "\{dir}/moon.mod"
   @fs.write_text(
     own,
@@ -338,7 +375,6 @@ async fn bump(modules : Array[String], dir : String, version : String) -> Unit {
     .to_array()
     .join("\n"),
   )
-  let files = module_files()
   for path in files {
     @fs.write_text(
       path,
