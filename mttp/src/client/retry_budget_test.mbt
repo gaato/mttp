@@ -195,3 +195,47 @@ test "a retry whose budget ran out during its wait returns the last outcome" {
   assert_eq(calls.val, 3)
   assert_eq(replies, [503, 503])
 }
+
+///|
+test "a withdrawal counts until its whole slot leaves the window" {
+  let calls = Ref(0)
+  let clock = @sim.FakeClock::new()
+  let client = @client.Client::new(
+    unavailable(calls),
+    clock,
+    retry=@client.RetryPolicy::conservative(),
+    // One retry per one-second window, kept in 100 ms slots.
+    retry_budget=@client.RetryBudget::new(
+      percent=0.0,
+      min_per_second=1,
+      window_ms=1000,
+    ),
+  )
+  let once = (
+    _ : @client.AttemptResult[Result[String, @client.ResponseFailure]],
+    context : @client.RetryContext,
+  ) => {
+    if context.attempt == 0 {
+      @retry.Decision::Wait(0)
+    } else {
+      Stop(NotRetryable)
+    }
+  }
+  clock.advance(99)
+  @driver.run_sync(() => {
+    ignore(client.send(@client.get("/"), decide_retry=once))
+  })
+  assert_eq(calls.val, 2)
+  // 901 ms after the retry at 99 ms: still inside the window.
+  clock.advance(901)
+  @driver.run_sync(() => {
+    ignore(client.send(@client.get("/"), decide_retry=once))
+  })
+  assert_eq(calls.val, 3)
+  // Once its whole slot (0 to 99 ms) is over a second old, it no longer counts.
+  clock.advance(100)
+  @driver.run_sync(() => {
+    ignore(client.send(@client.get("/"), decide_retry=once))
+  })
+  assert_eq(calls.val, 5)
+}

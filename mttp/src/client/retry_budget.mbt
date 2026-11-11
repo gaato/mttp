@@ -4,6 +4,11 @@
 let retry_budget_slots : Int32 = 10
 
 ///|
+/// Slots kept: one more than the window holds, so that the slot only partly
+/// inside the window is not reused while its withdrawals still count.
+let retry_budget_ring : Int32 = retry_budget_slots + 1
+
+///|
 /// A cap on retries as a share of recent requests, shared by every send of a
 /// Client. When a server fails, every caller's retries would otherwise
 /// multiply its load just as it tries to recover.
@@ -44,9 +49,9 @@ pub fn RetryBudget::new(
     min_per_second: min_per_second.max(0),
     window_ms: window,
     slot_ms: window / retry_budget_slots.to_int64(),
-    starts: FixedArray::make(retry_budget_slots, -1L),
-    deposits: FixedArray::make(retry_budget_slots, 0),
-    withdrawals: FixedArray::make(retry_budget_slots, 0),
+    starts: FixedArray::make(retry_budget_ring, -1L),
+    deposits: FixedArray::make(retry_budget_ring, 0),
+    withdrawals: FixedArray::make(retry_budget_ring, 0),
   }
 }
 
@@ -60,7 +65,7 @@ pub fn RetryBudget::unlimited() -> RetryBudget {
 /// The slot for `now`, emptied when it last counted an earlier period.
 fn RetryBudget::slot(self : RetryBudget, now : Int64) -> Int32 {
   let start = now - now % self.slot_ms
-  let index = (start / self.slot_ms % retry_budget_slots.to_int64()).to_int()
+  let index = (start / self.slot_ms % retry_budget_ring.to_int64()).to_int()
   if self.starts[index] != start {
     self.starts[index] = start
     self.deposits[index] = 0
@@ -70,14 +75,21 @@ fn RetryBudget::slot(self : RetryBudget, now : Int64) -> Int32 {
 }
 
 ///|
-/// Deposits and withdrawals of the slots inside the window ending at `now`.
+/// Deposits and withdrawals in the window ending at `now`, each counted on
+/// the side that keeps the cap: a deposit only when its whole slot is inside
+/// the window, a withdrawal while any part of its slot is.
 fn RetryBudget::totals(self : RetryBudget, now : Int64) -> (Int32, Int32) {
   let mut deposits = 0
   let mut withdrawals = 0
-  for i in 0..<retry_budget_slots {
+  for i in 0..<retry_budget_ring {
     let start = self.starts[i]
-    if start >= 0L && start > now - self.window_ms && start <= now {
+    if start < 0L || start > now {
+      continue
+    }
+    if start > now - self.window_ms {
       deposits += self.deposits[i]
+    }
+    if start + self.slot_ms > now - self.window_ms {
       withdrawals += self.withdrawals[i]
     }
   }
