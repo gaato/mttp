@@ -1213,7 +1213,7 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | `resolver_gate` | The library modules resolve and build from a scratch consumer outside moon.work; an experimental package needs the consumer's opt-in. |
 | `type_contracts` | Compile-fail fixtures from an external package: a Streaming endpoint refuses a Buffered request; `as_both` refuses streaming readers. |
 
-`scripts/*.mbtx` move to core/async's `fs` and shell APIs. A `.mbtx` script cannot set the experimental opt-in (front matter accepts `import` and `permission` only), so it runs with the experimental warning on stderr, which `scripts/gates.sh` filters. The shared `docs_audit.mbtx` was the last script on moonbitlang/async 0.22.5; it moved in every gaato repository on 2026-11-10, and the gate has no exemption left.
+`scripts/*.mbtx` move to core/async's `fs` and shell APIs. A `.mbtx` script cannot set the experimental opt-in (front matter accepts `import` and `permission` only), so it runs with the experimental warning on stderr, which `scripts/gates.sh` filters. The release helper is `scripts/release.mbtx` too (`bump`, `note`, `check`, `publish --dry-run`; it never publishes); only `gates.sh` stays bash, because it runs `moon` itself on every toolchain including nightly, filters that warning, and runs npm. The shared `docs_audit.mbtx` was the last script on moonbitlang/async 0.22.5; it moved in every gaato repository on 2026-11-10, and the gate has no exemption left.
 ## 6. sttp/tapir concept map
 
 | sttp / tapir concept | mttp home, or the reason it is omitted |
@@ -1300,7 +1300,7 @@ Each PR branches from the previous one, stays at about 5k changed lines or fewer
 | 15 | http-async `runtime` (+ VirtualClock), `conn` and socketconn, `codings` with `Decompress` and `compress` | decoder stages (5); decoded output per pull (64 KiB); codec windows; encoder output per pull (64 KiB); Accept-Encoding negotiation (16 KiB, 128 entries); VirtualClock `settle` rounds |
 | 16 | http-async `backend` (native, wasm, js), socket integration tests, `examples/get` | JS upload buffer (16 MiB); JS delivery slices (64 KiB) and empty host chunks (1024) |
 | 17 | http-async `server`, `fetch`, `hosts` with the Lambda empty-body fix (`undefined` when the event has no body); `examples/serve`, `examples/fetch` | fetch request body (1 MiB); fetch delivered chunks and empty-input budget; Lambda buffering (1 MiB / 4 MiB) |
-| 18 | `mttp_digest`, `conformance`, `benchmarks`, the coverage ledger, `release.sh check` dry runs for all four modules | Digest challenge (16 KiB) and nonce origins (16) |
+| 18 | `mttp_digest`, `conformance`, `benchmarks`, the coverage ledger, `release.mbtx check` dry runs for all four modules | Digest challenge (16 KiB) and nonce origins (16) |
 
 TEST_COVERAGE.md rows (uncovered lines with their reason) are added by each PR for its own packages; PR 18 closes the ledger with the full native coverage run.
 
@@ -1397,7 +1397,7 @@ discord 0.13 → next:
 
 **Every step below is an external operation and needs the owner's go-ahead at the time.** Nothing in §7.1 publishes.
 
-1. Publish the four modules in one train: gaato/http 0.6.0, gaato/http-async 0.6.0, gaato/mttp 0.1.0, gaato/mttp_digest 0.1.0. Before that: resolver gate green, `release.sh check` dry runs green, and the SDK and discord migrations green against the candidates as workspace members.
+1. Publish the four modules in one train: gaato/http 0.6.0, gaato/http-async 0.6.0, gaato/mttp 0.1.0, gaato/mttp_digest 0.1.0. Before that: resolver gate green, `release.mbtx check` dry runs green, and the SDK and discord migrations green against the candidates as workspace members.
 2. Publish openai, anthropic and github in the same train or immediately after (flag-day rule, §5.8).
 3. discord → discord_voice → discord-cli.
 4. kbbi, nekosama, profile-readme.

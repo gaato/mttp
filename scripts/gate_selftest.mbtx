@@ -92,14 +92,22 @@ async fn probe_interfaces(root : String, name : String, refused : Bool) -> Unit 
 }
 
 ///|
+/// Runs the copy of scripts/release.mbtx in `root`, as a caller would.
+async fn release(root : String, args : Array[String]) -> @shell.Output {
+  @shell.Cmd("moon", ["run", "scripts/release.mbtx", "--", ..args], cwd=root).output(
+    timeout_ms=300000,
+  )
+}
+
+///|
 /// Release selection must not depend on test kind: a private four-target
 /// harness is still tested, but is not a changelog requirement or bump target.
 async fn probe_release(parent : String) -> Unit {
   let root = parent + "/release-selection"
   @fs.mkdir(root + "/scripts", recursive=true)
   @fs.write_text(
-    root + "/scripts/release.sh",
-    @fs.read_text("scripts/release.sh"),
+    root + "/scripts/release.mbtx",
+    @fs.read_text("scripts/release.mbtx"),
   )
   @fs.write_text(
     root + "/scripts/modules.tsv",
@@ -122,17 +130,13 @@ async fn probe_release(parent : String) -> Unit {
     root + "/library/CHANGELOG.md",
     "# Changelog\n\n## [Unreleased]\n\n- Example.\n",
   )
-  let checked = @shell.Cmd("bash", ["scripts/release.sh", "check"], cwd=root).output()
+  let checked = release(root, ["check"])
   guard checked.exit_code() == 0 &&
     checked.stdout().contains("OK (1 changelogs)") else {
     raise SelfTestFailed("release check included a private module or app")
   }
   for dir in ["private", "app", "unlisted"] {
-    let refused = @shell.Cmd(
-      "bash",
-      ["scripts/release.sh", "bump", dir, "9.9.9"],
-      cwd=root,
-    ).output()
+    let refused = release(root, ["bump", dir, "9.9.9"])
     guard refused.exit_code() == 2 &&
       refused.stderr().contains("is not a release module") else {
       raise SelfTestFailed("release bump accepted " + dir)
@@ -142,11 +146,7 @@ async fn probe_release(parent : String) -> Unit {
       raise SelfTestFailed("refused release bump mutated " + dir)
     }
   }
-  let bumped = @shell.Cmd(
-    "bash",
-    ["scripts/release.sh", "bump", "library", "0.0.2"],
-    cwd=root,
-  ).output()
+  let bumped = release(root, ["bump", "library", "0.0.2"])
   guard bumped.exit_code() == 0 &&
     @fs.read_text(root + "/library/moon.mod").contains("version = \"0.0.2\"") &&
     @fs.read_text(root + "/library/CHANGELOG.md").contains("## [0.0.2] - ") &&

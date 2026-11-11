@@ -223,7 +223,7 @@ fn zip_names(archive : Bytes) -> Array[String] {
 /// version is dropped: between releases, main keeps the published version
 /// number, so the scratch registry must serve the local code under it, as the
 /// next release will. Refusing a version that is already published is the
-/// release's job (`release.sh publish --dry-run` skips it), not this gate's.
+/// release's job (`release.mbtx publish --dry-run` skips it), not this gate's.
 fn unpublished_rows(
   rows : Array[String],
   candidate : Module,
