@@ -1,7 +1,7 @@
 # Entries the docs audit accepts although its rules reject them: Markdown
 # links and fences, and public declarations without a doc comment. Each
 # entry is `<file> <key> # reason`.
-mttp_async/src/reexports.mbt doc:pub using @mttp_core # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
-mttp_async/src/reexports.mbt doc:pub using @client # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
-mttp_async/src/reexports.mbt doc:pub using @trust # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
-mttp_async/src/reexports.mbt doc:pub using @cookie # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
+mttp/src/reexports.mbt doc:pub using @mttp_core # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
+mttp/src/reexports.mbt doc:pub using @client # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
+mttp/src/reexports.mbt doc:pub using @trust # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
+mttp/src/reexports.mbt doc:pub using @cookie # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it

@@ -1,0 +1,83 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp"
+
+import {
+  "gaato/mttp/trust",
+  "gaato/mttp_core",
+  "gaato/mttp_core/client",
+  "gaato/mttp_core/cookie",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp_core/rt",
+  "gaato/mttp_core/sse",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn as_bytes() -> @client.ResponsePlan[Result[Bytes, @client.ResponseFailure], @client.Buffered]
+
+pub fn[T : @json.FromJson] as_json() -> @client.ResponsePlan[Result[T, @client.ResponseFailure], @client.Buffered]
+
+pub fn as_json_value() -> @client.ResponsePlan[Result[@json.Json, @client.ResponseFailure], @client.Buffered]
+
+pub fn as_lines(async (String) -> Unit, max_line_bytes? : Int32) -> @client.ResponsePlan[Result[Unit, @client.ResponseFailure], @client.Streaming]
+
+pub fn as_sse(async (@sse.SseEvent) -> Unit, max_event_bytes? : Int32, stop? : (@sse.SseEvent) -> Bool) -> @client.ResponsePlan[Result[Unit, @client.ResponseFailure], @client.Streaming]
+
+pub fn as_string() -> @client.ResponsePlan[Result[String, @client.ResponseFailure], @client.Buffered]
+
+pub fn backend(trust? : @trust.Trust, config? : @h1client.ClientConfig) -> &@mttp_core.Backend
+
+pub fn client(base_url? : String, headers? : @mttp_core.Headers, timeout_ms? : Int32, total_ms? : Int32, max_body_bytes? : Int32, retry? : @client.RetryPolicy, retry_budget? : @client.RetryBudget, redirect? : @client.RedirectConfig, limiter? : &@client.RateLimiter, trust? : @trust.Trust, config? : @h1client.ClientConfig, cookies? : @cookie.CookieJar, backend? : &@mttp_core.Backend, clock? : &@rt.Clock, timer? : &@rt.Timer) -> @client.Client
+
+pub fn clock() -> &@rt.Clock
+
+pub fn coordination() -> &@rt.Coordination
+
+pub fn get(String) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
+
+pub fn post(String) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
+
+pub fn request(@mttp_core.Request) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
+
+pub fn run(async () -> Unit) -> Unit
+
+pub fn timer() -> &@rt.Timer
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+pub using @mttp_core {type Body}
+
+pub using @client {type Client}
+
+pub using @cookie {type CookieJar}
+
+pub using @mttp_core {type Headers}
+
+pub using @mttp_core {type Method}
+
+pub using @client {type RedirectConfig}
+
+pub using @client {type Reply}
+
+pub using @mttp_core {type Request}
+
+pub using @client {type RequestPlan}
+
+pub using @mttp_core {type Response}
+
+pub using @client {type ResponseFailure}
+
+pub using @client {type ResponsePlan}
+
+pub using @client {type RetryBudget}
+
+pub using @client {type RetryPolicy}
+
+pub using @mttp_core {type TransportError}
+
+pub using @trust {type Trust}
+
+// Traits

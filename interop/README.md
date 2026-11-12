@@ -5,7 +5,7 @@ server, or against recorded bytes. Two implementations that share a
 misunderstanding pass those. This suite runs mttp against widely used
 third-party implementations instead:
 
-- **The client** (`gaato/mttp_async`'s Client and backend,
+- **The client** (`gaato/mttp`'s Client and backend,
   [mttp_client](mttp_client/main.mbt)) against nginx, Caddy and Apache
   httpd, over HTTP/1.1 and TLS, natively and as js under Node, Bun and Deno.
   It checks keep-alive reuse, a server closing an idle connection first,
@@ -15,7 +15,7 @@ third-party implementations instead:
   HTTPS-to-HTTP downgrade, `Expect: 100-continue` uploads and early refusals,
   16 MiB downloads and 8 MiB uploads, chunked uploads, trickled bodies and
   the client's deadlines, and a server that closes without answering.
-- **The server** (`gaato/mttp_async`'s server,
+- **The server** (`gaato/mttp`'s server,
   [mttp_server](mttp_server/main.mbt)) driven by curl, Go's net/http, Python
   httpx, and the fetch of Node, Bun and Deno ([clients](clients)), directly
   and behind nginx, Caddy and Apache as reverse proxies. It checks

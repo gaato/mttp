@@ -10,7 +10,7 @@ import {
 ----
 
 ///|
-/// The interoperability suite: gaato/mttp_async's client against nginx,
+/// The interoperability suite: gaato/mttp's client against nginx,
 /// Caddy and Apache httpd, and its server against curl, Go, Python httpx,
 /// Node, Bun, Deno and raw-socket probes, directly and behind the three
 /// servers as reverse proxies. interop/README.md says what is tested.

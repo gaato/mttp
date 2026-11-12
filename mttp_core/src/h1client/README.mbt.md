@@ -9,7 +9,7 @@ exchange under a deadline. `Client` implements `@mttp_core.Backend`, so a policy
 layer (retries, redirects, cookies, content decoding) wraps it without
 knowing it.
 
-> [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) wires
+> [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) wires
 > this engine to sockets, TLS and an event loop; most applications use that
 > instead.
 

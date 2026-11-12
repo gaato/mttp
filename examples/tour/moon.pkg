@@ -4,8 +4,8 @@ import {
   "gaato/mttp_core/openapi",
   "gaato/mttp_core/router",
   "gaato/mttp_core/schema",
-  "gaato/mttp_async",
-  "gaato/mttp_async/server",
+  "gaato/mttp",
+  "gaato/mttp/server",
   "moonbitlang/core/env",
 }
 

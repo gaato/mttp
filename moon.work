@@ -1,6 +1,6 @@
 members = [
   "mttp_core",
-  "mttp_async",
+  "mttp",
   "mttp_digest",
   "conformance",
   "examples/get",

@@ -11,11 +11,11 @@ fn main {
   // deadlines when it answers in-process, as below.
   let app = @router.Router::must(
     [hello.serve_public(name => Ok("hello, \{name}"))],
-    clock=@mttp_async.clock(),
-    timer=@mttp_async.timer(),
+    clock=@mttp.clock(),
+    timer=@mttp.timer(),
   )
 
-  @mttp_async.run(async fn() {
+  @mttp.run(async fn() {
     // Serve it on a port: `moon run examples/tour -- 127.0.0.1:8080`.
     if @env.args() is [_, addr] {
       @server.serve(app.handler(), addr~)
@@ -24,7 +24,7 @@ fn main {
 
     // Call it with the typed client: a String goes in, a String comes back.
     // The Router is a Backend too, so here it answers without a port.
-    let client = @mttp_async.client(backend=app)
+    let client = @mttp.client(backend=app)
     defer client.close()
     match hello.request((), "moon").send(client).body {
       Ok(Ok(greeting)) => println(greeting)

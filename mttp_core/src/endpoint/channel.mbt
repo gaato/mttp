@@ -85,7 +85,7 @@ pub struct EventSender[T] {
 /// full, so a slow reader slows the producer down. A `capacity` below 1 is
 /// taken as 1, as the dispatch limits clamp their bounds. `coordination`
 /// provides the waiting: `RuntimeCoordination::new()` from
-/// `gaato/mttp_async/runtime` in an app, `@sim.SimCoordination` in a test.
+/// `gaato/mttp/runtime` in an app, `@sim.SimCoordination` in a test.
 ///
 /// Closing the stream (its reader stops, or the client disconnects while
 /// `sse_out` streams it) drops the queued values and makes every `send`

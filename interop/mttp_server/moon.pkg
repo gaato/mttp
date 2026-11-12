@@ -1,8 +1,8 @@
 import {
   "gaato/mttp_core",
   "gaato/mttp_core/h1server",
-  "gaato/mttp_async",
-  "gaato/mttp_async/server",
+  "gaato/mttp",
+  "gaato/mttp/server",
   "gaato/mttp-interop/pattern",
   "moonbitlang/core/async",
   "moonbitlang/core/async/fs",

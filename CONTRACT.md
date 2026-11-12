@@ -9,12 +9,12 @@ The traits live in two packages of `gaato/mttp_core`: the root (`Backend`,
 `BodyStream`, `SendOptions`) and `rt` (Clock, Timer, Gate, Conn, Dialer,
 Signal, Coordination). The doubles are in `gaato/mttp_core/sim`, the deterministic
 scheduler in `gaato/mttp_core/driver`, and the runtime implementations in
-`gaato/mttp_async`. The policy rules at the end (client attempts) belong to
+`gaato/mttp`. The policy rules at the end (client attempts) belong to
 `gaato/mttp_core/client`.
 
 Shared checks: `@sim.check_conn`, `check_coordination_contract`,
 `check_body_stream_contract` and `check_backend_contract` run against the sim
-doubles and against mttp_async's adapters. Transport-specific rules (wire
+doubles and against mttp's adapters. Transport-specific rules (wire
 framing, socket deadlines, TLS) are checked by each implementation's own
 suites. For the implementations in this repository,
 [TEST_COVERAGE.md](TEST_COVERAGE.md) names the tests behind each rule and
@@ -84,7 +84,7 @@ react to a half-closed stream.
 A successful Dialer TLS upgrade owns its input connection. A failed upgrade
 leaves that connection owned by the caller, which closes it. The runtime
 `TcpDialer` verifies certificates according to its root-package
-`gaato/mttp_async.Trust` value (`System`
+`gaato/mttp.Trust` value (`System`
 by default; `Insecure` disables verification; `PemFile` trusts only the
 certificates in the supplied PEM file, replacing system roots), and it
 can upgrade any `&Conn`, including a CONNECT tunnel. `ScriptedDialer` records
@@ -139,7 +139,7 @@ engine, passes `@sim.check_backend_contract(make_backend)` from
 `gaato/mttp_core/sim`, which exercises these rules (including rule 6's phase) on
 the target it runs on.
 
-`mttp_async/backend.AsyncBackend::new` accepts optional `rt.Clock` and
+`mttp/backend.AsyncBackend::new` accepts optional `rt.Clock` and
 `rt.Timer` ports on every target. The defaults are `AsyncClock` and
 `ClockTimer` on the chosen clock. Socket pool idle expiry uses that clock,
 and phase deadlines use that timer. JS fetch uses them for upload, head and
@@ -203,7 +203,7 @@ all four targets. Its cancellation semantics match core/async's:
    unless spawned with `allow_failure=true`. The cause keeps its identity.
 7. With `auto_advance`, virtual time moves only when no task is ready, and
    only forward, to the next armed timer.
-8. **Runtime parity.** mttp_async's `ClockTimer`, `SemaphoreGate` and
+8. **Runtime parity.** mttp's `ClockTimer`, `SemaphoreGate` and
    `RuntimeCoordination` satisfy the Timer, Gate and Coordination rules above
    with the same contract tests as the sim doubles, including the
    cancellation cases.

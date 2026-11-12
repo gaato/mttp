@@ -13,13 +13,13 @@ fn flaky() -> @mttp_core.Handler {
 }
 
 ///|
-/// Calls `addr` with the retry policy `@mttp_async.client()` uses by default
+/// Calls `addr` with the retry policy `@mttp.client()` uses by default
 /// and prints every attempt the Client makes.
 async fn call(addr : String) -> Unit {
   let client = @client.Client::new(
-    @mttp_async.backend(),
-    @mttp_async.clock(),
-    timer=@mttp_async.timer(),
+    @mttp.backend(),
+    @mttp.clock(),
+    timer=@mttp.timer(),
     base_url="http://\{addr}",
     retry=@client.RetryPolicy::conservative(),
     // The policy spreads each wait by up to 20 % either way; the middle of
@@ -44,7 +44,7 @@ async fn call(addr : String) -> Unit {
 
 ///|
 fn main {
-  @mttp_async.run(async fn() {
+  @mttp.run(async fn() {
     @async.with_task_group(group => {
       @server.serve(flaky(), addr="127.0.0.1:0", on_listen=addr => {
         group.spawn_bg(() => {

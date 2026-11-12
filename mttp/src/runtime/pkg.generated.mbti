@@ -1,0 +1,62 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/runtime"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+}
+
+// Values
+pub async fn[X] with_timeout_opt(&@rt.Clock, Int32, async () -> X) -> X?
+
+// Errors
+pub(all) suberror NoQuiescence {
+  NoQuiescence(rounds~ : Int32)
+}
+
+// Types and methods
+pub struct AsyncClock {
+}
+pub fn AsyncClock::new() -> Self
+pub fn AsyncClock::now_unix_ms(Self) -> Int64
+pub async fn AsyncClock::sleep(Self, Int32) -> Unit noraise
+pub impl @rt.Clock for AsyncClock
+
+pub struct ClockTimer {
+  // private fields
+}
+pub fn ClockTimer::new(clock? : &@rt.Clock) -> Self
+pub async fn ClockTimer::within(Self, Int32, async () -> Unit noraise) -> Bool noraise
+pub impl @rt.Timer for ClockTimer
+
+pub struct RuntimeCoordination {
+}
+pub fn RuntimeCoordination::new() -> Self
+pub fn RuntimeCoordination::signal(Self) -> &@rt.Signal
+pub async fn RuntimeCoordination::supervise(Self, primary~ : async () -> Unit raise @mttp_core.TransportError, monitor~ : async () -> Unit raise @mttp_core.TransportError) -> Unit raise @mttp_core.TransportError
+pub impl @rt.Coordination for RuntimeCoordination
+
+pub struct SemaphoreGate {
+  // private fields
+}
+pub async fn SemaphoreGate::acquire(Self) -> Unit noraise
+pub fn SemaphoreGate::new(permits? : Int32) -> Self
+pub fn SemaphoreGate::release(Self) -> Unit
+pub impl @rt.Gate for SemaphoreGate
+
+pub struct VirtualClock {
+  // private fields
+}
+pub fn VirtualClock::VirtualClock(start_ms? : Int64) -> Self
+pub fn VirtualClock::advance(Self, Int32) -> Unit
+pub fn VirtualClock::advance_to_next(Self) -> Bool
+pub fn VirtualClock::next_deadline(Self) -> Int64?
+pub fn VirtualClock::now_unix_ms(Self) -> Int64
+pub fn VirtualClock::pending(Self) -> Array[Int32]
+pub async fn VirtualClock::settle(Self, until~ : () -> Bool, max_rounds? : Int32) -> Unit raise NoQuiescence
+pub async fn VirtualClock::sleep(Self, Int32) -> Unit noraise
+pub impl @rt.Clock for VirtualClock
+
+// Type aliases
+
+// Traits

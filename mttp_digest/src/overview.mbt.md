@@ -18,16 +18,16 @@ goes on top of it. The Client follows redirects outside the wrapper, so every
 redirect hop passes through it and is checked against the credential origin,
 and its retry policy sees the outcome of the whole exchange, challenge
 included. In an app on
-[`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async), wrap the
+[`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp), wrap the
 network backend and hand it to `client()`, which keeps its defaults:
 
 ```mbt nocheck
 ///|
 /// A client that answers the Digest challenges of api.example.com.
-fn api_client(user : String, password : String) -> @mttp_async.Client raise {
-  @mttp_async.client(
+fn api_client(user : String, password : String) -> @mttp.Client raise {
+  @mttp.client(
     backend=@mttp_digest.DigestScheme::new(
-      @mttp_async.backend(),
+      @mttp.backend(),
       user,
       password,
       origin="https://api.example.com",
@@ -37,7 +37,7 @@ fn api_client(user : String, password : String) -> @mttp_async.Client raise {
 }
 ```
 
-The package importing this lists `gaato/mttp_async` and `gaato/mttp_digest`,
+The package importing this lists `gaato/mttp` and `gaato/mttp_digest`,
 and so does the app's `moon.mod`. A library builds its Client the same way
 with `Client::new` from `gaato/mttp_core/client`.
 

@@ -1,5 +1,5 @@
 // The time and admission ports. The engines and the mttp client take them as
-// trait objects, so they never import a runtime: gaato/mttp_async implements
+// trait objects, so they never import a runtime: gaato/mttp implements
 // them on moonbitlang/core/async, and gaato/http/sim on the deterministic
 // driver. CONTRACT.md (Clock, Timer, Gate) states what each side may rely on.
 

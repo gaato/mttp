@@ -1,9 +1,9 @@
 # What the interop suite runs and what it expects. interop/run.mbtx reads it.
 #
 # Columns, separated by one tab:
-#   side    client: gaato/mttp_async's Client against a third-party server
+#   side    client: gaato/mttp's Client against a third-party server
 #           (interop/mttp_client/main.mbt describes each case).
-#           server: gaato/mttp_async's server driven by a third-party client
+#           server: gaato/mttp's server driven by a third-party client
 #           (interop/clients/*), directly or through a reverse proxy.
 #   case    the case id the program understands
 #   where   which runs the row applies to. Client side:
@@ -24,7 +24,7 @@
 # first and its exceptions after it. A case with no matching row is not run.
 side	case	where	expect	note
 
-# Client side: gaato/mttp_async's Client against nginx, Caddy and Apache.
+# Client side: gaato/mttp's Client against nginx, Caddy and Apache.
 client	get	*/*/*	pass
 client	keepalive	*/*/*	pass
 client	keepalive	node|bun|deno/*/*	n/a	on js the host's fetch owns the connections, so reuse is the host's, not mttp's
@@ -65,7 +65,7 @@ client	drop-get	*/apache/*	n/a	Apache has no directive that closes a connection 
 client	drop-post	*/nginx|caddy/*	pass
 client	drop-post	*/apache/*	n/a	Apache has no directive that closes a connection without answering
 
-# Server side: third-party clients against gaato/mttp_async's server,
+# Server side: third-party clients against gaato/mttp's server,
 # directly and behind nginx, Caddy and Apache.
 server	get	curl|go|httpx|node|bun|deno/*	pass
 server	reuse	curl|go|httpx|node|bun|deno/direct	pass

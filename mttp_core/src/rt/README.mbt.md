@@ -20,7 +20,7 @@ not for secrets.
 
 The implementations live elsewhere:
 
-- [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) implements
+- [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) implements
   them on `moonbitlang/core/async`: sockets, TLS, timers and task groups.
 - `gaato/mttp_core/sim` implements them in memory on the deterministic driver, for
   tests on every target, and holds the contract checkers that both

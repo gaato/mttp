@@ -3,14 +3,14 @@
 [![CI](https://github.com/gaato/mttp/actions/workflows/ci.yml/badge.svg)](https://github.com/gaato/mttp/actions/workflows/ci.yml)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/gaato/mttp)
 [![License](https://img.shields.io/github/license/gaato/mttp)](LICENSE)
-[![mooncakes](https://img.shields.io/badge/mooncakes-gaato%2Fmttp__async-blue)](https://mooncakes.io/docs/gaato/mttp_async)
+[![mooncakes](https://img.shields.io/badge/mooncakes-gaato%2Fmttp__async-blue)](https://mooncakes.io/docs/gaato/mttp)
 [![MoonBit 0.10.20+65efd5b93](https://img.shields.io/badge/MoonBit-0.10.20%2B65efd5b93-blue)](https://www.moonbitlang.com)
 
 HTTP for [MoonBit](https://www.moonbitlang.com/) in which one endpoint
 definition is your server, your typed client and your OpenAPI document, and
 whose client retries within a budget and keeps deadlines without being asked.
 
-[gaato/mttp_async](https://mooncakes.io/docs/gaato/mttp_async) ·
+[gaato/mttp](https://mooncakes.io/docs/gaato/mttp) ·
 [gaato/mttp_core](https://mooncakes.io/docs/gaato/mttp_core) ·
 [examples](#examples) ·
 [backend contract](CONTRACT.md)
@@ -32,11 +32,11 @@ fn main {
   // deadlines when it answers in-process, as below.
   let app = @router.Router::must(
     [hello.serve_public(name => Ok("hello, \{name}"))],
-    clock=@mttp_async.clock(),
-    timer=@mttp_async.timer(),
+    clock=@mttp.clock(),
+    timer=@mttp.timer(),
   )
 
-  @mttp_async.run(async fn() {
+  @mttp.run(async fn() {
     // Serve it on a port: `moon run examples/tour -- 127.0.0.1:8080`.
     if @env.args() is [_, addr] {
       @server.serve(app.handler(), addr~)
@@ -45,7 +45,7 @@ fn main {
 
     // Call it with the typed client: a String goes in, a String comes back.
     // The Router is a Backend too, so here it answers without a port.
-    let client = @mttp_async.client(backend=app)
+    let client = @mttp.client(backend=app)
     defer client.close()
     match hello.request((), "moon").send(client).body {
       Ok(Ok(greeting)) => println(greeting)
@@ -115,7 +115,7 @@ hello, moon
 
 [examples/retries](examples/retries) starts a server on a local port that
 answers 503 twice and then 200, and calls it with the retry policy and budget
-that `@mttp_async.client()` uses by default, printing each attempt:
+that `@mttp.client()` uses by default, printing each attempt:
 
 <!-- output: examples/retries -->
 ```text
@@ -160,12 +160,12 @@ above.
 
 | Module | Add it if |
 |---|---|
-| [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) | you are building an app or a server: it sends requests over the network with the defaults above, serves handlers, and re-exports the types and client functions an app uses most. Add `gaato/mttp_core` beside it for typed endpoints, the router, OpenAPI documents, multipart bodies, rate limits and test stubs. |
+| [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) | you are building an app or a server: it sends requests over the network with the defaults above, serves handlers, and re-exports the types and client functions an app uses most. Add `gaato/mttp_core` beside it for typed endpoints, the router, OpenAPI documents, multipart bodies, rate limits and test stubs. |
 | [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core) | you are writing a library, such as an SDK for some API: it takes a `Client` and leaves the network to the app, so its tests run without one. |
 | [`gaato/mttp_digest`](https://mooncakes.io/docs/gaato/mttp_digest) | a server asks for HTTP Digest authentication. |
 
 `gaato/mttp_core` holds everything without I/O and builds on every target;
-`gaato/mttp_async` connects it to the network through `moonbitlang/core/async`;
+`gaato/mttp` connects it to the network through `moonbitlang/core/async`;
 `gaato/mttp_digest` adds Digest authentication to either. The split follows
 Scala's [sttp](https://sttp.softwaremill.com/) family.
 
@@ -198,7 +198,7 @@ nightly toolchains:
   and the test that drives it past that bound.
 - [CONTRACT.md](CONTRACT.md) states what a backend, a runtime adapter or a
   test double must guarantee; the same contract checks run against the
-  in-memory doubles and against `gaato/mttp_async`'s adapters.
+  in-memory doubles and against `gaato/mttp`'s adapters.
 - [TEST_COVERAGE.md](TEST_COVERAGE.md) names a reason for every line the
   tests do not cover.
 - The [Cloudflare Workers app](examples/fetch/workers) runs on real workerd,
@@ -221,7 +221,7 @@ driver behind `run_sync` in tests, because it relies on compiler intrinsics
 that may change. A package that imports it lists it in its `moon.pkg`:
 `options("allow-experimental-packages": [ "gaato/mttp_core/driver" ])`.
 
-`gaato/mttp_async` runs on `moonbitlang/core/async`, which the toolchain still
+`gaato/mttp` runs on `moonbitlang/core/async`, which the toolchain still
 marks experimental. Its `run` and `client()` keep that opt-in out of an app's
 `moon.pkg`; code that imports core/async itself, to spawn tasks for example,
 lists it. The gates run on the toolchain that
@@ -230,7 +230,7 @@ lists it. The gates run on the toolchain that
 ## Coming from gaato/http
 
 `gaato/http` and `gaato/http-async` are now `gaato/mttp_core` and
-`gaato/mttp_async`; the [changelog of gaato/mttp_core](mttp_core/CHANGELOG.md) says
+`gaato/mttp`; the [changelog of gaato/mttp_core](mttp_core/CHANGELOG.md) says
 what to rename.
 
 ## License

@@ -7,7 +7,7 @@ multipart bodies, and typed endpoints with a router and OpenAPI documents.
 It depends on `moonbitlang/core` alone and builds on wasm-gc, wasm, js and
 native, with the same tests on each.
 
-Building an app? Start with [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async):
+Building an app? Start with [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp):
 it sends requests over the network with sensible defaults and re-exports the
 types and client functions an app uses most. Add `gaato/mttp_core` beside it for
 the rest: typed endpoints, the router, OpenAPI documents, multipart bodies,
@@ -16,8 +16,8 @@ this module alone, so the app decides how requests are sent and tests run
 without a network.
 
 Coming from `gaato/http` or `gaato/http-async`? They are now `gaato/mttp_core` and
-`gaato/mttp_async`; the
-[changelog](https://github.com/gaato/mttp/blob/main/mttp/CHANGELOG.md) says
+`gaato/mttp`; the
+[changelog](https://github.com/gaato/mttp/blob/main/mttp_core/CHANGELOG.md) says
 what to rename.
 
 The design follows the split of Scala's [sttp](https://sttp.softwaremill.com/)
@@ -53,14 +53,14 @@ tells whether resending a non-idempotent request is safe.
 
 ### On another runtime
 
-`gaato/mttp_async` provides the backends for `moonbitlang/core/async`, on
+`gaato/mttp` provides the backends for `moonbitlang/core/async`, on
 native, wasm and js (through the host's `fetch`); wasm-gc has no runtime
 there. A program on wasm-gc or on another runtime uses this module directly:
 implement `Backend` over that runtime's HTTP client, or implement only the
 ports in `rt` and reuse the `h1client` engine, then pass the backend, a
 `Clock` and, for deadlines, a `Timer` to `Client::new`. The client, typed
 endpoints and server-sent events work unchanged. A framework on the registry
-module `moonbitlang/async` can share a program with `gaato/mttp_async`: from
+module `moonbitlang/async` can share a program with `gaato/mttp`: from
 0.22.6 on, that module runs on `moonbitlang/core/async`'s runtime, so an app
 that needs it requires `moonbitlang/async@0.22.6` or later.
 
@@ -109,7 +109,7 @@ test "a library call against a test backend" {
 
 `Client::new` sends nothing it is not told to: retries, deadlines and rate
 limits are opt-in here (`retry=`, `timeout_ms=`, `limiter=`), while
-`gaato/mttp_async`'s `client()` turns retries and deadlines on for apps.
+`gaato/mttp`'s `client()` turns retries and deadlines on for apps.
 Redirects are followed by default, over any backend, a test function
 included (`redirect=` configures them, `RedirectConfig::none()` turns them
 off), and cookies are kept when the Client is given a jar (`cookies=`). The
@@ -150,7 +150,7 @@ test "one definition for client, server and docs" {
 ```
 
 The router is itself a `Backend`, as above, and its `handler()` is what
-`gaato/mttp_async`'s server or a JavaScript `fetch` export serves.
+`gaato/mttp`'s server or a JavaScript `fetch` export serves.
 
 ## Packages
 

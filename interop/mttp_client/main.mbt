@@ -1,4 +1,4 @@
-// The interop client: gaato/mttp_async's Client and backend against a
+// The interop client: gaato/mttp's Client and backend against a
 // third-party server (nginx, Caddy, Apache httpd). interop/run.mbtx runs it
 // once per server, scheme and runtime (native; js under Node, Bun and
 // Deno) with the cases interop/cases.tsv selects, and compares each line
@@ -40,7 +40,7 @@ fn check(ok : Bool, what : String) -> Unit raise Check {
 priv struct Ctx {
   base : String
   alt : String
-  trust : @mttp_async.Trust
+  trust : @mttp.Trust
 }
 
 ///|
@@ -59,7 +59,7 @@ fn Ctx::backend(self : Ctx) -> @backend.AsyncBackend {
 }
 
 ///|
-/// A Client with the defaults `@mttp_async.client()` uses, retries off
+/// A Client with the defaults `@mttp.client()` uses, retries off
 /// unless asked for, so a case sees each failure as it happened.
 fn Ctx::client(
   self : Ctx,
@@ -69,8 +69,8 @@ fn Ctx::client(
 ) -> @client.Client {
   @client.Client::new(
     self.backend(),
-    @mttp_async.clock(),
-    timer=@mttp_async.timer(),
+    @mttp.clock(),
+    timer=@mttp.timer(),
     timeout_ms~,
     retry~,
     observer?,
@@ -120,12 +120,12 @@ fn echoed(body : Bytes, key : String) -> String raise Check {
 
 ///|
 fn now() -> Int64 {
-  @mttp_async.clock().now_unix_ms()
+  @mttp.clock().now_unix_ms()
 }
 
 ///|
 async fn pause(ms : Int32) -> Unit {
-  @mttp_async.clock().sleep(ms)
+  @mttp.clock().sleep(ms)
 }
 
 ///|
@@ -723,7 +723,7 @@ fn main {
     },
   }
   let ids = args[n - 1].split(",").map(s => s.to_owned()).to_array()
-  @mttp_async.run(async fn() {
+  @mttp.run(async fn() {
     for id in ids {
       let line = try run_case(ctx, id) catch {
         Check(what) => "fail \{what}"

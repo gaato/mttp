@@ -5,10 +5,10 @@ fn main {
     println("usage: get <url>")
     @env.exit(2)
   }
-  @mttp_async.run(async fn() {
-    let client = @mttp_async.client()
+  @mttp.run(async fn() {
+    let client = @mttp.client()
     defer client.close()
-    let reply = client.send(@mttp_async.get(args[1]))
+    let reply = client.send(@mttp.get(args[1]))
     println("status: \{reply.status}")
     match reply.body {
       Ok(text) => println(text)

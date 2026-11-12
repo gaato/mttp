@@ -275,7 +275,7 @@ and it returns `false` once the stream is closed, for example when the client
 disconnects; return that to the SDK so that it cancels the upstream call. End
 the stream with `close` after the last value, or with `fail` when the producer
 failed, so the client sees an error instead of a complete stream. The channel
-waits through the `coordination` it is given: `@mttp_async.coordination()` in
+waits through the `coordination` it is given: `@mttp.coordination()` in
 an app, `@sim.SimCoordination` in a test.
 In a handler, run the producer with the request's `@mttp_core.background`
 scheduler, which `serve_with` passes (see "Server-only values" above).

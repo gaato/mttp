@@ -4,7 +4,7 @@ The HTTP client: request and response plans, and a `Client` that sends them.
 
 A plan describes what to send and how to read the answer; the `Client` sends
 it through any `@mttp_core.Backend` with defaults, admission, deadlines,
-decoded-body limits, redirects, cookies and retries. It does no I/O itself: `gaato/mttp_async`
+decoded-body limits, redirects, cookies and retries. It does no I/O itself: `gaato/mttp`
 provides the backends that do, and `gaato/mttp_core/testing` the stubs.
 
 ## Requests and response plans

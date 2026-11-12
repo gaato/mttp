@@ -58,13 +58,13 @@
 #   scripts/gates.sh drops exactly that warning from script output.
 dir	name	kind	targets	module_deps	package_imports	experimental	release
 mttp_core	gaato/mttp_core	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core,!moonbitlang/core/async,!moonbitlang/core/compress	gaato/mttp_core/driver	yes
-mttp_async	gaato/mttp_async	runtime	native,wasm,js	gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/mttp_core/driver	yes
+mttp	gaato/mttp	runtime	native,wasm,js	gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/mttp_core/driver	yes
 mttp_digest	gaato/mttp_digest	four-target	wasm-gc,wasm,js,native	gaato/mttp_core,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core,moonbitlang/x	test:gaato/mttp_core/driver	yes
 conformance	gaato/mttp-conformance	four-target	wasm-gc,wasm,js,native	gaato/mttp_core	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core	-	no
-examples/get	gaato/mttp-example-get	example	native,wasm	gaato/mttp_core,gaato/mttp_async	*	*	no
-examples/serve	gaato/mttp-example-serve	example	native	gaato/mttp_core,gaato/mttp_async	*	*	no
-examples/fetch	gaato/mttp-fetch-example	example	js	gaato/mttp_core,gaato/mttp_async	*	*	no
-examples/tour	gaato/mttp-example-tour	example	native	gaato/mttp_core,gaato/mttp_async	*	*	no
-examples/retries	gaato/mttp-example-retries	example	native	gaato/mttp_core,gaato/mttp_async	*	*	no
-interop	gaato/mttp-interop	example	native,js	gaato/mttp_core,gaato/mttp_async	*	*	no
-benchmarks/transport	gaato/mttp-transport-bench	benchmark	native	gaato/mttp_core,gaato/mttp_async	*	*	no
+examples/get	gaato/mttp-example-get	example	native,wasm	gaato/mttp_core,gaato/mttp	*	*	no
+examples/serve	gaato/mttp-example-serve	example	native	gaato/mttp_core,gaato/mttp	*	*	no
+examples/fetch	gaato/mttp-fetch-example	example	js	gaato/mttp_core,gaato/mttp	*	*	no
+examples/tour	gaato/mttp-example-tour	example	native	gaato/mttp_core,gaato/mttp	*	*	no
+examples/retries	gaato/mttp-example-retries	example	native	gaato/mttp_core,gaato/mttp	*	*	no
+interop	gaato/mttp-interop	example	native,js	gaato/mttp_core,gaato/mttp	*	*	no
+benchmarks/transport	gaato/mttp-transport-bench	benchmark	native	gaato/mttp_core,gaato/mttp	*	*	no

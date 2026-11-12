@@ -492,7 +492,7 @@ fn run_self_test(repo : Repo, allow : String) -> Unit raise {
     with_file("mttp_core/src/x/x_test.mbt", "// async test \"x\" {\n"),
     allow,
   )
-  audit(with_file("mttp_async/src/x/x_test.mbt", async_test), allow)
+  audit(with_file("mttp/src/x/x_test.mbt", async_test), allow)
   audit(with_file("scratch/src/x/x_test.mbt", async_test), allow)
   audit(
     with_file("mttp_core/src/x/x_test.mbt", "///|\ntest \"x\" {\n}\n"),
@@ -504,8 +504,8 @@ fn run_self_test(repo : Repo, allow : String) -> Unit raise {
   must_fail("an intrinsic in gaato/mttp_core", () => {
     audit(with_file("mttp_core/src/x/x.mbt", intrinsic), allow)
   })
-  must_fail("an intrinsic in gaato/mttp_async", () => {
-    audit(with_file("mttp_async/src/x/x.mbt", intrinsic), allow)
+  must_fail("an intrinsic in gaato/mttp", () => {
+    audit(with_file("mttp/src/x/x.mbt", intrinsic), allow)
   })
   must_fail("an intrinsic outside the modules", () => {
     audit(with_file("scratch/x.mbt", intrinsic), allow)
@@ -527,7 +527,7 @@ fn run_self_test(repo : Repo, allow : String) -> Unit raise {
     })
     must_fail("runtime import of \{testing}", () => {
       audit(
-        with_package("mttp_async/src/backend", "import { \"\{testing}\" @t }\n"),
+        with_package("mttp/src/backend", "import { \"\{testing}\" @t }\n"),
         allow,
       )
     })
@@ -612,7 +612,7 @@ fn run_self_test(repo : Repo, allow : String) -> Unit raise {
     with_file("mttp_core/src/x/x.mbt", "///|\nlet n = @env.nowhere\n"),
     allow,
   )
-  audit(with_file("mttp_async/src/x/x.mbt", now), allow)
+  audit(with_file("mttp/src/x/x.mbt", now), allow)
   // Allow entries: one per use, with a reason; stale and unknown ones fail.
   let allowed = allow + "\nmttp_core/src/x/x.mbt clock # self-test\n"
   audit(with_file("mttp_core/src/x/x.mbt", now), allowed)

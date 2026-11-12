@@ -1,7 +1,7 @@
 # Retries example
 
 Starts a server on a free local port that answers 503 twice and then 200,
-calls it with the retry policy and budget `@mttp_async.client()` uses by
+calls it with the retry policy and budget `@mttp.client()` uses by
 default, and prints each attempt with the wait the policy chose. From the
 repository root:
 

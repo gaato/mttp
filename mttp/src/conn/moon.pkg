@@ -1,0 +1,30 @@
+import {
+  "gaato/mttp/trust",
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "gaato/mttp/internal/socketconn",
+  "moonbitlang/core/async/io",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/async/tls",
+}
+
+import {
+  "gaato/mttp_core/sim",
+  "gaato/mttp/runtime",
+  "moonbitlang/core/async",
+} for "test"
+
+import {
+  "moonbitlang/core/async",
+} for "wbtest"
+
+supported_targets = "native+wasm"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/io",
+    "moonbitlang/core/async/socket",
+    "moonbitlang/core/async/tls",
+  ],
+)

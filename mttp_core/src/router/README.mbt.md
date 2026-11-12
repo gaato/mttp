@@ -23,7 +23,7 @@ test "in-process router example" {
 ## Serving
 
 `Router::handler()` is the `async (@mttp_core.Request) -> @mttp_core.Response` that a
-server runs: pass it to `gaato/mttp_async`'s `@server.serve`, or to
+server runs: pass it to `gaato/mttp`'s `@server.serve`, or to
 `@fetch.fetch_handler` for a JavaScript `fetch` export. `Router::new` raises
 a `DefinitionError` for definitions it refuses; `Router::must` aborts
 instead, so a router can be a top-level `let`.

@@ -2,7 +2,7 @@
 package "gaato/mttp-fetch-example"
 
 import {
-  "gaato/mttp_async/fetch",
+  "gaato/mttp/fetch",
 }
 
 // Values

@@ -1,4 +1,4 @@
-// The interop server: gaato/mttp_async's server with a handful of endpoints
+// The interop server: gaato/mttp's server with a handful of endpoints
 // that report what arrived, so that a third-party client or proxy in front
 // of it can be checked from the outside. interop/run.mbtx starts it and
 // drives it directly (curl, Go, Python, Node, Bun, Deno, raw sockets) and
@@ -191,7 +191,7 @@ async fn handle(request : @mttp_core.Request) -> @mttp_core.Response noraise {
 fn main {
   let args = @env.args()
   if args is [_, "www", dir] {
-    @mttp_async.run(async fn() {
+    @mttp.run(async fn() {
       @fs.mkdir(dir, recursive=true, allow_exist=true)
       for file in @pattern.files() {
         @fs.write_binary("\{dir}/\{file.0}", file.1)
@@ -204,7 +204,7 @@ fn main {
     println("usage: mttp_server <address> | mttp_server www <dir>")
     @env.exit(2)
   }
-  @mttp_async.run(async fn() {
+  @mttp.run(async fn() {
     @server.serve(
       handle,
       addr=args[1],

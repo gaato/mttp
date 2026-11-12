@@ -6,7 +6,7 @@ An HTTP/1.1 server connection engine over the `gaato/mttp_core/rt` ports.
 through the bounded `gaato/mttp_core/h1` codec. Head and body operations have
 deadlines; a handler deadline is optional.
 
-> [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) wires
+> [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) wires
 > this engine to sockets, TLS and an event loop; most applications use that
 > instead.
 
