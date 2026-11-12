@@ -88,7 +88,7 @@ pub async fn print_user(id : Int32) -> Unit {
 | Decompression | gzip, deflate, br and zstd | per request, by setting `Accept-Encoding` |
 | Body size | Buffered bodies up to 64 MiB after decoding | `max_body_bytes=` |
 | TLS | The system's roots | `trust=PemFile(..)` |
-| Network, clock and timers | The real ones | `backend=`, `clock=`, `timer=`, for tests (see [Tests](#tests)) |
+| Network, clock and timers | The real ones; the network over HTTP/1.1 | `backend=`, `clock=`, `timer=`, for tests (see [Tests](#tests)); `backend=@mttp_moonfetch.backend()` for HTTP/2 and HTTP/3 on native and wasm (see below) |
 
 ## Cookies
 
@@ -133,6 +133,16 @@ let claude = @anthropic.Anthropic::new(
 ```
 
 The app's `moon.mod` lists the SDK and `gaato/mttp_async`.
+
+## HTTP/2 and HTTP/3
+
+`backend()` speaks HTTP/1.1 on native and wasm, over the system's TLS; on js
+the host's `fetch` already negotiates HTTP/2 and HTTP/3. For HTTP/2 or HTTP/3
+on native and wasm, add
+[gaato/mttp_moonfetch](https://mooncakes.io/docs/gaato/mttp_moonfetch) and
+pass its backend where `backend()` would go, to `client(backend=...)` or to
+an SDK. The Client keeps every default above; its README says what it runs
+on and where it differs.
 
 ## Serve
 

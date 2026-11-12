@@ -63,6 +63,9 @@ endpoints and server-sent events work unchanged. A framework on the registry
 module `moonbitlang/async` can share a program with `gaato/mttp_async`: from
 0.22.6 on, that module runs on `moonbitlang/core/async`'s runtime, so an app
 that needs it requires `moonbitlang/async@0.22.6` or later.
+[gaato/mttp_moonfetch](https://mooncakes.io/docs/gaato/mttp_moonfetch) is
+such a backend, over moonbitstack/moonfetch on that module: it gives the
+Client HTTP/2 and HTTP/3 on native and wasm.
 
 ## A client in a library
 
