@@ -14,9 +14,12 @@ priv struct Limits {
 ///|
 /// A backend plus shared request defaults, policies and injected timing
 /// services. `Client::send` is the only sending path: it applies the
-/// defaults, admission, deadlines, decoded-body limits and retries, and maps
-/// each plan onto the `SendOptions` the backend receives.
+/// defaults, admission, deadlines, decoded-body limits, redirects, cookies
+/// and retries, and maps each plan onto the `SendOptions` the backend
+/// receives.
 pub struct Client {
+  /// The backend as the Client sends through it: wrapped in `Cookies` when
+  /// a jar was given and in `FollowRedirects` unless redirects are off.
   priv backend : &@mttp.Backend
   priv clock : &@rt.Clock
   priv base_url : String
@@ -55,6 +58,21 @@ pub struct Client {
 ///   10 s). It is checked when a retry is decided, and a retry it refuses
 ///   stops with `RetryBudgetSpent`; it is charged when the retry is sent, and
 ///   a retry whose budget ran out during its wait returns the last outcome.
+/// - `redirect` (default: `RedirectConfig::default()`, up to 10 hops) says
+///   how redirects are followed. They are followed inside one attempt: the
+///   limiter admits the attempt once, the attempt deadline covers every hop,
+///   and a retry resends the original request, so a 503 on the second hop
+///   starts the chain again. A request overrides the limit with
+///   `RequestPlan::follow_redirects` and `max_redirects`.
+///   `RedirectConfig::none()` (any `max_redirects` of 0 or less) turns
+///   redirects off for the whole Client: it adds no redirect layer, returns
+///   every 3xx as the backend gave it, and leaves the per-request limit to
+///   the backend. Pass it when `backend` already contains `FollowRedirects`,
+///   so redirects are not followed twice and that wrapper's
+///   `redirect_history` and `final_url` reach the reply.
+/// - `cookies` (default: none kept): a caller-owned `@cookie.CookieJar`. The
+///   Client attaches its matching cookies to every request and redirect hop
+///   and stores every response's `Set-Cookie` before the next hop.
 pub fn Client::new(
   backend : &@mttp.Backend,
   clock : &@rt.Clock,
@@ -67,10 +85,23 @@ pub fn Client::new(
   retry~ : RetryPolicy = RetryPolicy::none(),
   retry_budget~ : RetryBudget = RetryBudget::new(),
   limiter~ : &RateLimiter = NoLimiter::new(),
+  redirect~ : RedirectConfig = RedirectConfig::default(),
+  cookies? : @cookie.CookieJar,
   total_ms? : Int32,
   observer~ : (Attempt) -> Unit = _ => (),
   random~ : () -> Double = @rt.default_random,
 ) -> Client {
+  // The jar sits inside the redirects, so each hop sends the cookies for its
+  // own URL and stores what it receives before the next hop.
+  let backend : &@mttp.Backend = match cookies {
+    Some(jar) => @cookies.Cookies::new(backend, jar) as &@mttp.Backend
+    None => backend
+  }
+  let backend : &@mttp.Backend = if redirect.max_redirects > 0 {
+    FollowRedirects::new(backend, config=redirect) as &@mttp.Backend
+  } else {
+    backend
+  }
   {
     backend,
     clock,

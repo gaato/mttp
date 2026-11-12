@@ -2,8 +2,10 @@
 /// A backend that attaches matching cookies and stores every response's
 /// Set-Cookie fields before returning its head and caller-owned body.
 /// Compose as FollowRedirects(Cookies(inner, jar)): each hop then uses its
-/// own URL and stores cookies before the next hop. The jar does not enforce
-/// browser SameSite policy. Explicit Cookie headers take precedence.
+/// own URL and stores cookies before the next hop. `Client::new` with
+/// `cookies=jar` builds exactly that; use the wrapper directly only for a
+/// custom stack. The jar does not enforce browser SameSite policy. Explicit
+/// Cookie headers take precedence.
 pub struct Cookies {
   priv inner : &@mttp.Backend
   priv jar : @cookie.CookieJar

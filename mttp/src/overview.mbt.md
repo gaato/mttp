@@ -109,7 +109,10 @@ test "a library call against a test backend" {
 
 `Client::new` sends nothing it is not told to: retries, deadlines and rate
 limits are opt-in here (`retry=`, `timeout_ms=`, `limiter=`), while
-`gaato/mttp_async`'s `client()` turns retries and deadlines on for apps. The
+`gaato/mttp_async`'s `client()` turns retries and deadlines on for apps.
+Redirects are followed by default, over any backend, a test function
+included (`redirect=` configures them, `RedirectConfig::none()` turns them
+off), and cookies are kept when the Client is given a jar (`cookies=`). The
 `gaato/mttp/client/ratelimit` section below shows a limiter that follows a
 server's quota headers.
 
@@ -154,10 +157,10 @@ The router is itself a `Backend`, as above, and its `handler()` is what
 | Package | What it holds |
 |---|---|
 | `gaato/mttp` | The vocabulary: methods, headers, URLs, requests, responses and bodies, `Backend` and `SendOptions`, `TransportError`, URL, form and HTTP-date (parse and format) helpers |
-| `gaato/mttp/client` | Request and response plans with Result-valued readers, the `Client` loop (defaults, admission, deadlines, decoded-body limits, retries and the `RetryBudget`), `FollowRedirects`, `Paginator`, Retry-After and `Link` helpers |
+| `gaato/mttp/client` | Request and response plans with Result-valued readers, the `Client` loop (defaults, admission, deadlines, decoded-body limits, redirects, cookies, retries and the `RetryBudget`), `FollowRedirects`, `Paginator`, Retry-After and `Link` helpers |
 | `gaato/mttp/client/retry` | Retry rules and decisions as data |
 | `gaato/mttp/client/ratelimit` | Bounded window state, pacing, global quotas and header-driven admission |
-| `gaato/mttp/client/cookies` | A cookie-jar backend wrapper |
+| `gaato/mttp/client/cookies` | `Cookies`, the cookie-jar backend wrapper a Client with `cookies=` uses, for stacks built by hand |
 | `gaato/mttp/sse` | A bounded `text/event-stream` parser, reader and encoder |
 | `gaato/mttp/multipart` | A `multipart/form-data` writer with streamed parts |
 | `gaato/mttp/cookie` | An RFC 6265 cookie jar on an injected clock |

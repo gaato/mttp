@@ -55,6 +55,18 @@ never does.
   the limit raises `TooLarge`, a negative limit `Invalid`, and a stream is
   closed in every case. Replace `@client.read_body(body, limit)` with
   `body.read_all(max=limit)`.
+- Redirects and cookies are Client policies, like retries and deadlines, so
+  they work over any backend, a test stub included. `Client::new` takes
+  `redirect~ : RedirectConfig` (default `RedirectConfig::default()`, up to
+  10 hops) and `cookies? : CookieJar`, and wraps its backend as
+  `FollowRedirects(Cookies(backend, jar))`: the hops of one attempt share its
+  admission and deadline, and a retry starts again from the original request.
+  A Client over a stub that answers 3xx now follows it; pass
+  `redirect=RedirectConfig::none()` (new) to get the 3xx back, or
+  `.follow_redirects(false)` for one request. A stack built by hand that
+  already contains `FollowRedirects` passes `redirect=RedirectConfig::none()`
+  too, and drops its own `Cookies` in favour of `cookies=` unless it needs
+  another order.
 
 ### Added
 
