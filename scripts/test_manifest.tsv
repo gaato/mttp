@@ -136,7 +136,7 @@ gaato/mttp	gaato/mttp	native	15
 gaato/mttp	gaato/mttp	wasm	15
 gaato/mttp	gaato/mttp/backend	js	17
 gaato/mttp	gaato/mttp/backend	native	21
-gaato/mttp	gaato/mttp/backend	wasm	21
+gaato/mttp	gaato/mttp/backend	wasm	20
 gaato/mttp	gaato/mttp/codings	js	47
 gaato/mttp	gaato/mttp/codings	native	47
 gaato/mttp	gaato/mttp/codings	wasm	47
