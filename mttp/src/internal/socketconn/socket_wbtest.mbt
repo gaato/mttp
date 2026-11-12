@@ -8,6 +8,8 @@ priv struct ProbeIo {
   writes : Array[Bytes]
   fail_read : Bool
   fail_write : Bool
+  /// Writes raise `Closed`, as a connection beneath TLS may.
+  closed_write : Bool
   wait_write : Bool
   mut writing : Bool
   mut cleaned : Bool
@@ -20,6 +22,7 @@ fn probe(
   bytes~ : Bytes = b"",
   fail_read~ : Bool = false,
   fail_write~ : Bool = false,
+  closed_write~ : Bool = false,
   wait_write~ : Bool = false,
   after_read? : () -> Unit,
   yield_before_read~ : Bool = false,
@@ -33,6 +36,7 @@ fn probe(
     writes: [],
     fail_read,
     fail_write,
+    closed_write,
     wait_write,
     writing: false,
     cleaned: false,
@@ -122,6 +126,13 @@ impl @io.BinaryWriterImpl for ProbeIo with fn raw_write_impl(
   }
   if self.fail_write {
     raise Injected
+  }
+  if self.closed_write {
+    raise @mttp_core.TransportError(
+      kind=Closed,
+      phase=Unknown,
+      detail="closed beneath",
+    )
   }
   self.writes.push(bytes[offset:offset + len].to_owned())
   len
@@ -271,23 +282,34 @@ async test "caller cancellation of write is a signal and joins direction cleanup
 /// `Closed` promises that nothing of the write was sent: a TLS session
 /// that failed a write without starting one on the connection beneath
 /// reports it, one that started a write there does not, and neither does a
-/// failure over TCP, which cannot tell.
+/// failure over TCP, which cannot tell. A `Closed` from the connection
+/// beneath stays `Closed` only if no write beneath came before it.
 async test "a TLS write failed before reaching the connection beneath is Closed" {
   let idle : () -> Int64 = () => 0L
-  // Each look finds one more write started beneath: one ran meanwhile.
-  let started = Ref(0L)
-  let busy : () -> Int64 = () => {
-    started.val += 1L
-    started.val
+  // Each look finds `step` more writes started beneath since the last.
+  let counter = (step : Int64) => {
+    let started = Ref(0L)
+    () => {
+      started.val += step
+      started.val
+    }
   }
   for
     row in [
-      (Some(idle), @mttp_core.Kind::Closed),
-      (Some(busy), Network),
-      (None, Network),
+      (false, Some(idle), @mttp_core.Kind::Closed),
+      (false, Some(counter(1L)), Network),
+      (false, None, Network),
+      (true, Some(counter(1L)), Closed),
+      (true, Some(counter(2L)), Network),
+      (true, None, Network),
     ] {
-    let (lower_writes, expected) = row
-    let conn : &@rt.Conn = wrap(probe(fail_write=true), Ref(0), lower_writes?)
+    let (beneath, lower_writes, expected) = row
+    let io = if beneath {
+      probe(closed_write=true)
+    } else {
+      probe(fail_write=true)
+    }
+    let conn : &@rt.Conn = wrap(io, Ref(0), lower_writes?)
     try conn.write(b"request") catch {
       @mttp_core.TransportError(kind~, phase=Unknown, ..) =>
         assert_eq(kind, expected)

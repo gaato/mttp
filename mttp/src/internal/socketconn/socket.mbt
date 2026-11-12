@@ -129,19 +129,31 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
 }
 
 ///|
-/// The failure of a write. A TLS session that refused it without starting
-/// a write on the connection beneath sent none of it, which `Closed` says:
-/// OpenSSL refuses every write once the session is shut down, as it is
-/// after a read took the peer's close_notify, even a read whose caller was
-/// cancelled before it returned EOF.
+/// The failure of a write, `Closed` only when none of it was sent. A TLS
+/// session that refused it without starting a write on the connection
+/// beneath sent none of it: OpenSSL refuses every write once the session is
+/// shut down, as it is after a read took the peer's close_notify, even a
+/// read whose caller was cancelled before it returned EOF. A `Closed` from
+/// the connection beneath keeps that meaning only when its write was the
+/// first the session started; after an earlier one, part was sent.
 fn[R, W] SocketConn::write_failure(
   self : SocketConn[R, W],
   error : Error,
   lower_before : Int64?,
 ) -> @mttp_core.TransportError {
-  match (error, lower_before, self.lower_writes) {
-    (@mttp_core.TransportError(..), _, _) => transport_error(error)
-    (_, Some(before), Some(count)) if count() == before =>
+  let started = match (lower_before, self.lower_writes) {
+    (Some(before), Some(count)) => Some(count() - before)
+    _ => None
+  }
+  match (error, started) {
+    (@mttp_core.TransportError(kind=Closed, phase~, detail~), _) =>
+      if started is Some(0L | 1L) {
+        transport_error(error)
+      } else {
+        @mttp_core.TransportError(kind=Network, phase~, detail~)
+      }
+    (@mttp_core.TransportError(..), _) => transport_error(error)
+    (_, Some(0L)) =>
       @mttp_core.TransportError(
         kind=Closed,
         phase=Unknown,
