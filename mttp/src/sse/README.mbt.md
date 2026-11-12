@@ -1,8 +1,10 @@
 # gaato/mttp/sse
 
-Server-sent events (`text/event-stream`) as the
-[WHATWG HTML standard](https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation)
-defines them: an incremental parser, a shared async reader over the portable
+Server-sent events (`text/event-stream`): a parser, a reader and an encoder.
+
+They follow the
+[WHATWG HTML standard](https://html.spec.whatwg.org/multipage/server-sent-events.html#event-stream-interpretation):
+an incremental parser, a shared async reader over the portable
 `@mttp.BodyStream` interface, and an encoder for the server side. No runtime
 adapter is required.
 
@@ -22,9 +24,9 @@ adapter is required.
 The parser is bounded: one event, counting its `data` lines, the `event` and
 `id` lines in effect and the line being read, may hold `max_event_bytes`
 (16 MiB by default). Past that, `feed` raises
-`@mttp.TransportError(TooLarge(limit), Body)` and the stream ends; events
-that the same chunk completed earlier are returned first and the next call
-raises.
+`@mttp.TransportError(kind=TooLarge(limit), phase=Body, ..)` and the stream
+ends; events that the same chunk completed earlier are returned first and the
+next call raises.
 
 `SseReader::new(source, max_event_bytes~)` owns a body source and exposes
 `next_event` for pull consumers and `each(receive, stop~)` for callbacks.

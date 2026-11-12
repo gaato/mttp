@@ -7,11 +7,18 @@ multipart bodies, and typed endpoints with a router and OpenAPI documents.
 It depends on `moonbitlang/core` alone and builds on wasm-gc, wasm, js and
 native, with the same tests on each.
 
-Building an app? Add [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async)
-instead: it sends requests over the network with sensible defaults and
-re-exports what an app uses from here. Libraries, such as an SDK for some
-API, depend on this module, so the app decides how requests are sent and
-tests run without a network.
+Building an app? Start with [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async):
+it sends requests over the network with sensible defaults and re-exports the
+types and client functions an app uses most. Add `gaato/mttp` beside it for
+the rest: typed endpoints, the router, OpenAPI documents, multipart bodies,
+rate limits and test stubs. Libraries, such as an SDK for some API, depend on
+this module alone, so the app decides how requests are sent and tests run
+without a network.
+
+Coming from `gaato/http` or `gaato/http-async`? They are now `gaato/mttp` and
+`gaato/mttp_async`; the
+[changelog](https://github.com/gaato/mttp/blob/main/mttp/CHANGELOG.md) says
+what to rename.
 
 The design follows the split of Scala's [sttp](https://sttp.softwaremill.com/)
 family: a model, a client over swappable backends, and endpoint descriptions
@@ -43,19 +50,19 @@ test "describe a request" {
 A `Backend` sends one exchange and returns the response. Every failure is a
 `TransportError` whose phase says how far the exchange got, so `is_unsent`
 tells whether resending a non-idempotent request is safe.
-`gaato/mttp_async` provides the backend for `moonbitlang/core/async`; another
-runtime implements `Backend` itself, or only the ports in `rt` and reuses the
-`h1client` engine.
 
 ### On another runtime
 
-`gaato/mttp_async` is the backend for `moonbitlang/core/async`. A program on
-another runtime uses this module directly: implement `Backend` over that
-runtime's HTTP client (in a browser, `fetch`) and the `rt` ports the client
-needs (`Clock`, and `Timer` for deadlines), then pass them to `Client::new`.
-The client, typed endpoints and server-sent events work unchanged. This is
-also how to use it inside an app whose framework still runs on the registry
-`moonbitlang/async`, which cannot share a program with `moonbitlang/core/async`.
+`gaato/mttp_async` provides the backends for `moonbitlang/core/async`, on
+native, wasm and js (through the host's `fetch`); wasm-gc has no runtime
+there. A program on wasm-gc or on another runtime uses this module directly:
+implement `Backend` over that runtime's HTTP client, or implement only the
+ports in `rt` and reuse the `h1client` engine, then pass the backend, a
+`Clock` and, for deadlines, a `Timer` to `Client::new`. The client, typed
+endpoints and server-sent events work unchanged. This is also how to use it
+in an app whose framework still runs on the registry module
+`moonbitlang/async`, which cannot share a program with
+`moonbitlang/core/async`.
 
 ## A client in a library
 
@@ -96,9 +103,15 @@ test "a library call against a test backend" {
 }
 ```
 
+`gaato/mttp/driver` is experimental, so a test package that calls
+`@driver.run_sync` lists it in its `moon.pkg`:
+`options("allow-experimental-packages": [ "gaato/mttp/driver" ])`.
+
 `Client::new` sends nothing it is not told to: retries, deadlines and rate
 limits are opt-in here (`retry=`, `timeout_ms=`, `limiter=`), while
-`gaato/mttp_async`'s `client()` turns them on for apps.
+`gaato/mttp_async`'s `client()` turns retries and deadlines on for apps. The
+`gaato/mttp/client/ratelimit` section below shows a limiter that follows a
+server's quota headers.
 
 Every failure prints as a readable message: `"\{error}"` on a
 `TransportError`, or `failure.to_string()` on a `ResponseFailure`, summarises
@@ -135,12 +148,6 @@ test "one definition for client, server and docs" {
 
 The router is itself a `Backend`, as above, and its `handler()` is what
 `gaato/mttp_async`'s server or a JavaScript `fetch` export serves.
-
-Requests and responses also carry `Attributes`: typed local metadata that is
-never sent. A server shutting down lets running responses finish, and a
-streamed response with `close_on_shutdown` set to true is closed instead of
-being drained. It is for endless streams such as server-sent events, whose
-clients reconnect; the endpoint layer's `sse_out` and `sse_body_out` set it.
 
 ## Packages
 

@@ -1,8 +1,9 @@
 # gaato/mttp/sim
 
-In-memory implementations of the `gaato/mttp/rt` ports, on the deterministic
-driver (`gaato/mttp/driver`), and the contract checks that every
-implementation of the ports passes. With them, code written against the ports
+In-memory doubles of the `gaato/mttp/rt` ports, and the contract checks every implementation passes.
+
+The doubles run on the deterministic driver (`gaato/mttp/driver`). With them,
+code written against the ports
 (the connection engines, the mttp client, an SDK) is tested with plain `test`
 blocks on wasm-gc, wasm, js and native, without sockets or an event loop.
 
@@ -26,8 +27,9 @@ driver does; the package itself does not need the experimental opt-in.
 ## Contract checks
 
 `check_conn`, `check_coordination_contract`, `check_body_stream_contract` and
-`check_backend_contract` check the rules of the repository's `CONTRACT.md`
-(https://github.com/gaato/mttp/blob/main/CONTRACT.md) on any implementation:
+`check_backend_contract` check the rules of the repository's
+[CONTRACT.md](https://github.com/gaato/mttp/blob/main/CONTRACT.md) on any
+implementation:
 the doubles here pass them in this package's tests, and gaato/mttp_async's
 runtime adapters pass the same checks. Each raises `Failure` naming the first
 rule it saw broken.

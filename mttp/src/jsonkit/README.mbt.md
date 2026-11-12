@@ -1,7 +1,8 @@
 # gaato/mttp/jsonkit
 
-Helpers for hand-written and generated JSON models over `moonbitlang/core`'s
-`Json`, `ToJson` and `FromJson`:
+Helpers for hand-written and generated JSON models.
+
+They work with `moonbitlang/core`'s `Json`, `ToJson` and `FromJson`:
 
 - `Presence[T]` keeps the three states of an optional property apart:
   omitted (`Absent`), `null` (`Null`) and a value (`Value`). An API that

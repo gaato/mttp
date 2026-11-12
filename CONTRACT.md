@@ -16,8 +16,9 @@ Shared checks: `@sim.check_conn`, `check_coordination_contract`,
 `check_body_stream_contract` and `check_backend_contract` run against the sim
 doubles and against mttp_async's adapters. Transport-specific rules (wire
 framing, socket deadlines, TLS) are checked by each implementation's own
-suites. Implementing PRs name their tests in TEST_COVERAGE.md and, for bounds,
-in RESOURCE_BOUNDS.md.
+suites. For the implementations in this repository,
+[TEST_COVERAGE.md](TEST_COVERAGE.md) names the tests behind each rule and
+[RESOURCE_BOUNDS.md](RESOURCE_BOUNDS.md) the tests behind each bound.
 
 ## Clock
 
@@ -102,8 +103,8 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
 `close() -> Unit`.
 
 1. **Validation first.** An invalid URL, header, method or body framing is
-   refused before any I/O with `TransportError(Invalid, Pool)`, which is
-   unsent.
+   refused before any I/O with `TransportError(kind=Invalid, phase=Pool, ..)`,
+   which is unsent.
 2. **Phases are honest.** Every failure carries the phase in which it
    happened. A failure reported in Pool or Dial means no request byte reached
    the peer; `is_unsent` relies on this.
@@ -121,7 +122,7 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
    the per-target exception: it always negotiates and decodes codings, buffers
    request bodies, and is called with manual redirects.
 6. **Close.** `close` is idempotent. Afterwards, new sends fail with
-   `TransportError(Closed, Pool)` without I/O; in-flight exchanges may fail
+   `TransportError(kind=Closed, phase=Pool, ..)` without I/O; in-flight exchanges may fail
    with `Closed`, and their bodies remain closable.
 7. **Cancellation.** Cancelling a send unwinds it, closes the resources it
    owns, and propagates the cancellation unchanged; it is never converted
@@ -130,8 +131,8 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
    they document otherwise.
 9. **Unknown timings.** `BodyTiming` is `#non_exhaustive`. A backend that
    meets a variant it does not implement refuses the send before any I/O with
-   `TransportError(Invalid, Pool)`, as in rule 1, rather than guessing its
-   meaning.
+   `TransportError(kind=Invalid, phase=Pool, ..)`, as in rule 1, rather than
+   guessing its meaning.
 
 A backend written outside this repository, for example over another HTTP
 engine, passes `@sim.check_backend_contract(make_backend)` from
@@ -207,22 +208,6 @@ all four targets. Its cancellation semantics match core/async's:
    with the same contract tests as the sim doubles, including the
    cancellation cases.
 
-## Decision snapshots
-
-RetryRule consumes RequestHead plus explicit idempotency and replayability.
-`RetryContext::capture` reads live request facts once at the application
-boundary. Later acquisition or closure of a stream cannot change a captured
-decision. The Client still requires a body factory before automatically
-resending a stream.
-
-Admission, pool metadata, peer EOF/failure and listener lifecycle transitions
-(`gaato/mttp/internal/control`) return new persistent states and effect
-descriptions. Old snapshots remain valid. Connections, tasks, waiters and
-notifications belong to the engines and adapters and are absent from those
-states. The engines commit each new state before performing its
-close/cancel/wake actions. Decoder buffers and body cursors remain locally
-mutable; they are owned by a single exchange or reader.
-
 ## Client attempts (gaato/mttp/client)
 
 1. Retrying is opt-in. RetryPolicy is pure data. An optional typed decision
@@ -276,8 +261,8 @@ mutable; they are owned by a single exchange or reader.
 
 ## HTTP/1 codec (`gaato/mttp/h1`)
 
-The codec follows the message syntax and framing of RFC 9112
-(https://www.rfc-editor.org/rfc/rfc9112.html), with strict CRLF and a
+The codec follows the message syntax and framing of
+[RFC 9112](https://www.rfc-editor.org/rfc/rfc9112.html), with strict CRLF and a
 stricter rejection of duplicate Content-Length, even identical duplicates.
 CL+TE is rejected as smuggling. Only the single transfer coding `chunked` is
 supported. Header values retain Latin-1 octets and duplicate fields in order;

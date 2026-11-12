@@ -4,3 +4,4 @@
 mttp_async/src/reexports.mbt doc:pub using @mttp # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
 mttp_async/src/reexports.mbt doc:pub using @client # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
 mttp_async/src/reexports.mbt doc:pub using @trust # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it
+mttp_async/src/reexports.mbt doc:pub using @cookie # a re-export keeps the documentation of the declaration it names; moon doc lets a /// on a pub using replace it

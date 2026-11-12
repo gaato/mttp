@@ -13,7 +13,16 @@ readme = "README.md"
 
 repository = "https://github.com/gaato/mttp"
 
-keywords = [ "http", "client", "sans-io", "openapi", "endpoint", "sse" ]
+keywords = [
+  "http",
+  "client",
+  "server",
+  "router",
+  "sans-io",
+  "openapi",
+  "endpoint",
+  "sse",
+]
 
 description = "HTTP for MoonBit without I/O, for libraries such as SDKs: the types, an HTTP/1.1 codec and engines, a client with retries under a budget, deadlines, rate limits, redirects and cookies, SSE, multipart, and typed endpoints with a router and OpenAPI. Apps add gaato/mttp_async."
 

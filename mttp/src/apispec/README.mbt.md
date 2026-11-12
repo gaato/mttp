@@ -1,10 +1,12 @@
-# OpenAPI document data
+# gaato/mttp/apispec
 
-These core-only records describe the OpenAPI documents the endpoint
-interpreter emits. They type the 3.1 fixed fields and those 3.2 adds (`$self`,
-`itemSchema`, the `query` operation and `additionalOperations`, tag
-`parent` and `kind`, and others); the 3.2 fields stay unset in a 3.1
-document, so moving to 3.2 adds no field. They are plain data, independent of HTTP handlers and runtime I/O.
+OpenAPI document records with their JSON codecs.
+
+The records describe the OpenAPI documents the endpoint interpreter emits.
+They type the 3.1 fixed fields and those 3.2 adds (`$self`, `itemSchema`, the
+`query` operation and `additionalOperations`, tag `parent` and `kind`, and
+others); the 3.2 fields stay unset in a 3.1 document, so moving to 3.2 adds no
+field. They are plain data, independent of HTTP handlers and runtime I/O.
 Constructors supply optional defaults. JSON encoding flattens `extensions`
 entries whose names start with `x-` after the fixed fields.
 
@@ -42,7 +44,6 @@ nothing:
 An unmodeled member never replaces a typed field or an extension when
 encoding.
 
-The repository's `scripts/gen_apispec.mbtx` generates the record codecs from
-a field table. Explicit codecs keep wire field names such as `operationId`,
-`requestBody` and `securitySchemes` separate from MoonBit names and retain
-extension values when a document is decoded and encoded again.
+The codecs keep wire field names such as `operationId`, `requestBody` and
+`securitySchemes` apart from the MoonBit field names, and keep extension
+values when a document is decoded and encoded again.

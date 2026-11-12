@@ -209,6 +209,13 @@ All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design
 
 `gaato/mttp_digest` (root package): `DigestScheme` as an origin-scoped Backend wrapper, ported from requesto.
 
+`DigestScheme` rules beyond those its README states:
+
+- Each cnonce uses four draws of `random` (128 bits); the nonce count starts at one and is sent as eight hex digits. Concurrent calls share increasing counts, including responses to challenges with an already-used nonce. A new nonce or a `stale=true` challenge resets the count to one.
+- It closes intermediate responses unread and keeps the final body owned by the caller. It passes `SendOptions` through unchanged on every send; a `Client` with a Timer bounds the whole exchange. Request streams close on every exit, including validation refusal and cancellation. Close is idempotent and clears retained nonces.
+- `auth` is preferred over `auth-int` (the latter needs a buffered body). Legacy non-session challenges without qop are accepted without preemptive nonce reuse. `-sess` without qop and SHA-512-256 are declined: `moonbitlang/x` does not provide SHA-512/256's distinct initialization values.
+- All `WWW-Authenticate` values together have a 16 KiB UTF-8 budget; a larger challenge returns the 401 unchanged. The nonce store retains at most 16 origins, evicts the oldest on overflow and forgets a nonce when its count would exceed `ffffffff`. A same-nonce challenge at exhaustion returns the 401 unchanged rather than reusing a count. Each wrapper is scoped to one origin.
+
 ### 3.5 Responsibility rules
 
 - **gaato/mttp's vocabulary, codec and engines** own the wire. **They hold no policy**: no retry, no redirect following, no cookies, no rate limits, no content-coding negotiation, no decoded-body limits.
@@ -528,7 +535,97 @@ pub fn Cookies::new(inner : &@mttp.Backend, jar : @cookie.CookieJar) -> Cookies
 
 **Redirects.** FollowRedirects is configured once (`RedirectConfig`) and overridden per request through the `redirect_limit` attribute (set by `RequestPlan::follow_redirects` and `max_redirects`). It closes intermediate bodies unread, records `redirect_history`, and composes with Cookies. Retry sits above redirects: a 503 on hop 2 re-sends hop 1.
 
-**Port note.** `client/retry` and `client/ratelimit` keep their PR #2 form; the only change is `@model`/`@clock` → `@http`/`@rt`. RetryRule consumes a RequestHead plus explicit idempotency and replayability (CONTRACT, decision snapshots).
+**Rate limiter (`client/ratelimit`).** The rules `WindowLimiter` keeps; the package README shows how to wire it.
+
+`rate_limit_headers` reads a nonnegative remaining count and a reset in
+decimal seconds. A relative reset takes precedence over an absolute Unix
+reset; missing or malformed relative values fall back to the absolute one.
+The limiter consumes remaining quota at admission and records response
+headers on release. A status of zero means no response and preserves state.
+
+Each successful acquire returns an opaque `@client.Admission` with its bucket
+and a strictly increasing sequence assigned by this limiter. Pass that token
+to release, including on transport failure or cancellation. A token belongs
+to its issuing limiter. The first release removes it before processing the
+head; duplicate releases are ignored, even if recording the first head failed.
+
+Each key holds two optional, independent constraints: an ordinary quota with
+remaining/reset and restriction/consumption sequences, and a Retry-After
+block with its own deadline and admission sequence. They expire independently:
+expiring a short block never discards a longer quota window, and expiring
+quota never discards a longer block.
+
+Responses are ordered by admission identity, never by reset timestamps. An
+ordinary quota remembers the greatest sequence that restricted it; a block
+retains the greatest sequence of its Retry-After responses. A response may
+relax quota only if its own sequence exceeds both active authority watermarks.
+It must also not predate local quota consumption: a request's own response
+can refresh the quota it consumed, while an older response cannot undo later
+admissions. Relative reset delivery drift confers no permission to replenish.
+
+An eligible bucket 429 can replace prior ordinary exhaustion with its
+Retry-After block, including when quota headers are absent. An ineligible
+429 keeps newer ordinary quota and only adds or extends the independent block.
+Stale positive responses cannot reinstate quota while a newer block fences
+them. An eligible newer response can supply fresh quota for use after the
+block; responses never shorten an active block. Ordinary quota cannot change
+the block's deadline, but can independently require a longer admission wait.
+
+`Pace` groups buckets with a minimum interval between admissions.
+`GlobalWindow` counts non-exempt admissions across buckets. On 429,
+`LimitScope` selects a bucket block, a global block, shared parsed state, or
+no change. Retry-After (including `retry-after-ms` and HTTP dates) overrides
+the bucket reset; `default_retry_after_ms` handles missing or invalid values.
+Every server-specified wait, including the fallback, is capped at one hour.
+
+Optional `gate` factories provide fresh capacity-one FIFO `@rt.Gate`s,
+held from admission until release. This guarantees FIFO order inside a pace
+group. Independent groups compete in scheduler order; without gates there
+is no FIFO guarantee. Every successful acquire needs one release with that
+acquire's Admission. A cancelled
+wait consumes neither global nor bucket quota and returns any held gate.
+The final global, bucket and pace checks commit without suspension.
+
+`server_key` can map several caller buckets to one server window. Every key
+transition joins the two constraints independently and cannot relax either.
+Quota joins take the smaller remaining count, later reset and greater quota
+watermarks; block joins take the later block deadline and greater block
+sequence. An absent quota or block contributes no restriction and never deletes
+the destination's existing constraint. Learning, changing or removing an alias
+first joins the previously resolved state into the destination, even without
+parsed quota headers. The source stays available to other buckets. The
+response is then reconciled using its own sequence, so a genuinely eligible
+response may refresh quota after the transfer.
+
+Aliases expire independently after one hour and survive quota resets and
+sweeps of expired quota state. Expiry copies any live shared constraints to
+the caller bucket before detaching. If the state map has no room for that
+fallback, the alias retains its old route until a later lookup or sweep can
+transfer it, or its constraints expire. A refused response transition leaves
+the previous route and its constraints intact. These rules prevent a key
+change or eviction from bypassing a block or replenishing quota.
+Expired state, aliases and pace deadlines
+are swept on traffic, at doubling thresholds or every 60 seconds. Each map
+(including active gate groups and outstanding admission tokens) has a fixed
+4096-entry ceiling, including deferred alias expirations and copied fallback
+states. Outstanding bookkeeping holds at most 4096 tokens, including multiple
+requests for the same bucket, and is removed by every first release,
+including transport failures, ignored responses and recording refusals. New entries
+beyond it raise `TransportError(kind=TooLarge(4096), ..)` after eviction of expired
+entries; live state is retained. The phase is Pool on acquisition and Unknown
+on release, because a response was already received. A release that refuses
+recording still frees its gate. The caller controls the number of waiting calls.
+Sequence numbers never wrap: exhaustion of Int64 raises `Invalid` in phase
+Pool before admission, preserving quota and returning any acquired gate.
+
+The Clock port exposes Unix time rather than a monotonic clock. Internal
+deadlines use nondecreasing elapsed time built from positive clock deltas
+and completed sleeps. A backward clock adjustment cannot lengthen a wait by
+the size of that adjustment; overlapping sleeps are not summed. Forward
+wall adjustments still count as elapsed time. Unix time remains the input to
+server date parsing and the time reported by `state`.
+
+**Port note.** `client/retry` and `client/ratelimit` keep their PR #2 form; the only change is `@model`/`@clock` → `@http`/`@rt`. RetryRule consumes a RequestHead plus explicit idempotency and replayability (§5.11).
 
 ### 4.5 h1 codec and the connection engines
 
@@ -1182,7 +1279,8 @@ Binding rules:
 - `internal/control` contains no sockets, tasks, waiters, callbacks, async functions, `mut` fields or `Ref`s (gate). Each transition returns a new state and leaves old states usable; persistent HashMap/Vector updates avoid copying a whole pool per event.
 - Adapters keep a separate id-to-resource table and **commit a transition before interpreting its actions** (close, cancel, wake). Local builders never escape into states.
 - The engines are portable orchestration, not pure functions: they call Conn, Dialer, Clock, Timer and Coordination. Parsers still mutate private buffers, because a persistent buffer per input byte would cost more without strengthening the ownership contract.
-- Retry and redirect planning consume snapshots (RequestHead plus explicit idempotency and replayability). Body reuse and closure happen outside the planner. Capturing availability never authorizes resending a stream: the Client still needs a body factory.
+- Retry and redirect planning consume snapshots (RequestHead plus explicit idempotency and replayability). `RetryContext::capture` reads the live request facts once, at the application boundary, so a later acquisition or closure of a stream cannot change a captured decision. Body reuse and closure happen outside the planner. Capturing availability never authorizes resending a stream: the Client still needs a body factory.
+- The transitions of `internal/control` (admission, pool metadata, peer EOF/failure, listener lifecycle) return new persistent states and effect descriptions; old snapshots stay valid. Connections, tasks, waiters and notifications belong to the engines and adapters and never appear in those states. Decoder buffers and body cursors stay locally mutable, owned by a single exchange or reader.
 
 ### 5.12 Expected failure modes and their prevention
 

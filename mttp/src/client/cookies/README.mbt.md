@@ -1,6 +1,8 @@
 # gaato/mttp/client/cookies
 
-`Cookies::new(inner, jar)` is an `http.Backend` wrapper. It attaches cookies
+A Backend wrapper that keeps cookies in a `gaato/mttp/cookie` jar.
+
+`Cookies::new(inner, jar)` wraps an `@mttp.Backend`. It attaches cookies
 matching each request URL, preserves an explicit Cookie header, and stores
 every Set-Cookie field as soon as a response head arrives, including error
 and redirect responses. The response body stays owned by the caller.

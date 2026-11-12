@@ -1,7 +1,6 @@
-# Content codings
+# gaato/mttp_async/codings
 
-This package builds on native, wasm1 under moonrun and JS, matching the
-module's supported targets.
+Bounded content codings for native, wasm (under moonrun) and js.
 
 `ContentDecoder` incrementally decodes gzip, deflate, Brotli and zstd.
 `ContentEncoder` produces gzip, zlib-wrapped deflate and Brotli; the current

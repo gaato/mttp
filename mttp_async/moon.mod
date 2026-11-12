@@ -8,9 +8,9 @@ readme = "README.md"
 
 repository = "https://github.com/gaato/mttp"
 
-keywords = [ "http", "client", "server", "retry", "openapi", "async" ]
+keywords = [ "http", "client", "server", "retry", "sse", "async" ]
 
-description = "HTTP for MoonBit apps that outgrow the built-in client: one module with a ready client (retries with a budget, deadlines, redirects, decompression) and a server, on moonbitlang/core/async for native, wasm and js. Libraries depend on gaato/mttp instead."
+description = "HTTP for MoonBit apps that outgrow the built-in client: the module an app starts with, holding a ready client (retries with a budget, deadlines, redirects, cookies, decompression) and a server, on moonbitlang/core/async for native, wasm and js. Typed endpoints and OpenAPI come from gaato/mttp, which libraries depend on instead."
 
 source = "src"
 

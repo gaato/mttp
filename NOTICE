@@ -1,5 +1,5 @@
 mttp
-Copyright 2026 gaato
+Copyright 2026 Gakuto Furuya
 
 This product includes software developed by gaato
 (https://github.com/gaato).
@@ -11,7 +11,7 @@ sttp and tapir projects by SoftwareMill (https://github.com/softwaremill).
 The URI reference parser and resolver include code ported through gaato/http
 from moonbitstack/moonhttp (Copyright 2026 Leo Cheng, Apache-2.0).
 
-The NO_PROXY reference tests of gaato/http/h1client port the tables of two
+The NO_PROXY reference tests of gaato/mttp/h1client port the tables of two
 other projects by hand:
 - golang.org/x/net/http/httpproxy (proxy_test.go), Copyright The Go Authors,
   BSD-3-Clause license (https://go.googlesource.com/net/+/master/LICENSE);

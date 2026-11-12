@@ -1,6 +1,8 @@
 import {
   "gaato/mttp",
   "gaato/mttp/client",
+  "gaato/mttp/client/cookies",
+  "gaato/mttp/cookie",
   "gaato/mttp/h1client",
   "gaato/mttp/rt",
   "gaato/mttp_async/backend",
@@ -11,6 +13,9 @@ import {
 
 import {
   "gaato/mttp/endpoint",
+  "gaato/mttp/router",
+  "gaato/mttp/schema",
+  "gaato/mttp/testing",
   "gaato/mttp_async/server",
   "moonbitlang/core/async/cond_var",
   "moonbitlang/core/encoding/utf8",

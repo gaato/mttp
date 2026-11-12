@@ -12,6 +12,7 @@ import {
 
 import {
   "gaato/mttp_digest",
+  "moonbitlang/core/env",
   "gaato/mttp/driver",
   "gaato/mttp/sim",
   "gaato/mttp/client/retry",

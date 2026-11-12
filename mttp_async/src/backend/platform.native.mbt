@@ -1,7 +1,7 @@
 ///|
 fn platform_backend(
   config : @h1client.ClientConfig?,
-  trust : @http_async.Trust,
+  trust : @trust.Trust,
   clock : &@rt.Clock,
   timer : &@rt.Timer,
 ) -> AsyncBackend {

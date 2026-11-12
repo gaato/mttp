@@ -1,8 +1,9 @@
-# Typed endpoints
+# gaato/mttp/endpoint
 
-An endpoint describes request inputs, response representations and declared
-errors. The same definition creates a client request, a server interpreter and
-documentation metadata.
+Typed endpoints: one definition gives a client call, a server handler and documentation.
+
+An endpoint describes its request inputs, its response representations and
+the errors it declares:
 
 ```mbt check
 ///|
@@ -25,6 +26,60 @@ test "endpoint definition and client encoding" {
 }
 ```
 
+## Inputs
+
+`path` captures one decoded segment. `paths` captures the final `{name...}`
+tail as an array, retaining empty segments and encoded slashes. A custom
+`Input::new` supplies its own atoms, staged decoder and inverse encoder;
+`Staged::ready`, `Staged::after_body` and `RequestSink` setters are public.
+Custom atoms must describe every request field their decoder consumes.
+`encoded_path_template` exposes the same literal encoding used by client
+requests, retaining capture placeholders for documentation. Dot-only literal
+segments are refused along with dot-only capture values, because transports
+normalize them. `media_type_token` exposes the media comparison used by body
+inputs and response matching: case-insensitive, without parameters.
+
+`body` takes any `BodyCodec`, so an HTML form posts to the same object codec
+as a JSON API through `@schema.form_codec`. Its values are validated by that
+codec, and a 400 names the same JSON pointers as the JSON endpoint would:
+
+```mbt check
+///|
+test "an HTML form and a JSON API share one codec" {
+  let note = @schema.object2(
+    "Note",
+    @schema.field("title", @schema.jstring.validate(@schema.max_length(20)), (
+      n : (String, Int32),
+    ) => n.0),
+    @schema.field("stars", @schema.jint, n => n.1),
+    (title, stars) => (title, stars),
+  )
+  let from_form = @endpoint.endpoint
+    .post("/notes")
+    .input(@endpoint.body(@schema.form_codec(note)))
+    .output(@endpoint.json_out(note.body()))
+  let server = from_form.serve_public(n => Ok(n))
+  let request = from_form.request((), ("hi", 5)).raw()
+  assert_eq(request.body, @mttp.Body::Bytes(b"title=hi&stars=5"))
+  let bad = @mttp.Request::post("/notes").body_form([
+    ("title", "hi"),
+    ("stars", "five"),
+  ])
+  @driver.run_sync(() => {
+    let ctx = @endpoint.DispatchContext::new()
+    assert_eq(server.dispatch(request, Map([]), ctx).status, 200)
+    // The problem body's issue has the path /stars.
+    assert_eq(server.dispatch(bad, Map([]), ctx).status, 400)
+  })
+}
+```
+
+`raw_body()` requires a present body without restricting its media type;
+`raw_body().optional()` accepts absence. Present zero-length bytes remain
+present. Raw security may share buffered bytes with a typed regular body.
+
+## Outputs
+
 `text_out`, `bytes_out` and `html_out` cover plain text, opaque bytes and
 HTML pages. `html_out` takes the rendered page as a `String`: render it in the
 handler with any template engine, so a client reads back the same string.
@@ -32,42 +87,78 @@ handler with any template engine, so a client reads back the same string.
 fragment for htmx (decided by an `HX-Request` header input) and a 303 for a
 plain form post. `json_out(codec)` takes any body codec.
 
-Security inputs are decoded and authenticated before regular input failures
-are returned. Head decoding does not read the body. Buffered inputs are bounded
-by the router limit (1 MiB by default); streamed inputs count bytes while the
-handler reads. A raw signature body is buffered before authentication and
-cannot be combined with a streamed regular input.
+Projection functions used by `Variant::contramap` must be deterministic:
+selection and encoding may call a projection separately. `and_status` returns
+the received status alongside the typed value; `body_out` carries a per-response content type and bytes.
+`set_cookie` keeps separate Set-Cookie fields and returns each named cookie's
+value and attributes without interpreting its application-specific contents.
 
-The endpoint override replaces the dispatch default; an adapter's hard body
-ceiling still applies, so the smaller limit wins. Adapter `TooLarge` failures
-retain their original limit. Direct dispatch defaults to problem responses:
-400 for malformed inputs and validation issues, 401 for security credentials,
-413 with `Connection: close` for size, and 415 for media type. Query decoding
-admits 256 pairs; at most 100 failures or nested validation issues are reported.
-
-`Body::Empty` means absent, before media-type validation. Both optional buffered
-and streamed bodies decode it as `None`, even if a Content-Type was supplied.
-Present zero-length bytes or streams need the declared media type and decode
-as a present value. `stream_body().optional()` therefore round-trips the
-bodyless request its client interpreter builds.
+## Serving and calling
 
 `serve` takes authentication and business handlers returning `Result`. Declare
 ordinary application error values with `.errors(one_of([...]))`; raised errors
 use the server's unhandled-error policy. These Result wrappers do not change
 the wire JSON or generated OpenAPI document.
 
+Serve endpoints through `gaato/mttp/router`, and stub them in tests with
+`gaato/mttp/endpoint/testkit`. `ServerEndpoint::dispatch` remains for adapters
+that route themselves: it takes the captures and a `DispatchContext`.
+
+Each endpoint documents the errors its own output declares. Shared error
+types are fine, but give each endpoint an `Out` with only the variants it can
+return, so a public route does not document 401 or 409:
+
+```mbt check
+///|
+test "each endpoint declares only its own errors" {
+  let not_found = @endpoint.empty_variant(404)
+  let read = @endpoint.endpoint
+    .get("/items/{id}")
+    .input(@endpoint.path("id", @schema.string))
+    .output(@endpoint.text_out())
+    .errors(@endpoint.one_of([not_found]))
+  let statuses = read.doc().errors.map(variant => variant.status)
+  assert_eq(statuses, [404])
+}
+```
+
 `request(...).send(client)` reads a buffered output and returns
 `Result[Result[O, E], ResponseFailure]` in the reply body. A stream-only output
 requires `stream_request(..., use_)` through the same send pipeline. It also
 supports buffered outputs. The callback runs once, after retry decisions,
 and its borrowed streams close when it exits. `call` and `call_with` are
-convenience forms. `EventStream.each` closes on EOF, failure or cancellation.
-SSE outputs share `sse.SseReader` with `client.as_sse`: queued complete events
-are delivered before an oversized event fails, and pending overflow is raised
-before another read, even when the peer goes quiet. On the server, an SSE
-response carries `@mttp.close_on_shutdown`, so it ends when the server shuts
-down instead of holding the shutdown for its drain time; clients reconnect
-with `Last-Event-ID`.
+convenience forms.
+
+## Server-only values
+
+Keep a definition that the server and its clients share to the wire contract.
+A value the server adapter supplies, such as `@mttp.remote_addr` or the
+`@mttp.background` scheduler, is not part of it: an `attribute(...)` input in
+the shared definition would also appear in the client's input type. Serve the
+endpoint with `serve_with` or `serve_public_with` instead; their handler
+receives the attributes of the request being served beside the inputs:
+
+```mbt check
+///|
+test "a handler reads server-only values without an input" {
+  let ping = @endpoint.endpoint.get("/ping").output(@endpoint.text_out())
+  let server = ping.serve_public_with((_, attributes) => {
+    Ok(attributes.get(@mttp.remote_addr).unwrap_or("unknown"))
+  })
+  let request = ping.request((), ()).raw().attribute(@mttp.remote_addr, "peer")
+  @driver.run_sync(() => {
+    let ctx = @endpoint.DispatchContext::new()
+    let response = server.dispatch(request, Map([]), ctx)
+    assert_eq(response.body.read_all(max=100), b"peer")
+  })
+}
+```
+
+`attribute(key)` remains for a value that should be an input of the
+endpoint, for example one that a custom input maps or that only a server-side
+definition uses.
+
+## Server-sent events
 
 `sse_out` writes each value's JSON as the event's `data`. Its `meta` mapping
 gives each value an `id`, an event name and a `retry` hint as an `SseMeta`.
@@ -84,6 +175,14 @@ carry no fields of their own: on the server, `meta` decides them.
 original, so read and close only the mapped one.
 Every event stream opens with an SSE comment line, which parsers ignore, so
 that a server sends the response head before the first event exists.
+
+`EventStream::each` closes the stream on EOF, failure or cancellation.
+SSE outputs share `@sse.SseReader` with `@client.as_sse`: queued complete
+events are delivered before an oversized event fails, and pending overflow is
+raised before another read, even when the peer goes quiet. On the server, an
+SSE response carries `@mttp.close_on_shutdown`, so it ends when the server
+shuts down instead of holding the shutdown for its drain time; clients
+reconnect with `Last-Event-ID`.
 
 `sse_body_out` takes a `BodyCodec` instead, and sends each value's encoding as
 the event's text; `sse_out(codec)` is `sse_body_out(codec.body())`. For htmx's
@@ -176,7 +275,7 @@ failed, so the client sees an error instead of a complete stream. The channel
 waits through the `coordination` it is given: `@mttp_async.coordination()` in
 an app, `@sim.SimCoordination` in a test.
 In a handler, run the producer with the request's `@mttp.background`
-scheduler, which `serve_with` passes (see "Server-only values" below).
+scheduler, which `serve_with` passes (see "Server-only values" above).
 
 ```mbt check
 ///|
@@ -211,55 +310,35 @@ test "a channel turns a callback API into an event stream" {
 }
 ```
 
-`path` captures one decoded segment. `paths` captures the final `{name...}`
-tail as an array, retaining empty segments and encoded slashes. A custom
-`Input::new` supplies its own atoms, staged decoder and inverse encoder;
-`Staged::ready`, `Staged::after_body` and `RequestSink` setters are public.
-Custom atoms must describe every request field their decoder consumes.
-`encoded_path_template` exposes the same literal encoding used by client
-requests, retaining capture placeholders for documentation. Dot-only literal
-segments are refused along with dot-only capture values, because transports
-normalize them. `media_type_token` exposes the media comparison used by body
-inputs and response matching: case-insensitive, without parameters.
+## Limits and failures
 
-`body` takes any `BodyCodec`, so an HTML form posts to the same object codec
-as a JSON API through `@schema.form_codec`. Its values are validated by that
-codec, and a 400 names the same JSON pointers as the JSON endpoint would:
+Security inputs are decoded and authenticated before regular input failures
+are returned. Head decoding does not read the body. A raw signature body is
+buffered before authentication and cannot be combined with a streamed
+regular input.
 
-```mbt check
-///|
-test "an HTML form and a JSON API share one codec" {
-  let note = @schema.object2(
-    "Note",
-    @schema.field("title", @schema.jstring.validate(@schema.max_length(20)), (
-      n : (String, Int32),
-    ) => n.0),
-    @schema.field("stars", @schema.jint, n => n.1),
-    (title, stars) => (title, stars),
-  )
-  let from_form = @endpoint.endpoint
-    .post("/notes")
-    .input(@endpoint.body(@schema.form_codec(note)))
-    .output(@endpoint.json_out(note.body()))
-  let server = from_form.serve_public(n => Ok(n))
-  let request = from_form.request((), ("hi", 5)).raw()
-  assert_eq(request.body, @mttp.Body::Bytes(b"title=hi&stars=5"))
-  let bad = @mttp.Request::post("/notes").body_form([
-    ("title", "hi"),
-    ("stars", "five"),
-  ])
-  @driver.run_sync(() => {
-    let ctx = @endpoint.DispatchContext::new()
-    assert_eq(server.dispatch(request, Map([]), ctx).status, 200)
-    // The problem body's issue has the path /stars.
-    assert_eq(server.dispatch(bad, Map([]), ctx).status, 400)
-  })
-}
-```
+Buffered inputs are bounded by the router's limit, 1 MiB by default
+(`max_body_bytes` in `@router.ServerOptions`), and `Endpoint::max_body_bytes(n)` sets
+another limit for one endpoint. A server adapter's own body ceiling still
+applies, so the smaller limit wins, and its `TooLarge` failures keep their
+original limit. Streamed inputs count bytes while the handler reads.
+Direct dispatch defaults to problem responses: 400 for malformed inputs and
+validation issues, 401 for security credentials, 413 with
+`Connection: close` for size, and 415 for media type. Query decoding admits
+256 pairs; at most 100 failures or nested validation issues are reported.
 
-`raw_body()` requires a present body without restricting its media type;
-`raw_body().optional()` accepts absence. Present zero-length bytes remain
-present. Raw security may share buffered bytes with a typed regular body.
+`@mttp.Body::Empty` means absent, before media-type validation. Both optional
+buffered and streamed bodies decode it as `None`, even if a Content-Type was supplied.
+Present zero-length bytes or streams need the declared media type and decode
+as a present value. `stream_body().optional()` therefore round-trips the
+bodyless request its client interpreter builds.
+
+Matching buffered output variants are tried first, then matching declared-error
+variants, in declaration order within each group. The Client buffers the body
+once within its response limit and reuses those bytes for every candidate.
+The first successful decode wins; if all fail, `Deserialization` retains the
+last output failure (or the last declared-error failure if no output matched).
+An unmatched status or media type yields `UnexpectedStatus`.
 
 `check_definitions` requires equivalent path templates to use the same capture
 names at each position, even for different methods. For example, GET
@@ -269,71 +348,6 @@ both methods. Single and rest captures use the same naming rule when their
 paths project to the same OpenAPI hierarchy; distinct literal paths remain
 independent.
 
-Matching buffered output variants are tried first, then matching declared-error
-variants, in declaration order within each group. The Client buffers the body
-once within its response limit and reuses those bytes for every candidate.
-The first successful decode wins; if all fail, `Deserialization` retains the
-last output failure (or the last declared-error failure if no output matched).
-An unmatched status or media type yields `UnexpectedStatus`.
-
 `query_list` embeds its item schema through `Schema.reference`, preserving
 named children, reachable definitions and definition problems for the shared
 definition checker.
-
-Projection functions used by `Variant::contramap` must be deterministic:
-selection and encoding may call a projection separately. `and_status` returns
-the received status alongside
-the typed value; `body_out` carries a per-response content type and bytes.
-`set_cookie` keeps separate Set-Cookie fields and returns each named cookie's
-value and attributes without interpreting its application-specific contents.
-
-Serve endpoints through `gaato/mttp/router`, and stub them in tests with
-`gaato/mttp/endpoint/testkit`. `ServerEndpoint::dispatch` remains for adapters
-that route themselves: it takes the captures and a `DispatchContext`.
-
-Each endpoint documents the errors its own output declares. Shared error
-types are fine, but give each endpoint an `Out` with only the variants it can
-return, so a public route does not document 401 or 409:
-
-```mbt check
-///|
-test "each endpoint declares only its own errors" {
-  let not_found = @endpoint.empty_variant(404)
-  let read = @endpoint.endpoint
-    .get("/items/{id}")
-    .input(@endpoint.path("id", @schema.string))
-    .output(@endpoint.text_out())
-    .errors(@endpoint.one_of([not_found]))
-  let statuses = read.doc().errors.map(variant => variant.status)
-  assert_eq(statuses, [404])
-}
-```
-
-## Server-only values
-
-Keep a definition that the server and its clients share to the wire contract.
-A value the server adapter supplies, such as `@mttp.remote_addr` or the
-`@mttp.background` scheduler, is not part of it: an `attribute(...)` input in
-the shared definition would also appear in the client's input type. Serve the
-endpoint with `serve_with` or `serve_public_with` instead; their handler
-receives the attributes of the request being served beside the inputs:
-
-```mbt check
-///|
-test "a handler reads server-only values without an input" {
-  let ping = @endpoint.endpoint.get("/ping").output(@endpoint.text_out())
-  let server = ping.serve_public_with((_, attributes) => {
-    Ok(attributes.get(@mttp.remote_addr).unwrap_or("unknown"))
-  })
-  let request = ping.request((), ()).raw().attribute(@mttp.remote_addr, "peer")
-  @driver.run_sync(() => {
-    let ctx = @endpoint.DispatchContext::new()
-    let response = server.dispatch(request, Map([]), ctx)
-    assert_eq(response.body.read_all(max=100), b"peer")
-  })
-}
-```
-
-`attribute(key)` remains for a value that should be an input of the
-endpoint, for example one that a custom input maps or that only a server-side
-definition uses.

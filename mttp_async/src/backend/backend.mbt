@@ -17,7 +17,7 @@ pub struct AsyncBackend {
 /// for upload, head and body deadlines (host pooling remains outside them).
 pub fn AsyncBackend::new(
   config? : @h1client.ClientConfig,
-  trust~ : @http_async.Trust = System,
+  trust~ : @trust.Trust = System,
   clock? : &@rt.Clock,
   timer? : &@rt.Timer,
 ) -> AsyncBackend {

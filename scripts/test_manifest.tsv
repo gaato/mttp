@@ -50,10 +50,10 @@ gaato/mttp	gaato/mttp/h1client	js	88
 gaato/mttp	gaato/mttp/h1client	native	88
 gaato/mttp	gaato/mttp/h1client	wasm	88
 gaato/mttp	gaato/mttp/h1client	wasm-gc	88
-gaato/mttp	gaato/mttp/h1server	js	76
-gaato/mttp	gaato/mttp/h1server	native	76
-gaato/mttp	gaato/mttp/h1server	wasm	76
-gaato/mttp	gaato/mttp/h1server	wasm-gc	76
+gaato/mttp	gaato/mttp/h1server	js	79
+gaato/mttp	gaato/mttp/h1server	native	79
+gaato/mttp	gaato/mttp/h1server	wasm	79
+gaato/mttp	gaato/mttp/h1server	wasm-gc	79
 gaato/mttp	gaato/mttp/internal/control	js	9
 gaato/mttp	gaato/mttp/internal/control	native	9
 gaato/mttp	gaato/mttp/internal/control	wasm	9
@@ -124,8 +124,8 @@ gaato/mttp-example-serve	gaato/mttp-example-serve	native	0
 gaato/mttp-fetch-example	gaato/mttp-fetch-example	js	0
 gaato/mttp-fetch-example	gaato/mttp-fetch-example/workers	js	0
 gaato/mttp_async	gaato/mttp_async	js	0
-gaato/mttp_async	gaato/mttp_async	native	4
-gaato/mttp_async	gaato/mttp_async	wasm	4
+gaato/mttp_async	gaato/mttp_async	native	6
+gaato/mttp_async	gaato/mttp_async	wasm	6
 gaato/mttp_async	gaato/mttp_async/backend	js	17
 gaato/mttp_async	gaato/mttp_async/backend	native	18
 gaato/mttp_async	gaato/mttp_async/backend	wasm	18
