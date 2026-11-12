@@ -13,6 +13,12 @@ never does.
   `gaato/http` one, and raises `@mttp.TransportError`: gaato/http is now part
   of gaato/mttp. Replace `gaato/http` with `gaato/mttp` in moon.mod and
   moon.pkg, and `@http.` with `@mttp.` in code.
+- A Client follows redirects itself, outside the backend it is given, so
+  `Client::new(DigestScheme::new(backend, ..), ..)` checks every hop against
+  the credential origin without a `FollowRedirects` around the wrapper; with
+  `gaato/mttp_async`, pass it as `client(backend=DigestScheme::new(
+  @mttp_async.backend(), ..))`. Drop the `FollowRedirects` from a stack that
+  had one, or give its Client `redirect=RedirectConfig::none()`.
 
 ## [0.1.0] - 2026-11-10
 
