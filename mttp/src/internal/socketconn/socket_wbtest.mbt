@@ -148,7 +148,7 @@ impl @io.BinaryWriter for ProbeIo
 fn wrap(
   io : ProbeIo,
   closes : Ref[Int32],
-  lower_writes? : () -> Int64,
+  lower_sends? : () -> Int64,
 ) -> SocketConn[ProbeIo, ProbeIo] {
   {
     reader: io,
@@ -159,7 +159,7 @@ fn wrap(
     pending: b"",
     cancel_read: None,
     cancel_write: None,
-    lower_writes,
+    lower_sends,
   }
 }
 
@@ -279,37 +279,38 @@ async test "caller cancellation of write is a signal and joins direction cleanup
 }
 
 ///|
-/// `Closed` promises that nothing of the write was sent: a TLS session
-/// that failed a write without starting one on the connection beneath
-/// reports it, one that started a write there does not, and neither does a
-/// failure over TCP, which cannot tell. A `Closed` from the connection
-/// beneath stays `Closed` only if no write beneath came before it.
-async test "a TLS write failed before reaching the connection beneath is Closed" {
+/// `Closed` promises that nothing of the write was sent. Over TLS the
+/// adapter is told how many writes beneath may have sent bytes; a write
+/// beneath that raised `Closed` does not count. If none did during the
+/// write, any failure is `Closed`; if one did, a `Closed` from beneath, or
+/// a read's `Closed` that the session raises again, is `Network`. Over TCP,
+/// which cannot tell, it is `Network` too.
+async test "a TLS write failed before sending anything beneath is Closed" {
   let idle : () -> Int64 = () => 0L
-  // Each look finds `step` more writes started beneath since the last.
-  let counter = (step : Int64) => {
-    let started = Ref(0L)
+  // Each look finds one more write beneath that may have sent bytes.
+  let sending = () => {
+    let sent = Ref(0L)
     () => {
-      started.val += step
-      started.val
+      sent.val += 1L
+      sent.val
     }
   }
   for
     row in [
       (false, Some(idle), @mttp_core.Kind::Closed),
-      (false, Some(counter(1L)), Network),
+      (false, Some(sending()), Network),
       (false, None, Network),
-      (true, Some(counter(1L)), Closed),
-      (true, Some(counter(2L)), Network),
+      (true, Some(idle), Closed),
+      (true, Some(sending()), Network),
       (true, None, Network),
     ] {
-    let (beneath, lower_writes, expected) = row
-    let io = if beneath {
+    let (closed, lower_sends, expected) = row
+    let io = if closed {
       probe(closed_write=true)
     } else {
       probe(fail_write=true)
     }
-    let conn : &@rt.Conn = wrap(io, Ref(0), lower_writes?)
+    let conn : &@rt.Conn = wrap(io, Ref(0), lower_sends?)
     try conn.write(b"request") catch {
       @mttp_core.TransportError(kind~, phase=Unknown, ..) =>
         assert_eq(kind, expected)

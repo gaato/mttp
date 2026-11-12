@@ -5,9 +5,13 @@ priv struct ConnIo {
   inner : &@rt.Conn
   reader : @io.BinaryReaderController
   writer : @io.BinaryWriterController
-  /// How many writes the TLS layer has started on `inner`: counted before
-  /// each starts, so a write that fails or is cancelled midway counts.
-  mut writes : Int64
+  /// How many writes the TLS layer has started on `inner` that may have
+  /// sent bytes. A write counts from the moment it starts, so one that
+  /// fails or is cancelled midway counts; one that raises `Closed` stops
+  /// counting there, as `Closed` promises it sent nothing. A refusal never
+  /// offsets a write that went through: `Closed` means `inner` is closed,
+  /// so every later write on it is refused too.
+  mut sends : Int64
 }
 
 ///|
@@ -16,7 +20,7 @@ fn ConnIo::new(inner : &@rt.Conn) -> ConnIo {
     inner,
     reader: @io.BinaryReaderController(),
     writer: @io.BinaryWriterController(),
-    writes: 0L,
+    sends: 0L,
   }
 }
 
@@ -55,8 +59,14 @@ impl @io.BinaryWriterImpl for ConnIo with fn raw_write_impl(
   offset~,
   len~,
 ) {
-  self.writes += 1L
-  self.inner.write(bytes[offset:offset + len].to_owned())
+  self.sends += 1L
+  self.inner.write(bytes[offset:offset + len].to_owned()) catch {
+    @mttp_core.TransportError(kind=Closed, ..) as error => {
+      self.sends -= 1L
+      raise error
+    }
+    error => raise error
+  }
   len
 }
 

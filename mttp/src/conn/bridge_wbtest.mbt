@@ -51,3 +51,44 @@ async test "ConnIo owns independent controllers buffers read ahead and writes of
   @io.BinaryWriter::write(bridge, b"!")
   assert_eq(source.written.to_bytes(), b"hello!")
 }
+
+///|
+/// A connection whose writes fail with the next of `failures`, or go
+/// through once those run out.
+priv struct ScriptedWrites {
+  failures : Array[@mttp_core.Kind]
+}
+
+///|
+impl @rt.Conn for ScriptedWrites with fn read(_, max_len~) {
+  ignore(max_len)
+  None
+}
+
+///|
+impl @rt.Conn for ScriptedWrites with fn write(self, _) {
+  if self.failures.pop() is Some(kind) {
+    raise @mttp_core.TransportError(kind~, phase=Unknown, detail="scripted")
+  }
+}
+
+///|
+impl @rt.Conn for ScriptedWrites with fn close(_) {
+  ()
+}
+
+///|
+async test "ConnIo counts the writes beneath that may have sent bytes" {
+  // Popped from the end: Network, then Closed, then success.
+  let bridge = ConnIo::new(ScriptedWrites::{ failures: [Closed, Network], })
+  let sends = []
+  for _ in 0..<3 {
+    @io.BinaryWriter::write(bridge, b"x") catch {
+      _ => ()
+    }
+    sends.push(bridge.sends)
+  }
+  // A write that failed with `Network` may have sent part; one refused with
+  // `Closed` sent nothing; one that went through did.
+  assert_eq(sends, [1L, 1L, 2L])
+}
