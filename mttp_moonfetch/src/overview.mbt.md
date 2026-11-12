@@ -1,6 +1,6 @@
 # gaato/mttp_moonfetch
 
-An HTTP/2 and HTTP/3 network backend for the `Client` of
+An HTTP/1.1, HTTP/2 and HTTP/3 network backend for the `Client` of
 [gaato/mttp](https://mooncakes.io/docs/gaato/mttp), built on
 [moonbitstack/moonfetch](https://mooncakes.io/docs/moonbitstack/moonfetch),
 for native and wasm.
@@ -50,9 +50,10 @@ closes the backend's connections.
 
 `backend()` takes three settings, all about connections:
 
-- `http3=true` tries HTTP/3 first for `https` origins and falls back to TCP
-  for an origin that does not answer over QUIC. It is off by default; see
-  [Limits](#limits).
+- `http3=true` tries HTTP/3 over QUIC first for `https` origins and falls
+  back to TCP for an origin that sends no datagram answer within 3 s. It is
+  off by default, as it is in moonfetch, so `backend()` speaks HTTP/1.1 and
+  HTTP/2; see [Limits](#limits) before turning it on.
 - `proxy` sends every connection through an HTTP, HTTPS or SOCKS5 proxy:
   `proxy=@moonfetch.Proxy::parse("http://proxy.example:3128")`.
 - `tls` replaces moontls's client settings, for example to trust a private
@@ -136,11 +137,11 @@ pub async fn version_of(url : String) -> String? {
   store bundled with mooncred, not the operating system's. When that
   matters, use `@mttp_async.backend()`, which uses the system's OpenSSL on
   Linux and macOS, Schannel on Windows and the host's TLS on js.
-- **HTTP/3 is off by default.** With moonfetch 0.1.8, a larger response
-  body over HTTP/3 can fail partway (with moonhttp's `Incomplete`), for
-  example an uncompressed page; compressed bodies, which this backend asks
-  for by default, have read whole in testing. Pass `http3=true` to use
-  HTTP/3 anyway.
+- **HTTP/3 with moonfetch 0.1.8.** Over HTTP/3 a larger response body can
+  fail partway (with moonhttp's `Incomplete`), for example an uncompressed
+  page; compressed bodies, which this backend asks for by default, have read
+  whole in testing. Weigh that before passing `http3=true`, and in
+  particular for a request that names its own `Accept-Encoding`.
 
 ## Links
 

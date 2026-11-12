@@ -23,9 +23,10 @@ pub let http_version : @mttp.AttributeKey[String] = @mttp.AttributeKey::new(
 /// decompresses them. It is only the I/O: give it to a `Client`, which
 /// follows redirects, retries, keeps cookies and enforces deadlines.
 ///
-/// - `http3` (default false): try QUIC first for `https` origins, and fall
-///   back to TCP for an origin that does not answer on it. Off by default
-///   because moonfetch 0.1.8 can fail to read an HTTP/3 response body.
+/// - `http3` (default false, as in moonfetch): try QUIC first for `https`
+///   origins, and fall back to TCP for an origin that does not answer on it.
+///   With moonfetch 0.1.8 a larger uncompressed response body can fail
+///   partway over HTTP/3.
 /// - `proxy`: send every connection through this HTTP, HTTPS or SOCKS5
 ///   proxy (`@moonfetch.Proxy::parse("http://proxy.example:3128")`). The
 ///   environment's proxy variables are not read.

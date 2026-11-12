@@ -44,9 +44,9 @@ async test "live: HTTP/3 to cloudflare-quic.com, a compressed body" {
 
 ///|
 /// moonfetch 0.1.8 fails to read a larger HTTP/3 body (this page uncompressed
-/// ends with moonhttp/http2's Incomplete), which is why `backend()` leaves
-/// HTTP/3 off. This test passes while that holds and fails once the body
-/// reads whole, as the signal to turn HTTP/3 on by default.
+/// ends with moonhttp/http2's Incomplete), which the README's Limits warn
+/// about. This test passes while that holds and fails once the body reads
+/// whole, as the signal to drop that caution.
 async test "live: HTTP/3 uncompressed body still fails (moonfetch's known bug)" {
   guard live() else { return }
   let backend = @mttp_moonfetch.backend(http3=true)
@@ -66,6 +66,6 @@ async test "live: HTTP/3 uncompressed body still fails (moonfetch's known bug)" 
     other => raise other
   }
   fail(
-    "an uncompressed HTTP/3 body of \{length} characters read whole: moonfetch's HTTP/3 body bug looks fixed, so consider http3=true by default",
+    "an uncompressed HTTP/3 body of \{length} characters read whole: moonfetch's HTTP/3 body bug looks fixed, so drop the caution about it from mttp_moonfetch's README",
   )
 }
