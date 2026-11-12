@@ -192,7 +192,12 @@ fn main {
   let args = @env.args()
   if args is [_, "www", dir] {
     @mttp.run(async fn() {
-      @fs.mkdir(dir, recursive=true, allow_exist=true)
+      // `mkdir`'s flag for an existing directory is `allow_exist` on
+      // MoonBit 0.10.20 and `allow_existing` later; asking first needs
+      // neither, and a file in the way still makes `mkdir` fail.
+      if !(@fs.exists(dir) && @fs.kind(dir) is Directory) {
+        @fs.mkdir(dir, recursive=true)
+      }
       for file in @pattern.files() {
         @fs.write_binary("\{dir}/\{file.0}", file.1)
       }

@@ -1,4 +1,20 @@
 ///|
+/// The port `addr` is bound to, read from its text, which ends in `:port`.
+/// core/async's `Addr` has a `port()` method on MoonBit 0.10.20 and a
+/// `port` field on later toolchains; the text is what both share.
+fn port_of(addr : @socket.Addr) -> Int32 {
+  let text = addr.to_string()
+  guard text.rev_find(":") is Some(colon) else {
+    abort("no port in the address \{text}")
+  }
+  let mut port = 0
+  for digit in text[colon + 1:] {
+    port = port * 10 + (digit.to_int() - '0'.to_int())
+  }
+  port
+}
+
+///|
 #cfg(all(not(target="wasm"), not(platform="windows")))
 #warnings("-alert_internal")
 async fn test_tls_server(tcp : @socket.Tcp) -> @tls.Tls {
@@ -39,7 +55,7 @@ async test "TCP loopback pair satisfies the shared Conn contract" {
     defer server.close()
     let left = @conn.TcpDialer::new().connect(
       host="127.0.0.1",
-      port=server.addr.port(),
+      port=port_of(server.addr),
     )
     defer left.close()
     let (accepted, _) = server.accept()
@@ -56,13 +72,25 @@ async test "TCP loopback pair satisfies the shared Conn contract" {
 ///|
 async test "dial refusal is Connect Dial and closed socket errors remain typed" {
   let server = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
-  let port = server.addr.port()
+  let port = port_of(server.addr)
   server.close()
   try @conn.TcpDialer::new().connect(host="127.0.0.1", port~) catch {
     @mttp_core.TransportError(kind=Connect, phase=Dial, ..) => ()
     error => raise error
   } noraise {
     _ => fail("closed listener accepted a connection")
+  }
+}
+
+///|
+async test "dial refuses a port outside 0..=65535 as Invalid Dial" {
+  for port in [-1, 65536] {
+    try @conn.TcpDialer::new().connect(host="127.0.0.1", port~) catch {
+      @mttp_core.TransportError(kind=Invalid, phase=Dial, ..) => ()
+      error => raise error
+    } noraise {
+      _ => fail("port \{port} was dialled")
+    }
   }
 }
 
@@ -135,7 +163,7 @@ async test "TLS upgrades arbitrary Conn tunnels with custom and insecure trust a
       defer server.close()
       let tcp = @conn.TcpDialer::new().connect(
         host="127.0.0.1",
-        port=server.addr.port(),
+        port=port_of(server.addr),
       )
       let closes = Ref(0)
       let tunnel = Tunnel::{ inner: tcp, closes, }
@@ -181,7 +209,7 @@ async test "TLS verification failure leaves tunnel owned by caller" {
       defer server.close()
       let tcp = @conn.TcpDialer::new().connect(
         host="127.0.0.1",
-        port=server.addr.port(),
+        port=port_of(server.addr),
       )
       defer tcp.close()
       let closes = Ref(0)
@@ -276,7 +304,7 @@ async test "TLS write that sent part before a read's Closed resurfaced is Networ
     defer server.close()
     let tcp = @conn.TcpDialer::new().connect(
       host="127.0.0.1",
-      port=server.addr.port(),
+      port=port_of(server.addr),
     )
     defer tcp.close()
     let tunnel = ClosingReads::{

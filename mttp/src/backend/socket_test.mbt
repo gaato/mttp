@@ -1,4 +1,20 @@
 ///|
+/// The port `addr` is bound to, read from its text, which ends in `:port`.
+/// core/async's `Addr` has a `port()` method on MoonBit 0.10.20 and a
+/// `port` field on later toolchains; the text is what both share.
+fn port_of(addr : @socket.Addr) -> Int32 {
+  let text = addr.to_string()
+  guard text.rev_find(":") is Some(colon) else {
+    abort("no port in the address \{text}")
+  }
+  let mut port = 0
+  for digit in text[colon + 1:] {
+    port = port * 10 + (digit.to_int() - '0'.to_int())
+  }
+  port
+}
+
+///|
 async fn body(response : @mttp_core.Response) -> Bytes {
   defer response.close()
   match response.body {
@@ -35,7 +51,7 @@ async fn with_server(
           })
         }
       })
-      action("http://127.0.0.1:\{listener.addr.port()}", accepts)
+      action("http://127.0.0.1:\{port_of(listener.addr)}", accepts)
       group.return_immediately()
     })
   })
@@ -181,7 +197,7 @@ async test "socket upload with Expect waits for 100 Continue" {
       let backend = new_backend()
       defer backend.close()
       let request = @mttp_core.Request::post(
-          "http://127.0.0.1:\{listener.addr.port()}/",
+          "http://127.0.0.1:\{port_of(listener.addr)}/",
         )
         .body_bytes(b"payload")
         .header("Expect", "100-continue")
@@ -225,7 +241,7 @@ async test "socket POST after the server closed the idle connection uses a new o
       })
       let backend = new_backend()
       defer backend.close()
-      let url = "http://127.0.0.1:\{listener.addr.port()}/"
+      let url = "http://127.0.0.1:\{port_of(listener.addr)}/"
       assert_eq(
         body(
           backend.send(
@@ -442,7 +458,7 @@ async test "socket first read failure and false empty stream write no head" {
     defer backend.close()
     try
       backend.send(
-        @mttp_core.Request::post("http://127.0.0.1:\{listener.addr.port()}").body_stream(
+        @mttp_core.Request::post("http://127.0.0.1:\{port_of(listener.addr)}").body_stream(
           source,
           length?=if failing { None } else { Some(0L) },
         ),
@@ -497,7 +513,7 @@ async test "socket early final response cancels a blocked upload and prevents re
 ///|
 async test "socket refusal carries unsent Dial phase" {
   let listener = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
-  let port = listener.addr.port()
+  let port = port_of(listener.addr)
   listener.close()
   let backend = new_backend()
   defer backend.close()

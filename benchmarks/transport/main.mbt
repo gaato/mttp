@@ -27,7 +27,7 @@ impl @rt.Conn for LoopbackConn with fn read(self, max_len~) {
       raise @mttp_core.TransportError(
         kind=Network,
         phase=Body,
-        detail=error.to_string(),
+        detail=(error : Error).to_string(),
       )
   }
   self.eof = n == 0
@@ -54,7 +54,7 @@ impl @rt.Conn for LoopbackConn with fn write(self, bytes) {
         raise @mttp_core.TransportError(
           kind=Network,
           phase=Body,
-          detail=error.to_string(),
+          detail=(error : Error).to_string(),
         )
     }
     continue end
@@ -95,9 +95,7 @@ async fn sample(chunk_bytes : Int32) -> Double {
       config=@h1client.ClientConfig::default(),
     )
     defer backend.close()
-    let request = @mttp_core.Request::get(
-      "http://127.0.0.1:\{listener.addr.port()}/",
-    )
+    let request = @mttp_core.Request::get("http://\{listener.addr}/")
     let exchange : async () -> Unit = () => {
       let response = backend.send(request, @mttp_core.SendOptions::default())
       defer response.close()

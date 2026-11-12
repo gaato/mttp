@@ -373,7 +373,7 @@ async fn port_free(addr : String) -> Unit {
 /// certificate for 127.0.0.1, 127.0.0.2 and localhost.
 async fn make_certs() -> Unit {
   let dir = "\{work}/certs"
-  @fs.mkdir(dir, recursive=true, allow_exist=true)
+  make_dir(dir)
   let ec = [
     "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes",
   ]
@@ -493,7 +493,7 @@ async fn stop_servers(env : Env) -> Unit {
 /// Builds what the server-side clients need: the Go client (a static
 /// binary the host runs) and httpx with its dependencies.
 async fn prepare_clients(env : Env) -> Unit {
-  @fs.mkdir("\{work}/go", recursive=true, allow_exist=true)
+  make_dir("\{work}/go")
   ignore(
     must(
       env.engine,
@@ -526,7 +526,7 @@ async fn prepare_clients(env : Env) -> Unit {
       ],
     ),
   )
-  @fs.mkdir("\{work}/python", recursive=true, allow_exist=true)
+  make_dir("\{work}/python")
   ignore(
     must(
       env.engine,
@@ -742,7 +742,7 @@ async fn main_run(filters : Array[String]) -> Int32 {
     ]),
   )
   ignore(must("moon", ["build", "--target", "js", "interop/mttp_client"]))
-  @fs.mkdir(work, recursive=true, allow_exist=true)
+  make_dir(work)
   ignore(must(native_server, ["www", "\{work}/www"]))
   make_certs()
   for name, image in images {
@@ -830,4 +830,15 @@ async fn main {
     }
   }
   @env.exit(status)
+}
+
+///|
+/// Creates directory `path` and its parents unless it is a directory
+/// already. `@fs.mkdir`'s flag for that is `allow_exist` on MoonBit 0.10.20
+/// and `allow_existing` later; asking first needs neither, and a file in
+/// the way still makes `mkdir` fail.
+async fn make_dir(path : String) -> Unit {
+  if !(@fs.exists(path) && @fs.kind(path) is Directory) {
+    @fs.mkdir(path, recursive=true)
+  }
 }

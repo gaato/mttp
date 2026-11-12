@@ -58,7 +58,7 @@ async fn with_tls_server(
           })
         }
       })
-      action("https://localhost:\{listener.addr.port()}")
+      action("https://localhost:\{port_of(listener.addr)}")
       group.return_immediately()
     })
   })
@@ -180,7 +180,7 @@ async test "socket CONNECT tunnels verified TLS through plain and TLS proxies" {
             config={
               ..@h1client.ClientConfig::default(),
               proxy: @h1client.ProxyConfig::fixed(
-                "\{scheme}://user:pass@localhost:\{proxy.addr.port()}",
+                "\{scheme}://user:pass@localhost:\{port_of(proxy.addr)}",
               ),
             },
             trust=PemFile("src/conn/testdata/localhost.pem"),
@@ -226,7 +226,7 @@ async test "socket TLS handshake deadline stays in Dial and leaves no idle conne
     defer backend.close()
     try
       backend.send(
-        @mttp_core.Request::get("https://localhost:\{listener.addr.port()}"),
+        @mttp_core.Request::get("https://localhost:\{port_of(listener.addr)}"),
         @mttp_core.SendOptions::default(),
       )
     catch {
@@ -451,7 +451,7 @@ async test "socket TLS POST after the server's close_notify uses a new connectio
         config=@h1client.ClientConfig::default(),
       )
       defer client.close()
-      let url = "https://localhost:\{listener.addr.port()}/"
+      let url = "https://localhost:\{port_of(listener.addr)}/"
       assert_eq(
         body(
           client.send(

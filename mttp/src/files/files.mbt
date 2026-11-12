@@ -325,7 +325,7 @@ impl @mttp_core.BodyStream for FileBody with fn read_some(self) {
       raise @mttp_core.TransportError(
         kind=Network,
         phase=Body,
-        detail="reading the served file failed: \{error}",
+        detail="reading the served file failed: \{(error : Error)}",
       )
     }
   }

@@ -167,7 +167,7 @@ async fn copy_module(source : String, destination : String) -> Unit {
     source,
     (dir, entries) => {
       let target = destination + dir[source.length():].to_owned()
-      @fs.mkdir(target, recursive=true, allow_exist=true)
+      make_dir(target)
       let files = []
       for entry in entries {
         if excluded.contains(entry) {
@@ -258,7 +258,7 @@ async fn stage(candidate : Module, registry : String) -> Unit {
   // Packaging performs a check. Copy the module outside its original
   // workspace so sibling overrides cannot validate different dependency code.
   let source = registry + "/../sources/" + candidate.name
-  @fs.mkdir(source, recursive=true, allow_exist=true)
+  make_dir(source)
   copy_module(candidate.dir, source)
   let packaged = @shell.Cmd("moon", ["package"], cwd=source, env={
     "MOON_HOME": registry + "/..",
@@ -292,7 +292,7 @@ async fn stage(candidate : Module, registry : String) -> Unit {
     .unwrap()
     .to_owned()
   let cache = registry + "/cache/" + candidate.name
-  @fs.mkdir(cache, recursive=true, allow_exist=true)
+  make_dir(cache)
   run(
     "cp",
     [archive, cache + "/" + candidate.version + ".zip"],
@@ -310,7 +310,7 @@ async fn stage(candidate : Module, registry : String) -> Unit {
   let parent = registry +
     "/index/user/" +
     candidate.name.split("/").next().unwrap().to_owned()
-  @fs.mkdir(parent, recursive=true, allow_exist=true)
+  make_dir(parent)
   rows.push(entry.stringify())
   @fs.write_text(index, rows.join("\n") + "\n")
   println("staged " + candidate.name + "@" + candidate.version)
@@ -414,7 +414,7 @@ async fn check() -> Unit {
   let scratch_base = @env.get_env_var("MTTP_RESOLVER_TMPDIR").unwrap_or(
     "/var/tmp",
   )
-  @fs.mkdir(scratch_base, recursive=true, allow_exist=true)
+  make_dir(scratch_base)
   let scratch = run(
       "mktemp",
       ["-d", scratch_base + "/mttp-resolver.XXXXXXXX"],
@@ -582,5 +582,16 @@ async fn main {
       raise GateError(message)
     }
     other => raise other
+  }
+}
+
+///|
+/// Creates directory `path` and its parents unless it is a directory
+/// already. `@fs.mkdir`'s flag for that is `allow_exist` on MoonBit 0.10.20
+/// and `allow_existing` later; asking first needs neither, and a file in
+/// the way still makes `mkdir` fail.
+async fn make_dir(path : String) -> Unit {
+  if !(@fs.exists(path) && @fs.kind(path) is Directory) {
+    @fs.mkdir(path, recursive=true)
   }
 }
