@@ -147,6 +147,52 @@ async test "socket keep alive reuses one connection and early close discards it"
 }
 
 ///|
+/// A server that closes an idle keep-alive connection, as Apache does after
+/// 5 s: the next request, a POST that may not be resent, must not be
+/// written to the closed connection (found by the interop suite).
+async test "socket POST after the server closed the idle connection uses a new one" {
+  @async.with_timeout(5000, () => {
+    let listener = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
+    defer listener.close()
+    let requests = []
+    @async.with_task_group(group => {
+      group.spawn_bg(() => {
+        while true {
+          let (tcp, _) = listener.accept()
+          group.spawn_bg(() => {
+            // One request per connection, answered as kept alive, then the
+            // server's idle timeout closes it.
+            defer tcp.close()
+            guard tcp.read_until(b"\r\n\r\n") is Some(head) else { return }
+            let head = @utf8.decode_lossy(head).to_lower()
+            requests.push(head.split("\r\n").next().unwrap_or("").to_owned())
+            if head.contains("content-length: 1") {
+              ignore(tcp.read_exactly(1))
+            }
+            tcp.write(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok")
+          })
+        }
+      })
+      let backend = new_backend()
+      defer backend.close()
+      let url = "http://127.0.0.1:\{listener.addr.port()}/"
+      assert_eq(
+        body(
+          backend.send(@mttp.Request::get(url), @mttp.SendOptions::default()),
+        ),
+        b"ok",
+      )
+      assert_eq(backend.idle_connections(), 1)
+      @async.sleep(300)
+      let post = @mttp.Request::post(url).body_bytes(b"x")
+      assert_eq(body(backend.send(post, @mttp.SendOptions::default())), b"ok")
+      assert_eq(requests, ["get / http/1.1", "post / http/1.1"])
+      group.return_immediately()
+    })
+  })
+}
+
+///|
 async test "injected clock expires parked sockets at the idle boundary" {
   with_server(_ => @mttp.Response::new(200, body=Bytes(b"reuse")), (
     url,

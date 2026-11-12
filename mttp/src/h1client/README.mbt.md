@@ -75,7 +75,10 @@ test "send a request and read the response" {
   an upload ends the upload, and that connection is not reused.
 - **Reuse.** A connection is parked only after a complete, keep-alive
   exchange with no unread bytes, and is handed only to a request with the
-  same origin and User-Agent. A request on a reused connection that fails
+  same origin and User-Agent. A connection parked for 100 ms or more is
+  checked first, waiting at most 1 ms on the Timer: if the server closed it
+  or sent anything on it, it is closed and the request goes out on another,
+  whatever its method. A request on a reused connection that still fails
   before any response byte arrived is resent once on a fresh connection, if
   its body is replayable and it is idempotent (`@mttp.is_idempotent`); such
   a response carries the `stale_resend` attribute.

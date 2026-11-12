@@ -7,6 +7,17 @@ never does.
 
 ## [Unreleased]
 
+### Fixed
+
+- `h1client` no longer writes a request to a parked connection the server
+  has closed. Servers close idle keep-alive connections after a few seconds
+  (Apache after 5), and a POST sent after such a pause failed as sent, so it
+  could not be resent although the server never saw it; a response the
+  server sent on the idle connection (such as a 408) could be taken as the
+  answer to the next request. A connection parked for 100 ms or more is now
+  checked before reuse, waiting at most 1 ms, and dropped if the server
+  closed it or wrote to it.
+
 ## [0.2.0] - 2026-11-12
 
 ### Changed

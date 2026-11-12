@@ -162,3 +162,100 @@ test "a failure after a response byte or on a fresh connection is not resent" {
   })
   assert_eq(h.dialer.dialed.length(), 2)
 }
+
+///|
+/// The interop suite found this against nginx, Caddy and Apache: a POST
+/// sent a few seconds after the server closed the idle connection was
+/// written to that connection and failed as sent, so neither the engine
+/// nor the Client could resend it, though the server never saw it.
+test "a connection the server closed while parked is not written to" {
+  for meth in [@mttp.Method::Get, Post] {
+    let h = Harness::new()
+    h.run(() => {
+      let stale = park_stale(h, 1)
+      h.driver.sleep(1000)
+      let fresh = h.peer()
+      let server = h.driver.spawn(() => {
+        let seen = fresh.serve(ok("new"))
+        assert_eq(seen.length(), 1)
+      })
+      let request = @mttp.Request::new(meth, "http://example.test/")
+      let request = if meth is Post {
+        request.body_bytes(b"x")
+      } else {
+        request
+      }
+      let response = h.client.send(request, exchange())
+      // Not a resend: the request went out once, on the fresh connection.
+      assert_eq(response.attributes.get(@h1client.stale_resend), None)
+      assert_eq(body_of(response), b"new")
+      assert_eq(stale[0].written().length(), 1)
+      assert_eq(stale[0].closes(), 1)
+      h.finish()
+      ignore(server.wait())
+    })
+    assert_eq(h.dialer.dialed.length(), 2)
+  }
+}
+
+///|
+test "a parked connection the server wrote to or that failed is not reused" {
+  let reset = @mttp.TransportError(
+    kind=Network,
+    phase=Unknown,
+    detail="connection reset",
+  )
+  for
+    after in [
+      // Without the check, this 408 was read as the answer to the POST.
+      @sim.ReadStep::Chunk(
+        b"HTTP/1.1 408 Request Timeout\r\ncontent-length: 0\r\n\r\n",
+      ),
+      Failure(reset),
+    ] {
+    let h = Harness::new()
+    let idle = h.scripted([Chunk(ok("old")), after])
+    h.run(() => {
+      assert_eq(
+        fetch(h.client, @mttp.Request::get("http://example.test/")),
+        "old",
+      )
+      h.driver.sleep(1000)
+      ignore(h.scripted([Chunk(ok("new"))]))
+      let post = @mttp.Request::post("http://example.test/").body_bytes(b"x")
+      assert_eq(fetch(h.client, post), "new")
+      assert_eq(idle.written().length(), 1)
+      h.finish()
+    })
+    assert_eq(h.dialer.dialed.length(), 2)
+  }
+}
+
+///|
+test "an open parked connection is checked only after it idled" {
+  let h = Harness::new()
+  let peer = h.peer()
+  h.run(() => {
+    let server = h.driver.spawn(() => {
+      let seen = peer.serve(ok("same"))
+      assert_eq(seen.length(), 3)
+    })
+    let post = () => {
+      @mttp.Request::post("http://example.test/").body_bytes(b"x")
+    }
+    assert_eq(fetch(h.client, post()), "same")
+    // Reused at once: no check, no time spent.
+    let start = h.driver.now()
+    assert_eq(fetch(h.client, post()), "same")
+    assert_eq(h.driver.now(), start)
+    // Reused after a pause: the check waits its millisecond, finds nothing
+    // to read and leaves the connection usable.
+    h.driver.sleep(1000)
+    let start = h.driver.now()
+    assert_eq(fetch(h.client, post()), "same")
+    assert_eq(h.driver.now() - start, 1L)
+    h.finish()
+    ignore(server.wait())
+  })
+  assert_eq(h.dialer.dialed.length(), 1)
+}
