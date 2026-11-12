@@ -12,24 +12,33 @@ import {
 /// Per-target build, test and public-interface gates for every module of
 /// `scripts/modules.tsv`.
 ///
-///   moon run scripts/runtime_gates.mbtx -- tests [--target T]...
+///   moon run scripts/runtime_gates.mbtx -- tests [--target T]... [--gate G]
 ///       `moon check --deny-warn`, then the tests of each package on its own
 ///       (so a native abort cannot hide the other packages), on each target
 ///       (default: all four) the package builds on. Counts are compared with
-///       `scripts/test_manifest.tsv`: a run fails when `moon test` fails,
-///       prints no "Total tests" line, reports a count the manifest does not
-///       record, or warns that a package uses an experimental package it did
-///       not list (moon does not turn that warning into an error).
+///       the rows of `scripts/test_manifest.tsv` for those packages and
+///       targets: a run fails when `moon test` fails, prints no "Total tests"
+///       line, reports a count the manifest does not record, or warns that a
+///       package uses an experimental package it did not list (moon does not
+///       turn that warning into an error).
 ///   moon run scripts/runtime_gates.mbtx -- manifest --update
 ///       runs every package on every target and rewrites the manifest.
 ///   moon run scripts/runtime_gates.mbtx -- manifest --check
 ///       the manifest on its own: well formed, one row per package and
 ///       target, and equal counts across the targets of a four-target module.
-///   moon run scripts/runtime_gates.mbtx -- interfaces
+///   moon run scripts/runtime_gates.mbtx -- interfaces [--gate G]
 ///       the public interfaces: the enums `scripts/non_exhaustive.tsv` lists
 ///       carry `#non_exhaustive`; no interface names a runtime type
 ///       (design, principle 9); and a package's interface is the same on
 ///       every target it builds on.
+///   moon run scripts/runtime_gates.mbtx -- packages [--gate G]
+///       prints the package directories, one per line, for the moon commands
+///       of scripts/gates.sh that take package paths (fmt, info).
+///
+/// `--gate G` keeps the modules whose `gate` column in `scripts/modules.tsv`
+/// is G, so a `scripts/gates.sh` target builds only its own modules; without
+/// it, every module counts. The manifest stays whole: `manifest` reads and
+/// writes every module.
 ///
 /// A package builds on its module's targets, narrowed by a
 /// `supported_targets = "a+b"` line in its `moon.pkg`.
@@ -50,6 +59,59 @@ let runtime_markers : Array[String] = [
   "@async.", "@socket.", "@tls.", "@io.", "@js_async.", "TaskGroup", "\"moonbitlang/core/async",
   "\"moonbitlang/async",
 ]
+
+///|
+/// The packages whose types are runtime types.
+let runtime_packages : Array[String] = [
+  "moonbitlang/core/async", "moonbitlang/async",
+]
+
+///|
+/// The aliases an interface's `import { ... }` block binds to packages that
+/// are not runtime packages: `"moonbitstack/moontls/tls"` binds `tls`, so
+/// `@tls.` there is moontls's, not core/async's.
+fn other_aliases(text : String) -> Array[String] {
+  let out = []
+  let mut inside = false
+  for raw in text.split("\n") {
+    let line = raw.trim()
+    if line == "import {" {
+      inside = true
+      continue
+    }
+    if inside && line.has_prefix("}") {
+      break
+    }
+    guard inside && line.split("\"").to_array() is [_, path, rest, ..] else {
+      continue
+    }
+    let path = path.to_owned()
+    if runtime_packages.any(p => path == p || path.has_prefix(p + "/")) {
+      continue
+    }
+    let name = match rest.trim().strip_prefix("@") {
+      Some(name) => name.trim_end(chars=",").to_owned()
+      None => path.split("/").last().map(s => s.to_owned()).unwrap_or(path)
+    }
+    out.push(name)
+  }
+  out
+}
+
+///|
+/// The runtime markers `text`, a generated interface, mentions. An `@x.`
+/// marker whose name the interface binds to another package does not count.
+fn runtime_mentions(text : String) -> Array[String] {
+  let others = other_aliases(text)
+  runtime_markers.filter(marker => {
+    let name = marker
+      .strip_prefix("@")
+      .bind(rest => rest.strip_suffix("."))
+      .map(name => name.to_owned())
+    let foreign = name is Some(name) && others.contains(name)
+    !foreign && text.contains(marker)
+  })
+}
 
 ///|
 /// The warning moon prints for an unlisted experimental package.
@@ -138,16 +200,20 @@ async fn package_dirs(root : String) -> Array[String] {
 
 ///|
 /// Every package of every module whose directory exists, in order.
-async fn packages() -> Array[Package] {
+async fn packages(gate? : String) -> Array[Package] {
   let out : Array[Package] = []
   for raw in @fs.read_text("scripts/modules.tsv").split("\n") {
     let line = raw.trim_end().to_owned()
     if line.is_empty() || line.has_prefix("#") || line.has_prefix("dir\t") {
       continue
     }
-    guard line.split("\t").map(s => s.to_owned()).to_array()
-      is [dir, module_name, kind, targets, ..] else {
+    let cells = line.split("\t").map(s => s.to_owned()).to_array()
+    guard cells is [dir, module_name, kind, targets, ..] else {
       raise GateError("scripts/modules.tsv: malformed row: \{line}")
+    }
+    let row_gate = cells.get(8).unwrap_or("full")
+    if gate is Some(wanted) && row_gate != wanted {
+      continue
     }
     let module_targets = cell_list(targets)
     let root = if kind == "example" || kind == "benchmark" {
@@ -355,14 +421,23 @@ fn report(failures : Array[String]) -> Unit raise GateError {
 }
 
 ///|
-async fn tests(targets : Array[String]) -> Unit {
-  let pkgs = packages()
+async fn tests(targets : Array[String], gate : String?) -> Unit {
+  let pkgs = packages(gate?)
+  let modules = pkgs.map(pkg => pkg.module_name)
   let expected = manifest()
   let (counts, failures, failed) = run_tests(pkgs, targets, Some(expected))
   let differences = []
   for key, count in expected {
     let target = key.split("\t").last().map(s => s.to_owned()).unwrap_or("")
-    guard targets.contains(target) else { continue }
+    let module_name = key
+      .split("\t")
+      .next()
+      .map(s => s.to_owned())
+      .unwrap_or("")
+    // Rows of modules another gate runs are that gate's.
+    guard targets.contains(target) && modules.contains(module_name) else {
+      continue
+    }
     match counts.get(key) {
       Some(actual) if actual == count => ()
       Some(actual) =>
@@ -475,8 +550,20 @@ async fn interface(pkg : Package, target : String) -> String {
 }
 
 ///|
-async fn interfaces() -> Unit {
-  let pkgs = packages()
+async fn interfaces(gate : String?) -> Unit {
+  // The alias reading first: `@tls.` is a runtime type only when the
+  // interface's `tls` is core/async's.
+  let sample = (path : String) => {
+    "package \"probe\"\n\nimport {\n  \"\{path}\",\n}\n\npub fn f(c : @tls.Client) -> Unit\n"
+  }
+  if runtime_mentions(sample("moonbitstack/moontls/tls")) != [] ||
+    runtime_mentions(sample("moonbitlang/core/async/tls")) == [] {
+    raise GateError("runtime markers: the import aliases are read wrongly")
+  }
+  // Every package names the enums of scripts/non_exhaustive.tsv; only the
+  // gate's own are built below.
+  let all = packages()
+  let pkgs = packages(gate?)
   let failures = []
   // Extensible enums.
   for raw in @fs.read_text("scripts/non_exhaustive.tsv").split("\n") {
@@ -488,7 +575,7 @@ async fn interfaces() -> Unit {
       is [name, enum_name] else {
       raise GateError("scripts/non_exhaustive.tsv: malformed row: \{line}")
     }
-    guard pkgs.iter().find_first(pkg => pkg.name == name) is Some(pkg) else {
+    guard all.iter().find_first(pkg => pkg.name == name) is Some(pkg) else {
       failures.push(
         "scripts/non_exhaustive.tsv names \{name}, which is no package",
       )
@@ -519,9 +606,11 @@ async fn interfaces() -> Unit {
     }
   }
   // Runtime types and per-target agreement.
-  let info = @shell.Cmd("moon", ["info", "--target", "all"], stdout=Discard).output(
-    timeout_ms=timeout_ms(),
-  )
+  let info = @shell.Cmd(
+    "moon",
+    ["info", "--target", "all", ..pkgs.map(pkg => pkg.dir)],
+    stdout=Discard,
+  ).output(timeout_ms=timeout_ms())
   if info.exit_code() != 0 {
     println(info.stderr())
     raise GateError("moon info --target all failed")
@@ -530,11 +619,11 @@ async fn interfaces() -> Unit {
     let seen : Array[(String, String)] = []
     for target in pkg.targets {
       let text = interface(pkg, target)
-      for marker in runtime_markers {
+      for marker in runtime_mentions(text) {
         // Internal adapters intentionally exchange runtime handles. They are
         // inaccessible to consumers; target and all other interface checks
         // still apply, while the public boundary must expose only ports.
-        if !pkg.name.split("/").contains("internal") && text.contains(marker) {
+        if !pkg.name.split("/").contains("internal") {
           failures.push(
             "\{pkg.name} on \{target}: the public interface mentions \{marker}; expose a gaato/mttp/rt port instead",
           )
@@ -560,24 +649,39 @@ async fn interfaces() -> Unit {
 
 ///|
 async fn main {
-  let usage = "usage: moon run scripts/runtime_gates.mbtx -- tests [--target T]... | manifest --update | manifest --check | interfaces"
+  let usage = "usage: moon run scripts/runtime_gates.mbtx -- tests [--target T]... [--gate G] | manifest --update | manifest --check | interfaces [--gate G] | packages [--gate G]"
+  // `--target T` and `--gate G` pairs, in any order.
+  let options = (rest : ArrayView[String], targets_allowed : Bool) => {
+    let targets = []
+    let mut gate = None
+    for i = 0; i < rest.length(); i = i + 2 {
+      guard i + 1 < rest.length() else { raise GateError(usage) }
+      match rest[i] {
+        "--target" if targets_allowed && all_targets.contains(rest[i + 1]) =>
+          targets.push(rest[i + 1])
+        "--gate" if gate is None => gate = Some(rest[i + 1])
+        _ => raise GateError(usage)
+      }
+    }
+    // A gate no module names would check nothing and pass.
+    if gate is Some(name) && packages(gate=name).is_empty() {
+      raise GateError("no module of scripts/modules.tsv has gate \{name}")
+    }
+    (targets, gate)
+  }
   let task : async () -> Unit = () => {
     match @env.args()[1:] {
       ["tests", .. rest] => {
-        let targets = []
-        for i = 0; i < rest.length(); i = i + 2 {
-          guard rest[i] == "--target" &&
-            i + 1 < rest.length() &&
-            all_targets.contains(rest[i + 1]) else {
-            raise GateError(usage)
-          }
-          targets.push(rest[i + 1])
-        }
-        tests(if targets.is_empty() { all_targets } else { targets })
+        let (targets, gate) = options(rest, true)
+        tests(if targets.is_empty() { all_targets } else { targets }, gate)
       }
       ["manifest", "--update"] => update_manifest()
       ["manifest", "--check"] => check_manifest()
-      ["interfaces"] => interfaces()
+      ["interfaces", .. rest] => interfaces(options(rest, false).1)
+      ["packages", .. rest] =>
+        for pkg in packages(gate?=options(rest, false).1) {
+          println(pkg.dir)
+        }
       _ => raise GateError(usage)
     }
   }

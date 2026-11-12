@@ -155,3 +155,5 @@ gaato/mttp_digest	gaato/mttp_digest	js	28
 gaato/mttp_digest	gaato/mttp_digest	native	28
 gaato/mttp_digest	gaato/mttp_digest	wasm	28
 gaato/mttp_digest	gaato/mttp_digest	wasm-gc	28
+gaato/mttp_moonfetch	gaato/mttp_moonfetch	native	26
+gaato/mttp_moonfetch	gaato/mttp_moonfetch	wasm	26

@@ -1,8 +1,9 @@
 # Resource bounds
 
 What a long-running client, server or parser built on `gaato/mttp`,
-`gaato/mttp_async` or `gaato/mttp_digest` can accumulate, and
-what keeps each structure from growing without limit. The rule: **every
+`gaato/mttp_async`, `gaato/mttp_digest` or `gaato/mttp_moonfetch` can
+accumulate, and what keeps each structure from growing without limit. The
+rule: **every
 structure that grows with input from the network, a peer, or the number of
 requests, buckets, connections or pending calls is listed here with its
 bound**. A new one, such as a map keyed by names that arrive from outside or a
@@ -133,6 +134,7 @@ a test from hanging.
 | `mttp/client/ratelimit` response bookkeeping | Constant-time outstanding-token removal; no cohort or shared-route scan | Prevents late bookkeeping from allocating an unchecked fallback state or freeing another request's gate | `mttp/src/client/ratelimit/alias_wbtest.mbt`: "admission accounting cannot allocate fallback state after capacity checks"; `mttp/src/client/ratelimit/sequence_test.mbt`: "duplicate and mismatched releases cannot change state aliases or a new gate holder" |
 | `mttp/client/ratelimit` independent quota and Retry-After constraints | At most one optional quota and one optional block per existing bounded state entry; each retains only its deadline and sequence metadata, with server waits capped at one hour | Transfers join each constraint monotonically; missing quota or block never erases the other key's constraint. Each expires independently, and only a sequence-qualified response can relax prior ordinary quota | `mttp/src/client/ratelimit/constraints_test.mbt`: "an alias merge preserves ordinary exhaustion alongside a shorter Retry-After", "a stale Retry-After cannot discard a newer quota constraint on the same key"; `mttp/src/client/ratelimit/model_wbtest.mbt`: "alias joins preserve independent constraints for every pair of state shapes", "quota expiry preserves a separately merged longer Retry-After block" |
 | `mttp/client/ratelimit` alias lifetime across quota resets and key transitions | One hour independently of quota state; fallback copies count toward the existing 4096-state cap and deferred expirations toward the 4096-alias cap | Every transition carries source constraints and restriction/consumption sequences before switching; expiry materializes live shared state under the caller key. At state capacity expiry retains the old route until transfer has room or the constraints expire. Refusal preserves existing constraints. Sweeping expired quota leaves live aliases intact | `mttp/src/client/ratelimit/reconcile_fixture_wbtest.mbt`: "live aliases survive quota expiry and a forced capacity sweep"; `mttp/src/client/ratelimit/alias_wbtest.mbt`: "alias expiry transfers a refreshed shared block and quota before detaching", "alias expiry at state capacity retains its route until transfer has room", "refused alias transitions preserve the previously resolved block"; `mttp/src/client/ratelimit/model_wbtest.mbt`: "random admission identities aliases resets and duplicate releases match the reference" |
+| `mttp_moonfetch` response body wire bytes with `Exchange(max_bytes)` | `max_bytes` from SendOptions, counted as moonfetch delivers the bytes, before any content decoding | `TooLarge(limit)` in phase Body; the moonfetch stream is closed | `mttp_moonfetch/src/backend_test.mbt`: "with Exchange, the byte limit counts wire bytes" |
 
 ## Bounded by rate and lifetime
 
@@ -166,6 +168,7 @@ Growth that follows what the caller asks for, not what the network sends.
 | `mttp/router` route table, middleware and definition findings | Endpoints and middleware registered by the application | Construction consumes caller-built definitions; per-request captures have the segment bound above. |
 | `mttp/openapi` projected document and `mttp/endpoint/testkit` verification findings | Endpoint definitions composed by the application | Projection and checking scale with registered metadata. Each operation has at most 400 explicit final statuses (200–599) plus default; a dynamic variant fans out only across those entries. Reference traversal has its own bound above. |
 | `mttp/client/ratelimit` gate waiters | Concurrent calls in one pace group | One waiter per caller, removed on handoff or cancellation; active group entries disappear once there are no holders or waiters. The caller bounds concurrent calls and their lifetime, using the Client total deadline or an injected Timer. |
+| `mttp_moonfetch` request body over HTTP/1.1 | The body the caller sends | moonfetch collects a streamed request body in memory before writing it over HTTP/1.1 (over HTTP/2 and HTTP/3 it sends each piece as it is read); the caller chooses the body. |
 
 ## Known gaps
 
@@ -175,3 +178,5 @@ it could be fixed.
 | Structure | Grows with | What limits it | Suggested fix |
 |---|---|---|---|
 | `mttp/h1server` handler lifetime with `handler_timeout_ms = None` (the design's explicit default) | Time an application spends without returning or pulling its body; peer failure cannot be detected once raw read-ahead reaches 64 KiB | Configuring a finite handler deadline; request-body deadlines start only on a pull. `disconnect_test.mbt`: "a full unread body read ahead stops at 64 KiB and the handler deadline cancels it" | Propose a finite default handler deadline in the design before changing `ServerLimits::default()`; keep `None` as explicit opt-out for long-running handlers |
+| `mttp_moonfetch` streamed response body (`Stream(idle_ms)`) | Bytes the server sends | Only the idle limit of each read and the caller's reader, which bounds decoded bytes. moonfetch bounds a streamed body nowhere, so coded bodies that decode to nothing (empty stored blocks, skippable frames) are not bounded by wire bytes, as `ClientConfig.max_body_bytes` bounds them for `@mttp_async.backend()` | A wire-byte ceiling on `backend()`, applied to streamed bodies as the engine ceiling is |
+| `mttp_moonfetch` HTTP/2 and HTTP/3 connections | Origins the program talks to | moonfetch keeps one connection per origin until the server closes it or the backend is closed; it has no idle expiry or connection cap to configure. HTTP/1.1 takes a fresh connection per exchange and keeps none | An idle limit in moonfetch's pool, passed through `backend()` |

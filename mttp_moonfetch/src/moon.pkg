@@ -1,0 +1,49 @@
+import {
+  "gaato/mttp",
+  "gaato/mttp_async/codings",
+  "moonbitstack/moonfetch",
+  "moonbitstack/moonhttp/method",
+  "moonbitstack/moonhttp/http1",
+  "moonbitstack/moonhttp/http2",
+  "moonbitstack/moonhttp/http3",
+  "moonbitstack/moontls/tls",
+  "moonbitstack/moontls/alert",
+  "moonbitlang/async/os_error",
+  "moonbitlang/async/socket",
+  "moonbitlang/core/async",
+  "moonbitlang/core/debug",
+}
+
+import {
+  "gaato/mttp",
+  "gaato/mttp/sim",
+  "gaato/mttp_async",
+  "gaato/mttp_async/server",
+  "moonbitstack/moontls/tls",
+  "moonbitstack/mooncred/x509",
+  "moonbitstack/moonnet/tcp",
+  "moonbitstack/moonhttp/http2",
+  "moonbitstack/moonhttp/header",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/cond_var",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/env",
+} for "test"
+
+// Not js: there gaato/mttp_async's backend is the host's fetch, which already
+// negotiates HTTP/2 and HTTP/3, and moonfetch would only grow the bundle.
+
+supported_targets = "native + wasm"
+
+// Experimental, so each importer opts in: the package follows moonfetch, a
+// fast-moving 0.x module with one maintainer, and classifies failures by
+// moonfetch's error types (and, for an early close, by one error text), which
+// any moonfetch release may change.
+
+options(
+  experimental: true,
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/cond_var",
+  ],
+)

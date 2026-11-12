@@ -20,10 +20,10 @@ suberror SelfTestFailed {
 ///|
 let modules_tsv : String =
   #|# The self-test's modules.
-  #|dir	name	kind	targets	module_deps	package_imports	experimental	release
-  #|portable	selftest/portable	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core	-	yes
-  #|runtime	selftest/runtime	runtime	native	-	moonbitlang/core	moonbitlang/core/async	yes
-  #|benchmark	selftest/benchmark	benchmark	native	-	moonbitlang/core	-	no
+  #|dir	name	kind	targets	module_deps	package_imports	experimental	release	gate
+  #|portable	selftest/portable	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core	-	yes	full
+  #|runtime	selftest/runtime	runtime	native	-	moonbitlang/core	moonbitlang/core/async	yes	full
+  #|benchmark	selftest/benchmark	benchmark	native	-	moonbitlang/core	-	no	full
   #|
 
 ///|
@@ -113,11 +113,11 @@ async fn probe_release(parent : String) -> Unit {
   )
   @fs.write_text(
     root + "/scripts/modules.tsv",
-    "dir\tname\tkind\ttargets\tmodule_deps\tpackage_imports\texperimental\trelease\n" +
-    "library\tprobe/library\tfour-target\tnative\t-\t*\t-\tyes\n" +
-    "private\tprobe/private\tfour-target\tnative\tprobe/library\t*\t-\tno\n" +
-    "app\tprobe/app\texample\tnative\t-\t*\t-\tno\n" +
-    "examples/nested\tprobe/nested\texample\tnative\t-\t*\t-\tno\n",
+    "dir\tname\tkind\ttargets\tmodule_deps\tpackage_imports\texperimental\trelease\tgate\n" +
+    "library\tprobe/library\tfour-target\tnative\t-\t*\t-\tyes\tfull\n" +
+    "private\tprobe/private\tfour-target\tnative\tprobe/library\t*\t-\tno\tfull\n" +
+    "app\tprobe/app\texample\tnative\t-\t*\t-\tno\tfull\n" +
+    "examples/nested\tprobe/nested\texample\tnative\t-\t*\t-\tno\tfull\n",
   )
   @fs.write_text(
     root + "/moon.work",

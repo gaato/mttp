@@ -24,3 +24,27 @@ jobs:
           persist-credentials: false
       - name: Validate all targets and ledgers
         run: scripts/gates.sh full
+
+  # gaato/mttp_moonfetch built against the newest moonbitstack/moonfetch and
+  # moonbitlang/async on mooncakes.io rather than the versions its moon.mod
+  # names, then its tests against public HTTP/2 and HTTP/3 servers. moonfetch
+  # changes quickly and the backend classifies its errors, so this job going
+  # red while `gates` stays green means moonfetch, its runtime or the
+  # toolchain moved under mttp_moonfetch. One live test expects moonfetch's
+  # known HTTP/3 body bug and fails once it is fixed, as the signal to revisit
+  # what mttp_moonfetch's README says about HTTP/3.
+  moonfetch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [latest, nightly]
+    container:
+      image: ghcr.io/gaato/moonbit:${{ matrix.toolchain }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate gaato/mttp_moonfetch on the newest moonfetch, live
+        run: scripts/gates.sh newest

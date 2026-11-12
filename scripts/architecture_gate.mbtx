@@ -14,9 +14,10 @@ import {
 ///   modules of the row's `module_deps` column.
 /// - `import`: every package of a module imports only packages its row's
 ///   `package_imports` column allows, and packages of the module itself.
-/// - `async-runtime`: no `moon.mod`, `moon.pkg` or script imports
-///   `moonbitlang/async`; the runtime is `moonbitlang/core/async`, and two
-///   runtimes in one program cannot share an event loop.
+/// - `async-runtime`: the runtime is `moonbitlang/core/async`. Only the
+///   modules of `registry_async_modules` below import the registry's
+///   `moonbitlang/async`, each at no lower a version than its floor there;
+///   no other `moon.mod`, `moon.pkg` or script imports it.
 /// - `experimental`: `allow-experimental-packages` is a list, never `true`,
 ///   and names only packages the row's `experimental` column allows, each of
 ///   which the package imports. An entry marked `test:` may be imported by
@@ -42,6 +43,70 @@ import {
 /// the shared docs_audit.mbtx, the last one, moved to core/async in every
 /// repository. An entry needs a reason that outweighs a second runtime.
 let script_exemptions : Array[(String, String)] = []
+
+///|
+/// The modules that may import the registry's `moonbitlang/async`, the
+/// lowest version their moon.mod may ask for, and the reason. From 0.22.6
+/// that module runs on moonbitlang/core/async's event loop, so a program
+/// that links both still has one runtime; an older one brings a second
+/// event loop that cannot share a native process with core/async's.
+let registry_async_modules : Array[(String, String, String)] = [
+  (
+    "gaato/mttp_moonfetch", "0.22.6", "moonbitstack/moonfetch, the HTTP/1.1, HTTP/2 and HTTP/3 client it adapts, runs on it",
+  ),
+]
+
+///|
+/// The numeric parts of a version such as `0.22.6`; a part that does not
+/// start with a digit counts as 0.
+fn version_parts(version : String) -> Array[Int32] {
+  version
+  .split(".")
+  .map(part => {
+    let mut n = 0
+    for c in part {
+      guard c >= '0' && c <= '9' else { break }
+      n = n * 10 + (c.to_int() - '0'.to_int())
+    }
+    n
+  })
+  .to_array()
+}
+
+///|
+/// Whether `version` is `floor` or later.
+fn at_least(version : String, floor : String) -> Bool {
+  let have = version_parts(version)
+  let want = version_parts(floor)
+  for i in 0..<have.length().max(want.length()) {
+    let a = have.get(i).unwrap_or(0)
+    let b = want.get(i).unwrap_or(0)
+    if a != b {
+      return a > b
+    }
+  }
+  true
+}
+
+///|
+/// The versions a `moon.mod` asks for `name` at (`"name@1.2.3"`), outside
+/// comments.
+fn import_versions(text : String, name : String) -> Array[String] {
+  let needle = "\"\{name}@"
+  let out = []
+  for raw in text.split("\n") {
+    let line = raw.trim().to_owned()
+    guard !line.has_prefix("//") && line.find(needle) is Some(at) else {
+      continue
+    }
+    let rest = line[at + needle.length():].to_owned()
+    match rest.find("\"") {
+      Some(close) => out.push(rest[:close].to_owned())
+      None => out.push(rest)
+    }
+  }
+  out
+}
 
 ///|
 /// The connection engines and the pure control package.
@@ -115,14 +180,19 @@ fn parse_rows(text : String) -> Array[Row] raise {
         package_imports,
         experimental,
         release,
+        gate,
       ] else {
-      fail("scripts/modules.tsv: expected 8 tab-separated cells: \{line}")
+      fail("scripts/modules.tsv: expected 9 tab-separated cells: \{line}")
     }
     guard kind is ("four-target" | "runtime" | "example" | "benchmark") else {
       fail("scripts/modules.tsv: unknown kind \{kind}: \{line}")
     }
     guard release is ("yes" | "no") else {
       fail("scripts/modules.tsv: release must be yes or no: \{line}")
+    }
+    // The targets of scripts/gates.sh that build modules.
+    guard gate is ("full" | "moonfetch") else {
+      fail("scripts/modules.tsv: gate must be full or moonfetch: \{line}")
     }
     rows.push({
       example: kind == "example" || kind == "benchmark",
@@ -404,13 +474,41 @@ fn audit(files : Map[String, String]) -> Array[String] raise {
     if script_exemptions.any(exemption => exemption.0 == path) {
       continue
     }
+    // The floor of the module a manifest belongs to, if it may import
+    // moonbitlang/async; a script belongs to no module.
+    let owner = if path.has_suffix(".mbtx") {
+      None
+    } else {
+      rows.iter().find_first(row => path.has_prefix(row.dir + "/"))
+    }
+    let floor = match owner {
+      Some(row) =>
+        registry_async_modules
+        .iter()
+        .find_first(allowed => allowed.0 == row.name)
+        .map(allowed => allowed.1)
+      None => None
+    }
     for item in imports {
-      if under(item.path, "moonbitlang/async") {
-        note(
-          path,
-          "async-runtime",
-          "line \{item.line} imports \{item.path}; use moonbitlang/core/async",
-        )
+      guard under(item.path, "moonbitlang/async") else { continue }
+      match floor {
+        None =>
+          note(
+            path,
+            "async-runtime",
+            "line \{item.line} imports \{item.path}; use moonbitlang/core/async (only the modules of registry_async_modules may import moonbitlang/async)",
+          )
+        Some(floor) if base == "moon.mod" =>
+          for version in import_versions(text, item.path) {
+            if !at_least(version, floor) {
+              note(
+                path,
+                "async-runtime",
+                "line \{item.line} asks for \{item.path}@\{version}; below \{floor} it does not run on moonbitlang/core/async's event loop",
+              )
+            }
+          }
+        Some(_) => ()
       }
     }
   }
@@ -663,6 +761,32 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
     ],
     "async-runtime",
   )
+  rejects(
+    "moonbitlang/async in a module outside registry_async_modules",
+    [
+      (
+        "mttp_async/moon.mod",
+        files.get("mttp_async/moon.mod").unwrap_or("") +
+        "\nimport {\n  \"moonbitlang/async@0.22.9\",\n}\n",
+      ),
+    ],
+    "async-runtime",
+  )
+  rejects(
+    "moonbitlang/async below its floor in gaato/mttp_moonfetch",
+    [
+      (
+        "mttp_moonfetch/moon.mod", "name = \"gaato/mttp_moonfetch\"\n\nimport {\n  \"moonbitlang/async@0.22.5\",\n}\n",
+      ),
+    ],
+    "async-runtime",
+  )
+  accepts("moonbitlang/async at its floor in gaato/mttp_moonfetch", [
+    (
+      "mttp_moonfetch/moon.mod", "name = \"gaato/mttp_moonfetch\"\n\nimport {\n  \"moonbitlang/async@0.22.6\",\n}\n",
+    ),
+    pkg("mttp_moonfetch/src", "import {\n  \"moonbitlang/async/socket\",\n}\n"),
+  ])
   accepts("gaato/mttp importing its own packages and core", [
     pkg(
       "mttp/src/h1client", "import {\n  \"gaato/mttp\",\n  \"gaato/mttp/rt\" @rt,\n  \"moonbitlang/core/json\",\n}\n",

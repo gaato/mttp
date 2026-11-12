@@ -1,0 +1,21 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_moonfetch"
+
+import {
+  "gaato/mttp",
+  "moonbitstack/moonfetch",
+  "moonbitstack/moontls/tls",
+}
+
+// Values
+pub fn backend(http3? : Bool, proxy? : @moonfetch.Proxy, tls? : @tls.Client) -> &@mttp.Backend
+
+pub let http_version : @mttp.AttributeKey[String]
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

@@ -13,6 +13,12 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Two jobs on the pinned toolchain, side by side and always both (no path
+# filters: gaato/mttp_moonfetch sits on gaato/mttp and gaato/mttp_async and
+# breaks with them). `gates` covers every module but mttp_moonfetch;
+# `moonfetch` covers mttp_moonfetch, which runs on moonbitstack's code, so a
+# failure there points at it alone. scripts/modules.tsv's gate column says
+# which job builds which module.
 jobs:
   gates:
     runs-on: ubuntu-24.04
@@ -31,3 +37,19 @@ jobs:
       # image's Node runs it.
       - name: Validate all targets and ledgers
         run: scripts/gates.sh full
+
+  moonfetch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.20-65efd5b93
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Update registry index before testing
+        run: moon update
+      # Local servers only: the tests against public HTTP/2 and HTTP/3
+      # servers run in canary.yml.
+      - name: Validate gaato/mttp_moonfetch on native and wasm
+        run: scripts/gates.sh moonfetch

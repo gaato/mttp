@@ -16,7 +16,11 @@ import {
 // allow-experimental-packages, and a second build without the list must warn,
 // so the opt-in a user needs is the opt-in the module documents. Nothing is
 // uploaded or published.
-// Usage: moon run scripts/resolver_gate.mbtx [-- --self-test]
+//
+// With `--gate G`, only the modules whose `gate` column in scripts/modules.tsv
+// is G get a consumer; the workspace modules they depend on are staged too,
+// so a consumer resolves the code of this checkout.
+// Usage: moon run scripts/resolver_gate.mbtx [-- --self-test | --gate G]
 
 ///|
 suberror GateError {
@@ -35,6 +39,8 @@ struct Module {
   /// The targets of each package that narrows the module's targets with
   /// `supported_targets` in its moon.pkg.
   package_targets : Map[String, Array[String]]
+  /// The `gate` column of the module's row.
+  gate : String
 }
 
 ///|
@@ -80,7 +86,11 @@ fn quoted(line : StringView) -> String raise {
 }
 
 ///|
-async fn module_at(dir : String, targets : Array[String]) -> Module {
+async fn module_at(
+  dir : String,
+  targets : Array[String],
+  gate : String,
+) -> Module {
   let mut name = ""
   let mut version = ""
   let deps : Map[String, Json] = Map([])
@@ -146,6 +156,7 @@ async fn module_at(dir : String, targets : Array[String]) -> Module {
     experimental,
     targets,
     package_targets,
+    gate,
   }
 }
 
@@ -326,8 +337,8 @@ async fn workspace_modules(root : String) -> Array[Module] {
     if line.is_empty() || line.has_prefix("#") || line.has_prefix("dir\t") {
       continue
     }
-    guard line.split("\t").map(s => s.to_owned()).to_array()
-      is [dir, _, kind, targets, ..] else {
+    let cells = line.split("\t").map(s => s.to_owned()).to_array()
+    guard cells is [dir, _, kind, targets, ..] else {
       raise GateError("scripts/modules.tsv: malformed row: " + line)
     }
     if kind == "example" || kind == "benchmark" {
@@ -339,7 +350,9 @@ async fn workspace_modules(root : String) -> Array[Module] {
         .map(t => t.trim().to_owned())
         .filter(t => !t.is_empty())
         .to_array()
-      modules.push(module_at(root + "/" + dir, targets))
+      modules.push(
+        module_at(root + "/" + dir, targets, cells.get(8).unwrap_or("full")),
+      )
     }
   }
   modules
@@ -403,9 +416,36 @@ async fn build(consumer : String, target : String, isolated : String) -> String 
 }
 
 ///|
-async fn check() -> Unit {
+/// The modules to stage for the consumers of `selected`: those and the
+/// workspace modules they depend on, directly or not, in dependency order.
+fn staged(modules : Array[Module], selected : Array[Module]) -> Array[Module] {
+  let wanted : Map[String, Unit] = Map([])
+  for candidate in selected {
+    wanted[candidate.name] = ()
+  }
+  // Rows are in dependency order, so one pass from the last row reaches
+  // every dependency of a wanted module.
+  for i = modules.length() - 1; i >= 0; i = i - 1 {
+    if wanted.contains(modules[i].name) {
+      for dep, _ in modules[i].deps {
+        wanted[dep] = ()
+      }
+    }
+  }
+  modules.filter(candidate => wanted.contains(candidate.name))
+}
+
+///|
+async fn check(gate : String?) -> Unit {
   let root = @fs.realpath(".")
-  let modules = workspace_modules(root)
+  let all = workspace_modules(root)
+  let modules = match gate {
+    Some(name) => all.filter(candidate => candidate.gate == name)
+    None => all
+  }
+  if modules.is_empty() {
+    raise GateError("no library module of scripts/modules.tsv has that gate")
+  }
   let home = @env.get_env_var("MOON_HOME").unwrap_or(
     @env.get_env_var("HOME").unwrap() + "/.moon",
   )
@@ -432,7 +472,7 @@ async fn check() -> Unit {
   )
   |> ignore
   @fs.symlink(target=home + "/lib", isolated + "/lib")
-  for candidate in modules {
+  for candidate in staged(all, modules) {
     stage(candidate, isolated + "/registry")
   }
   for i, candidate in modules {
@@ -510,6 +550,7 @@ async fn main {
         experimental: [],
         targets: [],
         package_targets: {},
+        gate: "full",
       }
       // A published row for the candidate's version gives way to the local
       // code; other versions stay.
@@ -572,8 +613,40 @@ async fn main {
       } else {
         raise GateError("supported_targets is read wrongly")
       }
+      // A gate's consumers get its modules and the workspace modules those
+      // depend on, transitively, and nothing else.
+      let base : Module = { ..candidate, deps: {}, }
+      let core = { ..base, name: "probe/core", }
+      let middle = {
+        ..base,
+        name: "probe/middle",
+        deps: { "probe/core": Json::string("0.1.0") },
+      }
+      let other = { ..base, name: "probe/other", }
+      let edge = {
+        ..base,
+        name: "probe/edge",
+        gate: "edge",
+        deps: {
+          "probe/middle": Json::string("0.1.0"),
+          "moonbitstack/outside": Json::string("0.1.0"),
+        },
+      }
+      let names = staged([core, middle, other, edge], [edge]).map(m => m.name)
+      if names == ["probe/core", "probe/middle", "probe/edge"] {
+        println("resolver gate self-test: a gate stages its dependencies OK")
+      } else {
+        raise GateError("a gate stages the wrong modules: \{names.join(", ")}")
+      }
     } else {
-      check()
+      match @env.args()[1:] {
+        [] => check(None)
+        ["--gate", name] => check(Some(name))
+        _ =>
+          raise GateError(
+            "usage: moon run scripts/resolver_gate.mbtx [-- --self-test | --gate G]",
+          )
+      }
     }
   }
   task() catch {
