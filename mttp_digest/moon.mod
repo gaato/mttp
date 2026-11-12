@@ -8,6 +8,8 @@ readme = "README.md"
 
 repository = "https://github.com/gaato/mttp"
 
+keywords = [ "http", "digest", "auth" ]
+
 description = "Origin-scoped Digest authentication for gaato/mttp."
 
 source = "src"

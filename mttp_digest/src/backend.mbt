@@ -14,7 +14,8 @@ pub struct DigestScheme {
 ///|
 /// Creates an origin-scoped wrapper. The origin must be an absolute HTTP(S)
 /// URL without userinfo. Paths are ignored. Supply an unpredictable random
-/// source returning values in [0,1) for cnonces; tests can inject fixed values.
+/// source returning values in [0,1) for cnonces, such as one built on
+/// `@env.rand` of `moonbitlang/core/env`; tests can inject fixed values.
 /// No network I/O occurs here. Explicit request Authorization takes precedence.
 pub fn DigestScheme::new(
   inner : &@mttp.Backend,

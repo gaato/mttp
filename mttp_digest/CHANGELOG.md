@@ -7,6 +7,13 @@ never does.
 
 ## [Unreleased]
 
+### Changed
+
+- `DigestScheme` wraps a `gaato/mttp` Backend (`&@mttp.Backend`) instead of a
+  `gaato/http` one, and raises `@mttp.TransportError`: gaato/http is now part
+  of gaato/mttp. Replace `gaato/http` with `gaato/mttp` in moon.mod and
+  moon.pkg, and `@http.` with `@mttp.` in code.
+
 ## [0.1.0] - 2026-11-10
 
 ### Added

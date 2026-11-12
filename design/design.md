@@ -209,6 +209,13 @@ All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design
 
 `gaato/mttp_digest` (root package): `DigestScheme` as an origin-scoped Backend wrapper, ported from requesto.
 
+`DigestScheme` rules beyond those its README states:
+
+- Each cnonce uses four draws of `random` (128 bits); the nonce count starts at one and is sent as eight hex digits. Concurrent calls share increasing counts, including responses to challenges with an already-used nonce. A new nonce or a `stale=true` challenge resets the count to one.
+- It closes intermediate responses unread and keeps the final body owned by the caller. It passes `SendOptions` through unchanged on every send; a `Client` with a Timer bounds the whole exchange. Request streams close on every exit, including validation refusal and cancellation. Close is idempotent and clears retained nonces.
+- `auth` is preferred over `auth-int` (the latter needs a buffered body). Legacy non-session challenges without qop are accepted without preemptive nonce reuse. `-sess` without qop and SHA-512-256 are declined: `moonbitlang/x` does not provide SHA-512/256's distinct initialization values.
+- All `WWW-Authenticate` values together have a 16 KiB UTF-8 budget; a larger challenge returns the 401 unchanged. The nonce store retains at most 16 origins, evicts the oldest on overflow and forgets a nonce when its count would exceed `ffffffff`. A same-nonce challenge at exhaustion returns the 401 unchanged rather than reusing a count. Each wrapper is scoped to one origin.
+
 ### 3.5 Responsibility rules
 
 - **gaato/mttp's vocabulary, codec and engines** own the wire. **They hold no policy**: no retry, no redirect following, no cookies, no rate limits, no content-coding negotiation, no decoded-body limits.
