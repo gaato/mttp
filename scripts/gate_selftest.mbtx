@@ -93,10 +93,42 @@ async fn probe_interfaces(root : String, name : String, refused : Bool) -> Unit 
 
 ///|
 /// Runs the copy of scripts/release.mbtx in `root`, as a caller would.
-async fn release(root : String, args : Array[String]) -> @shell.Output {
-  @shell.Cmd("moon", ["run", "scripts/release.mbtx", "--", ..args], cwd=root).output(
-    timeout_ms=300000,
-  )
+/// `env` adds to the inherited environment; MTTP_RELEASE_TAG is empty unless
+/// it names one, so a variable set around the self-test cannot leak in.
+async fn release(
+  root : String,
+  args : Array[String],
+  env~ : Map[String, String] = {},
+) -> @shell.Output {
+  let vars = { "MTTP_RELEASE_TAG": "" }
+  for name, value in env {
+    vars[name] = value
+  }
+  @shell.Cmd(
+    "moon",
+    ["run", "scripts/release.mbtx", "--", ..args],
+    cwd=root,
+    env=vars,
+  ).output(timeout_ms=300000)
+}
+
+///|
+/// Runs release.mbtx and expects it to refuse with `code` and `message` on
+/// stderr. Every refusal probed here happens before `moon update` or `moon
+/// publish`, so the self-test never reaches the registry.
+async fn refused(
+  root : String,
+  what : String,
+  args : Array[String],
+  code : Int32,
+  message : String,
+  env~ : Map[String, String] = {},
+) -> Unit {
+  let output = release(root, args, env~)
+  guard output.exit_code() == code && output.stderr().contains(message) else {
+    println(output.stdout() + output.stderr())
+    raise SelfTestFailed("release.mbtx did not refuse " + what)
+  }
 }
 
 ///|
@@ -137,11 +169,57 @@ async fn probe_release(parent : String) -> Unit {
     root + "/library/CHANGELOG.md",
     "# Changelog\n\n## [Unreleased]\n\n- Example.\n",
   )
+  // The release workflow runs on the release module's tag only.
+  @fs.mkdir(root + "/.github/workflows", recursive=true)
+  let workflow = root + "/.github/workflows/release.yml"
+  @fs.write_text(workflow, "on:\n  push:\n    tags:\n      - 'other-v*'\n")
+  refused(
+    root,
+    "a workflow without the module's tag trigger",
+    ["check"],
+    1,
+    "no tag trigger 'library-v*'",
+  )
+  @fs.write_text(workflow, "on:\n  push:\n    tags:\n      - 'library-v*'\n")
   let checked = release(root, ["check"])
   guard checked.exit_code() == 0 &&
     checked.stdout().contains("OK (1 changelogs)") else {
     raise SelfTestFailed("release check included a private module or app")
   }
+  // A real publish needs the release workflow's tag, and only a release
+  // module is published; a dry run needs the version's changelog section.
+  refused(root, "publish without a module", ["publish"], 2, "publish takes")
+  refused(
+    root,
+    "a publish outside the release workflow",
+    ["publish", "library"],
+    2,
+    "by pushing the tag library-v0.0.1",
+  )
+  refused(
+    root,
+    "a publish under another tag",
+    ["publish", "library"],
+    2,
+    "by pushing the tag library-v0.0.1",
+    env={ "MTTP_RELEASE_TAG": "library-v9.9.9" },
+  )
+  for dir in ["private", "app", "unlisted"] {
+    refused(
+      root,
+      "a publish of " + dir,
+      ["publish", "--dry-run", dir],
+      2,
+      "is not a release module",
+    )
+  }
+  refused(
+    root,
+    "a dry run without a changelog section",
+    ["publish", "--dry-run", "library"],
+    1,
+    "no '## [0.0.1] - <date>' heading",
+  )
   for dir in ["private", "app", "examples/nested", "unlisted"] {
     let refused = release(root, ["bump", dir, "9.9.9"])
     guard refused.exit_code() == 2 &&
@@ -172,7 +250,7 @@ async fn probe_release(parent : String) -> Unit {
     )
   }
   println(
-    "gate self-test: release selection, bump guards and nested members OK",
+    "gate self-test: release selection, bump and publish guards and nested members OK",
   )
 }
 

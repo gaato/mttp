@@ -1,43 +1,193 @@
 name: Release
 
-# The library modules are released together. A tag `<module dir>-v<version>`
-# (for example `mttp-v0.2.0`) runs the release preflight; nothing here
-# publishes. Publication is a separately approved local command (see
-# scripts/release.mbtx).
+# Publishes one module to mooncakes.io when its release tag is pushed:
+# `mttp-v<version>`, `mttp_async-v<version>` or `mttp_digest-v<version>`.
+# Pushing the tag is the approval; nothing else publishes. The tag must name a
+# release module of scripts/modules.tsv at the version in its moon.mod and
+# point at a commit on main, which the publish job checks before it runs the
+# full gates. `scripts/release.mbtx publish <module>` then publishes that
+# module alone, built outside the workspace so it resolves its dependencies
+# from the registry as consumers do: a module whose new version imports
+# another's new version (mttp_async on mttp) is tagged after that one is
+# published.
+#
+# A new release module needs its tag pattern below and in the deployment
+# tags of the `mooncakes` environment, which holds the MOONCAKES_TOKEN and
+# MOONCAKES_USERNAME secrets; `release.mbtx check` refuses a release module
+# without a trigger here.
+#
+# After the publish, a GitHub Release is created for the tag from that
+# version's section of `<module>/CHANGELOG.md`. Only gaato/mttp_async releases
+# are marked latest. Run the workflow by hand with a tag to create a missing
+# Release for a version already published; that run does not publish.
+
 on:
   push:
     tags:
-      - 'mttp_async-v*'
       - 'mttp-v*'
+      - 'mttp_async-v*'
       - 'mttp_digest-v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag of a published version, such as mttp-v0.2.0
+        required: true
+        type: string
 
 permissions:
   contents: read
 
+# One release at a time. GitHub keeps one waiting run per group and cancels
+# an older waiting one, so push the next tag after the previous run finished.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  preflight:
+  publish:
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     container:
       image: ghcr.io/gaato/moonbit:0.10.20-65efd5b93
+    environment: mooncakes
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check the registry credentials
+        env:
+          MOONCAKES_TOKEN: ${{ secrets.MOONCAKES_TOKEN }}
+          MOONCAKES_USERNAME: ${{ secrets.MOONCAKES_USERNAME }}
+        run: |
+          if [ -z "$MOONCAKES_TOKEN" ] || [ -z "$MOONCAKES_USERNAME" ]; then
+            echo "MOONCAKES_TOKEN and MOONCAKES_USERNAME must be set in the mooncakes environment; nothing published" >&2
+            exit 1
+          fi
+
+      - name: Check out the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - name: Tag names a module at its moon.mod version
-        if: github.ref_type == 'tag'
+
+      - name: Check the tag against main, modules.tsv and moon.mod
+        id: tag
+        shell: bash
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          dir=${TAG%-v*}; version=${TAG##*-v}
-          actual=$(sed -nE 's/^version = "(.*)"$/\1/p' "$dir/moon.mod")
-          if [ "$actual" != "$version" ]; then
-            echo "$TAG: $dir/moon.mod has version '$actual'" >&2
+          # The container's git sees a checkout owned by another user.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          module="${TAG%-v*}"
+          version="${TAG##*-v}"
+          if ! awk -F '\t' -v dir="$module" '!/^#/ && $1 == dir && $8 == "yes" { found = 1 } END { exit !found }' scripts/modules.tsv; then
+            echo "$TAG: $module is not a release module of scripts/modules.tsv" >&2
             exit 1
           fi
+          declared=$(sed -nE 's/^version = "(.*)"$/\1/p' "$module/moon.mod")
+          if [ "$declared" != "$version" ]; then
+            echo "$TAG names $version, but $module/moon.mod declares $declared" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "$TAG points at a commit that is not on main" >&2
+            exit 1
+          fi
+          echo "module=$module" >> "$GITHUB_OUTPUT"
+
       - run: moon update
-      # Includes the resolver gate: real archives, an isolated registry and
-      # consumers outside the workspace.
+      # Includes the resolver gate (real archives, an isolated registry and
+      # consumers outside the workspace) and, last, the Workers example on
+      # workerd: npm ci fetches the wrangler that
+      # examples/fetch/workers/package-lock.json pins, and the image's Node
+      # runs it.
       - run: scripts/gates.sh full
-      - run: moon run scripts/release.mbtx -- publish --dry-run
+
+      - name: Publish
+        shell: bash
+        env:
+          MOONCAKES_TOKEN: ${{ secrets.MOONCAKES_TOKEN }}
+          MOONCAKES_USERNAME: ${{ secrets.MOONCAKES_USERNAME }}
+          MODULE: ${{ steps.tag.outputs.module }}
+          # release.mbtx publishes only when this names the module's tag.
+          MTTP_RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # moon needs credentials even for --dry-run: mooncakes checks the
+          # package. They exist only during this step.
+          moon_home="${MOON_HOME:-$HOME/.moon}"
+          mkdir -p "$moon_home"
+          umask 077
+          printf '{"token":"%s","username":"%s"}\n' "$MOONCAKES_TOKEN" "$MOONCAKES_USERNAME" > "$moon_home/credentials.json"
+          trap 'rm -f "$moon_home/credentials.json"' EXIT
+          moon run scripts/release.mbtx -- publish --dry-run "$MODULE"
+          moon run scripts/release.mbtx -- publish "$MODULE"
+
+  github-release:
+    needs: publish
+    # A manual run skips the publish and only creates the Release.
+    if: >-
+      !cancelled() && (needs.publish.result == 'success' ||
+      (github.event_name == 'workflow_dispatch' && needs.publish.result == 'skipped'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+
+      - name: Create the Release from the changelog
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          module="${TAG%-v*}"
+          version="${TAG##*-v}"
+          # The module's name, from the modules.tsv of the tagged commit.
+          name=$(awk -F '\t' -v dir="$module" '!/^#/ && $1 == dir && $8 == "yes" { print $2 }' scripts/modules.tsv)
+          if [ -z "$name" ]; then
+            echo "$TAG is not a release tag: $module is not a release module of scripts/modules.tsv" >&2
+            exit 1
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "A Release for $TAG already exists"
+            exit 0
+          fi
+          notes="$RUNNER_TEMP/notes.md"
+          # The section runs from `## [<version>]` to the next `## [` heading.
+          awk -v heading="## [$version]" '
+            index($0, heading) == 1 { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' "$module/CHANGELOG.md" > "$notes"
+          if ! grep -q '[^[:space:]]' "$notes"; then
+            echo "$module/CHANGELOG.md has no section for $version" >&2
+            exit 1
+          fi
+          printf '\nPublished as [%s@%s](https://mooncakes.io/docs/%s).\n' \
+            "$name" "$version" "$name" >> "$notes"
+          # gaato/mttp_async is the module an app starts with (the README
+          # lists it first), so only its stable versions take the Latest
+          # badge; a backfill of an older one leaves it on the newer Release.
+          # A version with a SemVer prerelease part (`-rc.1`) is a
+          # prerelease, which GitHub never marks latest; that also keeps
+          # `sort -V`, which orders `1.0.0-rc.1` after `1.0.0`, comparing
+          # stable versions only.
+          latest=false
+          prerelease=()
+          if [[ "$version" == *-* ]]; then
+            prerelease=(--prerelease)
+          elif [ "$module" = mttp_async ]; then
+            current=$(gh release view --json tagName --jq .tagName 2> /dev/null || true)
+            if [[ "$current" == mttp_async-v* ]]; then
+              newest=$(printf '%s\n%s\n' "${current#mttp_async-v}" "$version" | sort -V | tail -n 1)
+              if [ "$newest" = "$version" ]; then latest=true; fi
+            else
+              latest=true
+            fi
+          fi
+          gh release create "$TAG" --verify-tag --title "$name $version" \
+            --notes-file "$notes" --latest="$latest" "${prerelease[@]}"
