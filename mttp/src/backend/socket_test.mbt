@@ -465,11 +465,8 @@ async test "socket first read failure and false empty stream write no head" {
         @mttp_core.SendOptions::default(),
       )
     catch {
-      @mttp_core.TransportError(
-        kind=Unreplayable,
-        phase=Write,
-        detail="upload sentinel"
-      ) if failing => ()
+      @mttp_core.TransportError(kind=Unreplayable, phase~, detail~) if failing =>
+        assert_eq((phase, detail), (Write, "upload sentinel"))
       @mttp_core.TransportError(kind=Protocol, ..) if !failing => ()
       error => raise error
     } noraise {

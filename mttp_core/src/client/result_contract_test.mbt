@@ -234,10 +234,9 @@ test "head selection retains a buffered rejection before stream handoff" {
     .send(client, decide_retry=(attempt, context) => {
       if context.attempt == 0 {
         checks.push(
-          attempt
-          is Buffered(
-            { body: Err(@client.UnexpectedStatus({ status: 503, .. }, ..)), .. }
-          ),
+          attempt is Buffered(buffered) &&
+          buffered.body
+          is Err(@client.UnexpectedStatus({ status: 503, .. }, ..)),
         )
       } else {
         checks.push(

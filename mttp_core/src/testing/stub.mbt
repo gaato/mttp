@@ -1,4 +1,14 @@
 ///|
+/// Short names that keep `Canned::Factory` on one line: formatters before and
+/// after MoonBit 0.10.20 disagree on a trailing comma after a long one.
+using @mttp_core {
+  type Request,
+  type SendOptions,
+  type Response,
+  type TransportError,
+}
+
+///|
 /// What a stub answers. Byte responses can be reused; factories must return a
 /// fresh stream for each send so take-once state is never shared accidentally.
 /// A canned response or failure closes a stream request body unread, as a
@@ -7,9 +17,7 @@
 pub(all) enum Canned {
   Response(status~ : Int32, headers~ : @mttp_core.Headers, body~ : Bytes)
   Failure(@mttp_core.TransportError)
-  Factory(
-    async (@mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
-  )
+  Factory(async (Request, SendOptions) -> Response raise TransportError)
 }
 
 ///|

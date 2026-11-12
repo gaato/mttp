@@ -282,12 +282,8 @@ async test "concurrent background jobs report failures and remain owned after th
         errors
         .iter()
         .any(error => {
-          error
-          is @mttp_core.TransportError(
-            kind=Timeout(ms=7),
-            phase=Body,
-            detail="original"
-          )
+          let @mttp_core.TransportError(kind~, phase~, detail~) = error
+          (kind, phase, detail) == (Timeout(ms=7), Body, "original")
         }),
       )
       assert_false(errors[0].message().contains("private application detail"))

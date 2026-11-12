@@ -118,18 +118,8 @@ fn RetryRule::refusal(
         None => Some(NotRetryable)
         Some(rule) => permit(rule.methods, request, idempotent)
       }
-    Failure(
-      TransportError(
-        kind=Invalid
-        | Protocol
-        | TooLarge(..)
-        | Unreplayable
-        | Closed
-        | TooManyRedirects(..)
-        | RedirectRefused,
-        ..
-      )
-    ) => Some(NotRetryable)
+    Failure(TransportError(kind~, ..)) if never_retried(kind) =>
+      Some(NotRetryable)
     Failure(TransportError(kind=Proxy(status~), ..)) =>
       if self.unsent_failures && self.status_rule(status) is Some(_) {
         None
@@ -217,5 +207,20 @@ fn RetryRule::server_delay(
     StopAbove(limit) if delay > limit => Err(RetryAfterTooLong(delay))
     BackoffAbove(limit) if delay > limit => Ok(None)
     _ => Ok(Some(delay))
+  }
+}
+
+///|
+/// The failure kinds `RetryRule::refusal` stops on whatever the rule says.
+fn never_retried(kind : @mttp_core.Kind) -> Bool {
+  match kind {
+    Invalid
+    | Protocol
+    | TooLarge(..)
+    | Unreplayable
+    | Closed
+    | TooManyRedirects(..)
+    | RedirectRefused => true
+    _ => false
   }
 }

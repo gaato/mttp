@@ -220,14 +220,10 @@ async test "socket adapter translates runtime I O failures and preserves transpo
     phase=Write,
     detail="original",
   )
-  assert_true(
-    transport_error(original)
-    is @mttp_core.TransportError(
-      kind=Timeout(ms=7),
-      phase=Write,
-      detail="original"
-    ),
-  )
+  match transport_error(original) {
+    @mttp_core.TransportError(kind~, phase~, detail~) =>
+      assert_eq((kind, phase, detail), (Timeout(ms=7), Write, "original"))
+  }
 }
 
 ///|
