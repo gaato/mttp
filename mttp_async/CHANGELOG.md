@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-12
+
 ### Added
 
 - First release under this name. gaato/mttp_async continues gaato/http-async

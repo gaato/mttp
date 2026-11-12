@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-12
+
 ### Changed
 
 - `DigestScheme` wraps a `gaato/mttp` Backend (`&@mttp.Backend`) instead of a
