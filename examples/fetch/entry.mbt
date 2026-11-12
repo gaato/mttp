@@ -1,6 +1,6 @@
 ///|
 let adapter : (@fetch.JsRequest, @fetch.JsBackground) -> @fetch.JsPromise = @fetch.fetch_handler(request => {
-    @mttp_core.Response::new(200, body=request.body)
+    @mttp.Response::new(200, body=request.body)
   },
 )
 

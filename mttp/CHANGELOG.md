@@ -34,6 +34,17 @@ never does.
   | `@mttp_async.` in code | `@mttp.` |
   | `.mooncakes/gaato/mttp_async/hosts/*.mjs` | `.mooncakes/gaato/mttp/hosts/*.mjs` |
 
+### Added
+
+- The root re-exports more of gaato/mttp_core, so that an app that serves
+  plain handlers or streams bodies needs no other module: `Handler`,
+  `Attributes`, `AttributeKey` and the attribute keys `background`,
+  `remote_addr`, `close_on_shutdown` and `replay_safe`; `Url` and
+  `UrlError`; `StreamBody`, `BodyStream` and `read_bounded`; and `Backend`
+  with its `SendOptions`, the type `client(backend=)` takes. Typed
+  endpoints, the router, OpenAPI, multipart, rate limiters and the test
+  doubles stay in gaato/mttp_core, which an app that uses them adds too.
+
 ## Earlier versions, as gaato/mttp_async
 
 ## [0.1.0] - 2026-11-12

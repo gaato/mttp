@@ -1,13 +1,13 @@
 ///|
 /// A server that answers 503 to the first two requests and 200 after that.
-fn flaky() -> @mttp_core.Handler {
+fn flaky() -> @mttp.Handler {
   let served = Ref(0)
   _ => {
     served.val += 1
     if served.val <= 2 {
-      @mttp_core.Response::new(503)
+      @mttp.Response::new(503)
     } else {
-      @mttp_core.Response::new(200, body=Bytes(b"ready"))
+      @mttp.Response::new(200, body=Bytes(b"ready"))
     }
   }
 }
@@ -16,12 +16,12 @@ fn flaky() -> @mttp_core.Handler {
 /// Calls `addr` with the retry policy `@mttp.client()` uses by default
 /// and prints every attempt the Client makes.
 async fn call(addr : String) -> Unit {
-  let client = @client.Client::new(
+  let client = @mttp.Client::new(
     @mttp.backend(),
     @mttp.clock(),
     timer=@mttp.timer(),
     base_url="http://\{addr}",
-    retry=@client.RetryPolicy::conservative(),
+    retry=@mttp.RetryPolicy::conservative(),
     // The policy spreads each wait by up to 20 % either way; the middle of
     // that range keeps this output the same on every run.
     random=() => 0.5,
@@ -35,7 +35,7 @@ async fn call(addr : String) -> Unit {
     },
   )
   defer client.close()
-  let reply = client.send(@client.get("/status"))
+  let reply = client.send(@mttp.get("/status"))
   match reply.body {
     Ok(text) => println("result: \{reply.status} \{text}")
     Err(failure) => println("result: \{failure}")

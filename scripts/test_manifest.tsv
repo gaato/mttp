@@ -131,8 +131,8 @@ gaato/mttp-interop	gaato/mttp-interop/mttp_server	native	0
 gaato/mttp-interop	gaato/mttp-interop/pattern	js	3
 gaato/mttp-interop	gaato/mttp-interop/pattern	native	3
 gaato/mttp	gaato/mttp	js	0
-gaato/mttp	gaato/mttp	native	12
-gaato/mttp	gaato/mttp	wasm	12
+gaato/mttp	gaato/mttp	native	15
+gaato/mttp	gaato/mttp	wasm	15
 gaato/mttp	gaato/mttp/backend	js	17
 gaato/mttp	gaato/mttp/backend	native	20
 gaato/mttp	gaato/mttp/backend	wasm	20

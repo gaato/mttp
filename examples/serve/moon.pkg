@@ -1,5 +1,5 @@
 import {
-  "gaato/mttp_core",
+  "gaato/mttp",
   "gaato/mttp/server",
   "moonbitlang/core/async",
   "moonbitlang/core/env",

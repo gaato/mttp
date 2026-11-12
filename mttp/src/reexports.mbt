@@ -6,6 +6,20 @@ pub using @mttp_core {
   type Headers,
   type Method,
   type TransportError,
+  type Url,
+  type UrlError,
+  type Handler,
+  type Attributes,
+  type AttributeKey,
+  type StreamBody,
+  trait BodyStream,
+  type SendOptions,
+  trait Backend,
+  background,
+  remote_addr,
+  close_on_shutdown,
+  replay_safe,
+  read_bounded,
 }
 
 ///|

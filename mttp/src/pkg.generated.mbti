@@ -27,15 +27,25 @@ pub fn as_string() -> @client.ResponsePlan[Result[String, @client.ResponseFailur
 
 pub fn backend(trust? : @trust.Trust, config? : @h1client.ClientConfig) -> &@mttp_core.Backend
 
+pub let background : @mttp_core.AttributeKey[(async () -> Unit) -> Unit]
+
 pub fn client(base_url? : String, headers? : @mttp_core.Headers, timeout_ms? : Int32, total_ms? : Int32, max_body_bytes? : Int32, retry? : @client.RetryPolicy, retry_budget? : @client.RetryBudget, redirect? : @client.RedirectConfig, limiter? : &@client.RateLimiter, trust? : @trust.Trust, config? : @h1client.ClientConfig, cookies? : @cookie.CookieJar, backend? : &@mttp_core.Backend, clock? : &@rt.Clock, timer? : &@rt.Timer) -> @client.Client
 
 pub fn clock() -> &@rt.Clock
+
+pub let close_on_shutdown : @mttp_core.AttributeKey[Bool]
 
 pub fn coordination() -> &@rt.Coordination
 
 pub fn get(String) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
 
 pub fn post(String) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
+
+pub async fn read_bounded(&@mttp_core.BodyStream, Int32) -> Bytes raise @mttp_core.TransportError
+
+pub let remote_addr : @mttp_core.AttributeKey[String]
+
+pub let replay_safe : @mttp_core.AttributeKey[Bool]
 
 pub fn request(@mttp_core.Request) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]
 
@@ -48,11 +58,17 @@ pub fn timer() -> &@rt.Timer
 // Types and methods
 
 // Type aliases
+pub using @mttp_core {type AttributeKey}
+
+pub using @mttp_core {type Attributes}
+
 pub using @mttp_core {type Body}
 
 pub using @client {type Client}
 
 pub using @cookie {type CookieJar}
+
+pub type Handler = async (@mttp_core.Request) -> @mttp_core.Response noraise
 
 pub using @mttp_core {type Headers}
 
@@ -76,8 +92,20 @@ pub using @client {type RetryBudget}
 
 pub using @client {type RetryPolicy}
 
+pub using @mttp_core {type SendOptions}
+
+pub using @mttp_core {type StreamBody}
+
 pub using @mttp_core {type TransportError}
 
 pub using @trust {type Trust}
+
+pub using @mttp_core {type Url}
+
+pub using @mttp_core {type UrlError}
+
+pub using @mttp_core {trait Backend}
+
+pub using @mttp_core {trait BodyStream}
 
 // Traits
