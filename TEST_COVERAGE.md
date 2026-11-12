@@ -129,7 +129,7 @@ exchanges, a POST past the server's stream limit resent on a new
 connection, a send that outlives `close` leaving no connection open, the
 proxy with `http3=true` (no datagram reaches the origin), URLs outside ASCII
 sent percent-encoded, fragments kept from servers and proxies, CONNECT and
-URL credentials refused,
+URL credentials refused, a proxy's credentials on an `http` URL,
 decompression, raw redirects, the attempt deadline over head and body, idle
 reads, the wire byte limit, cancellation and a failed handshake. Its
 classification of moonfetch's failures is white-box tested, including the

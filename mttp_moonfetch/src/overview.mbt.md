@@ -147,6 +147,11 @@ pub async fn version_of(url : String) -> String? {
   does not wait for a stream to free up. The request itself is unsent and
   the Client resends it on a new connection; a response cut that way is a
   failure in phase Body.
+- **A failed proxy setup leaks a socket.** When a proxy refuses CONNECT,
+  SOCKS5 negotiation fails, or the attempt deadline ends either, moonfetch
+  0.1.8 does not close the socket it opened to the proxy, and nothing above
+  it can. A program that keeps failing through a proxy keeps file
+  descriptors open.
 - **TLS is moonbitstack's own.** The TLS protocol (moontls), its
   cryptography (mooncrypt) and certificate validation (mooncred) are
   moonbitstack's MoonBit libraries, not a widely deployed implementation

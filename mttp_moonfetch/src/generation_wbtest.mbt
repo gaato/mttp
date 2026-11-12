@@ -1,7 +1,8 @@
 // When the backend replaces its moonfetch client, and when it closes the old
 // one. Closing a client does not cut a response whose bytes already arrived,
 // so the black-box tests cannot tell an early close from a late one; these
-// read the generations' state instead.
+// read the generations' state instead. Also what a proxy changes in the
+// client and the fields it is given, for cases no local server shows.
 
 ///|
 test "a client is replaced after exchanges_per_client sends and closed with its last response" {
@@ -49,4 +50,30 @@ test "with a proxy, the client is built without HTTP/3" {
   let proxy = @moonfetch.Proxy::parse("http://proxy.example:3128")
   assert_false(MoonfetchBackend::new(http3=true, proxy~).http3)
   assert_true(MoonfetchBackend::new(http3=true).http3)
+}
+
+///|
+test "proxy credentials go only on an http URL, and never twice" {
+  let proxy = @moonfetch.Proxy::parse("http://user:secret@proxy.example:3128")
+  let none = @mttp.Headers::empty()
+  assert_eq(
+    proxy_authorization(Some(proxy), "http://origin.example/", none),
+    Some(("proxy-authorization", "Basic dXNlcjpzZWNyZXQ=")),
+  )
+  // An https request goes through the tunnel to the origin.
+  assert_eq(
+    proxy_authorization(Some(proxy), "https://origin.example/", none),
+    None,
+  )
+  let own = @mttp.Headers::of([("Proxy-Authorization", "Bearer t")])
+  assert_eq(
+    proxy_authorization(Some(proxy), "http://origin.example/", own),
+    None,
+  )
+  let anonymous = @moonfetch.Proxy::parse("http://proxy.example:3128")
+  assert_eq(
+    proxy_authorization(Some(anonymous), "http://origin.example/", none),
+    None,
+  )
+  assert_eq(proxy_authorization(None, "http://origin.example/", none), None)
 }

@@ -940,3 +940,28 @@ async test "CONNECT is refused before any I/O" {
     assert_eq(heads.length(), 0)
   })
 }
+
+///|
+/// moonfetch 0.1.8 sends a proxy's credentials only on CONNECT; an `http`
+/// URL goes to the proxy in absolute form, and the backend adds them there.
+async test "an http URL through a proxy with credentials carries Proxy-Authorization" {
+  with_recording_server((port, heads) => {
+    let backend = @mttp_moonfetch.backend(
+      proxy=@moonfetch.Proxy::parse("http://user:secret@127.0.0.1:\{port}"),
+    )
+    defer backend.close()
+    backend
+    .send(
+      @mttp.Request::get("http://origin.example/p"),
+      @mttp.SendOptions::default(),
+    )
+    .close()
+    guard heads is [head] else { fail("heads: \{heads.length()}") }
+    let fields = head
+      .split("\r\n")
+      .map(line => line.to_lower())
+      .filter(line => line.has_prefix("proxy-authorization:"))
+      .to_array()
+    assert_eq(fields, ["proxy-authorization: basic dxnlcjpzzwnyzxq="])
+  })
+}

@@ -194,6 +194,9 @@ impl @mttp.Backend for MoonfetchBackend with fn send(self, request, options) {
     raise invalid("unsupported request body")
   }
   let headers = outgoing_headers(request.headers)
+  if proxy_authorization(self.proxy, url, request.headers) is Some(field) {
+    headers.push(field)
+  }
   let lease = self.generation()
   lease.sends += 1
   lease.open += 1
@@ -319,6 +322,30 @@ fn outgoing_headers(headers : @mttp.Headers) -> Array[(String, String)] {
     !(name is ("host" | "content-length" | "transfer-encoding"))
   })
   .collect()
+}
+
+///|
+/// The `Proxy-Authorization` field for a request moonfetch sends to an HTTP
+/// proxy in absolute form: an `http` URL through an `http` or `https` proxy
+/// that has credentials, when the caller set no such field. moonfetch 0.1.8
+/// sends the proxy's credentials only on the CONNECT of an `https` URL, so
+/// an `http` URL would meet a 407. An `https` URL gets nothing here: its
+/// request goes through the tunnel to the origin.
+fn proxy_authorization(
+  proxy : @moonfetch.Proxy?,
+  url : String,
+  headers : @mttp.Headers,
+) -> (String, String)? {
+  guard proxy is Some(proxy) &&
+    proxy.scheme is ("http" | "https") &&
+    proxy.user is Some(user) &&
+    proxy.password is Some(password) &&
+    url.to_lower().has_prefix("http:") &&
+    headers.get("proxy-authorization") is None else {
+    return None
+  }
+  let credentials = @utf8.encode("\{user}:\{password}")
+  Some(("proxy-authorization", "Basic " + @base64.encode(credentials)))
 }
 
 ///|
