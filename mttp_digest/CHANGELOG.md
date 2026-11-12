@@ -7,6 +7,18 @@ never does.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
+### Changed
+
+- Depends on gaato/mttp_core 0.1.0, the new name of gaato/mttp 0.2.0, the
+  module without I/O: `DigestScheme` wraps a `&@mttp_core.Backend` and
+  raises `@mttp_core.TransportError`, the same types as before under their
+  new module. The app module, gaato/mttp_async until now, is gaato/mttp
+  0.3.0, so in an app `client(backend=DigestScheme::new(@mttp.backend(), ..))`
+  works as before with `@mttp` in place of `@mttp_async`. A library that
+  builds its Client with `Client::new` imports `gaato/mttp_core/client`.
+
 ## [0.2.0] - 2026-11-12
 
 ### Changed
