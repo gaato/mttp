@@ -125,6 +125,11 @@ gaato/mttp-example-serve	gaato/mttp-example-serve	native	0
 gaato/mttp-example-tour	gaato/mttp-example-tour	native	0
 gaato/mttp-fetch-example	gaato/mttp-fetch-example	js	0
 gaato/mttp-fetch-example	gaato/mttp-fetch-example/workers	js	0
+gaato/mttp-interop	gaato/mttp-interop/mttp_client	js	0
+gaato/mttp-interop	gaato/mttp-interop/mttp_client	native	0
+gaato/mttp-interop	gaato/mttp-interop/mttp_server	native	0
+gaato/mttp-interop	gaato/mttp-interop/pattern	js	3
+gaato/mttp-interop	gaato/mttp-interop/pattern	native	3
 gaato/mttp_async	gaato/mttp_async	js	0
 gaato/mttp_async	gaato/mttp_async	native	12
 gaato/mttp_async	gaato/mttp_async	wasm	12

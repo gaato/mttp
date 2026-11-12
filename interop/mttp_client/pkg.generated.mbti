@@ -1,0 +1,13 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-interop/mttp_client"
+
+// Values
+
+// Errors
+type Check
+
+// Types and methods
+
+// Type aliases
+
+// Traits

@@ -66,4 +66,5 @@ examples/serve	gaato/mttp-example-serve	example	native	gaato/mttp,gaato/mttp_asy
 examples/fetch	gaato/mttp-fetch-example	example	js	gaato/mttp,gaato/mttp_async	*	*	no
 examples/tour	gaato/mttp-example-tour	example	native	gaato/mttp,gaato/mttp_async	*	*	no
 examples/retries	gaato/mttp-example-retries	example	native	gaato/mttp,gaato/mttp_async	*	*	no
+interop	gaato/mttp-interop	example	native,js	gaato/mttp,gaato/mttp_async	*	*	no
 benchmarks/transport	gaato/mttp-transport-bench	benchmark	native	gaato/mttp,gaato/mttp_async	*	*	no

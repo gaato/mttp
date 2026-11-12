@@ -9,4 +9,5 @@ members = [
   "examples/tour",
   "examples/retries",
   "benchmarks/transport",
+  "interop",
 ]
