@@ -1,8 +1,10 @@
-# Static files
+# gaato/mttp_async/files
+
+A directory's files as a handler, for native and wasm (under moonrun).
 
 `static_files(root, prefix?, cache_control?, index?)` is a Handler that
 serves the files below the directory `root` to GET and HEAD requests whose
-path lies below `prefix` (`/` by default), on native and wasm. Serve it with
+path lies below `prefix` (`/` by default). Serve it with
 `gaato/mttp_async/server` like any other handler:
 
 ```mbt nocheck

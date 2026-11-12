@@ -1,5 +1,5 @@
 import {
-  "gaato/mttp_async/trust" @http_async,
+  "gaato/mttp_async/trust",
   "gaato/mttp",
   "gaato/mttp/rt",
   "gaato/mttp_async/internal/socketconn",

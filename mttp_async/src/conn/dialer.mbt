@@ -2,12 +2,12 @@
 /// TCP and TLS over portable connections. Neither write-half shutdown nor
 /// ALPN negotiation is exposed by this adapter.
 pub struct TcpDialer {
-  priv trust : @http_async.Trust
+  priv trust : @trust.Trust
 }
 
 ///|
 /// Creates a dialer using system certificate roots unless specified otherwise.
-pub fn TcpDialer::new(trust~ : @http_async.Trust = System) -> TcpDialer {
+pub fn TcpDialer::new(trust~ : @trust.Trust = System) -> TcpDialer {
   { trust, }
 }
 
@@ -40,7 +40,7 @@ pub impl @rt.Dialer for TcpDialer with fn start_tls(self, inner, host~) {
       System => SystemRoot
       Insecure => NoVerification
       PemFile(path) => CustomPemFile(path)
-      @http_async.Trust::.. =>
+      @trust.Trust::.. =>
         raise @mttp.TransportError(
           kind=Invalid,
           phase=Dial,

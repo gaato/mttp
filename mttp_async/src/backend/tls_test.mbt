@@ -69,7 +69,7 @@ async test "socket TLS custom roots insecure mode and verification failures use 
   with_tls_server(_ => @mttp.Response::new(200, body=Bytes(b"secured")), url => {
     for
       trust in [
-        @http_async.Trust::PemFile("src/conn/testdata/localhost.pem"),
+        @trust.Trust::PemFile("src/conn/testdata/localhost.pem"),
         Insecure,
       ] {
       let backend = @backend.AsyncBackend::new(
@@ -84,7 +84,7 @@ async test "socket TLS custom roots insecure mode and verification failures use 
         b"secured",
       )
     }
-    for trust in [@http_async.Trust::System] {
+    for trust in [@trust.Trust::System] {
       let backend = @backend.AsyncBackend::new(
         config=@h1client.ClientConfig::default(),
         trust~,

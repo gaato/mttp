@@ -1,16 +1,66 @@
-# Fetch host entries
+# gaato/mttp_async/hosts
 
-These small adapters accept your compiled MoonBit application functions.
+Host shims: JavaScript files, not a MoonBit package, that connect a
+compiled MoonBit `fetch` export to Workers, Deno, Bun, Node, Fastly, Vercel
+and Lambda.
+
 They ship inside the published module: after `moon add gaato/mttp_async`
 they are at `.mooncakes/gaato/mttp_async/hosts/adapters.mjs` and
 `.mooncakes/gaato/mttp_async/hosts/lambda.mjs`; import them from there or
 copy them next to your entry. They have no dependencies.
 
-Export a `fetch(req, background)` function which calls your stored
-`fetch_handler(handler)` closure. For Workers export
-`fetch_with_env(req, background, env)` instead, which first calls
-`@fetch.with_env(req, env)` and then invokes that closure; read a string
-binding in the handler with `@fetch.env_string(env, "NAME")`.
+## The MoonBit side
+
+The app's js package exports a `fetch(request, background)` function that
+calls a `gaato/mttp_async/fetch` adapter, and for Workers a
+`fetch_with_env(request, background, env)` that associates the bindings
+first:
+
+```moonbit
+///|
+let adapter : (@fetch.JsRequest, @fetch.JsBackground) -> @fetch.JsPromise = @fetch.fetch_handler(request => {
+    @mttp.Response::new(200, body=request.body)
+  },
+)
+
+///|
+pub fn fetch(
+  request : @fetch.JsRequest,
+  background : @fetch.JsBackground,
+) -> @fetch.JsPromise {
+  adapter(request, background)
+}
+
+///|
+pub fn fetch_with_env(
+  request : @fetch.JsRequest,
+  background : @fetch.JsBackground,
+  env : @fetch.JsEnv,
+) -> @fetch.JsPromise {
+  adapter(@fetch.with_env(request, env), background)
+}
+```
+
+Its `moon.pkg` builds an ES module that exports them:
+
+```text
+supported_targets = "js"
+
+options(
+  link: { "js": { "exports": [ "fetch", "fetch_with_env" ], "format": "esm" } },
+)
+```
+
+In the handler, read a Workers string binding with
+`@fetch.env_string(env, "NAME")`. The
+[fetch package](https://github.com/gaato/mttp/tree/main/mttp_async/src/fetch)
+describes the adapter, and
+[examples/fetch](https://github.com/gaato/mttp/tree/main/examples/fetch) is a
+complete setup.
+
+## The JavaScript side
+
+`./app.js` below stands for the module `moon build --target js` writes.
 
 ```js
 // Cloudflare Workers module entry: give workers() a loader, not the function.

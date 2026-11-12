@@ -9,7 +9,7 @@ priv struct FetchDriver {
 ///|
 fn platform_backend(
   config : @h1client.ClientConfig?,
-  _trust : @http_async.Trust,
+  _trust : @trust.Trust,
   clock : &@rt.Clock,
   timer : &@rt.Timer,
 ) -> AsyncBackend {

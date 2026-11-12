@@ -1,11 +1,14 @@
-# HTTP/1 listener
+# gaato/mttp_async/server
 
-`serve(handler, addr~)` binds TCP on native or wasm1 under moonrun and hands
-accepted sockets to `gaato/mttp/h1server.serve_conn`. `on_listen` receives
-the actual bound address, including an ephemeral port chosen for `:0`.
-Requests carry an absolute URL, `http.remote_addr` and `http.background`.
-TLS termination belongs to the deployment; use `codings.compress(handler)`
-when response compression is wanted.
+An HTTP/1.1 listener for native and wasm (under moonrun).
+
+`serve(handler, addr~)` binds TCP and serves each accepted connection with
+`gaato/mttp/h1server.serve_conn`. `on_listen` receives the actual bound
+address, including an ephemeral port chosen for `:0`. Requests carry an
+absolute URL, the peer's address as `@mttp.remote_addr` and a scheduler for
+work that outlives the response as `@mttp.background`. TLS termination
+belongs to the deployment; use `codings.compress(handler)` when response
+compression is wanted.
 
 ```mbt check
 ///|
@@ -30,12 +33,10 @@ for body, drain, Expect, framing, half-close and handler-deadline behavior.
 Cancelling `serve` stops acceptance and closes idle sockets. Active responses
 and background jobs get `drain_ms` (ten seconds by default) to finish. Expiry,
 including a zero budget, closes remaining sockets and cancels jobs; the call
-joins their cleanup before propagating cancellation. A response remains busy
-through its wire writes, including chunked termination. Its private body lease
-records closure; the next-request `stopping` checkpoint commits the idle
-transition. This also covers HEAD and empty responses without exposing
-runtime hooks in the portable engine. Cleanup that shields cancellation can
-outlast the grace period, as with the underlying cooperative runtime.
+joins their cleanup before propagating cancellation. A response counts as
+active until its last byte is written, including the end of a chunked body,
+and a connection becomes idle only between requests. Cleanup that shields
+itself from cancellation can outlast the grace period.
 
 An endless stream, such as server-sent events, would hold shutdown for the
 whole `drain_ms`. A response that sets `@mttp.close_on_shutdown` to `true`
@@ -66,14 +67,10 @@ or calling `on_listen`. Bind and accept failures raise `Bind` and `Accept`,
 whose `detail` names the address and keeps the system's reason, such as
 `could not bind 127.0.0.1:8080: @socket.TcpServer::new(): Address already in
 use`; an address that does not parse says so and what is expected.
-Connection errors go to `on_error` as `http.TransportError`. Background errors
-preserve `TransportError`; other background errors become `Network` in phase
-`Unknown`, with application details omitted.
-Schedule background work during handling. The listener tracks and joins it
-even after the response ends; retained schedulers do nothing after shutdown.
-Applications own the number and duration of jobs they schedule.
+Connection errors go to `on_error` as `@mttp.TransportError`. Background
+errors preserve `TransportError`; other background errors become `Network`
+in phase `Unknown`, with application details omitted.
 
-The listener's immutable lifecycle decisions live in
-`mttp_async/internal/control`, with separate resource tables in this adapter.
-MoonBit's module visibility prevents importing `http/internal/control` here;
-the listener uses the same transition rules and snapshot tests locally.
+Schedule background work during handling. The listener tracks and joins it
+even after the response ends; a scheduler kept past shutdown does nothing.
+Applications own the number and duration of jobs they schedule.
