@@ -46,10 +46,10 @@ gaato/mttp	gaato/mttp/h1	js	39
 gaato/mttp	gaato/mttp/h1	native	39
 gaato/mttp	gaato/mttp/h1	wasm	39
 gaato/mttp	gaato/mttp/h1	wasm-gc	39
-gaato/mttp	gaato/mttp/h1client	js	91
-gaato/mttp	gaato/mttp/h1client	native	91
-gaato/mttp	gaato/mttp/h1client	wasm	91
-gaato/mttp	gaato/mttp/h1client	wasm-gc	91
+gaato/mttp	gaato/mttp/h1client	js	96
+gaato/mttp	gaato/mttp/h1client	native	96
+gaato/mttp	gaato/mttp/h1client	wasm	96
+gaato/mttp	gaato/mttp/h1client	wasm-gc	96
 gaato/mttp	gaato/mttp/h1server	js	79
 gaato/mttp	gaato/mttp/h1server	native	79
 gaato/mttp	gaato/mttp/h1server	wasm	79
@@ -129,8 +129,8 @@ gaato/mttp_async	gaato/mttp_async	js	0
 gaato/mttp_async	gaato/mttp_async	native	12
 gaato/mttp_async	gaato/mttp_async	wasm	12
 gaato/mttp_async	gaato/mttp_async/backend	js	17
-gaato/mttp_async	gaato/mttp_async/backend	native	19
-gaato/mttp_async	gaato/mttp_async/backend	wasm	19
+gaato/mttp_async	gaato/mttp_async/backend	native	20
+gaato/mttp_async	gaato/mttp_async/backend	wasm	20
 gaato/mttp_async	gaato/mttp_async/codings	js	47
 gaato/mttp_async	gaato/mttp_async/codings	native	47
 gaato/mttp_async	gaato/mttp_async/codings	wasm	47

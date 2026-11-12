@@ -17,6 +17,12 @@ never does.
   answer to the next request. A connection parked for 100 ms or more is now
   checked before reuse, waiting at most 1 ms, and dropped if the server
   closed it or wrote to it.
+- `h1client` honours `Expect: 100-continue` on a request that sets it: the
+  body follows the server's 100, or one second without an answer, and a
+  final answer that comes first (a 413, say) leaves it unsent. It used to
+  send the body at once, so a server refusing it closed the connection while
+  the body was still arriving, and the reset that followed could destroy
+  the refusal before it was read (seen with Apache over TLS).
 
 ## [0.2.0] - 2026-11-12
 

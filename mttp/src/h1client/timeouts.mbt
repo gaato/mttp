@@ -77,17 +77,9 @@ fn PhaseTimer::new(
 }
 
 ///|
-/// Runs `f` as `phase`. A limit that runs out cancels `f` and raises
-/// `Timeout` in `phase` with the limit that expired; one already spent
-/// raises without starting `f`. Failures of `f` become a TransportError of
-/// `phase` through `failure`. Cancellation from outside is not an `Error`,
-/// so it propagates untouched.
-async fn[X] PhaseTimer::run(
-  self : PhaseTimer,
-  phase : @mttp.Phase,
-  f : async () -> X,
-) -> X raise @mttp.TransportError {
-  let remaining = self.deadline.map(at => {
+/// Milliseconds left before the attempt deadline, or `None` without one.
+fn PhaseTimer::remaining(self : PhaseTimer) -> Int64? {
+  self.deadline.map(at => {
     let now = self.clock.now_unix_ms()
     if at <= now {
       0L
@@ -100,6 +92,20 @@ async fn[X] PhaseTimer::run(
       }
     }
   })
+}
+
+///|
+/// Runs `f` as `phase`. A limit that runs out cancels `f` and raises
+/// `Timeout` in `phase` with the limit that expired; one already spent
+/// raises without starting `f`. Failures of `f` become a TransportError of
+/// `phase` through `failure`. Cancellation from outside is not an `Error`,
+/// so it propagates untouched.
+async fn[X] PhaseTimer::run(
+  self : PhaseTimer,
+  phase : @mttp.Phase,
+  f : async () -> X,
+) -> X raise @mttp.TransportError {
+  let remaining = self.remaining()
   guard phase_budget(self.limits.of(phase), total=self.total, remaining~)
     is Some((budget, limit)) else {
     return f() catch { error => raise failure(phase, error) }

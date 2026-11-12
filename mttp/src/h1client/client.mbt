@@ -188,6 +188,10 @@ async fn Client::send_request(
   defer (if !transferred { self.slots.release(key) })
   let agent = request.headers.get("user-agent")
   let resendable = request.body.is_replayable() && @mttp.is_idempotent(request)
+  let expect_continue = request.headers
+    .get_all("expect")
+    .iter()
+    .any(value => value.trim().to_lower() == "100-continue")
   let mut fresh = false
   for ;; {
     if self.pool.control.closed {
@@ -240,6 +244,7 @@ async fn Client::send_request(
       timer,
       self.config.head_limits,
       self.coordination,
+      expect_continue~,
     ) catch {
       @mttp.TransportError(kind=Network, ..) if reused &&
         resendable &&
