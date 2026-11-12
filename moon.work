@@ -6,5 +6,7 @@ members = [
   "examples/get",
   "examples/serve",
   "examples/fetch",
+  "examples/tour",
+  "examples/retries",
   "benchmarks/transport",
 ]

@@ -1,0 +1,14 @@
+import {
+  "gaato/mttp/apispec",
+  "gaato/mttp/endpoint",
+  "gaato/mttp/openapi",
+  "gaato/mttp/router",
+  "gaato/mttp/schema",
+  "gaato/mttp_async",
+  "gaato/mttp_async/server",
+  "moonbitlang/core/env",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")
