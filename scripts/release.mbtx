@@ -636,7 +636,12 @@ async fn publish_module(
   if out != "" {
     println(out)
   }
-  if code != 0 {
+  // moon before 0.1.20261104 printed this on an accepted dry run while
+  // exiting non-zero, as publish_dry_run also allows; a real publish is
+  // judged by its exit status alone.
+  let accepted = code == 0 ||
+    (dry_run && out.contains("Dry run completed successfully"))
+  if !accepted {
     let others = []
     for other in modules {
       if other != dir {
@@ -645,7 +650,7 @@ async fn publish_module(
     }
     if waits_for(out, others) {
       eprintln(
-        "release.mbtx: \{name}@\{version} imports a version that is not published yet; publish that one first, then tag \{tag} again or rerun its workflow",
+        "release.mbtx: \{name}@\{version} imports a version that is not published yet; publish that one first, then rerun the workflow of \{tag}",
       )
     }
     @env.exit(code)
