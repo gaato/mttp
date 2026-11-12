@@ -46,6 +46,14 @@ pub fn run(main : async () -> Unit) -> Unit {
 /// with every request, `limiter` admits requests (no limit by default),
 /// `trust` chooses the TLS roots and `config` tunes the connection pool.
 /// Close the Client when done; that closes its connections.
+///
+/// `backend`, `clock` and `timer` replace the real network, the system
+/// clock and the event loop's timers, so a test gets the same Client, with
+/// all the defaults above, over a stub such as `@testing.BackendStub` and a
+/// virtual clock. `timer` defaults to a timer on `clock`, so a virtual clock
+/// drives the deadlines too. A given `backend` is used as it is: `trust` and
+/// `config` configure only the network backend this builds when `backend` is
+/// omitted, and are ignored otherwise.
 pub fn client(
   base_url~ : String = "",
   headers~ : @mttp.Headers = @mttp.Headers::empty(),
@@ -59,16 +67,19 @@ pub fn client(
   trust~ : @trust.Trust = System,
   config? : @h1client.ClientConfig,
   cookies? : @cookie.CookieJar,
+  backend? : &@mttp.Backend,
+  clock? : &@rt.Clock,
+  timer? : &@rt.Timer,
 ) -> @client.Client {
-  let clock = system_clock()
+  let clock = clock.unwrap_or_else(system_clock)
   @client.Client::new(
-    network(trust, config),
+    backend.unwrap_or_else(() => network(trust, config)),
     clock,
     base_url~,
     headers~,
     timeout_ms~,
     max_body_bytes?,
-    timer=@runtime.ClockTimer::new(clock~),
+    timer=timer.unwrap_or_else(() => @runtime.ClockTimer::new(clock~)),
     retry~,
     retry_budget~,
     redirect~,

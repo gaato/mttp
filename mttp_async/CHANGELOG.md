@@ -17,7 +17,10 @@ never does.
     (`RetryPolicy::conservative()` under a `RetryBudget`), a 30 s attempt
     and 120 s call deadline, redirects (up to 10) and decompression; with
     `cookies=`, a `CookieJar` (re-exported from `gaato/mttp/cookie`) that
-    every redirect hop sends and stores cookies through.
+    every redirect hop sends and stores cookies through. `backend=`,
+    `clock=` and `timer=` replace the network, the clock and the timers, so
+    a test gets the same Client, defaults included, over a stub and a
+    virtual clock.
   - The root package re-exports the vocabulary and the client API an app
     needs (`Request`, `Response`, `Client`, `get`, `post`, `as_json` and so
     on), so an app that calls APIs and serves plain handlers needs no other

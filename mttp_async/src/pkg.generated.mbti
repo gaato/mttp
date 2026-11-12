@@ -27,7 +27,7 @@ pub fn as_string() -> @client.ResponsePlan[Result[String, @client.ResponseFailur
 
 pub fn backend(trust? : @trust.Trust, config? : @h1client.ClientConfig) -> &@mttp.Backend
 
-pub fn client(base_url? : String, headers? : @mttp.Headers, timeout_ms? : Int32, total_ms? : Int32, max_body_bytes? : Int32, retry? : @client.RetryPolicy, retry_budget? : @client.RetryBudget, redirect? : @client.RedirectConfig, limiter? : &@client.RateLimiter, trust? : @trust.Trust, config? : @h1client.ClientConfig, cookies? : @cookie.CookieJar) -> @client.Client
+pub fn client(base_url? : String, headers? : @mttp.Headers, timeout_ms? : Int32, total_ms? : Int32, max_body_bytes? : Int32, retry? : @client.RetryPolicy, retry_budget? : @client.RetryBudget, redirect? : @client.RedirectConfig, limiter? : &@client.RateLimiter, trust? : @trust.Trust, config? : @h1client.ClientConfig, cookies? : @cookie.CookieJar, backend? : &@mttp.Backend, clock? : &@rt.Clock, timer? : &@rt.Timer) -> @client.Client
 
 pub fn clock() -> &@rt.Clock
 

@@ -122,7 +122,6 @@ uncovered-line budget is needed for these additions.
 
 | File | Budget | Reason |
 | --- | --- | --- |
-| mttp_async/src/entry.mbt | 1 | The body of `run` starts core/async's event loop, which a test cannot do from inside the loop it already runs in; examples/get runs it. |
 | mttp_async/src/conn/dialer.mbt | 1 | Forward-compatible Trust arm: Trust belongs to the cross-target trust package, so the dialer must refuse future constructors that cannot be constructed in this release. |
 | mttp_async/src/conn/conn_io.mbt | 1 | BinaryWriterImpl::get_controller is not called by core's current writer defaults; the controller is a stateless marker reserved for future buffering/locking. Each bridge still constructs and owns its controller as required by the core trait. |
 | mttp_async/src/codings/body_source.mbt | 1 | Forward-compatible Body arm: a future body representation is refused instead of silently treated as empty. |
