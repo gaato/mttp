@@ -1,6 +1,8 @@
 ///|
 /// Digest credentials scoped to one HTTP(S) origin, wrapping a Backend.
-/// Put this inside FollowRedirects so credentials are checked on every hop.
+/// Build the `Client` over it: the Client follows redirects outside this
+/// wrapper, so each hop is checked against the origin. In a stack built by
+/// hand, keep it inside `FollowRedirects` for the same reason.
 pub struct DigestScheme {
   priv inner : &@mttp.Backend
   priv origin : String

@@ -17,14 +17,19 @@ never does.
     (`RetryPolicy::conservative()` under a `RetryBudget`), a 30 s attempt
     and 120 s call deadline, redirects (up to 10) and decompression; with
     `cookies=`, a `CookieJar` (re-exported from `gaato/mttp/cookie`) that
-    every redirect hop sends and stores cookies through.
+    every redirect hop sends and stores cookies through. `backend=`,
+    `clock=` and `timer=` replace the network, the clock and the timers, so
+    a test gets the same Client, defaults included, over a stub and a
+    virtual clock.
   - The root package re-exports the vocabulary and the client API an app
     needs (`Request`, `Response`, `Client`, `get`, `post`, `as_json` and so
     on), so an app that calls APIs and serves plain handlers needs no other
     module in its `moon.mod`.
   - `backend()`, `clock()` and `timer()` supply the same I/O to a library
     that builds its own Client, such as an API SDK, which keeps its own base
-    URL, authentication and retry defaults.
+    URL, authentication and retry defaults. `backend()` is the network
+    alone, HTTP/1.1 with decompression: the Client built over it follows
+    redirects and keeps cookies, as every `Client::new` does.
   - `coordination()` supplies the event loop's signals to the parts of
     `gaato/mttp` that wait without I/O, such as `EventStream::channel`.
 - `ListenError` implements `Show`.

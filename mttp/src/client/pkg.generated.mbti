@@ -4,6 +4,7 @@ package "gaato/mttp/client"
 import {
   "gaato/mttp",
   "gaato/mttp/client/retry",
+  "gaato/mttp/cookie",
   "gaato/mttp/rt",
   "gaato/mttp/sse",
   "moonbitlang/core/debug",
@@ -114,7 +115,7 @@ pub struct Client {
   // private fields
 }
 pub fn Client::close(Self) -> Unit
-pub fn Client::new(&@mttp.Backend, &@rt.Clock, base_url? : String, headers? : @mttp.Headers, timeout_ms? : Int32, max_body_bytes? : Int32, read_idle_ms? : Int32, timer? : &@rt.Timer, retry? : RetryPolicy, retry_budget? : RetryBudget, limiter? : &RateLimiter, total_ms? : Int32, observer? : (Attempt) -> Unit, random? : () -> Double) -> Self
+pub fn Client::new(&@mttp.Backend, &@rt.Clock, base_url? : String, headers? : @mttp.Headers, timeout_ms? : Int32, max_body_bytes? : Int32, read_idle_ms? : Int32, timer? : &@rt.Timer, retry? : RetryPolicy, retry_budget? : RetryBudget, limiter? : &RateLimiter, redirect? : RedirectConfig, cookies? : @cookie.CookieJar, total_ms? : Int32, observer? : (Attempt) -> Unit, random? : () -> Double) -> Self
 pub async fn[T, M : ResponseMode] Client::send(Self, RequestPlan[T, M], decide_retry? : (AttemptResult[T], RetryContext) -> @retry.Decision) -> Reply[T]
 
 pub struct FollowRedirects {
@@ -155,6 +156,7 @@ pub(all) struct RedirectConfig {
 }
 pub fn RedirectConfig::default() -> Self
 pub fn RedirectConfig::equal(Self, Self) -> Bool
+pub fn RedirectConfig::none() -> Self
 pub fn RedirectConfig::not_equal(Self, Self) -> Bool
 pub fn RedirectConfig::to_repr(Self) -> @debug.Repr
 

@@ -13,39 +13,33 @@ moon add gaato/mttp_digest
 
 ## Usage
 
-`DigestScheme` wraps the backend that sends the requests. In an app on
+`DigestScheme` wraps the backend that sends the requests, and the `Client`
+goes on top of it. The Client follows redirects outside the wrapper, so every
+redirect hop passes through it and is checked against the credential origin,
+and its retry policy sees the outcome of the whole exchange, challenge
+included. In an app on
 [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async), wrap the
-network backend itself, put `FollowRedirects` around it so that every
-redirect hop is checked against the credential origin, and build the `Client`
-on top, so that its retry policy sees the outcome of the whole exchange.
-`@mttp_async.backend()` already ends in `FollowRedirects`, so start from
-`AsyncBackend` in `gaato/mttp_async/backend` instead:
+network backend and hand it to `client()`, which keeps its defaults:
 
 ```mbt nocheck
 ///|
 /// A client that answers the Digest challenges of api.example.com.
-fn api_client(user : String, password : String) -> @client.Client raise {
-  @client.Client::new(
-    @client.FollowRedirects::new(
-      @mttp_digest.DigestScheme::new(
-        @backend.AsyncBackend::new(clock=@mttp_async.clock()),
-        user,
-        password,
-        origin="https://api.example.com",
-        random=secure_random,
-      ),
+fn api_client(user : String, password : String) -> @mttp_async.Client raise {
+  @mttp_async.client(
+    backend=@mttp_digest.DigestScheme::new(
+      @mttp_async.backend(),
+      user,
+      password,
+      origin="https://api.example.com",
+      random=secure_random,
     ),
-    @mttp_async.clock(),
-    timer=@mttp_async.timer(),
-    retry=@client.RetryPolicy::conservative(),
   )
 }
 ```
 
-The package importing this lists `gaato/mttp_async`,
-`gaato/mttp_async/backend`, `gaato/mttp/client` and `gaato/mttp_digest`, so
-the app's `moon.mod` has `gaato/mttp` beside `gaato/mttp_async` and
-`gaato/mttp_digest`.
+The package importing this lists `gaato/mttp_async` and `gaato/mttp_digest`,
+and so does the app's `moon.mod`. A library builds its Client the same way
+with `Client::new` from `gaato/mttp/client`.
 
 ## Random source
 

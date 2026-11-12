@@ -85,6 +85,33 @@ async test "client() follows a redirect and turns retries off on request" {
 }
 
 ///|
+async test "backend() is the I/O only and returns a redirect unfollowed" {
+  with_local_server(
+    request => {
+      if request.url.has_suffix("/old") {
+        @mttp.Response::new(
+          301,
+          headers=@mttp.Headers::of([("location", "/new")]),
+        )
+      } else {
+        @mttp.Response::new(200)
+      }
+    },
+    address => {
+      let network = @mttp_async.backend()
+      defer network.close()
+      let response = network.send(
+        @mttp.Request::get("http://\{address}/old"),
+        @mttp.SendOptions::default(),
+      )
+      defer response.close()
+      assert_eq(response.status, 301)
+      assert_eq(response.attributes.get(@client.final_url), None)
+    },
+  )
+}
+
+///|
 async test "client(cookies=) sends a cookie set on a redirect to the next hop and later calls" {
   let seen : Array[String?] = []
   with_local_server(
@@ -111,9 +138,10 @@ async test "client(cookies=) sends a cookie set on a redirect to the next hop an
       assert_eq(jar.length(), 1)
       // A second Client given the same jar sends it too.
       let other = @client.Client::new(
-        @mttp_async.backend(cookies=jar),
+        @mttp_async.backend(),
         @mttp_async.clock(),
         base_url="http://\{address}",
+        cookies=jar,
       )
       defer other.close()
       assert_eq(other.send(@mttp_async.get("/again")).status, 200)
@@ -156,6 +184,42 @@ async test "backend(), clock() and timer() give a hand-built Client a total dead
         _ => None
       }
       assert_true(kind is Some(Timeout(..)))
+    },
+  )
+}
+
+///|
+async test "client(clock=) runs the network backend's deadlines on that clock" {
+  with_local_server(
+    _ => {
+      // Real time: far longer than the virtual read deadline below.
+      @async.sleep(3000)
+      @mttp.Response::new(200)
+    },
+    address => {
+      let clock = @runtime.VirtualClock(start_ms=0L)
+      let api = @mttp_async.client(
+        base_url="http://\{address}",
+        clock~,
+        config={
+          ..@h1client.ClientConfig::default(),
+          read_timeout_ms: Some(1000),
+          proxy: @h1client.ProxyConfig::none(),
+        },
+        retry=@mttp_async.RetryPolicy::none(),
+        timeout_ms=100_000,
+        total_ms=200_000,
+      )
+      defer api.close()
+      @async.with_task_group(group => {
+        let result = send_later(group, api, @mttp_async.get("/slow"))
+        advance_at(clock, 1000L)
+        clock.settle(until=() => result.val is Some(_))
+        guard result.val is Some(Err(@mttp.TransportError(kind~, ..))) else {
+          fail("expected a transport failure")
+        }
+        assert_eq(kind, Timeout(ms=1000))
+      })
     },
   )
 }

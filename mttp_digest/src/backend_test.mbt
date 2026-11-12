@@ -428,3 +428,44 @@ test "Digest replaces lone surrogates during hashing and extended username encod
   assert_true(seen[1].unwrap().contains("username*=UTF-8''%EF%BF%BD"))
   backend.close()
 }
+
+///|
+test "a Client over Digest follows redirects outside it, so each hop is checked against the origin" {
+  let sent : Array[(String, Bool)] = []
+  let digest = wrap(
+    @client.from_fn((request, _) => {
+      let authorized = request.headers.contains("authorization")
+      sent.push((request.url, authorized))
+      if request.url == "https://a.test/old" {
+        @mttp.Response::new(
+          302,
+          headers=@mttp.Headers::of([("location", "/new")]),
+        )
+      } else if request.url == "https://a.test/away" {
+        @mttp.Response::new(
+          302,
+          headers=@mttp.Headers::of([("location", "https://b.test/x")]),
+        )
+      } else if authorized {
+        @mttp.Response::new(200)
+      } else {
+        @mttp.Response::new(401, headers=challenge())
+      }
+    }),
+  )
+  let client = @client.Client::new(digest, @sim.FakeClock::new())
+  @driver.run_sync(() => {
+    // The challenge of the second hop is answered inside that hop.
+    assert_eq(client.send(@client.get("https://a.test/old")).status, 200)
+    // A hop to another origin gets no credentials, and its 401 comes back.
+    assert_eq(client.send(@client.get("https://a.test/away")).status, 401)
+  })
+  assert_eq(sent, [
+    ("https://a.test/old", false),
+    ("https://a.test/new", false),
+    ("https://a.test/new", true),
+    ("https://a.test/away", true),
+    ("https://b.test/x", false),
+  ])
+  client.close()
+}

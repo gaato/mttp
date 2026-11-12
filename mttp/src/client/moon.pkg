@@ -1,7 +1,9 @@
 import {
   "gaato/mttp",
   "gaato/mttp/rt",
+  "gaato/mttp/client/cookies",
   "gaato/mttp/client/retry",
+  "gaato/mttp/cookie",
   "gaato/mttp/sse",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",

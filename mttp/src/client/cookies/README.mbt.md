@@ -2,6 +2,12 @@
 
 A Backend wrapper that keeps cookies in a `gaato/mttp/cookie` jar.
 
+A `Client` uses it already: `Client::new(backend, clock, cookies=jar)` wraps
+the backend as `FollowRedirects(Cookies(backend, jar))`. Build the wrapper
+yourself only for a stack of your own, and give the Client over a stack that
+contains `FollowRedirects` `redirect=RedirectConfig::none()`, so redirects
+are not followed twice.
+
 `Cookies::new(inner, jar)` wraps an `@mttp.Backend`. It attaches cookies
 matching each request URL, preserves an explicit Cookie header, and stores
 every Set-Cookie field as soon as a response head arrives, including error

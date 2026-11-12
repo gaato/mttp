@@ -4,7 +4,7 @@ The HTTP client: request and response plans, and a `Client` that sends them.
 
 A plan describes what to send and how to read the answer; the `Client` sends
 it through any `@mttp.Backend` with defaults, admission, deadlines,
-decoded-body limits and retries. It does no I/O itself: `gaato/mttp_async`
+decoded-body limits, redirects, cookies and retries. It does no I/O itself: `gaato/mttp_async`
 provides the backends that do, and `gaato/mttp/testing` the stubs.
 
 ## Requests and response plans
@@ -92,18 +92,72 @@ test "retry a 503 and read JSON" {
 }
 ```
 
+## Redirects and cookies
+
+A Client follows 301, 302, 303, 307 and 308 over whatever backend it is
+given, a test function included, under its `redirect` argument
+(`RedirectConfig::default()`: 10 hops, no HTTPS downgrade, credentials
+removed on an origin change). A request overrides the limit with
+`RequestPlan::follow_redirects(false)` or `max_redirects(n)`, and the reply's
+attributes carry `redirect_history` and `final_url`. The hops of one
+attempt share its admission and its deadline, and a retry starts again from
+the original request: a 503 on the second hop resends the first. A transport
+failure on a later hop never reads as unsent, since the first request was
+answered.
+
+`redirect=RedirectConfig::none()` turns redirects off for the whole Client:
+every 3xx comes back as the backend gave it.
+
+With `cookies=`, a caller-owned `@cookie.CookieJar`, the Client sends the
+jar's matching cookies with every request and redirect hop and stores every
+response's `Set-Cookie` before the next hop. Several Clients may share a jar.
+
+```mbt check
+///|
+test "a login that answers with a redirect and a cookie" {
+  let backend = @client.from_fn((request, _) => {
+    if request.url.has_suffix("/login") {
+      @mttp.Response::new(
+        302,
+        headers=@mttp.Headers::of([
+          ("location", "/home"),
+          ("set-cookie", "session=abc; Path=/"),
+        ]),
+      )
+    } else {
+      @mttp.Response::new(
+        200,
+        body=Bytes(@utf8.encode(request.headers.get("cookie").unwrap_or(""))),
+      )
+    }
+  })
+  let jar = @cookie.CookieJar::new(@sim.FakeClock::new())
+  let client = @client.Client::new(
+    backend,
+    @sim.FakeClock::new(),
+    base_url="https://shop.example",
+    cookies=jar,
+  )
+  let reply = @driver.run_sync(() => client.send(@client.get("/login")))
+  assert_eq(reply.body, Ok("session=abc"))
+  assert_eq(
+    reply.attributes.get(@client.final_url),
+    Some("https://shop.example/home"),
+  )
+}
+```
+
 ## Wrappers
 
 A policy that needs only the request and the response head is a Backend
 wrapper:
 
-- `FollowRedirects` follows 301, 302, 303, 307 and 308 under a
-  `RedirectConfig` (10 hops, no HTTPS downgrade, credentials removed on an
-  origin change), overridden per request by the `redirect_limit` attribute
-  that `RequestPlan::follow_redirects` and `max_redirects` set. It records
-  `redirect_history` and `final_url`. Keep retries above it; a transport
-  failure on a later hop never reads as unsent, since the first request was
-  answered.
+- `FollowRedirects` and `Cookies` (in `gaato/mttp/client/cookies`) are what
+  the Client wraps its backend in, as `FollowRedirects(Cookies(backend,
+  jar))`. Use them directly to build a stack of your own, for example to put
+  another wrapper between them, and give the Client over that stack
+  `redirect=RedirectConfig::none()` so redirects are not followed twice; the
+  per-request limit then reaches the stack's own `FollowRedirects`.
 - `from_fn` and `from_handler` turn a function or an `@mttp.Handler` into a
   backend that validates what it is given.
 

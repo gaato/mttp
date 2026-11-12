@@ -1,7 +1,7 @@
 ///|
 /// One exchange over HTTP/1 sockets on native/wasm, or host fetch on JS.
 /// Socket responses are decoded unless the request sets Accept-Encoding.
-/// Compose redirects, retries and cookies explicitly above this backend.
+/// A `Client` over it adds redirects, retries and cookies.
 pub struct AsyncBackend {
   priv inner : &@mttp.Backend
   priv idle : () -> Int32

@@ -68,12 +68,14 @@ pub let redirect_history : @mttp.AttributeKey[Array[RedirectHop]] = @mttp.Attrib
 )
 
 ///|
-/// How `FollowRedirects` follows. Build it from `RedirectConfig::default()`
-/// with a record update; the field set is frozen.
+/// How a `Client` (its `redirect` argument) or a `FollowRedirects` wrapper
+/// follows redirects. Build it from `RedirectConfig::default()` with a record
+/// update, or take `RedirectConfig::none()`; the field set is frozen.
 #derive(Eq, Debug)
 pub(all) struct RedirectConfig {
   /// Hops followed before `TooManyRedirects(max)`; 0 or less follows none.
-  /// The `redirect_limit` attribute overrides it per request.
+  /// The `redirect_limit` attribute overrides it per request, except on a
+  /// `Client`, where 0 or less means the Client has no redirect layer at all.
   max_redirects : Int32
   /// Whether an `https` request may be redirected to `http`.
   allow_downgrade : Bool
@@ -117,11 +119,30 @@ pub fn RedirectConfig::default() -> RedirectConfig {
 }
 
 ///|
+/// No redirects: the default configuration with `max_redirects` 0. Given to
+/// `Client::new`, the Client follows no redirect and returns each 3xx as the
+/// backend gave it; pass it when the backend already follows redirects.
+///
+/// ```mbt check
+/// test {
+///   assert_eq(@client.RedirectConfig::none().max_redirects, 0)
+/// }
+/// ```
+pub fn RedirectConfig::none() -> RedirectConfig {
+  { ..RedirectConfig::default(), max_redirects: 0, }
+}
+
+///|
 /// Follows 301, 302, 303, 307 and 308 responses. Intermediate bodies close
 /// unread; credentials are removed when the origin changes; an HTTPS
 /// downgrade is refused unless configured. A 303, or a 301 or 302 to a POST,
 /// becomes a GET without the body; any other hop resends the body, so a body
 /// that cannot be sent again is refused (`Unreplayable`).
+///
+/// `Client::new` already wraps its backend in this, following its `redirect`
+/// argument; use the wrapper directly for a custom stack, and give that
+/// stack's Client `RedirectConfig::none()` so redirects are not followed
+/// twice.
 ///
 /// The wrapper passes `SendOptions` to every hop unchanged, so each hop gets
 /// the attempt deadline; a `Client` with a Timer bounds the whole chain.

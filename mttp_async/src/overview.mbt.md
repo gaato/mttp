@@ -83,11 +83,12 @@ pub async fn print_user(id : Int32) -> Unit {
 | Retries | Up to two, for idempotent requests on 408, 409, 429, 500, 502, 503 and 504 and on network failures, and for any request that was never sent; `Retry-After` is honoured, and a server that asks to wait more than 60 s is not retried; backoff is exponential with jitter | `retry=RetryPolicy::none()` or another policy |
 | Retry budget | Retries stay within 20 % of the requests of the last 10 s, plus 10 per second, so a failing server is not flooded | `retry_budget=RetryBudget::new(..)` or `RetryBudget::unlimited()` |
 | Deadlines | 30 s per attempt, 120 s for the whole call, retries included | `timeout_ms=`, `total_ms=` |
-| Redirects | Up to 10 hops, never from HTTPS to HTTP, credentials dropped across origins | `redirect=`, or `.follow_redirects(false)` on a request |
+| Redirects | Up to 10 hops, never from HTTPS to HTTP, credentials dropped across origins | `redirect=`, `redirect=RedirectConfig::none()` to turn them off, or `.follow_redirects(false)` on a request |
 | Cookies | None kept | `cookies=` a `CookieJar` |
 | Decompression | gzip, deflate, br and zstd | per request, by setting `Accept-Encoding` |
 | Body size | Buffered bodies up to 64 MiB after decoding | `max_body_bytes=` |
 | TLS | The system's roots | `trust=PemFile(..)` |
+| Network, clock and timers | The real ones | `backend=`, `clock=`, `timer=`, for tests (see [Tests](#tests)) |
 
 ## Cookies
 
@@ -109,15 +110,17 @@ pub async fn account_page(token : String) -> String? {
 ```
 
 The jar belongs to the caller: several Clients may share it, and it outlives
-them. `backend(cookies=)` takes one too. The jar does not apply browsers'
-`SameSite` rules.
+them. A Client built with `Client::new` takes one the same way, `cookies=`.
+The jar does not apply browsers' `SameSite` rules.
 
 ## With an API SDK
 
 An SDK built on `gaato/mttp` (such as `gaato/openai` or `gaato/anthropic`)
 creates its own Client with the provider's base URL, authentication and retry
 rules. Give it the I/O with `backend()`, `clock()` and `timer()`; the timer
-lets it enforce its deadlines:
+lets it enforce its deadlines. `backend()` is the network alone, HTTP/1.1
+with decompression; the SDK's Client follows redirects itself, as every
+`Client` does:
 
 ```mbt nocheck
 ///|
@@ -228,8 +231,10 @@ same handlers on JavaScript hosts, with a Cloudflare Workers app).
 ## Tests
 
 Code that takes its Client as a parameter can be tested without the network:
-give it a Client over `BackendStub` from `gaato/mttp/testing`, which answers
-with canned responses and records what was sent. The test package imports
+give it the app's own `client()` over `BackendStub` from `gaato/mttp/testing`,
+which answers with canned responses and records what was sent. `backend=`
+replaces only the network, so the Client keeps every default above:
+retries, deadlines, redirects and cookies. The test package imports
 `gaato/mttp/testing` (`gaato/mttp` in `moon.mod`), and a plain `test` block
 runs the async code with `run`, again without importing core/async:
 
@@ -252,17 +257,17 @@ test "user_name reads the name from the reply" {
     request => request.url == "https://api.example/users/1",
     @testing.Canned::bytes(200, body=b"{\"name\":\"Ada\"}"),
   )
-  let api = @mttp_async.Client::new(
-    stub,
-    @mttp_async.clock(),
-    base_url="https://api.example",
-  )
+  let api = @mttp_async.client(base_url="https://api.example", backend=stub)
   let name : Ref[String?] = Ref(None)
   @mttp_async.run(async fn() { name.val = user_name(api, 1) })
   assert_eq(name.val, Some("Ada"))
   assert_eq(stub.sent().length(), 1)
 }
 ```
+
+A test of retries or deadlines also passes `clock=` a virtual clock, such as
+`VirtualClock` from `gaato/mttp_async/runtime`; the Client's timers then run
+on it too, so 30 s pass without waiting.
 
 Check results after `run`, as above, not inside it. A failing `inspect` or
 `assert_eq` inside `run` reports only its error's name, `InspectError`,
