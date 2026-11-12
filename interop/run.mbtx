@@ -764,8 +764,9 @@ async fn main_run(filters : Array[String]) -> Int32 {
     )
     defer server.cancel()
     wait_port(server_addr, "the mttp interop server")
-    start_servers(env)
+    // Cleanup first, so that a start failing partway removes what started.
     defer @async.protect_from_cancel(() => stop_servers(env))
+    start_servers(env)
     for runtime in runtimes {
       for server in servers {
         for scheme in schemes {
