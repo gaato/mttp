@@ -80,7 +80,7 @@ test "send a request and read the response" {
 - **Reuse.** A connection is parked only after a complete, keep-alive
   exchange with no unread bytes, and is handed only to a request with the
   same origin and User-Agent. A connection parked for 100 ms or more is
-  checked first, waiting at most 1 ms on the Timer: if the server closed it
+  checked first, waiting at most 2 ms on the Timer: if the server closed it
   or sent anything on it, it is closed and the request goes out on another,
   whatever its method. So does a request whose first write the reused
   connection refuses with nothing sent (it raised `Closed`, as a TLS session

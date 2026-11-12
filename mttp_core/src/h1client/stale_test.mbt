@@ -277,12 +277,12 @@ test "an open parked connection is checked only after it idled" {
     let start = h.driver.now()
     assert_eq(fetch(h.client, post()), "same")
     assert_eq(h.driver.now(), start)
-    // Reused after a pause: the check waits its millisecond, finds nothing
-    // to read and leaves the connection usable.
+    // Reused after a pause: the check waits its 2 ms, finds nothing to read
+    // and leaves the connection usable.
     h.driver.sleep(1000)
     let start = h.driver.now()
     assert_eq(fetch(h.client, post()), "same")
-    assert_eq(h.driver.now() - start, 1L)
+    assert_eq(h.driver.now() - start, 2L)
     h.finish()
     ignore(server.wait())
   })

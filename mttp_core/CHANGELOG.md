@@ -30,18 +30,21 @@ never does.
   could not be resent although the server never saw it; a response the
   server sent on the idle connection (such as a 408) could be taken as the
   answer to the next request. A connection parked for 100 ms or more is now
-  checked before reuse, waiting at most 1 ms, and dropped if the server
+  checked before reuse, waiting at most 2 ms, and dropped if the server
   closed it or wrote to it.
 - `h1client` sends a request on another connection, whatever its method,
-  when a reused connection refuses its first write with nothing sent. Over
-  TLS the check above can miss a server's close: its read takes the
-  close_notify, OpenSSL answers with its own, and when that write is slow
-  (under load) the 1 ms deadline cancels the read before it returns EOF.
-  The session then refuses every write, so a POST failed in phase Write as
-  if sent and was not resent, though the server never saw it (seen with
-  nginx and Caddy). `rt.Conn` states what makes this safe: a write that
-  raises `Closed` sent none of its bytes. The refusal is reported as
-  `Network`, not `Closed`, when it does surface.
+  when a reused connection refuses its first write with nothing sent. The
+  check above can miss a close that is already there: core/async counts
+  timers in whole milliseconds, so a 1 ms wait could end at once (it
+  missed 13 to 20 closes in 200 in a loopback test; the check now waits
+  2 ms, which missed none, also under load). Over TLS, a check cut off
+  after it took the server's close_notify leaves the session shut down
+  without having returned EOF, and OpenSSL then refuses every write: a
+  POST failed in phase Write as if sent and was not resent, though the
+  server never saw it (seen in the interop suite with nginx and Caddy).
+  `rt.Conn` states what makes resending safe: a write that raises `Closed`
+  sent none of its bytes. The refusal is reported as `Network`, not
+  `Closed`, when it does surface.
 - `h1client` honours `Expect: 100-continue` on a request that sets it: the
   body follows the server's 100, or one second without an answer, and a
   final answer that comes first (a 413, say) leaves it unsent. It used to

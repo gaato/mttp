@@ -49,7 +49,7 @@ never does.
 
 - A POST over TLS a few seconds after the server closed the idle
   connection no longer fails in phase Write with `protocol is shutdown`
-  (seen in the interop suite with nginx and Caddy, under load). A TLS
+  (seen in the interop suite with nginx and Caddy). A TLS
   session that refuses a write before passing any of it to the connection
   beneath now raises `Closed`, which gaato/mttp_core's `rt.Conn` reserves
   for a write that sent nothing, and the client sends the request on a new

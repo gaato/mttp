@@ -59,8 +59,16 @@ let probe_after_ms : Int64 = 100L
 
 ///|
 /// How long the check waits. A close or bytes the peer already sent are
-/// there at once, so waiting longer only delays a healthy connection.
-let probe_ms : Int32 = 1
+/// there at once, so waiting longer only delays a healthy connection. It is
+/// 2 and not 1 because core/async counts its timers in whole milliseconds:
+/// a 1 ms wait ends at the next tick of the clock, which can be at once,
+/// and its read was then cancelled before it saw a close already there. In
+/// a loopback test against a server that had closed (TLS, close_notify then
+/// FIN), 1 ms missed the close in 13 to 20 checks of 200, 2 ms in none,
+/// also with every core busy. Over TLS such a cut-off read can leave the
+/// session shut down without returning EOF; `Client::send_request` handles
+/// the write the session then refuses.
+let probe_ms : Int32 = 2
 
 ///|
 /// Whether the peer closed the parked connection or sent something on it,
