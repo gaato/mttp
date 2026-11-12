@@ -183,7 +183,12 @@ impl @mttp.Backend for MoonfetchBackend with fn send(self, request, options) {
   let verb = @method.Method::of(request.meth.to_string()) catch {
     _ => raise invalid("method \{request.meth.to_string()} is not supported")
   }
-  check_url(request.url)
+  // moonfetch frames CONNECT as an ordinary request (an origin-form target
+  // on HTTP/1.1, :scheme and :path on HTTP/2), so it is refused here.
+  if request.meth == Connect {
+    raise invalid("CONNECT is not supported")
+  }
+  let url = wire_url(request.url)
   if upload is Unsupported {
     raise invalid("unsupported request body")
   }
@@ -203,7 +208,7 @@ impl @mttp.Backend for MoonfetchBackend with fn send(self, request, options) {
       Whole(bytes) => one_piece(bytes)
       Pieces(stream, length) => streamed(stream, length)
     }
-    client.stream(verb, request.url, headers~, body~, redirects=0)
+    client.stream(verb, url, headers~, body~, redirects=0)
   }
   let opened = try {
     match options.timeout_ms {
@@ -273,9 +278,13 @@ fn invalid(detail : String) -> @mttp.TransportError {
 }
 
 ///|
-/// Refuses, before any I/O, a URL moonfetch would not send: it must be
-/// absolute, `http` or `https`, with a host.
-fn check_url(url : String) -> Unit raise @mttp.TransportError {
+/// The URL as moonfetch gets it, or a refusal before any I/O: absolute,
+/// `http` or `https`, with a host. It is mttp's parse written back, which
+/// percent-encodes what the text had outside ASCII, and without the
+/// fragment, which never leaves the client. moonfetch 0.1.8 would write the
+/// low byte of each character of the original text on HTTP/1.1 (so `\u{10D}`
+/// `\u{10A}` would become CR LF) and would send a fragment to an HTTP proxy.
+fn wire_url(url : String) -> String raise @mttp.TransportError {
   let parsed = @mttp.Url::parse(url) catch { e => raise invalid("URL: \{e}") }
   guard parsed.scheme is Some(scheme) && scheme.to_lower() is ("http" | "https") else {
     raise invalid("URL scheme is not http or https")
@@ -283,6 +292,12 @@ fn check_url(url : String) -> Unit raise @mttp.TransportError {
   guard parsed.host is Some(host) && host != "" else {
     raise invalid("URL has no host")
   }
+  let written = parsed.without_fragment().to_string()
+  // Defensive: the parse percent-encodes, so only visible ASCII is left.
+  guard written.iter().all(c => c >= '!' && c <= '~') else {
+    raise invalid("URL has a character that cannot be sent")
+  }
+  written
 }
 
 ///|

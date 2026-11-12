@@ -121,6 +121,8 @@ pub async fn version_of(url : String) -> String? {
 - It does not build for js. There, `gaato/mttp_async` already uses the
   host's `fetch`, and the browser or runtime negotiates HTTP/2 and HTTP/3
   itself; moonfetch would only make the bundle larger.
+- It does not send `CONNECT`: moonfetch would frame it as an ordinary
+  request, so it is refused with `Invalid` before any I/O.
 - It does not read the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`
   environment variables, which `@mttp_async.backend()` does.
 - The `Host` header comes from the URL. A request's own `Host`,

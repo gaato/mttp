@@ -842,3 +842,95 @@ async test "a send that outlives close leaves no connection open once its respon
     assert_eq(ended.val, 1)
   })
 }
+
+///|
+/// Runs `run` with a bare TCP server that records the head of each request
+/// and answers 204.
+async fn with_recording_server(
+  run : async (Int32, Array[String]) -> Unit,
+) -> Unit {
+  let heads : Array[String] = []
+  with_tcp_server(
+    conn => {
+      if conn.read_until("\r\n\r\n") is Some(head) {
+        heads.push(head)
+      }
+      conn.write(b"HTTP/1.1 204 No Content\r\n\r\n")
+    },
+    port => run(port, heads),
+  )
+}
+
+///|
+/// moonfetch 0.1.8 writes the low byte of each character of the URL it is
+/// given on HTTP/1.1, so U+010D U+010A would go out as CR LF. The backend
+/// gives it mttp's parse of the URL, which percent-encodes them.
+async test "a URL outside ASCII goes out percent-encoded, never as raw bytes" {
+  with_recording_server((port, heads) => {
+    let backend = @mttp_moonfetch.backend()
+    defer backend.close()
+    backend
+    .send(
+      @mttp.Request::get(
+        "http://127.0.0.1:\{port}/a\u{10D}\u{10A}injected:1?q=\u{10D}",
+      ),
+      @mttp.SendOptions::default(),
+    )
+    .close()
+    guard heads is [head] else { fail("heads: \{heads.length()}") }
+    let lines = head.split("\r\n").map(line => line.to_owned()).to_array()
+    assert_eq(lines[0], "GET /a%C4%8D%C4%8Ainjected:1?q=%C4%8D HTTP/1.1")
+    assert_false(lines.any(line => line.has_prefix("injected")))
+  })
+}
+
+///|
+/// moonfetch writes an HTTP proxy's absolute-form target from the whole URL;
+/// the backend gives it none with a fragment, which never leaves the client.
+async test "the fragment reaches neither the server nor an HTTP proxy" {
+  with_recording_server((port, heads) => {
+    let direct = @mttp_moonfetch.backend()
+    defer direct.close()
+    direct
+    .send(
+      @mttp.Request::get("http://127.0.0.1:\{port}/p#secret"),
+      @mttp.SendOptions::default(),
+    )
+    .close()
+    let proxied = @mttp_moonfetch.backend(
+      proxy=@moonfetch.Proxy::parse("http://127.0.0.1:\{port}"),
+    )
+    defer proxied.close()
+    proxied
+    .send(
+      @mttp.Request::get("http://origin.example/p#secret"),
+      @mttp.SendOptions::default(),
+    )
+    .close()
+    let first_lines = heads.map(head => {
+      head.split("\r\n").next().unwrap_or("").to_owned()
+    })
+    assert_eq(first_lines, [
+      "GET /p HTTP/1.1", "GET http://origin.example/p HTTP/1.1",
+    ])
+  })
+}
+
+///|
+/// moonfetch frames CONNECT as an ordinary request, so the backend refuses
+/// it before any I/O.
+async test "CONNECT is refused before any I/O" {
+  with_recording_server((port, heads) => {
+    let backend = @mttp_moonfetch.backend()
+    defer backend.close()
+    let error = transport_error(() => {
+      backend.send(
+        @mttp.Request::new(Connect, "http://127.0.0.1:\{port}/"),
+        @mttp.SendOptions::default(),
+      )
+    })
+    let @mttp.TransportError(kind~, phase~, ..) = error
+    assert_eq((kind, phase), (Invalid, Pool))
+    assert_eq(heads.length(), 0)
+  })
+}
