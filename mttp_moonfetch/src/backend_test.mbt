@@ -575,9 +575,11 @@ async test "a certificate outside the trusted roots fails the handshake, unsent"
 async test "a URL moonfetch cannot send is refused before any I/O" {
   let backend = @mttp_moonfetch.backend()
   defer backend.close()
-  // Another scheme, no host, and a port mttp's URL parser refuses.
+  // Another scheme, no host, a port mttp's URL parser refuses, and
+  // credentials, which moonfetch would write into an HTTP proxy's request
+  // line.
   let urls = [
-    "ftp://example.com/", "http:///no-host", "http://example.com:99999/",
+    "ftp://example.com/", "http:///no-host", "http://example.com:99999/", "http://user:secret@example.com/",
   ]
   for url in urls {
     let error = transport_error(() => {
@@ -923,14 +925,18 @@ async test "CONNECT is refused before any I/O" {
   with_recording_server((port, heads) => {
     let backend = @mttp_moonfetch.backend()
     defer backend.close()
-    let error = transport_error(() => {
-      backend.send(
-        @mttp.Request::new(Connect, "http://127.0.0.1:\{port}/"),
-        @mttp.SendOptions::default(),
-      )
-    })
-    let @mttp.TransportError(kind~, phase~, ..) = error
-    assert_eq((kind, phase), (Invalid, Pool))
+    // The method as a variant, and as an extension token that names it.
+    let methods : Array[@mttp.Method] = [Connect, Other("CONNECT")]
+    for meth in methods {
+      let error = transport_error(() => {
+        backend.send(
+          @mttp.Request::new(meth, "http://127.0.0.1:\{port}/"),
+          @mttp.SendOptions::default(),
+        )
+      })
+      let @mttp.TransportError(kind~, phase~, ..) = error
+      assert_eq((kind, phase), (Invalid, Pool))
+    }
     assert_eq(heads.length(), 0)
   })
 }

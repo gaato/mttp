@@ -185,7 +185,8 @@ impl @mttp.Backend for MoonfetchBackend with fn send(self, request, options) {
   }
   // moonfetch frames CONNECT as an ordinary request (an origin-form target
   // on HTTP/1.1, :scheme and :path on HTTP/2), so it is refused here.
-  if request.meth == Connect {
+  // `verb` is moonhttp's reading of the token, so Other("CONNECT") counts too.
+  if verb is Connect {
     raise invalid("CONNECT is not supported")
   }
   let url = wire_url(request.url)
@@ -279,7 +280,7 @@ fn invalid(detail : String) -> @mttp.TransportError {
 
 ///|
 /// The URL as moonfetch gets it, or a refusal before any I/O: absolute,
-/// `http` or `https`, with a host. It is mttp's parse written back, which
+/// `http` or `https`, with a host and without userinfo. It is mttp's parse written back, which
 /// percent-encodes what the text had outside ASCII, and without the
 /// fragment, which never leaves the client. moonfetch 0.1.8 would write the
 /// low byte of each character of the original text on HTTP/1.1 (so `\u{10D}`
@@ -291,6 +292,11 @@ fn wire_url(url : String) -> String raise @mttp.TransportError {
   }
   guard parsed.host is Some(host) && host != "" else {
     raise invalid("URL has no host")
+  }
+  // moonfetch would write credentials in the URL into an HTTP proxy's
+  // request line; mttp_async's backends refuse them too.
+  guard parsed.userinfo is None else {
+    raise invalid("URL has userinfo; send credentials in a header")
   }
   let written = parsed.without_fragment().to_string()
   // Defensive: the parse percent-encodes, so only visible ASCII is left.
