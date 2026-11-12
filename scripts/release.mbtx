@@ -13,13 +13,15 @@ import {
 //
 // Exit status: 0 = done; 1 = a check failed, a CHANGELOG cannot take the
 // note, or an argument is missing; 2 = not a release module, an unknown
-// command, or a publish that is not a dry run. A failing command it runs
-// (`moon update`, `date`) ends it with that command's status.
+// command, or a publish outside the release workflow (MTTP_RELEASE_TAG does
+// not name the module's release tag). A failing command it runs (`moon
+// update`, `moon publish`, `date`) ends it with that command's status.
 
 ///|
 let usage : String =
-  #|Release helper for the workspace: the library modules of scripts/modules.tsv
-  #|are released together (design, section 5.8).
+  #|Release helper for the workspace: each library module of scripts/modules.tsv
+  #|is released on its own, by pushing its tag `<module>-v<version>` (design,
+  #|section 5.8).
   #|
   #|  moon run scripts/release.mbtx -- bump <module> <version>
   #|      set a module's version and its import in every moon.work member,
@@ -28,19 +30,34 @@ let usage : String =
   #|  moon run scripts/release.mbtx -- note <module> <section> <text>
   #|      add "- <text>" under ### <section> of the module's [Unreleased]
   #|  moon run scripts/release.mbtx -- check
-  #|      every module's CHANGELOG has [Unreleased] first
+  #|      every module's CHANGELOG has [Unreleased] first, and
+  #|      .github/workflows/release.yml runs on every module's tag
   #|  moon run scripts/release.mbtx -- publish --dry-run
   #|      for every module whose version is not yet in the mooncakes index,
   #|      bottom-up: its CHANGELOG has a heading for the version, and
-  #|      `moon publish --dry-run` accepts it
+  #|      `moon publish --dry-run` accepts it (needs registry credentials)
+  #|  moon run scripts/release.mbtx -- publish [--dry-run] <module>
+  #|      the same for one module, built outside the workspace so that it
+  #|      resolves its dependencies from the registry as a consumer does;
+  #|      without --dry-run it publishes, unless the version is already in
+  #|      the index
   #|
-  #|This script never publishes. Publishing is an outward step that gaato
-  #|approves each time; it is `moon -C <module> publish` for each module the dry
-  #|run lists, in the order it lists them, with `moon update` in between so a
-  #|dependant resolves the version published before it.
+  #|A real publish runs only in the release workflow, which a pushed tag
+  #|starts: the workflow sets MTTP_RELEASE_TAG to the tag, and the script
+  #|refuses to publish unless it is `<module>-v<version>` for the module's
+  #|moon.mod. Pushing the tag is the approval; tag a module after the
+  #|versions it imports are published.
 
 ///|
 let modules_tsv : String = "scripts/modules.tsv"
+
+///|
+let release_workflow : String = ".github/workflows/release.yml"
+
+///|
+/// The variable the release workflow sets to the pushed tag; a real publish
+/// needs it to name the module's tag.
+let release_tag_var : String = "MTTP_RELEASE_TAG"
 
 ///|
 let unreleased : String = "## [Unreleased]"
@@ -415,6 +432,20 @@ async fn check(modules : Array[String]) -> Unit {
       status = 1
     }
   }
+  // A module's release is its tag, so the workflow must run on it. The
+  // `mooncakes` environment's deployment policy lists the same patterns, but
+  // only the repository settings show it.
+  let workflow = @fs.read_text(release_workflow) catch { _ => "" }
+  let triggers = lines(workflow).map(line => line.trim().to_owned())
+  for dir in modules {
+    if !triggers.contains("- '\{dir}-v*'") &&
+      !triggers.contains("- \"\{dir}-v*\"") {
+      eprintln(
+        "\{release_workflow}: no tag trigger '\{dir}-v*'; add it there and to the mooncakes environment's deployment tags",
+      )
+      status = 1
+    }
+  }
   if status == 0 {
     println("release check: OK (\{modules.length()} changelogs)")
   }
@@ -483,6 +514,21 @@ fn waits_for(out : String, pending : Array[String]) -> Bool {
 }
 
 ///|
+/// Whether the module's CHANGELOG has the dated heading `bump` writes for
+/// `version`; the GitHub Release takes its notes from that section. Says
+/// what is missing when it has not.
+async fn has_release_heading(dir : String, version : String) -> Bool {
+  let changelog = @fs.read_text("\{dir}/CHANGELOG.md") catch { _ => "" }
+  if changelog.contains("## [\{version}] - ") {
+    return true
+  }
+  eprintln(
+    "\{dir}/CHANGELOG.md: no '## [\{version}] - <date>' heading (use 'moon run scripts/release.mbtx -- bump')",
+  )
+  false
+}
+
+///|
 async fn publish_dry_run(modules : Array[String]) -> Unit {
   let updated = @shell.Cmd("moon", ["update"], stdout=Discard).status()
   if updated != 0 {
@@ -499,11 +545,7 @@ async fn publish_dry_run(modules : Array[String]) -> Unit {
       println("skip    \{name}@\{version} (already published)")
       continue
     }
-    let changelog = @fs.read_text("\{dir}/CHANGELOG.md") catch { _ => "" }
-    if !changelog.contains("## [\{version}] - ") {
-      eprintln(
-        "\{dir}/CHANGELOG.md: no '## [\{version}] - <date>' heading (use 'moon run scripts/release.mbtx -- bump')",
-      )
+    if !has_release_heading(dir, version) {
       status = 1
     }
     // A dependant of a module that this run would publish first cannot be
@@ -536,6 +578,86 @@ async fn publish_dry_run(modules : Array[String]) -> Unit {
 }
 
 ///|
+/// Publishes one module, or with `dry_run` only lets mooncakes check it. The
+/// module is built outside the workspace (MOON_WORK=off), so it resolves its
+/// dependencies from the registry as a consumer does: a module whose new
+/// version imports another's new version is tagged after that one is
+/// published. A version already in the index is skipped, so a rerun of the
+/// release workflow after a successful publish does nothing.
+async fn publish_module(
+  modules : Array[String],
+  dir : String,
+  dry_run~ : Bool,
+) -> Unit {
+  require_release_module(modules, dir)
+  let name = module_field(dir, "name")
+  let version = module_field(dir, "version")
+  let tag = "\{dir}-v\{version}"
+  if !dry_run && @env.get_env_var(release_tag_var) != Some(tag) {
+    die(
+      2,
+      "release.mbtx: \{name}@\{version} is published by pushing the tag \{tag}; the release workflow then runs this with \{release_tag_var}=\{tag}",
+    )
+  }
+  if !has_release_heading(dir, version) {
+    @env.exit(1)
+  }
+  let outside = { "MOON_WORK": "off" }
+  let updated = @shell.Cmd(
+    "moon",
+    ["update"],
+    cwd=dir,
+    env=outside,
+    stdout=Discard,
+  ).status()
+  if updated != 0 {
+    @env.exit(updated)
+  }
+  if index_has(name, version) {
+    println("skip    \{name}@\{version} (already published)")
+    return
+  }
+  let args = if dry_run { ["publish", "--dry-run"] } else { ["publish"] }
+  if !dry_run {
+    println("publish \{name}@\{version}")
+  }
+  let scratch = @fs.tmpdir(prefix="mttp-release-")
+  let log = scratch + "/publish.log"
+  let code = @shell.Cmd(
+    "moon",
+    args,
+    cwd=dir,
+    env=outside,
+    stdout=AppendToFile(log),
+    stderr=AppendToFile(log),
+  ).status()
+  let out = read(log).trim_end(chars="\n").to_owned()
+  @fs.rmdir(scratch, recursive=true)
+  if out != "" {
+    println(out)
+  }
+  if code != 0 {
+    let others = []
+    for other in modules {
+      if other != dir {
+        others.push(module_field(other, "name"))
+      }
+    }
+    if waits_for(out, others) {
+      eprintln(
+        "release.mbtx: \{name}@\{version} imports a version that is not published yet; publish that one first, then tag \{tag} again or rerun its workflow",
+      )
+    }
+    @env.exit(code)
+  }
+  if dry_run {
+    println("would   \{name}@\{version}")
+  } else {
+    println("published \{name}@\{version}")
+  }
+}
+
+///|
 async fn main {
   if !is_file(modules_tsv) {
     die(2, "release.mbtx: run it from the repository root (no \{modules_tsv})")
@@ -555,14 +677,17 @@ async fn main {
         _ => die(1, "release.mbtx: note needs <module> <section> <text>")
       }
     ["check", ..] => check(modules)
-    ["publish", .. rest] => {
-      guard rest is ["--dry-run"] else {
-        die(
-          2, "release.mbtx publishes nothing; run 'moon run scripts/release.mbtx -- publish --dry-run'",
-        )
+    ["publish", .. rest] =>
+      match rest {
+        ["--dry-run"] => publish_dry_run(modules)
+        ["--dry-run", dir] => publish_module(modules, dir, dry_run=true)
+        [dir] if dir != "" && !dir.has_prefix("-") =>
+          publish_module(modules, dir, dry_run=false)
+        _ =>
+          die(
+            2, "release.mbtx: publish takes --dry-run, --dry-run <module> or <module>; a release is published by pushing its tag",
+          )
       }
-      publish_dry_run(modules)
-    }
     _ => {
       println(usage)
       @env.exit(2)
