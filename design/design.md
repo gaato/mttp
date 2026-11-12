@@ -1272,7 +1272,8 @@ Binding rules:
 - `internal/control` contains no sockets, tasks, waiters, callbacks, async functions, `mut` fields or `Ref`s (gate). Each transition returns a new state and leaves old states usable; persistent HashMap/Vector updates avoid copying a whole pool per event.
 - Adapters keep a separate id-to-resource table and **commit a transition before interpreting its actions** (close, cancel, wake). Local builders never escape into states.
 - The engines are portable orchestration, not pure functions: they call Conn, Dialer, Clock, Timer and Coordination. Parsers still mutate private buffers, because a persistent buffer per input byte would cost more without strengthening the ownership contract.
-- Retry and redirect planning consume snapshots (RequestHead plus explicit idempotency and replayability). Body reuse and closure happen outside the planner. Capturing availability never authorizes resending a stream: the Client still needs a body factory.
+- Retry and redirect planning consume snapshots (RequestHead plus explicit idempotency and replayability). `RetryContext::capture` reads the live request facts once, at the application boundary, so a later acquisition or closure of a stream cannot change a captured decision. Body reuse and closure happen outside the planner. Capturing availability never authorizes resending a stream: the Client still needs a body factory.
+- The transitions of `internal/control` (admission, pool metadata, peer EOF/failure, listener lifecycle) return new persistent states and effect descriptions; old snapshots stay valid. Connections, tasks, waiters and notifications belong to the engines and adapters and never appear in those states. Decoder buffers and body cursors stay locally mutable, owned by a single exchange or reader.
 
 ### 5.12 Expected failure modes and their prevention
 
