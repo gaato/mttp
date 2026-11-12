@@ -104,8 +104,9 @@ pub async fn version_of(url : String) -> String? {
   host, connecting, the TLS handshake and the proxy come before the request,
   and so does a request the server refused before processing it and before
   any response head (HTTP/3 `H3_REQUEST_REJECTED`; HTTP/2 `REFUSED_STREAM`
-  for a request without a body): the Client may send those again whatever
-  the method. moonfetch raises `REFUSED_STREAM` itself too when a connection
+  for a request without a body), and a stream not opened because the server
+  allows no more at once or sent GOAWAY: the Client may send those again
+  whatever the method. moonfetch raises `REFUSED_STREAM` itself too when a connection
   dies while a request body waits for flow-control window, after part of it
   was written, so for a request with a body that code proves nothing. Any
   other failure may have come after the request was written, and only an
@@ -137,6 +138,13 @@ pub async fn version_of(url : String) -> String? {
   against the newest moonfetch and runs it against public HTTP/2 and HTTP/3
   servers to catch that. The package is not marked experimental, so no
   opt-in is needed; these limits are its status instead.
+- **One failed HTTP/2 or HTTP/3 exchange closes its connection.** When an
+  exchange fails before its response head, moonfetch 0.1.8 drops the shared
+  connection, so the other responses still arriving on it fail too. That
+  includes a request past the server's concurrent-stream limit: moonfetch
+  does not wait for a stream to free up. The request itself is unsent and
+  the Client resends it on a new connection; a response cut that way is a
+  failure in phase Body.
 - **TLS is moonbitstack's own.** The TLS protocol (moontls), its
   cryptography (mooncrypt) and certificate validation (mooncred) are
   moonbitstack's MoonBit libraries, not a widely deployed implementation

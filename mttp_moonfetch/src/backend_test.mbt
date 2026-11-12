@@ -727,3 +727,118 @@ async test "HTTP/2: after 1000 exchanges a new client takes over, and open respo
     assert_eq(read_text(first), "GET /first ")
   })
 }
+
+///|
+/// A server that takes one stream at a time holds the first response open.
+/// moonhttp refuses to open a second stream before writing anything, so the
+/// POST is unsent and the Client resends it; moonfetch 0.1.8 also drops the
+/// shared connection, which fails the held response (README, Limits).
+async test "HTTP/2: past the server's stream limit a POST is unsent, and the Client resends it" {
+  with_h2_server(
+    max_streams=1,
+    (verb, path, fields, body) => {
+      if path == "/held" {
+        Hold(200)
+      } else {
+        echo(verb, path, fields, body)
+      }
+    },
+    (port, connections) => {
+      let base = "https://localhost:\{port}"
+      let backend = @mttp_moonfetch.backend(tls=trusting())
+      let held = backend.send(
+        @mttp.Request::get("\{base}/held"),
+        @mttp.SendOptions::default(),
+      )
+      assert_eq(held.status, 200)
+      let error = transport_error(() => {
+        backend.send(
+          @mttp.Request::post("\{base}/second").body_bytes(b"x"),
+          @mttp.SendOptions::default(),
+        )
+      })
+      let @mttp.TransportError(phase~, ..) = error
+      assert_eq(phase, Pool)
+      assert_true(error.is_unsent())
+      // moonfetch dropped the connection the held response was on.
+      let cut = transport_error(() => {
+        ignore(read_text(held))
+        held
+      })
+      let @mttp.TransportError(phase~, ..) = cut
+      assert_eq(phase, Body)
+      let api = @mttp_async.client(base_url=base, backend~)
+      defer api.close()
+      let reply = api.send(@mttp_async.post("/again").body_bytes(b"y"))
+      assert_eq(reply.body, Ok("POST /again y"))
+      assert_eq(connections.val, 2)
+    },
+  )
+}
+
+///|
+/// A request body whose first read waits until `open` is set.
+priv struct Waiting {
+  open : Ref[Bool]
+  reading : Ref[Bool]
+  mut sent : Bool
+}
+
+///|
+impl @mttp.BodyStream for Waiting with fn read_some(self) {
+  self.reading.val = true
+  while !self.open.val {
+    @async.sleep(5)
+  }
+  if self.sent {
+    None
+  } else {
+    self.sent = true
+    Some(b"late")
+  }
+}
+
+///|
+impl @mttp.BodyStream for Waiting with fn close(_) {
+  ()
+}
+
+///|
+/// moonfetch's close empties its pool but does not stop a send already on
+/// its way, which then dials and keeps a new connection. The backend closes
+/// that client again when the send's response is closed.
+async test "a send that outlives close leaves no connection open once its response is closed" {
+  let ended = Ref(0)
+  with_h2_server(ended~, echo, (port, connections) => {
+    let backend = @mttp_moonfetch.backend(tls=trusting())
+    let body = Waiting::{ open: Ref(false), reading: Ref(false), sent: false, }
+    let reply : Ref[@mttp.Response?] = Ref(None)
+    @async.with_task_group(group => {
+      group.spawn_bg(() => {
+        reply.val = Some(
+          backend.send(
+            @mttp.Request::post("https://localhost:\{port}/late").body_stream(
+              body,
+            ),
+            @mttp.SendOptions::default(),
+          ),
+        )
+      })
+      while !body.reading.val {
+        @async.sleep(5)
+      }
+      backend.close()
+      body.open.val = true
+    })
+    guard reply.val is Some(response) else { fail("no response") }
+    assert_eq(read_text(response), "POST /late late")
+    assert_eq(connections.val, 1)
+    for _ in 0..<200 {
+      if ended.val == 1 {
+        break
+      }
+      @async.sleep(10)
+    }
+    assert_eq(ended.val, 1)
+  })
+}

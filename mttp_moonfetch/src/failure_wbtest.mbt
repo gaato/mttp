@@ -25,6 +25,11 @@ test "failures that prove nothing was sent are unsent" {
     ("handshake", @alert.Alert(level=Fatal, kind=HandshakeFailure)),
     ("h2 refused", @moonfetch.Reset(code=7)),
     ("h3 rejected", @http3.Fault(code=RequestRejected, detail="busy")),
+    (
+      "h2 stream limit",
+      @http2.Order("past the server's SETTINGS_MAX_CONCURRENT_STREAMS"),
+    ),
+    ("h2 after goaway", @http2.Order("a new stream after the server's GOAWAY")),
     ("proxy", @moonfetch.Proxy("proxy.example:3128: CONNECT answered 407")),
     ("url", @moonfetch.Url("ftp://example.com")),
   ]
@@ -58,6 +63,7 @@ test "failures on an established connection may have been sent" {
     ("h2 incomplete", @http2.Incomplete),
     ("h1 partial", @http1.Partial),
     ("h3 internal", @http3.Fault(code=InternalError, detail="")),
+    ("h2 order", @http2.Order("a head on a stream this side has ended")),
     ("other", Failure("unexpected")),
   ]
   for item in sent {

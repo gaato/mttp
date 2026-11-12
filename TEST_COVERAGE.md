@@ -125,7 +125,9 @@ state machine and moontls with a test root from
 early or answer keep-alive requests. The suites cover the Backend checker,
 HTTP/2 multiplexing, a refused stream resent for a POST without a body and
 not for one with a body, the move to a new moonfetch client after 1000
-exchanges, the proxy with `http3=true` (no datagram reaches the origin),
+exchanges, a POST past the server's stream limit resent on a new
+connection, a send that outlives `close` leaving no connection open, the
+proxy with `http3=true` (no datagram reaches the origin),
 decompression, raw redirects, the attempt deadline over head and body, idle
 reads, the wire byte limit, cancellation and a failed handshake. Its
 classification of moonfetch's failures is white-box tested, including the

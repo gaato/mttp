@@ -64,20 +64,22 @@ priv struct Generation {
 }
 
 ///|
-/// Closes the client once.
+/// Closes the client's connections. moonfetch's close empties its pool but
+/// does not stop an exchange still on its way, which may dial and keep a new
+/// connection afterwards, so `release` closes the client again once the
+/// last exchange of a closed generation ends.
 fn Generation::shut(self : Generation) -> Unit {
-  if !self.closed {
-    self.closed = true
-    self.client.close()
-  }
+  self.closed = true
+  self.client.close()
 }
 
 ///|
 /// One exchange of this generation ended: its send failed, or its response
-/// was closed. A replaced generation closes with its last exchange.
+/// was closed. A replaced or closed generation closes with its last
+/// exchange.
 fn Generation::release(self : Generation) -> Unit {
   self.open -= 1
-  if self.retired && self.open == 0 {
+  if (self.retired || self.closed) && self.open == 0 {
     self.shut()
   }
 }

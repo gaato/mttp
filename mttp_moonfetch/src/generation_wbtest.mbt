@@ -37,9 +37,11 @@ test "closing the backend closes the current client and every replaced one" {
   @mttp.Backend::close(backend)
   assert_true(first.closed)
   assert_true(second.closed)
-  // A response closed after the backend does not close anything twice.
+  // An exchange that ends after the backend closed closes its client
+  // again, for a connection it may have opened after the close.
   first.release()
   assert_true(first.closed)
+  assert_eq(first.open, 0)
 }
 
 ///|

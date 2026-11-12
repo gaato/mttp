@@ -36,6 +36,8 @@ priv enum H2Answer {
   Reply(Int32, Array[(String, String)], Bytes)
   /// Resets the stream with REFUSED_STREAM without answering.
   Refuse
+  /// Sends the head with this status and never ends the stream.
+  Hold(Int32)
 }
 
 ///|
@@ -48,10 +50,14 @@ fn trusting() -> @tls.Client raise {
 /// Runs `run` with an HTTP/2 server over TLS (ALPN `h2` only) on the test
 /// certificate, answering each request with `answer(method, path, fields,
 /// body)`. `run` receives the port and the number of connections that
-/// carried a request so far.
+/// carried a request so far. `max_streams` is the server's
+/// SETTINGS_MAX_CONCURRENT_STREAMS, and `ended` counts the connections that
+/// carried a request and have closed.
 async fn with_h2_server(
   answer : (String, String, Array[(String, String)], Bytes) -> H2Answer,
   run : async (Int32, Ref[Int32]) -> Unit,
+  max_streams? : Int32,
+  ended~ : Ref[Int32] = Ref(0),
 ) -> Unit {
   let tls = @tls.Server::new(
     @x509.pems(test_cert),
@@ -64,7 +70,7 @@ async fn with_h2_server(
       let listener = @tcp.listen(host="127.0.0.1", port=0, tls~)
       group.spawn_bg(no_wait=true, () => {
         listener.serve((conn, _) => {
-          serve_h2(conn, answer, connections) catch {
+          serve_h2(conn, answer, connections, ended, max_streams?) catch {
             _ => ()
           }
           conn.close()
@@ -82,10 +88,16 @@ async fn serve_h2(
   conn : @tcp.Conn,
   answer : (String, String, Array[(String, String)], Bytes) -> H2Answer,
   connections : Ref[Int32],
+  ended : Ref[Int32],
+  max_streams? : Int32,
 ) -> Unit {
-  let wire = @http2.Conn::new(Server)
+  let wire = @http2.Conn::new(
+    Server,
+    settings=@http2.Settings::new(max_concurrent_streams=max_streams),
+  )
   let open : Map[Int32, (Array[(String, String)], Buffer)] = Map([])
   let mut counted = false
+  defer (if counted { ended.val += 1 })
   for ;; {
     let out = wire.take()
     if out.length() > 0 {
@@ -118,6 +130,12 @@ async fn serve_h2(
         match
           answer(field(":method"), field(":path"), fields, buffer.to_bytes()) {
           Refuse => wire.reset(stream, code=7)
+          Hold(status) =>
+            wire.headers(
+              stream,
+              [@header.Header::of(":status", status.to_string())],
+              end=false,
+            )
           Reply(status, extra, body) => {
             let head = [@header.Header::of(":status", status.to_string())]
             for f in extra {

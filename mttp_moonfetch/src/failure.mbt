@@ -70,6 +70,19 @@ fn failure(
         phase=Pool,
         detail="refused before processing: \{detail}",
       )
+    // moonhttp refuses to open a stream past the server's
+    // SETTINGS_MAX_CONCURRENT_STREAMS, or after its GOAWAY, before writing
+    // anything, and moonfetch passes the refusal on as it is.
+    @http2.Order(why) if phase is Unknown &&
+      (
+        why.contains("SETTINGS_MAX_CONCURRENT_STREAMS") ||
+        why.contains("after the server's GOAWAY")
+      ) =>
+      @mttp.TransportError(
+        kind=Network,
+        phase=Pool,
+        detail="not sent: \{detail}",
+      )
     @http1.Malformed(_)
     | @http1.Smuggled(_)
     | @http1.Order(_)
