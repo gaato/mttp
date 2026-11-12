@@ -14,7 +14,7 @@ scheduler in `gaato/mttp_core/driver`, and the runtime implementations in
 
 Shared checks: `@sim.check_conn`, `check_coordination_contract`,
 `check_body_stream_contract` and `check_backend_contract` run against the sim
-doubles and against mttp's adapters. Transport-specific rules (wire
+doubles and against gaato/mttp's adapters. Transport-specific rules (wire
 framing, socket deadlines, TLS) are checked by each implementation's own
 suites. For the implementations in this repository,
 [TEST_COVERAGE.md](TEST_COVERAGE.md) names the tests behind each rule and
@@ -203,7 +203,7 @@ all four targets. Its cancellation semantics match core/async's:
    unless spawned with `allow_failure=true`. The cause keeps its identity.
 7. With `auto_advance`, virtual time moves only when no task is ready, and
    only forward, to the next armed timer.
-8. **Runtime parity.** mttp's `ClockTimer`, `SemaphoreGate` and
+8. **Runtime parity.** gaato/mttp's `ClockTimer`, `SemaphoreGate` and
    `RuntimeCoordination` satisfy the Timer, Gate and Coordination rules above
    with the same contract tests as the sim doubles, including the
    cancellation cases.

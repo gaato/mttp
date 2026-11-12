@@ -3,7 +3,7 @@
 [![CI](https://github.com/gaato/mttp/actions/workflows/ci.yml/badge.svg)](https://github.com/gaato/mttp/actions/workflows/ci.yml)
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/gaato/mttp)
 [![License](https://img.shields.io/github/license/gaato/mttp)](LICENSE)
-[![mooncakes](https://img.shields.io/badge/mooncakes-gaato%2Fmttp__async-blue)](https://mooncakes.io/docs/gaato/mttp)
+[![mooncakes](https://img.shields.io/badge/mooncakes-gaato%2Fmttp-blue)](https://mooncakes.io/docs/gaato/mttp)
 [![MoonBit 0.10.20+65efd5b93](https://img.shields.io/badge/MoonBit-0.10.20%2B65efd5b93-blue)](https://www.moonbitlang.com)
 
 HTTP for [MoonBit](https://www.moonbitlang.com/) in which one endpoint
@@ -15,7 +15,39 @@ whose client retries within a budget and keeps deadlines without being asked.
 [examples](#examples) ·
 [backend contract](CONTRACT.md)
 
+## Start
+
+An app adds one module:
+
+```sh
+moon add gaato/mttp
+```
+
+and its package imports `"gaato/mttp"`. This is
+[examples/get](examples/get), which sends one GET request with retries,
+deadlines, redirects and decompression on, and runs on native, wasm and js:
+
+<!-- source: examples/get/main.mbt -->
+```moonbit
+///|
+fn main {
+  @mttp.run(async fn() {
+    let client = @mttp.client()
+    defer client.close()
+    let reply = client.send(@mttp.get("https://example.com/"))
+    match reply.body {
+      Ok(text) => println("\{reply.status}: \{text.length()} characters")
+      Err(failure) => println("\{reply.status}: \{failure}")
+    }
+  })
+}
+```
+
 ## One definition, three uses
+
+Typed endpoints come from `gaato/mttp_core`, the part of the family without
+I/O, so that a definition can be shared with code that builds on wasm-gc. An
+app that uses them adds it beside gaato/mttp (`moon add gaato/mttp_core`):
 
 <!-- source: examples/tour/main.mbt -->
 ```moonbit
@@ -160,8 +192,8 @@ above.
 
 | Module | Add it if |
 |---|---|
-| [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) | you are building an app or a server: it sends requests over the network with the defaults above, serves handlers, and re-exports the types and client functions an app uses most. Add `gaato/mttp_core` beside it for typed endpoints, the router, OpenAPI documents, multipart bodies, rate limits and test stubs. |
-| [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core) | you are writing a library, such as an SDK for some API: it takes a `Client` and leaves the network to the app, so its tests run without one. |
+| [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) | you are building an app or a server: it sends requests over the network with the defaults above, serves handlers, and re-exports the types, request attributes and client functions an app uses. Add `gaato/mttp_core` beside it for typed endpoints, the router, OpenAPI documents, multipart bodies, rate limits and test stubs. |
+| [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core) | you are writing a library, such as an SDK for some API: it takes a `Client` and leaves the network to the app, so it builds on every target, wasm-gc included, and its tests run without a network. |
 | [`gaato/mttp_digest`](https://mooncakes.io/docs/gaato/mttp_digest) | a server asks for HTTP Digest authentication. |
 
 `gaato/mttp_core` holds everything without I/O and builds on every target;
@@ -174,7 +206,7 @@ Scala's [sttp](https://sttp.softwaremill.com/) family.
 - [examples/tour](examples/tour): the endpoint above, served, called and
   documented.
 - [examples/retries](examples/retries): the retries above.
-- [examples/get](examples/get): one GET request from the command line.
+- [examples/get](examples/get): one GET request, on native, wasm and js.
 - [examples/serve](examples/serve): an HTTP/1.1 server.
 - [examples/fetch](examples/fetch): a `fetch` export for JavaScript hosts,
   with a [Cloudflare Workers app](examples/fetch/workers).
@@ -214,7 +246,7 @@ nightly toolchains:
 
 The modules are at 0.x: a minor release (0.1 → 0.2) may break the API, and a
 patch release never does. Each module's changelog, such as
-[mttp_core/CHANGELOG.md](mttp_core/CHANGELOG.md), says what changed and what to rename.
+[mttp/CHANGELOG.md](mttp/CHANGELOG.md), says what changed and what to rename.
 
 One package is experimental: `gaato/mttp_core/driver`, the deterministic task
 driver behind `run_sync` in tests, because it relies on compiler intrinsics
@@ -227,11 +259,17 @@ marks experimental. Its `run` and `client()` keep that opt-in out of an app's
 lists it. The gates run on the toolchain that
 [moonbit-version](moonbit-version) pins.
 
-## Coming from gaato/http
+## Renamed modules
 
-`gaato/http` and `gaato/http-async` are now `gaato/mttp_core` and
-`gaato/mttp`; the [changelog of gaato/mttp_core](mttp_core/CHANGELOG.md) says
-what to rename.
+Up to gaato/mttp 0.2, the name `gaato/mttp` was the part without I/O, and the
+module an app adds was `gaato/mttp_async`. From 0.3, `gaato/mttp` is the
+module an app adds (formerly gaato/mttp_async) and the part without I/O is
+`gaato/mttp_core`. The [changelog of gaato/mttp](mttp/CHANGELOG.md) has a
+table of what to replace, in which order.
+
+`gaato/http` and `gaato/http-async`, the modules before those, are now
+`gaato/mttp_core` and `gaato/mttp`; the
+[changelog of gaato/mttp_core](mttp_core/CHANGELOG.md) says what to rename.
 
 ## License
 

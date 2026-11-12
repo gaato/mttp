@@ -5,6 +5,7 @@ import {
 }
 
 import {
+  "gaato/mttp",
   "gaato/mttp_core/endpoint",
   "gaato/mttp_core/router",
   "gaato/mttp/server",

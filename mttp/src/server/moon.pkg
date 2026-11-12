@@ -12,6 +12,7 @@ import {
 }
 
 import {
+  "gaato/mttp",
   "moonbitlang/core/encoding/utf8",
 } for "test"
 

@@ -9,16 +9,19 @@ native, with the same tests on each.
 
 Building an app? Start with [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp):
 it sends requests over the network with sensible defaults and re-exports the
-types and client functions an app uses most. Add `gaato/mttp_core` beside it for
-the rest: typed endpoints, the router, OpenAPI documents, multipart bodies,
-rate limits and test stubs. Libraries, such as an SDK for some API, depend on
-this module alone, so the app decides how requests are sent and tests run
-without a network.
+types, request attributes and client functions an app uses. Add
+`gaato/mttp_core` beside it for the rest: typed endpoints, the router,
+OpenAPI documents, multipart bodies, rate limits and test stubs. Libraries,
+such as an SDK for some API, depend on this module alone, so the app
+decides how requests are sent and tests run without a network.
 
-Coming from `gaato/http` or `gaato/http-async`? They are now `gaato/mttp_core` and
-`gaato/mttp`; the
-[changelog](https://github.com/gaato/mttp/blob/main/mttp_core/CHANGELOG.md) says
-what to rename.
+Coming from `gaato/mttp` 0.2 or earlier? This is that module, renamed: from
+0.3, `gaato/mttp` is the module an app adds (formerly `gaato/mttp_async`).
+In a library, replace `gaato/mttp` with `gaato/mttp_core` in `moon.mod` and
+`moon.pkg`, and `@mttp.` with `@mttp_core.` in code; the
+[changelog](https://github.com/gaato/mttp/blob/main/mttp_core/CHANGELOG.md)
+has the details. Coming from `gaato/http` or `gaato/http-async`? They are
+now `gaato/mttp_core` and `gaato/mttp`.
 
 The design follows the split of Scala's [sttp](https://sttp.softwaremill.com/)
 family: a model, a client over swappable backends, and endpoint descriptions

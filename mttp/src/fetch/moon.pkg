@@ -5,6 +5,10 @@ import {
 }
 
 import {
+  "gaato/mttp",
+} for "test"
+
+import {
   "gaato/mttp_core/endpoint",
   "gaato/mttp_core/schema",
   "moonbitlang/core/async",

@@ -6,15 +6,25 @@ decompression and typed failures, plus an HTTP/1.1 server, on
 `moonbitlang/core/async` for native, wasm and js. It is the module an app
 starts with; an app that calls APIs and serves plain handlers needs no other.
 
-Add [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core) to the app as well
-when it uses the parts without I/O that this module does not re-export:
-typed endpoints, the router and OpenAPI documents, multipart forms, rate
-limits such as `WindowLimiter`, the request attributes `@mttp_core.background`
-and `@mttp_core.remote_addr`, or the test doubles of `gaato/mttp_core/testing`.
+Its root re-exports what such an app uses from
+[`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core), the part
+of the family without I/O: the messages (`Request`, `Response`, `Body`,
+`Headers`, `Method`, `Url`), `Handler`, request attributes such as
+`remote_addr` and `background`, streamed bodies, `Backend`, errors, and
+the client API (`Client`, `get`, `as_json` and the rest). Add
+`gaato/mttp_core` to the app as well when it uses the parts this module
+does not re-export: typed endpoints, the router and OpenAPI documents,
+multipart forms, server-sent events, rate limits such as `WindowLimiter`, or
+the test doubles of `gaato/mttp_core/testing`.
 
-Writing a library, such as an SDK for some API? Depend on `gaato/mttp_core` only:
-it has the same types and client without any I/O, so it builds on every
-target and the app chooses how requests are sent.
+Writing a library, such as an SDK for some API? Depend on `gaato/mttp_core`
+only: it has the same types and client without any I/O, so it builds on
+every target, wasm-gc included, and the app chooses how requests are sent.
+
+Coming from `gaato/mttp_async`? It is this module, renamed in 0.3; up to
+0.2, `gaato/mttp` was the part without I/O, now `gaato/mttp_core`. The
+[changelog](https://github.com/gaato/mttp/blob/main/mttp/CHANGELOG.md) has
+a table of what to replace.
 
 ## Install
 

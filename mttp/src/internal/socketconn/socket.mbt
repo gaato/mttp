@@ -154,7 +154,7 @@ pub fn transport_error(error : Error) -> @mttp_core.TransportError {
 }
 
 ///|
-/// Accepted sockets cross the runtime boundary only inside mttp.
+/// Accepted sockets cross the runtime boundary only inside gaato/mttp.
 pub fn from_tcp(tcp : @socket.Tcp) -> &@rt.Conn {
   SocketConn::{
     reader: tcp,

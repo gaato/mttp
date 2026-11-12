@@ -1,6 +1,6 @@
 # mttp design
 
-**Status: rebuilt on 2026-11-08.** The design accepted on 2026-10-24 was implemented on branch `ccr-eae554e2-r0xapl-u1` (PR #2, head `1ea1b3b`). The 2026-11-08 decisions in §0.1 split its lower half into a stable, separately versioned `gaato/http` 0.6, rename the I/O module to `gaato/http-async`, and move the runtime to `moonbitlang/core/async` now. Where an older passage disagrees with §0.1, §0.1 wins. On 2026-11-11 the family took its final form (§0.0): gaato/http folded into gaato/mttp, gaato/http-async became gaato/mttp_async with the app's entry, and §0.0 wins over everything below it.
+**Status: rebuilt on 2026-11-08.** The design accepted on 2026-10-24 was implemented on branch `ccr-eae554e2-r0xapl-u1` (PR #2, head `1ea1b3b`). The 2026-11-08 decisions in §0.1 split its lower half into a stable, separately versioned `gaato/http` 0.6, rename the I/O module to `gaato/http-async`, and move the runtime to `moonbitlang/core/async` now. Where an older passage disagrees with §0.1, §0.1 wins. On 2026-11-11 the family took its final form (§0.0): gaato/http folded into gaato/mttp, gaato/http-async became gaato/mttp_async with the app's entry, and §0.0 wins over everything below it. On 2026-11-12 the names moved (§0.0, "Names"): the core is gaato/mttp_core and the app module gaato/mttp.
 
 PR #2 is the **reference branch**: its code, tests and measurements are the source for the rebuild, component by component (§7.2), but it is not merged. Its status notes (`design/implementation-status.md`, `design/validation.md`) describe that branch and are not carried over. The contracts of its two follow-up documents (portable engines; typed responses) are folded into this document: §5.11 (layers), §4.4 and §4.7 (Result-based responses), CONTRACT.md (ports and attempts).
 
@@ -27,13 +27,13 @@ Toolchain now: MoonBit 0.10.20 (`moon version --all` reports `0.10.20+65efd5b93`
 
 ### 0.0 Final form (2026-11-11)
 
-Decided by the owner on 2026-11-11 after a review from first principles. Where §0.1, §0.2 or a later section disagrees, this section wins. Sections 1–6 already use the names below; §7–§10 are kept as records of the rebuild and keep the names of their time.
+Decided by the owner on 2026-11-11 after a review from first principles; the module names were changed on 2026-11-12 ("Names" below). Where §0.1, §0.2 or a later section disagrees, this section wins. Sections 1–6 already use the names below; §7–§10 are kept as records of the rebuild and keep the names of their time.
 
 **Criteria.** Every structural choice follows from these; a change is reopened only when one of them is found broken or a new fact appears.
 
 1. **Who chooses it**: MoonBit users who outgrow `moonbitlang/core/async/http`: API clients and SDKs, long-running services, typed APIs with OpenAPI. Simple GETs are left to the standard library. What the family offers on top: policy (retries under a budget, deadlines, rate limits, redirects, cookies), typed errors, typed endpoints with OpenAPI, and an I/O-free core tested identically on four targets. Bounded parsing is not a selling point once core fixes its #4612 P0-2 findings.
 2. **Quality is the entry ticket**: bounded defaults, deterministic tests and the gates stay.
-3. **One module per job** for an app, whose first example fits in about ten lines compiled in CI; no experimental opt-in on a recommended path. One accepted exception: an app with typed endpoints lists gaato/mttp as well, because its endpoint definitions belong in an I/O-free package that the server, the client and the tests share, and that package depends on gaato/mttp anyway.
+3. **One module per job** for an app, whose first example fits in about ten lines compiled in CI; no experimental opt-in on a recommended path. One accepted exception: an app with typed endpoints lists gaato/mttp_core as well, because its endpoint definitions belong in an I/O-free package that the server, the client and the tests share, and that package depends on gaato/mttp_core anyway.
 4. **Libraries carry no I/O**: an SDK depends on no I/O module, builds on wasm-gc, and does not re-release when the runtime or a codec changes.
 5. **Module boundaries only by principle 8.** In this family the only boundary with a reason is I/O. Package boundaries follow dependencies.
 6. **Names**: every module carries the brand `mttp`; each description names the job; the first line of each README routes the reader.
@@ -44,23 +44,24 @@ Decided by the owner on 2026-11-11 after a review from first principles. Where �
 
 | Module | Holds | Who adds it |
 |---|---|---|
-| `gaato/mttp` 0.2 | Everything without I/O: the vocabulary (root package, `@mttp`), `rt`, `h1`, `h1client`, `h1server`, `driver`, `sim` (formerly gaato/http), the client and its policy, `sse`, `multipart`, `cookie`, `jsonkit`, `schema`, `testing`, and the endpoint layer (`endpoint`, `endpoint/testkit`, `router`, `apispec`, `openapi`) | Libraries (SDKs), and code that shares endpoint definitions on wasm-gc |
-| `gaato/mttp_async` 0.1 | I/O on moonbitlang/core/async (formerly gaato/http-async: `backend`, `runtime`, `codings`, `conn`, `server`, `fetch`, `hosts`, `trust`) and the app's entry in its root: `run`, `client()` and re-exports | Apps; the only module in their moon.mod |
-| `gaato/mttp_digest` 0.2 | Digest authentication (moonbitlang/x for crypto) | Apps that need Digest |
+| `gaato/mttp_core` 0.1 (gaato/mttp ≤ 0.2) | Everything without I/O: the vocabulary (root package, `@mttp_core`), `rt`, `h1`, `h1client`, `h1server`, `driver`, `sim` (formerly gaato/http), the client and its policy, `sse`, `multipart`, `cookie`, `jsonkit`, `schema`, `testing`, and the endpoint layer (`endpoint`, `endpoint/testkit`, `router`, `apispec`, `openapi`) | Libraries (SDKs), and code that shares endpoint definitions on wasm-gc |
+| `gaato/mttp` 0.3 (gaato/mttp_async 0.1) | I/O on moonbitlang/core/async (formerly gaato/http-async: `backend`, `runtime`, `codings`, `conn`, `server`, `fetch`, `hosts`, `trust`) and the app's entry in its root: `run`, `client()` and re-exports | Apps; the only module in their moon.mod unless they use typed endpoints |
+| `gaato/mttp_digest` 0.3 | Digest authentication (moonbitlang/x for crypto) | Apps that need Digest |
 
-- gaato/http and gaato/http-async are deprecated with a pointer to these; gaato/requesto's and gaato/req's deprecation reasons point to gaato/mttp_async (`moon deprecate --reason` rewrites them).
-- **No neutral HTTP layer of our own.** A runtime-independent HTTP vocabulary belongs in the standard library (Go's net/http, the Web platform's Request/Response); today core's HTTP types live inside `core/async/http`. It is proposed upstream in a new issue referencing #4613 and #4686; if core adopts one, gaato/mttp moves onto it.
-- **sttp mapping**: sttp-model → mttp's root, sse, multipart, cookie; client4 core → `mttp/client`; client4 backends → mttp_async (core/async) or any other module implementing `Backend` or the `rt` ports; tapir core, server and stub → `endpoint`, `router`, `endpoint/testkit`; sttp-apispec and openapi-docs → `apispec`, `openapi`. Differences: three modules, not a dozen (MoonBit compiles only imported packages, and every 0.x module adds version coordination); the core has no default backend (ours needs a runtime and codecs, the JVM's HttpClient needs nothing); one client, so the client interpreter stays in `endpoint`; no sttp-shared (direct-style async); an HTTP/1.1 engine of our own (no neutral one exists in MoonBit).
-- **The entry** (`gaato/mttp_async` root): `run(async fn)` starts core/async's loop without the app importing core/async. `client()` builds a Client over AsyncBackend with `RetryPolicy::conservative()` under a `RetryBudget` (retries on by default, as API SDKs and ky do; the budget keeps retries within 20 % of recent requests plus 10 per second), a 30 s attempt and 120 s call deadline, redirects (10 hops) and decompression; `backend=`, `clock=` and `timer=` swap the I/O for a stub and a virtual clock in tests while keeping these defaults. `backend()` is the I/O alone (AsyncBackend with decompression). The root re-exports the vocabulary and the client API an app uses; serving goes through `gaato/mttp_async/server` and a Router's handler.
-- **Redirects and cookies are Client policies** (2026-11-12), like retries, deadlines and rate limits: `Client::new` takes `redirect~ : RedirectConfig` and `cookies? : CookieJar` and wraps its backend as `FollowRedirects(Cookies(backend, jar))`, so they work over any backend, a test stub included, and an SDK that receives `@mttp_async.backend()` follows redirects through its own Client. The hops of one attempt keep sharing one admission and the attempt deadline; retries stay outside the chain. `RedirectConfig::none()` (any `max_redirects` ≤ 0) means the Client adds no redirect layer at all, rather than a layer limited to zero hops, so that a hand-built stack that already contains `FollowRedirects` keeps its own `redirect_history` and `final_url` and receives the per-request `redirect_limit`; a zero-hop outer layer would overwrite both attributes and could follow what the inner one was told not to. `FollowRedirects` and `Cookies` stay public for such stacks.
+- **Names** (2026-11-12). The app module is `gaato/mttp` and the core `gaato/mttp_core`; until then they were `gaato/mttp_async` 0.1 and `gaato/mttp` 0.2. Reasons: `_async` read as an asynchronous variant of the core, though the core's Client is async too and the difference is I/O; most people who run `moon add` on an HTTP module are writing an app, while the core's direct users are a few library authors (the SDKs, mttp_digest) and wasm-gc programs; and since the runtime can be shared, other backends (such as gaato/mttp_moonfetch) plug into the app module's `client(backend=...)`, so "the module with the default network path" is the natural owner of the brand. It was done before any module outside the family depended on either name. The app module continues at 0.3.0 because the registry holds gaato/mttp 0.1 and 0.2 (the core); those and every gaato/mttp_async version are deprecated with a pointer to the new name. The core's root is read as `@mttp_core` (its default alias) and the app's as `@mttp`, so code says which module a name comes from. The app root re-exports what an app without typed endpoints needs (the messages, `Url`, `Handler`, request attributes and their keys, streamed bodies, `Backend`, the client API), so such an app lists gaato/mttp alone; typed endpoints stay in the core because their definitions are shared with wasm-gc code (criterion 3's exception).
+- gaato/http and gaato/http-async are deprecated with a pointer to these; gaato/requesto's and gaato/req's deprecation reasons point to gaato/mttp (`moon deprecate --reason` rewrites them).
+- **No neutral HTTP layer of our own.** A runtime-independent HTTP vocabulary belongs in the standard library (Go's net/http, the Web platform's Request/Response); today core's HTTP types live inside `core/async/http`. It is proposed upstream in a new issue referencing #4613 and #4686; if core adopts one, gaato/mttp_core moves onto it.
+- **sttp mapping**: sttp-model → gaato/mttp_core's root, sse, multipart, cookie; client4 core → `mttp_core/client`; client4 backends → gaato/mttp (core/async) or any other module implementing `Backend` or the `rt` ports; tapir core, server and stub → `endpoint`, `router`, `endpoint/testkit`; sttp-apispec and openapi-docs → `apispec`, `openapi`. Differences: three modules, not a dozen (MoonBit compiles only imported packages, and every 0.x module adds version coordination); the core has no default backend (ours needs a runtime and codecs, the JVM's HttpClient needs nothing); one client, so the client interpreter stays in `endpoint`; no sttp-shared (direct-style async); an HTTP/1.1 engine of our own (no neutral one exists in MoonBit).
+- **The entry** (`gaato/mttp` root): `run(async fn)` starts core/async's loop without the app importing core/async. `client()` builds a Client over AsyncBackend with `RetryPolicy::conservative()` under a `RetryBudget` (retries on by default, as API SDKs and ky do; the budget keeps retries within 20 % of recent requests plus 10 per second), a 30 s attempt and 120 s call deadline, redirects (10 hops) and decompression; `backend=`, `clock=` and `timer=` swap the I/O for a stub and a virtual clock in tests while keeping these defaults. `backend()` is the I/O alone (AsyncBackend with decompression). The root re-exports the vocabulary and the client API an app uses; serving goes through `gaato/mttp/server` and a Router's handler.
+- **Redirects and cookies are Client policies** (2026-11-12), like retries, deadlines and rate limits: `Client::new` takes `redirect~ : RedirectConfig` and `cookies? : CookieJar` and wraps its backend as `FollowRedirects(Cookies(backend, jar))`, so they work over any backend, a test stub included, and an SDK that receives `@mttp.backend()` follows redirects through its own Client. The hops of one attempt keep sharing one admission and the attempt deadline; retries stay outside the chain. `RedirectConfig::none()` (any `max_redirects` ≤ 0) means the Client adds no redirect layer at all, rather than a layer limited to zero hops, so that a hand-built stack that already contains `FollowRedirects` keeps its own `redirect_history` and `final_url` and receives the per-request `redirect_limit`; a zero-hop outer layer would overwrite both attributes and could follow what the inner one was told not to. `FollowRedirects` and `Cookies` stay public for such stacks.
 - **Graduated**: endpoint, endpoint/testkit, router, apispec, openapi, h1client and h1server are no longer experimental. `driver` stays experimental: it relies on the compiler's `%async` intrinsics. apispec types OpenAPI 3.2's fields now, unset in 3.1 documents, because a struct cannot be `#non_exhaustive`.
 - **Declined, with reasons** (§12 keeps only what waits on outside facts):
   - SDKs emitting Endpoint values: OpenAPI documents of third-party APIs come from their providers and the SDKs are generated from them; `BackendStub` already fakes them in tests; the SDKs' public API would be tied to the endpoint layer's.
   - AsyncAPI: there is nothing to describe (no WebSockets; SSE is described with `itemSchema`).
   - An endpoint core without the client (as tapir-core is without sttp's client): the client interpreter uses the endpoint's private internals, so separating it would freeze them as a public API and turn `ep.request(...)` into a function; it saves only one package's compile for server-only users, and the family has one client while tapir has several.
   - Reporting core/async/http's head bound and CL+TE handling: core's own review tracks both as P0-2 with reproductions.
-  - Re-exporting core/async's concurrency API (tasks, task groups) from gaato/mttp_async so that apps need no opt-in for it: that would name runtime types in mttp_async's public API (principle 9). The README shows `run` in plain tests and says where concurrency comes from.
-- **Trial before the first release** (2026-11-11): a short-link service built on these modules found that `@schema.pattern` raised (now it records a definition problem instead, so endpoints can be top-level values), that error types lacked `Show`, that typed SSE dropped event ids and names and could not stop early, and that endless streams held up shutdown; all were fixed before 0.2.0, together with the full RFC 9110 reason-phrase table and the documentation gaps it found. A second and third round served the same definitions from Deno and from a Rabbita admin page: `Router::must` lets a router be a top-level value, the process-host shims gained `shutdown()` so SSE ends at shutdown there too, aborts after a completed response are ignored, and the README of gaato/mttp says how to use it on another runtime (a framework on the registry `moonbitlang/async` was then thought unable to share a program with core/async; since its 0.22.6 it runs on core/async's runtime, verified on 2026-11-12 with mttp_async's server and client and an mttp Client over moonbitstack/moonfetch in one native program. Adapters for such libraries live in their own repositories, because this repository does not depend on `moonbitlang/async`). A fourth round served Discord interactions on workerd: the Workers entry the hosts README showed did not start, because evaluating a compiled MoonBit module draws its hash seed from `crypto.getRandomValues` and Workers refuses that in global scope (moonbitlang/core#2901, open). The Workers shim now imports the app inside the first request, `scripts/gates.sh full` runs a Workers app on workerd, and `@fetch.env_string` reads a string binding without hand-written FFI. A minimal js bundle measured about 650 KB raw (90 KB gzipped) for the client, mostly the client itself, core's number formatting and JSON parsing; with no size target and no obvious waste, nothing was changed.
+  - Re-exporting core/async's concurrency API (tasks, task groups) from gaato/mttp so that apps need no opt-in for it: that would name runtime types in gaato/mttp's public API (principle 9). The README shows `run` in plain tests and says where concurrency comes from.
+- **Trial before the first release** (2026-11-11): a short-link service built on these modules found that `@schema.pattern` raised (now it records a definition problem instead, so endpoints can be top-level values), that error types lacked `Show`, that typed SSE dropped event ids and names and could not stop early, and that endless streams held up shutdown; all were fixed before 0.2.0, together with the full RFC 9110 reason-phrase table and the documentation gaps it found. A second and third round served the same definitions from Deno and from a Rabbita admin page: `Router::must` lets a router be a top-level value, the process-host shims gained `shutdown()` so SSE ends at shutdown there too, aborts after a completed response are ignored, and the README of gaato/mttp_core says how to use it on another runtime (a framework on the registry `moonbitlang/async` was then thought unable to share a program with core/async; since its 0.22.6 it runs on core/async's runtime, verified on 2026-11-12 with gaato/mttp's server and client and a gaato/mttp_core Client over moonbitstack/moonfetch in one native program. Adapters for such libraries live in their own repositories, because this repository does not depend on `moonbitlang/async`). A fourth round served Discord interactions on workerd: the Workers entry the hosts README showed did not start, because evaluating a compiled MoonBit module draws its hash seed from `crypto.getRandomValues` and Workers refuses that in global scope (moonbitlang/core#2901, open). The Workers shim now imports the app inside the first request, `scripts/gates.sh full` runs a Workers app on workerd, and `@fetch.env_string` reads a string binding without hand-written FFI. A minimal js bundle measured about 650 KB raw (90 KB gzipped) for the client, mostly the client itself, core's number formatting and JSON parsing; with no size target and no obvious waste, nothing was changed.
 - **Waiting on outside facts**: OpenAPI 3.2 output (code generators and Redoc cannot read 3.2 yet); WebSockets (core/async's websocket lacks bounds and masking checks, X-06); HTTP/2 (core/tls has no ALPN). HTTP/2 and HTTP/3 come through gaato/mttp_moonfetch, a Backend over moonbitstack/moonfetch in its own repository, which requires `moonbitlang/async@0.22.6` or later so both runtimes are one.
 
 
@@ -106,22 +107,22 @@ Made by the user on 2026-10-24; they superseded the corresponding [needs-user-in
 | Goals | Non-goals |
 |---|---|
 | An HTTP library family that MoonBit users pick when they outgrow the standard library's HTTP (§0.0), with sttp's split of responsibilities: vocabulary (sttp-model), client (client4), endpoint descriptions with server and client interpreters (tapir), and a spec model (sttp-apispec) | sttp's type machinery: F[_], capability type parameters, a sttp-shared layer |
-| A runtime-free core (`gaato/mttp`) that libraries build on, so an app chooses the I/O | A second runtime, or code that runs on two event loops in one process |
-| Sans-IO by default: every package except `gaato/mttp_async` builds and tests on wasm-gc, wasm, js and native | Building on `moonbitlang/core/async/http` (§0.1) |
+| A runtime-free core (`gaato/mttp_core`) that libraries build on, so an app chooses the I/O | A second runtime, or code that runs on two event loops in one process |
+| Sans-IO by default: every package except `gaato/mttp` builds and tests on wasm-gc, wasm, js and native | Building on `moonbitlang/core/async/http` (§0.1) |
 | Move gaato's existing consumers (discord, discord_voice, discord-cli, openai, anthropic, github, codex-protocol, kbbi, nekosama, profile-readme) onto one stack, with one retry loop, one error pair and one transport trait | Keeping sdk-runtime, requesto, gaato/http or gaato/http-async as parallel long-term APIs; a neutral HTTP vocabulary of our own (it belongs in the standard library) |
 | Keep gaato's strengths: injected clock and randomness; bounded-by-default with ledgers; phase-tagged errors with `is_unsent`; the incremental SSE parser; deterministic tests on every target | HTTP/2 and ALPN (core/tls has no ALPN), server TLS, AsyncAPI and WebSockets |
 
 ## 2. Principles
 
 1. **sttp's split of responsibilities, not its types.** The layers are vocabulary, client, endpoint description, interpreters and spec model.
-2. **Sans-IO by default.** Only `gaato/mttp_async` touches sockets, the event loop, TLS or JS host objects. gaato/mttp is runtime-free; their async code is tested through the runtime-free Driver (`@driver.run_sync`).
+2. **Sans-IO by default.** Only `gaato/mttp` touches sockets, the event loop, TLS or JS host objects. gaato/mttp_core is runtime-free; their async code is tested through the runtime-free Driver (`@driver.run_sync`).
 3. **Injected nondeterminism.** Clock, Timer, Gate, Dialer, Coordination and randomness are always passed in. No code reads wall time or calls a global RNG.
 4. **Bounded by default; refuse rather than degrade.** Every bound has a RESOURCE_BOUNDS row naming a test (§7.1).
 5. **Transport failures carry their phase.** `is_unsent` decides whether a non-idempotent request may be resent.
 6. **One mechanism per concern.** One sending path (`Client::send`), one wrapper form (a `Backend` struct, or `from_fn`), one attempt deadline, one bucket channel, one body direction (pull), one response type for both directions, one definition checker, one framing function for both engines. §5.10 lists the mechanisms that were removed.
 7. **Codegen is optional.** Generated code is code a person could write by hand.
 8. **A module boundary needs one of two reasons:** (a) an **external dependency**, because a module's imports reach every consumer's download set and version selection (F31); or (b) an **independent version cadence**, such as a stable lower layer under an experimental upper one (a split isolates consumers' versions only if the parts are versioned independently, F32). Target isolation is *not* a reason: per-package `supported_targets` does it inside one module (F17). Inside a stable module, an experimental package sets `experimental: true` in its moon.pkg, and each importer opts in with the list form of `allow-experimental-packages`; the gate refuses `true`.
-9. **No public signature names a runtime type.** This covers moonbitlang/core/async's `TaskGroup`, `@io.BinaryReader`/`BinaryWriter`, `@socket.Tcp`, `@tls.Tls` and every `@js_async.*` type, and it applies to gaato/mttp and gaato/mttp_async alike (gaato/mttp_digest has no async adapter to leak). Ports are traits in `gaato/mttp/rt`; adapters implement them privately. This keeps signatures stable across runtime changes; it does not keep consumers' manifests stable (an `async fn main` still imports the runtime).
+9. **No public signature names a runtime type.** This covers moonbitlang/core/async's `TaskGroup`, `@io.BinaryReader`/`BinaryWriter`, `@socket.Tcp`, `@tls.Tls` and every `@js_async.*` type, and it applies to gaato/mttp_core and gaato/mttp alike (gaato/mttp_digest has no async adapter to leak). Ports are traits in `gaato/mttp_core/rt`; adapters implement them privately. This keeps signatures stable across runtime changes; it does not keep consumers' manifests stable (an `async fn main` still imports the runtime).
 10. **Evolution rules from the first release.** Every `pub(all)` enum that may grow is `#non_exhaustive`. `pub(all)` struct field sets are frozen at release, and users build these structs through `::new`/`::default()` plus record update. Suberrors cannot be made non-exhaustive, so a suberror that may grow carries a `#non_exhaustive` kind enum; every other suberror is frozen at release (§5.6).
 11. **Three layers inside the engines** (§5.11): pure decisions over persistent snapshots, local orchestration over injected ports, and runtime adapters. Effects never enter the pure layer, and adapters commit a new state before acting on it.
 12. **Expected failures are values.** A rejected status or an undecodable body is a `Result` value; transport failures, cancellation and unknown user errors stay effects with their identity (§4.4).
@@ -132,44 +133,46 @@ Made by the user on 2026-10-24; they superseded the corresponding [needs-user-in
 
 | Module | Kind | Depends on | Why it is a module (principle 8) |
 |---|---|---|---|
-| `gaato/mttp` 0.2 | the runtime-free core; wasm-gc, wasm, js, native | moonbitlang/core only; never `core/async*` or `core/compress*` | (a) Libraries depend on it without taking the runtime or the codecs. |
-| `gaato/mttp_async` 0.1 | the only I/O module and the app's entry; native, wasm, js | gaato/mttp, moonbitlang/core (incl. `core/async`, opted in), gaato/codec_bytes, gaato/deflate, gaato/brotli, gaato/zstd | (a) External dependencies (codecs) and the one runtime. |
-| `gaato/mttp_digest` 0.2 | Digest authentication wrapper | gaato/mttp, moonbitlang/x | (a) Crypto dependency; it must not reach every mttp consumer. |
+| `gaato/mttp_core` 0.1 | the runtime-free core; wasm-gc, wasm, js, native | moonbitlang/core only; never `core/async*` or `core/compress*` | (a) Libraries depend on it without taking the runtime or the codecs. |
+| `gaato/mttp` 0.3 | the only I/O module and the app's entry; native, wasm, js | gaato/mttp_core, moonbitlang/core (incl. `core/async`, opted in), gaato/codec_bytes, gaato/deflate, gaato/brotli, gaato/zstd | (a) External dependencies (codecs) and the one runtime. |
+| `gaato/mttp_digest` 0.3 | Digest authentication wrapper | gaato/mttp_core, moonbitlang/x | (a) Crypto dependency; it must not reach every mttp consumer. |
 | `gaato/mttp-gen` | tool, **later** | moonbitlang/parser | A tool, installed with `moon install`, never listed in any moon.mod (F51). Dropped until a consumer needs it. |
 
-Unpublished members of the workspace (`moon.work`): `conformance` (corpora, ledgers, cross-layer e2e suite), `examples` (`get`, `serve`, `fetch`) and `benchmarks`. Socket and adversarial suites live inside mttp_async's own packages as native/wasm tests.
+Unpublished members of the workspace (`moon.work`): `conformance` (corpora, ledgers, cross-layer e2e suite), `examples` (`get`, `serve`, `fetch`) and `benchmarks`. Socket and adversarial suites live inside gaato/mttp's own packages as native/wasm tests.
 
 Retired or replaced paths:
 
 | Path | Fate |
 |---|---|
-| `gaato/http` ≤ 0.6 | Folded into gaato/mttp 0.2 (§0.0); deprecated. |
-| `gaato/http-async` ≤ 0.6 | Renamed gaato/mttp_async 0.1 (§0.0); deprecated. |
-| `gaato/sdk-runtime` | Replaced by `gaato/mttp/client`; deprecated after the SDKs moved. |
-| `gaato/requesto`, `gaato/req` | Deprecated; the reason points to gaato/mttp_async. |
+| `gaato/http` ≤ 0.6 | Folded into gaato/mttp 0.2, now gaato/mttp_core (§0.0); deprecated. |
+| `gaato/http-async` ≤ 0.6 | Renamed gaato/mttp_async 0.1, now gaato/mttp (§0.0); deprecated. |
+| `gaato/mttp` ≤ 0.2 | The core, renamed gaato/mttp_core 0.1 (§0.0); deprecated. From 0.3 the name is the app module's. |
+| `gaato/mttp_async` 0.1 | Renamed gaato/mttp 0.3 (§0.0); deprecated. |
+| `gaato/sdk-runtime` | Replaced by `gaato/mttp_core/client`; deprecated after the SDKs moved. |
+| `gaato/requesto`, `gaato/req` | Deprecated; the reason points to gaato/mttp. |
 | `gaato/mttp-net` | Never published; the name is dropped. |
 
-`gaato/clock` and `gaato/jsonkit` are not modules: the ports are packages of gaato/mttp (`rt`) and jsonkit is a package of gaato/mttp. A consumer compiles only the packages it imports (F18).
+`gaato/clock` and `gaato/jsonkit` are not modules: the ports are packages of gaato/mttp_core (`rt`) and jsonkit is a package of gaato/mttp_core. A consumer compiles only the packages it imports (F18).
 
-### 3.2 Packages of gaato/mttp: vocabulary, codec, engines
+### 3.2 Packages of gaato/mttp_core: vocabulary, codec, engines
 
 All build on all four targets. "Status" is the package's stability inside the stable module.
 
 | Package | Status | Responsibility | Source in PR #2 |
 |---|---|---|---|
-| root `@mttp` | stable | Method, Headers, Url (WPT parser), Request/Response (+ heads), Body/StreamBody/BodyStream, TransportError (Kind, Phase, `is_unsent`), Attributes, Handler, URL/form/date helpers. **New:** `trait Backend`, `SendOptions`, `BodyTiming` (§4.2) | `mttp/model`; Backend from `mttp/client` |
+| root `@mttp_core` | stable | Method, Headers, Url (WPT parser), Request/Response (+ heads), Body/StreamBody/BodyStream, TransportError (Kind, Phase, `is_unsent`), Attributes, Handler, URL/form/date helpers. **New:** `trait Backend`, `SendOptions`, `BodyTiming` (§4.2) | `mttp/model`; Backend from `mttp/client` |
 | `rt` | stable | Port traits: Clock, Timer, Gate, Conn, Dialer, Signal, Coordination; `default_random` | `mttp/clock`, `mttp/conn` |
 | `h1` | stable | Sans-IO HTTP/1.1 codec: HeadDecoder, `scan_head`, `parse_request_head`/`parse_response_head` returning named structs `ParsedRequest`/`ParsedResponse`, framing, ChunkedDecoder, wire writers, `Limits`, `ParseError` | `mttp/h1` |
-| `h1client` | stable | Client connection engine: pool, slots, wire, body, deadlines, proxy CONNECT and NO_PROXY. `Client::new(dialer~, clock~, timer~, coordination~, config~ : ClientConfig)` and `impl @mttp.Backend` | `mttp-net/internal/h1client`, `mttp-net/h1/client` |
+| `h1client` | stable | Client connection engine: pool, slots, wire, body, deadlines, proxy CONNECT and NO_PROXY. `Client::new(dialer~, clock~, timer~, coordination~, config~ : ClientConfig)` and `impl @mttp_core.Backend` | `mttp-net/internal/h1client`, `mttp-net/h1/client` |
 | `h1server` | stable | `serve_conn` (one accepted connection, `scheme~` added), `ServerLimits`, `ServerConfigError` (validation only) | `mttp-net/internal/h1server`, `mttp-net/h1`, `mttp-net/h1/server` |
 | `internal/control` | internal | Persistent pure state machines: admission, pool metadata, peer EOF/failure, listener lifecycle | `mttp-net/internal/control` |
 | `driver` | experimental | Runtime-free deterministic scheduler: `run_sync`, `Driver`, tasks, virtual timers; the only file with `%async` intrinsics | `mttp/testing/driver` |
 | `sim` | stable | Port doubles and contract checks: SimConn (`pair`), ScriptedConn, ScriptedDialer, SimCoordination, FakeClock, SimClock, SimGate, Feed, quickcheck generators, `check_splits`, **new** `check_conn`, and the Backend/BodyStream/Coordination contract checkers | `mttp/testing/conn`, `mttp/clock/fake`, `mttp/testing/feed`, `mttp/testing/gen`, the checkers of `mttp/testing` |
 | `internal/form`, `internal/text` | internal | Form and UTF-8 helpers behind the root's public functions | `mttp/internal/*` |
 
-The root package's alias is `@mttp`, so it no longer collides with `moonbitlang/core/async/http`'s `@http`.
+The root package's alias is `@mttp_core`, so it no longer collides with `moonbitlang/core/async/http`'s `@http`.
 
-### 3.3 Packages of gaato/mttp_async: I/O and the app's entry
+### 3.3 Packages of gaato/mttp: I/O and the app's entry
 
 Every package that imports core/async lists the exact core/async packages it uses in `allow-experimental-packages`.
 
@@ -181,14 +184,14 @@ Every package that imports core/async lists the exact core/async packages it use
 | `conn` | native, wasm | `TcpDialer`: `Tcp::connect_to_host`, then `Tls::client(ConnIo(&Conn), host~, trust~)`, so TLS also runs inside a CONNECT tunnel. Trust comes from the `trust` package; no core type is exposed. `internal/socketconn` adapts a Tcp/Tls to `&@rt.Conn` | `mttp-net/conn`, `mttp-net/internal/socketconn` (rewritten) |
 | `server` | native, wasm | Listener: TcpServer accepts and hands each connection to `@h1server.serve_conn`. Bind and accept failures are `ListenError` | `mttp-net/server` (rewritten; tests kept) |
 | `files` | native, wasm | `static_files(root, prefix?, cache_control?, index?)`: a Handler serving a directory's regular files over core/async's `fs`, streamed in 64 KiB slices; segments starting with `.` (dot segments, hidden files) refused and real paths kept below the root's | new after the 2026-11-11 trial |
-| `backend` | native, wasm, js | One type, `AsyncBackend`: on native/wasm the h1client engine + TcpDialer + Decompress; on js `fetch` over core's js_async. `impl @mttp.Backend` | `mttp-net/backend` |
+| `backend` | native, wasm, js | One type, `AsyncBackend`: on native/wasm the h1client engine + TcpDialer + Decompress; on js `fetch` over core's js_async. `impl @mttp_core.Backend` | `mttp-net/backend` |
 | `codings` | native, wasm, js | Bounded ContentDecoder/ContentEncoder, coding plans, negotiation; **new** `Decompress` (Backend wrapper) and `compress` (Handler wrapper) | `mttp-net/codings` |
 | `fetch` | js | Host-neutral `fetch_handler(handler)(req, background)` | `mttp-net/fetch` |
 | `hosts` | js | JS entry shims for Workers, Fastly, Vercel, Deno, Bun and AWS Lambda URLs | `mttp-net/fetch` host shims |
 
-### 3.4 Packages of gaato/mttp: client, schema and endpoint layer; gaato/mttp_digest
+### 3.4 Packages of gaato/mttp_core: client, schema and endpoint layer; gaato/mttp_digest
 
-All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design (v0.1–v0.4) are all in mttp; the endpoint layer graduated from experimental on 2026-11-11 (§0.0).
+All of gaato/mttp_core builds on all four targets. The tiers of the 2026-10-24 design (v0.1–v0.4) are all in gaato/mttp_core; the endpoint layer graduated from experimental on 2026-11-11 (§0.0).
 
 | Package | Responsibility | sttp/tapir counterpart |
 |---|---|---|
@@ -204,7 +207,7 @@ All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design
 | `schema` | Schema (JSON Schema 2020-12 + defs), Issue, DecodeFailure, Validator, TextCodec, JsonCodec, BodyCodec | tapir Codec, Schema, Validator |
 | `endpoint` | Inputs, outputs, declared errors, Endpoint builders with a response mode, server dispatch, client interpreter, definition checker | tapir core + interpreters |
 | `endpoint/testkit` | `when_endpoint`, `verify` | tapir stub / verifier |
-| `router` | Router, ServerOptions, Middleware, problem+json, CORS, `impl @mttp.Backend for Router` | tapir server core + stub server |
+| `router` | Router, ServerOptions, Middleware, problem+json, CORS, `impl @mttp_core.Backend for Router` | tapir server core + stub server |
 | `apispec`, `openapi` | Typed OpenAPI model (3.1 fields, plus 3.2's left unset); `to_openapi`, `docs_endpoint`, `check_documented` | sttp-apispec, tapir openapi-docs |
 | `internal/form`, `internal/text` | Helpers for schema, which imports no HTTP vocabulary | — |
 
@@ -219,19 +222,19 @@ All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design
 
 ### 3.5 Responsibility rules
 
-- **gaato/mttp's vocabulary, codec and engines** own the wire. **They hold no policy**: no retry, no redirect following, no cookies, no rate limits, no content-coding negotiation, no decoded-body limits.
+- **gaato/mttp_core's vocabulary, codec and engines** own the wire. **They hold no policy**: no retry, no redirect following, no cookies, no rate limits, no content-coding negotiation, no decoded-body limits.
   - **root** names things on the wire and defines `Backend`. No I/O, no codec beyond HTTP syntax.
   - **rt** defines what the engines need from a runtime; it implements nothing.
   - **h1** turns bytes into heads and framing, and heads into bytes. No connections.
   - **h1client / h1server** drive one or many connections over `rt` ports, with wire-level bounds and deadlines. They never import codings.
   - **internal/control** decides; it never acts.
   - **driver / sim** are test infrastructure. No production package imports them (gate).
-- **gaato/mttp's client and endpoint layer** own policy and descriptions. A client policy goes in one of three places:
+- **gaato/mttp_core's client and endpoint layer** own policy and descriptions. A client policy goes in one of three places:
   - a **Backend wrapper**, if it needs only the request and the response head: redirects, cookies, header injection, wire logging, Digest;
   - the **Client loop**, if it must see the read outcome or pair work across one attempt: retry, rate-limit admission and release, deadlines, decoded-body limits, the attempt observer;
   - the **Client defaults**: base URL, default headers, default SendOptions.
   - **schema** converts and describes values; it knows nothing about HTTP. **endpoint** describes operations and interprets one endpoint on both sides. **router** chooses the endpoint and applies server-wide policy; it is a Handler and a Backend. **apispec** is document data; **openapi** projects endpoints onto it. **testing** and **endpoint/testkit** hold doubles and checkers.
-- **gaato/mttp_async** owns the runtime, sockets, TLS, JS host objects and compression. It adapts; it adds no HTTP policy beyond content codings, except the entry's default wiring (`client()`), which only chooses among gaato/mttp's policies.
+- **gaato/mttp** owns the runtime, sockets, TLS, JS host objects and compression. It adapts; it adds no HTTP policy beyond content codings, except the entry's default wiring (`client()`), which only chooses among gaato/mttp_core's policies.
 
 ### 3.6 Dependency diagram
 
@@ -239,9 +242,9 @@ All of gaato/mttp builds on all four targets. The tiers of the 2026-10-24 design
 moonbitlang/core
    │
    ▼
-gaato/mttp  (core only; wasm-gc, wasm, js, native)        (A ──► B means "A imports B")
+gaato/mttp_core  (core only; wasm-gc, wasm, js, native)        (A ──► B means "A imports B")
    rt                          (core only)
-   root (@mttp) ──► internal/form, internal/text
+   root (@mttp_core) ──► internal/form, internal/text
    h1 ──► root
    internal/control            (core only; no async, no mut, no Ref)
    h1client ──► root, rt, h1, internal/control
@@ -262,9 +265,9 @@ gaato/mttp  (core only; wasm-gc, wasm, js, native)        (A ──► B means "
    apispec                     (core json only)
    openapi ──► root, schema, endpoint, apispec
 
-gaato/mttp_digest ──► gaato/mttp (root, client), moonbitlang/x
+gaato/mttp_digest ──► gaato/mttp_core (root, client), moonbitlang/x
 
-gaato/mttp_async ──► gaato/mttp
+gaato/mttp ──► gaato/mttp_core
    trust                       (core only)
    runtime ──► rt + core/async
    conn ──► rt, trust + core/async (socket, tls)
@@ -272,19 +275,19 @@ gaato/mttp_async ──► gaato/mttp
    backend ──► h1client, conn, runtime, codings, trust (native/wasm); js_async fetch (js)
    server ──► h1server, conn, runtime, codings
    fetch, hosts ──► root + js_async                          (js)
-   root (entry) ──► backend, runtime, trust, mttp root, client, h1client + core/async
+   root (entry) ──► backend, runtime, trust, mttp_core root, client, h1client + core/async
 
-libraries ──► gaato/mttp: gaato/{openai,anthropic,github}, codex-protocol
-apps and I/O libraries ──► gaato/mttp_async (+ gaato/mttp for its other packages):
+libraries ──► gaato/mttp_core: gaato/{openai,anthropic,github}, codex-protocol
+apps and I/O libraries ──► gaato/mttp (+ gaato/mttp_core for its other packages):
            gaato/discord, discord_voice, discord-cli, kbbi, nekosama, profile-readme
 tools (never imported): mbt-sdk tools/gen (Python)
 ```
 
-Rules: an endpoint-definition package imports only gaato/mttp's root, `schema` and `endpoint`, never mttp_async, so it checks on wasm-gc. Every package that imports a target-restricted package declares `supported_targets` itself (F17). Every package that imports an experimental package lists it in `allow-experimental-packages`.
+Rules: an endpoint-definition package imports only gaato/mttp_core's root, `schema` and `endpoint`, never gaato/mttp, so it checks on wasm-gc. Every package that imports a target-restricted package declares `supported_targets` itself (F17). Every package that imports an experimental package lists it in `allow-experimental-packages`.
 
 ### 3.7 Consumer manifests
 
-Packages of a transitive module cannot be imported (F31), but a re-export (`pub using`) can be used across modules (verified 2026-11-11). So an app lists only `gaato/mttp_async`: its root re-exports the vocabulary and the client API, and `run` spares the app the core/async import and opt-in. An app that uses other gaato/mttp packages directly (the endpoint layer, `schema`, `sse`) lists `gaato/mttp` too. A library lists `gaato/mttp` only; one that does I/O itself (discord's gateway and interactions listener) lists `gaato/mttp_async` as well. gaato/mttp_digest lists gaato/mttp.
+Packages of a transitive module cannot be imported (F31), but a re-export (`pub using`) can be used across modules (verified 2026-11-11). So an app lists only `gaato/mttp`: its root re-exports the vocabulary and the client API, and `run` spares the app the core/async import and opt-in. An app that uses other gaato/mttp_core packages directly (the endpoint layer, `schema`, `sse`) lists `gaato/mttp_core` too. A library lists `gaato/mttp_core` only; one that does I/O itself (discord's gateway and interactions listener) lists `gaato/mttp` as well. gaato/mttp_digest lists gaato/mttp_core.
 
 ## 4. Layer-by-layer design
 
@@ -294,51 +297,51 @@ Names used in PR #2, §8 and §10, and their homes now:
 
 | PR #2 / earlier text | Now |
 |---|---|
-| `@model` (`gaato/mttp/model`) | `@http` (gaato/mttp root) |
-| `@clock` (`gaato/mttp/clock`), `@conn` (`gaato/mttp/conn`) | `@rt` (`gaato/mttp/rt`) |
-| `clock/fake`, `testing/conn`, `testing/feed`, `testing/gen`, contract checkers of `testing` | `@sim` (`gaato/mttp/sim`) |
-| `testing/driver`, `testing.run_sync` | `@driver` (`gaato/mttp/driver`) |
-| `gaato/mttp/h1` | `@h1` (`gaato/mttp/h1`) |
-| `mttp-net/internal/h1client`, `mttp-net/h1/client.H1Backend`, `mttp-net/backend.H1Backend` | `@h1client.Client` (`gaato/mttp/h1client`) |
-| `mttp-net/internal/h1server`, `mttp-net/h1` (ServerLimits, ServerConfigError), `mttp-net/h1/server.serve_conn` | `@h1server` (`gaato/mttp/h1server`) |
-| `mttp-net/internal/control` | `gaato/mttp/internal/control` |
-| `@client.Backend`, `@client.RequestOptions` | `@mttp.Backend`, `@mttp.SendOptions` + `@mttp.BodyTiming` |
-| `ServeError`, `ServerConfigError::{Bind, Accept}` | `@mttp.TransportError`; `@server.ListenError` |
-| any other `mttp-net/<pkg>` | `gaato/mttp_async/<pkg>` |
+| `@model` (`gaato/mttp/model`) | `@mttp_core` (gaato/mttp_core root) |
+| `@clock` (`gaato/mttp/clock`), `@conn` (`gaato/mttp/conn`) | `@rt` (`gaato/mttp_core/rt`) |
+| `clock/fake`, `testing/conn`, `testing/feed`, `testing/gen`, contract checkers of `testing` | `@sim` (`gaato/mttp_core/sim`) |
+| `testing/driver`, `testing.run_sync` | `@driver` (`gaato/mttp_core/driver`) |
+| `gaato/mttp/h1` | `@h1` (`gaato/mttp_core/h1`) |
+| `mttp-net/internal/h1client`, `mttp-net/h1/client.H1Backend`, `mttp-net/backend.H1Backend` | `@h1client.Client` (`gaato/mttp_core/h1client`) |
+| `mttp-net/internal/h1server`, `mttp-net/h1` (ServerLimits, ServerConfigError), `mttp-net/h1/server.serve_conn` | `@h1server` (`gaato/mttp_core/h1server`) |
+| `mttp-net/internal/control` | `gaato/mttp_core/internal/control` |
+| `@client.Backend`, `@client.RequestOptions` | `@mttp_core.Backend`, `@mttp_core.SendOptions` + `@mttp_core.BodyTiming` |
+| `ServeError`, `ServerConfigError::{Bind, Accept}` | `@mttp_core.TransportError`; `@server.ListenError` |
+| any other `mttp-net/<pkg>` | `gaato/mttp/<pkg>` |
 | `mttp-net/quick`, `client.quick_request`, root `new_client` | removed (§0.1) |
 
 ### 4.1 rt, sim and jsonkit
 
 ```moonbit
-// gaato/mttp/rt — ports; implemented by gaato/mttp/sim (tests) and gaato/mttp_async/runtime, conn (real)
+// gaato/mttp_core/rt — ports; implemented by gaato/mttp_core/sim (tests) and gaato/mttp/runtime, conn (real)
 pub(open) trait Clock { async fn sleep(Self, Int) -> Unit noraise; fn now_unix_ms(Self) -> Int64 }
 pub(open) trait Timer { async fn within(Self, Int, async () -> Unit noraise) -> Bool noraise }
 pub(open) trait Gate  { async fn acquire(Self) -> Unit noraise; fn release(Self) -> Unit }
 pub(open) trait Conn {
-  async fn read(Self, max_len~ : Int) -> Bytes? raise @mttp.TransportError
-  async fn write(Self, Bytes) -> Unit raise @mttp.TransportError
+  async fn read(Self, max_len~ : Int) -> Bytes? raise @mttp_core.TransportError
+  async fn write(Self, Bytes) -> Unit raise @mttp_core.TransportError
   fn close(Self) -> Unit
 }
 pub(open) trait Dialer {
-  async fn connect(Self, host~ : String, port~ : Int) -> &Conn raise @mttp.TransportError
-  async fn start_tls(Self, &Conn, host~ : String) -> &Conn raise @mttp.TransportError
+  async fn connect(Self, host~ : String, port~ : Int) -> &Conn raise @mttp_core.TransportError
+  async fn start_tls(Self, &Conn, host~ : String) -> &Conn raise @mttp_core.TransportError
 }
 pub(open) trait Signal { async fn wait(Self) -> Unit noraise; fn notify(Self) -> Unit }
 pub(open) trait Coordination {
   fn signal(Self) -> &Signal
-  async fn supervise(Self, primary~ : async () -> Unit raise @mttp.TransportError,
-    monitor~ : async () -> Unit raise @mttp.TransportError) -> Unit raise @mttp.TransportError
+  async fn supervise(Self, primary~ : async () -> Unit raise @mttp_core.TransportError,
+    monitor~ : async () -> Unit raise @mttp_core.TransportError) -> Unit raise @mttp_core.TransportError
 }
 pub fn default_random() -> Double
 ```
 
-`rt` imports the root for `TransportError`; the root does not import `rt`, so `Backend` (in the root) names no port. Their rules (sticky EOF, idempotent close, TLS ownership transfer, supervision outcomes, cancellation) are in CONTRACT.md. The traits are new traits with the old names; they are not re-exports of gaato/mttp 0.5's clock traits (G-02).
+`rt` imports the root for `TransportError`; the root does not import `rt`, so `Backend` (in the root) names no port. Their rules (sticky EOF, idempotent close, TLS ownership transfer, supervision outcomes, cancellation) are in CONTRACT.md. The traits are new traits with the old names; they are not re-exports of gaato/mttp_core 0.5's clock traits (G-02).
 
-`sim` holds the doubles: `FakeClock::new(start_unix_ms~ : Int64 = 0L)` (a sequential accumulator), `SimClock`/`SimTimer`/`SimGate` sharing a Driver's time, `pair(coordination, chunk_bytes?)` for two SimConn ends with configurable fragmentation and separate write-half shutdown, `ScriptedConn` (read steps: chunk, EOF, failure, wait), `ScriptedDialer`, `SimCoordination::new(driver)`, `Feed` (a scripted BodyStream), quickcheck generators, `check_splits`, and the contract checkers `check_conn` (new name of `check_conn_pair_contract`), `check_coordination_contract`, `check_body_stream_contract` and `check_backend_contract`. The checkers live here, not in mttp, because mttp_async must run them against its own adapters and cannot import mttp. `sim` imports `driver`, so it lists `driver` in `allow-experimental-packages` like any other importer, and its Driver-taking constructors (`SimCoordination::new`, `Feed::new`, SimClock) change only when `driver` does.
+`sim` holds the doubles: `FakeClock::new(start_unix_ms~ : Int64 = 0L)` (a sequential accumulator), `SimClock`/`SimTimer`/`SimGate` sharing a Driver's time, `pair(coordination, chunk_bytes?)` for two SimConn ends with configurable fragmentation and separate write-half shutdown, `ScriptedConn` (read steps: chunk, EOF, failure, wait), `ScriptedDialer`, `SimCoordination::new(driver)`, `Feed` (a scripted BodyStream), quickcheck generators, `check_splits`, and the contract checkers `check_conn` (new name of `check_conn_pair_contract`), `check_coordination_contract`, `check_body_stream_contract` and `check_backend_contract`. The checkers live here, in gaato/mttp_core, because gaato/mttp runs them against its own adapters and a module cannot import the module that depends on it. `sim` imports `driver`, so it lists `driver` in `allow-experimental-packages` like any other importer, and its Driver-taking constructors (`SimCoordination::new`, `Feed::new`, SimClock) change only when `driver` does.
 
-`gaato/mttp/jsonkit`: `Presence[T]` (Absent/Null/Value), `ObjBuilder`, `field`, `opt_field`, `presence_field`, `expect_object`, `open_int`, `open_string`. The alias `@json` would collide with core's, hence the name.
+`gaato/mttp_core/jsonkit`: `Presence[T]` (Absent/Null/Value), `ObjBuilder`, `field`, `opt_field`, `presence_field`, `expect_object`, `open_int`, `open_string`. The alias `@json` would collide with core's, hence the name.
 
-### 4.2 gaato/mttp root
+### 4.2 gaato/mttp_core root
 
 ```moonbit
 #non_exhaustive
@@ -410,8 +413,8 @@ Design notes:
 
 | Package | Contents |
 |---|---|
-| `sse` | `SseEvent{event, data, id, retry}`, `SseParser::new(max_event_bytes? = 16 MiB)`, `feed`, `finish`, `encode`. On overflow, `feed` and `finish` raise `@mttp.TransportError(TooLarge(limit), Body)`; events completed earlier in the same chunk are delivered first. |
-| `multipart` | `body(req, parts, boundary~) -> @mttp.Request raise MultipartError`, `encode_segments_fresh(parts, random~)`, `make_boundary(random)`, streaming parts with ownership rules. `MultipartError` keeps InvalidBoundary, BoundaryCollision, InvalidHeaderValue and StreamPart. A bounded reader comes later. |
+| `sse` | `SseEvent{event, data, id, retry}`, `SseParser::new(max_event_bytes? = 16 MiB)`, `feed`, `finish`, `encode`. On overflow, `feed` and `finish` raise `@mttp_core.TransportError(TooLarge(limit), Body)`; events completed earlier in the same chunk are delivered first. |
+| `multipart` | `body(req, parts, boundary~) -> @mttp_core.Request raise MultipartError`, `encode_segments_fresh(parts, random~)`, `make_boundary(random)`, streaming parts with ownership rules. `MultipartError` keeps InvalidBoundary, BoundaryCollision, InvalidHeaderValue and StreamPart. A bounded reader comes later. |
 | `cookie` | `CookieJar::new(clock, max_per_domain? = 50, max_total? = 3000, is_public_suffix?)`, `SetCookie::to_header`, `parse_cookie_header`. |
 
 ### 4.4 client
@@ -426,10 +429,10 @@ pub(open) trait ResponseMode { /* sealed in practice: Buffered, Streaming */ }
 
 #non_exhaustive
 pub(all) enum ResponseFailure {             // an expected failure: a value, not an effect
-  UnexpectedStatus(@mttp.ResponseHead, body~ : Bytes)                  // body: at most 1 MiB of diagnostic bytes
-  Deserialization(@mttp.ResponseHead, message~ : String, body~ : Bytes)
+  UnexpectedStatus(@mttp_core.ResponseHead, body~ : Bytes)                  // body: at most 1 MiB of diagnostic bytes
+  Deserialization(@mttp_core.ResponseHead, message~ : String, body~ : Bytes)
 } derive(Eq, Debug)
-pub fn ResponseFailure::head(self : ResponseFailure) -> @mttp.ResponseHead
+pub fn ResponseFailure::head(self : ResponseFailure) -> @mttp_core.ResponseHead
 pub fn status_of(f : ResponseFailure) -> Int?
 pub(all) suberror InvalidRequest { InvalidRequest(message~ : String) } derive(Debug)   // raised by encoders, never sent
 
@@ -437,20 +440,20 @@ pub(all) suberror InvalidRequest { InvalidRequest(message~ : String) } derive(De
 pub struct ResponsePlan[T, M] { /* private */ }
 pub fn as_bytes() -> ResponsePlan[Result[Bytes, ResponseFailure], Buffered]     // as_string, as_json_value, as_form(max_pairs?), ignore_body
 pub fn[T : FromJson] as_json() -> ResponsePlan[Result[T, ResponseFailure], Buffered]
-pub fn[T] as_stream(f : async (@mttp.ResponseHead, &@mttp.BodyStream) -> T) -> ResponsePlan[Result[T, ResponseFailure], Streaming]
+pub fn[T] as_stream(f : async (@mttp_core.ResponseHead, &@mttp_core.BodyStream) -> T) -> ResponsePlan[Result[T, ResponseFailure], Streaming]
 pub fn as_sse(f : async (@sse.SseEvent) -> Unit, max_event_bytes? : Int, stop? : (@sse.SseEvent) -> Bool)
   -> ResponsePlan[Result[Unit, ResponseFailure], Streaming]                       // as_lines(f, max_line_bytes? = 1 MiB)
-pub fn[T, M : ResponseMode] from_head(choose : (@mttp.ResponseHead) -> ResponsePlan[T, M]) -> ResponsePlan[T, M]
+pub fn[T, M : ResponseMode] from_head(choose : (@mttp_core.ResponseHead) -> ResponsePlan[T, M]) -> ResponsePlan[T, M]
 pub fn[A, B] as_both(a : ResponsePlan[A, Buffered], b : ResponsePlan[B, Buffered]) -> ResponsePlan[(A, B), Buffered]
-pub fn[T] ResponsePlan::new(f : (@mttp.ResponseHead, Bytes) -> T raise) -> ResponsePlan[T, Buffered]
-pub fn[T] ResponsePlan::stream(f : async (@mttp.ResponseHead, &@mttp.BodyStream) -> T) -> ResponsePlan[Result[T, ResponseFailure], Streaming]
+pub fn[T] ResponsePlan::new(f : (@mttp_core.ResponseHead, Bytes) -> T raise) -> ResponsePlan[T, Buffered]
+pub fn[T] ResponsePlan::stream(f : async (@mttp_core.ResponseHead, &@mttp_core.BodyStream) -> T) -> ResponsePlan[Result[T, ResponseFailure], Streaming]
 pub fn[T] ResponsePlan::reject() -> ResponsePlan[Result[T, ResponseFailure], Buffered]
 // any_status, map, map_ok, map_with_head; as_streaming (Buffered -> Streaming widening only)
 
 // a request plus how to read its response
 pub struct RequestPlan[T, M] { /* private: raw request, plan, per-request overrides */ }
-pub fn request(raw : @mttp.Request) -> RequestPlan[Result[String, ResponseFailure], Buffered]   // get(url), post(url)
-pub fn[T, M] RequestPlan::new(raw : @mttp.Request, plan : ResponsePlan[T, M]) -> RequestPlan[T, M]
+pub fn request(raw : @mttp_core.Request) -> RequestPlan[Result[String, ResponseFailure], Buffered]   // get(url), post(url)
+pub fn[T, M] RequestPlan::new(raw : @mttp_core.Request, plan : ResponsePlan[T, M]) -> RequestPlan[T, M]
 pub fn[T, U, M, N] RequestPlan::response(self : RequestPlan[T, M], plan : ResponsePlan[U, N]) -> RequestPlan[U, N]
 // header, bearer, body_bytes, body_json, body_fn (built per attempt, after admission), attribute,
 // timeout_ms, max_body_bytes, read_idle_ms; follow_redirects(Bool), max_redirects(Int) set the redirect attribute
@@ -460,13 +463,13 @@ pub fn[T] RequestPlan::to_curl(self : RequestPlan[T, Buffered], sensitive_header
 pub type ClientRequest[T] = RequestPlan[T, Buffered]
 pub type ResponseAs[T] = ResponsePlan[T, Buffered]
 
-pub(all) struct Reply[T] { status : Int; headers : @mttp.Headers; body : T; request : @mttp.RequestHead; attributes : @mttp.Attributes }
+pub(all) struct Reply[T] { status : Int; headers : @mttp_core.Headers; body : T; request : @mttp_core.RequestHead; attributes : @mttp_core.Attributes }
 
 // Backend + defaults + policy: the only sending path
 pub fn Client::new(
-  backend : &@mttp.Backend, clock : &@rt.Clock,
+  backend : &@mttp_core.Backend, clock : &@rt.Clock,
   base_url? : String,             // prefix join (join_url), never RFC 3986 resolve
-  headers? : @mttp.Headers,       // defaults; a header the request sets itself wins
+  headers? : @mttp_core.Headers,       // defaults; a header the request sets itself wins
   timeout_ms? : Int,              // (new form) attempt deadline, passed as SendOptions.timeout_ms
   max_body_bytes? : Int,          // (new form) decoded limit for Buffered plans, 64 MiB; also the wire cap sent as Exchange(max_bytes)
   read_idle_ms? : Int,            // (new form) per-read deadline for Streaming plans, sent as Stream(idle_ms)
@@ -484,16 +487,16 @@ pub async fn[T, M : ResponseMode] Client::send(self : Client, r : RequestPlan[T,
 pub fn Client::close(self : Client) -> Unit
 
 // retry: policy data plus an optional typed decision
-pub(all) enum AttemptResult[T] { Buffered(Reply[T]); StreamReady(@mttp.ResponseHead); TransportFailure(@mttp.TransportError) }
-pub(all) struct RetryContext { request : @mttp.RequestHead; idempotent : Bool; bucket : String; attempt : Int; random : Double
+pub(all) enum AttemptResult[T] { Buffered(Reply[T]); StreamReady(@mttp_core.ResponseHead); TransportFailure(@mttp_core.TransportError) }
+pub(all) struct RetryContext { request : @mttp_core.RequestHead; idempotent : Bool; bucket : String; attempt : Int; random : Double
   now_unix_ms : Int64; remaining_ms : Int64?; replayable : Bool; default_decision : @retry.Decision }
-pub fn RetryContext::capture(request : @mttp.Request, ..) -> RetryContext      // reads live facts once
-pub fn RetryContext::new(head : @mttp.RequestHead, idempotent~ : Bool, replayable~ : Bool, ..) -> RetryContext
+pub fn RetryContext::capture(request : @mttp_core.Request, ..) -> RetryContext      // reads live facts once
+pub fn RetryContext::new(head : @mttp_core.RequestHead, idempotent~ : Bool, replayable~ : Bool, ..) -> RetryContext
 pub(all) struct RetryPolicy { rule : @retry.RetryRule } derive(Eq, Debug)
 pub fn RetryPolicy::conservative() -> RetryPolicy   // none, default, from_rule, with_max_retries, allow_non_idempotent
 pub(open) trait RateLimiter {
   async fn acquire(Self, String, global_exempt~ : Bool) -> Admission
-  async fn release(Self, Admission, status~ : Int, headers~ : @mttp.Headers) -> Unit
+  async fn release(Self, Admission, status~ : Int, headers~ : @mttp_core.Headers) -> Unit
 }
 pub struct Admission { /* opaque bucket and limiter-issued sequence */ }
 pub fn Admission::new(bucket : String, sequence~ : Int64) -> Admission
@@ -501,19 +504,19 @@ pub fn Admission::bucket(Self) -> String
 pub fn Admission::sequence(Self) -> Int64
 // Return each Admission only to its issuer. A second release is ignored;
 // implementations track outstanding identities within their resource bound.
-pub(all) struct Attempt { request : @mttp.RequestHead; attributes : @mttp.Attributes; bucket : String; attempt : Int
-  status : Int; headers : @mttp.Headers; duration_ms : Int64; error : Error?; decision : @retry.Decision? }
-pub let rate_limit_bucket : @mttp.AttributeKey[String]     // global_exempt, operation_id
+pub(all) struct Attempt { request : @mttp_core.RequestHead; attributes : @mttp_core.Attributes; bucket : String; attempt : Int
+  status : Int; headers : @mttp_core.Headers; duration_ms : Int64; error : Error?; decision : @retry.Decision? }
+pub let rate_limit_bucket : @mttp_core.AttributeKey[String]     // global_exempt, operation_id
 pub fn[T, E] Paginator::with_cursor(f : async (String?) -> Result[Page[T], E]) -> Paginator[T, E]   // new, next_page, each, collect(max~)
 
 // Backend wrappers
-pub fn from_fn(f : async (@mttp.Request, @mttp.SendOptions) -> @mttp.Response raise @mttp.TransportError, on_close? : () -> Unit) -> &@mttp.Backend
+pub fn from_fn(f : async (@mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError, on_close? : () -> Unit) -> &@mttp_core.Backend
 pub(all) struct RedirectConfig { max_redirects : Int; allow_downgrade : Bool; credential_headers : Array[String] }  // (new) default 10, false, the credential set
-pub let redirect_limit : @mttp.AttributeKey[Int]          // (new) per-request override; 0 = do not follow
-pub fn FollowRedirects::new(inner : &@mttp.Backend, config? : RedirectConfig, on_redirect? : (RedirectHop) -> Unit) -> FollowRedirects
-pub let redirect_history : @mttp.AttributeKey[Array[RedirectHop]]
-// gaato/mttp/client/cookies
-pub fn Cookies::new(inner : &@mttp.Backend, jar : @cookie.CookieJar) -> Cookies
+pub let redirect_limit : @mttp_core.AttributeKey[Int]          // (new) per-request override; 0 = do not follow
+pub fn FollowRedirects::new(inner : &@mttp_core.Backend, config? : RedirectConfig, on_redirect? : (RedirectHop) -> Unit) -> FollowRedirects
+pub let redirect_history : @mttp_core.AttributeKey[Array[RedirectHop]]
+// gaato/mttp_core/client/cookies
+pub fn Cookies::new(inner : &@mttp_core.Backend, jar : @cookie.CookieJar) -> Cookies
 ```
 
 **Response modes.** Requests and response descriptions carry their mode in the type. A Buffered plan is read inside the attempt, so a reader's `Err` or a rejected status reaches the decision; a Streaming plan's callback starts only after the attempt's release and observation, and its result or exception is never retried. `from_head` lets the head choose a branch, but the *mode* only describes what may happen; the chosen branch decides the actual lifetime, and metadata selection never turns a stream callback into a retryable buffered operation. `as_both` accepts only Buffered plans; a Buffered plan may widen to Streaming explicitly (`as_streaming`), never the reverse.
@@ -632,10 +635,10 @@ server date parsing and the time reported by `state`.
 
 ### 4.5 h1 codec and the connection engines
 
-PR #2 measured the reasons for owning the codec (F36–F39): stock parsers read heads and chunk lines without a bound, ingest headers quadratically, serve a smuggled request after CL+TE and merge duplicate headers. The same gaps remain in core/async/http on 0.10.20 (F65). gaato/mttp therefore owns the codec, and both engines parse with it.
+PR #2 measured the reasons for owning the codec (F36–F39): stock parsers read heads and chunk lines without a bound, ingest headers quadratically, serve a smuggled request after CL+TE and merge duplicate headers. The same gaps remain in core/async/http on 0.10.20 (F65). gaato/mttp_core therefore owns the codec, and both engines parse with it.
 
 ```moonbit
-// gaato/mttp/h1 — all 4 targets; imports the root only
+// gaato/mttp_core/h1 — all 4 targets; imports the root only
 pub(all) struct Limits { max_head_bytes : Int; max_chunk_line_bytes : Int; max_trailer_bytes : Int
   max_headers : Int } derive(Eq, Debug)       // default: 16 KiB incl. CRLF, 4 KiB, 16 KiB, 100 fields (also per trailer block)
 #non_exhaustive
@@ -645,18 +648,18 @@ pub(all) suberror ParseError { ParseError(kind~ : ParseKind, detail~ : String) }
 pub(all) enum Version { Http10; Http11 } derive(Eq, Debug)
 pub fn HeadDecoder::new(max? : Int) -> HeadDecoder                          // feed -> HeadResult, finish; linear, sticky errors
 pub fn scan_head(buf : BytesView, max~ : Int) -> Int? raise ParseError       // stateless alternative
-pub struct ParsedRequest { meth : @mttp.Method; target : String; version : Version; headers : @mttp.Headers }   // (new) read-only
-pub struct ParsedResponse { version : Version; status : Int; headers : @mttp.Headers }                         // (new) read-only
+pub struct ParsedRequest { meth : @mttp_core.Method; target : String; version : Version; headers : @mttp_core.Headers }   // (new) read-only
+pub struct ParsedResponse { version : Version; status : Int; headers : @mttp_core.Headers }                         // (new) read-only
 pub fn parse_request_head(head : BytesView, limits? : Limits) -> ParsedRequest raise ParseError    // (new form; was a 4-tuple)
 pub fn parse_response_head(head : BytesView, limits? : Limits) -> ParsedResponse raise ParseError  // (new form; was a 3-tuple)
 #non_exhaustive
 pub(all) enum Framing { NoBody; Length(Int64); Chunked; UntilClose } derive(Eq, Debug)
-pub fn request_framing(headers : @mttp.Headers) -> Framing raise ParseError  // CL+TE -> Smuggling; duplicate (even identical) or invalid CL -> Malformed
-pub fn response_framing(headers : @mttp.Headers, status~ : Int, meth? : @mttp.Method) -> Framing raise ParseError
+pub fn request_framing(headers : @mttp_core.Headers) -> Framing raise ParseError  // CL+TE -> Smuggling; duplicate (even identical) or invalid CL -> Malformed
+pub fn response_framing(headers : @mttp_core.Headers, status~ : Int, meth? : @mttp_core.Method) -> Framing raise ParseError
 pub fn ChunkedDecoder::new(limits : Limits) -> ChunkedDecoder                // feed -> Decoded, finish; payload not buffered
-pub struct Decoded { chunks : Array[Bytes]; done : Bool; trailers : @mttp.Headers; consumed : Int }   // read-only
-pub fn write_request_head(meth : @mttp.Method, target : String, headers : @mttp.Headers, framing : Framing, version : Version) -> Bytes raise ParseError
-pub fn write_response_head(status : Int, headers : @mttp.Headers, framing : Framing, version : Version) -> Bytes raise ParseError
+pub struct Decoded { chunks : Array[Bytes]; done : Bool; trailers : @mttp_core.Headers; consumed : Int }   // read-only
+pub fn write_request_head(meth : @mttp_core.Method, target : String, headers : @mttp_core.Headers, framing : Framing, version : Version) -> Bytes raise ParseError
+pub fn write_response_head(status : Int, headers : @mttp_core.Headers, framing : Framing, version : Version) -> Bytes raise ParseError
 pub fn encode_chunk(b : Bytes) -> Bytes
 ```
 
@@ -675,7 +678,7 @@ Codec rules (RFC 9112, stricter where noted):
 | Successful CONNECT | `NoBody` describes the message only; the engine hands the remaining bytes to the tunnel |
 
 ```moonbit
-// gaato/mttp/h1client
+// gaato/mttp_core/h1client
 pub(all) struct ClientConfig {        // (new) collects H1Backend::new's optional parameters; build with default() + record update
   proxy : String?; lookup : ((String) -> String?)?      // proxy env lookup is captured at construction through the callback
   connect_timeout_ms : Int?; write_timeout_ms : Int?; read_timeout_ms : Int?; pool_timeout_ms : Int?
@@ -687,23 +690,23 @@ pub(all) struct ClientConfig {        // (new) collects H1Backend::new's optiona
 pub fn ClientConfig::default() -> ClientConfig
 pub fn Client::new(dialer~ : &@rt.Dialer, clock~ : &@rt.Clock, timer~ : &@rt.Timer,
   coordination~ : &@rt.Coordination, config~ : ClientConfig) -> Client
-pub impl @mttp.Backend for Client                                    // idle_connections
-// gaato/mttp/h1server
+pub impl @mttp_core.Backend for Client                                    // idle_connections
+// gaato/mttp_core/h1server
 pub(all) struct ServerLimits { max_body_bytes : Int; header_timeout_ms : Int; body_timeout_ms : Int; max_header_bytes : Int
   max_connections : Int; drain_max_bytes : Int; handler_timeout_ms : Int?; drain_ms : Int }
 pub fn ServerLimits::default() -> ServerLimits     // 1 MiB, 5000, 5000, 16 KiB, 256, 64 KiB, None, 10 000; validate
 pub(all) suberror ServerConfigError { InvalidMaxBodyBytes(value~ : Int); InvalidBodyTimeoutMs(value~ : Int)
   InvalidHeaderTimeoutMs(value~ : Int); InvalidMaxConnections(value~ : Int); InvalidMaxHeaderBytes(value~ : Int)
   InvalidDrainMaxBytes(value~ : Int); InvalidHandlerTimeoutMs(value~ : Int); InvalidDrainMs(value~ : Int) } derive(Debug)
-pub async fn serve_conn(conn : &@rt.Conn, handler : @mttp.Handler, clock~ : &@rt.Clock, timer~ : &@rt.Timer,
+pub async fn serve_conn(conn : &@rt.Conn, handler : @mttp_core.Handler, clock~ : &@rt.Clock, timer~ : &@rt.Timer,
   coordination~ : &@rt.Coordination, scheme~ : String, limits? : ServerLimits, peer? : String, authority? : String,
-  on_error? : (@mttp.TransportError) -> Unit, stopping? : () -> Bool, background? : (async () -> Unit) -> Unit) -> Unit
+  on_error? : (@mttp_core.TransportError) -> Unit, stopping? : () -> Bool, background? : (async () -> Unit) -> Unit) -> Unit
 ```
 
 Engine rules:
 
 - **Client engine.** Pool, slots, wire, body and deadlines run over the ports; the Buffered/Streaming choice comes from `BodyTiming`. It reads response heads, chunk lines, trailers and a proxy's CONNECT answer within `head_limits`, so the old "unbounded client head" gap (F63, risk 20) is closed for every target that uses the engine. A response that arrives early during an upload cancels the unfinished upload and excludes the socket from reuse; informational responses keep upload progress. The outgoing stream's first read happens before the head is written, so a stream that fails or lies about being empty sends nothing.
-- **Stale-connection repair.** A failure on a reused idle connection before any response byte is resent once on a fresh connection only if the body is replayable *and* the request is resend-safe (`@mttp.is_idempotent`: an idempotent method or the `replay_safe` attribute). Receiving no response bytes does not prove the request was unprocessed, so replayability alone never licenses a resend; otherwise the failure surfaces with its phase. This repair is not a policy attempt and is reported separately (§4.4 rule 8).
+- **Stale-connection repair.** A failure on a reused idle connection before any response byte is resent once on a fresh connection only if the body is replayable *and* the request is resend-safe (`@mttp_core.is_idempotent`: an idempotent method or the `replay_safe` attribute). Receiving no response bytes does not prove the request was unprocessed, so replayability alone never licenses a resend; otherwise the failure surfaces with its phase. This repair is not a policy attempt and is reported separately (§4.4 rule 8).
 - **Server engine.** `serve_conn` owns the accepted connection and closes it on every exit. The handler gets an absolute `Request.url` from `scheme~` and the `Host` header. A supplied background scheduler owns detached work; without one, no `background` attribute is advertised. A client disconnect cancels the handler. Failures reported through `on_error` are `TransportError` values; runtime error identities never escape. Compression is not an engine concern: wrap the handler with `@codings.compress` (§4.11).
 - **Control.** Admission, pool metadata, peer EOF/failure and listener lifecycle are transitions of `internal/control` (§5.11).
 ### 4.6 schema
@@ -749,7 +752,7 @@ pub fn[T] form_codec(codec : JsonCodec[T]) -> BodyCodec[T]   // (new) urlencoded
 ```
 
 - **Named children are `$ref`s.** Combinators embed a named child through `reference` and carry its definition in `defs`, so nested types keep their names and recursive types are possible. In `wf3/rev`, Team refers to User by `$ref` and Tree's `children.items` refers to Tree (SC-01).
-- **Patterns are ECMA-262 source.** `@string.Regex` uses lexmatch syntax and rejects real spec patterns, for example `^[a-zA-Z0-9_-]{1,64}$` and `\d` (F22). `pattern(ecma)` translates the common subset (`\d \w \s` to POSIX classes, an edge `-` to `\-`). It refuses anything else when the validator is built, and the documentation emits the original ECMA string. tools/gen routes spec patterns through the same translator. The translator **[needs-prototype]**; a translation corpus goes to `mttp/conformance`.
+- **Patterns are ECMA-262 source.** `@string.Regex` uses lexmatch syntax and rejects real spec patterns, for example `^[a-zA-Z0-9_-]{1,64}$` and `\d` (F22). `pattern(ecma)` translates the common subset (`\d \w \s` to POSIX classes, an edge `-` to `\-`). It refuses anything else when the validator is built, and the documentation emits the original ECMA string. tools/gen routes spec patterns through the same translator. The translator **[needs-prototype]**; a translation corpus goes to `mttp_core/conformance`.
 - **Three JSON mechanisms, one role each.**
   - `as_json` (derive FromJson) is for client readers.
   - `JsonCodec` is for endpoints: it collects every issue and its schema cannot drift.
@@ -765,13 +768,13 @@ pub(all) enum AuthScheme { Bearer(format~ : String?); Basic; ApiKeyHeader(String
 pub(all) enum Location { Path; Query; Header; Cookie; Auth(scheme~ : AuthScheme, scheme_name~ : String); Body(media_type~ : String, streamed~ : Bool); RawBody; Derived }   // Derived: attribute/unit inputs, read from no part of the request
 pub struct Atom { location : Location; name : String; schema : @schema.Schema; required : Bool; description : String? }  // (new: read-only; pub(all) in wf3/rev) docs fields will grow (SC-13)
 pub fn Atom::new(location : Location, name : String, schema : @schema.Schema, required? : Bool, description? : String) -> Atom  // (new)
-pub struct Head { request : @mttp.Request; captures : Map[String, String]; query : Array[(String, String)] }   // what an input sees before the body
+pub struct Head { request : @mttp_core.Request; captures : Map[String, String]; query : Array[(String, String)] }   // what an input sees before the body
 pub struct RequestSink { /* private */ }                                    // (new) opaque; wf3/rev had read-only `mut` fields (E4094 outside endpoint)
 pub fn RequestSink::set_header(self : RequestSink, name : String, value : String) -> Unit    // (new)
 pub fn RequestSink::add_query(self : RequestSink, name : String, value : String) -> Unit     // (new)
 pub fn RequestSink::set_capture(self : RequestSink, name : String, value : String) -> Unit   // (new)
-pub fn RequestSink::set_body(self : RequestSink, body : @mttp.Body) -> Unit                 // (new)
-pub(all) enum BodyValue { NoBody; Buffered(Bytes); Streamed(&@mttp.BodyStream) }
+pub fn RequestSink::set_body(self : RequestSink, body : @mttp_core.Body) -> Unit                 // (new)
+pub(all) enum BodyValue { NoBody; Buffered(Bytes); Streamed(&@mttp_core.BodyStream) }
 pub struct Staged[T] { /* private */ }
 pub fn[T] Staged::ready(v : T) -> Staged[T]                                                     // (new) head-only input
 pub fn[T] Staged::after_body(finish : (BodyValue) -> T raise InputErrors) -> Staged[T]          // (new) needs the body
@@ -785,7 +788,7 @@ pub fn bearer(scheme_name? : String) -> Input[String]                     // mis
 pub fn signature_header(name : String) -> Input[String]                   // missing -> 401; documented as a required header
 pub fn raw_body() -> Input[Bytes]                                         // in a security input: buffered (endpoint limit) before authenticate
 pub fn[T] body(codec : @schema.BodyCodec[T]) -> Input[T]                  // 415 media type, 413 size, 400 issues
-pub fn[T] attribute(key : @mttp.AttributeKey[T]) -> Input[T?]            // server-only: no docs, no-op on encode (SC-07)
+pub fn[T] attribute(key : @mttp_core.AttributeKey[T]) -> Input[T?]            // server-only: no docs, no-op on encode (SC-07)
 // (new) stream_body(media), query_params(), headers(), paths(name) for a {name...} capture, client_ip(trust_forwarded~)
 pub fn[T] Input::optional(self : Input[T]) -> Input[T?]
 pub fn[T, U] Input::map(self : Input[T], to : (T) -> U raise @schema.DecodeFailure, from : (U) -> T) -> Input[U]
@@ -799,7 +802,7 @@ pub fn[A, T] Variant::contramap(self : Variant[A], project : (T) -> A?, inject :
 pub fn[T, H] Variant::and_header(self : Variant[T], name : String, codec : @schema.TextCodec[H]) -> Variant[(T, H)]   // fixed_header, and_status
 pub fn[T] one_of(variants : Array[Variant[T]]) -> Out[T, @client.Buffered]
 pub fn[T] json_out(codec : @schema.BodyCodec[T], status? : Int) -> Out[T, @client.Buffered]       // no_content, text_out, bytes_out
-pub fn stream_body_out(status? : Int) -> Out[(String?, @mttp.Body), @client.Buffered]              // content type computed per response
+pub fn stream_body_out(status? : Int) -> Out[(String?, @mttp_core.Body), @client.Buffered]              // content type computed per response
 pub fn[T] sse_body_out(codec : @schema.BodyCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]   // data = the codec's bytes as UTF-8 text (HTML for htmx)
 pub fn[T] sse_out(codec : @schema.JsonCodec[T], meta? : (T) -> SseMeta) -> Out[EventStream[T], @client.Streaming]           // sse_body_out(codec.body(), meta?)
 pub fn[T, H, M] Out::and_header(self : Out[T, M], name : String, codec : @schema.TextCodec[H]) -> Out[(T, H), M]   // and_status, set_cookie
@@ -816,7 +819,7 @@ pub fn[I, E, O, S2, M] Endpoint::security(self : Endpoint[Unit, I, E, O, M], s :
 pub fn[S, E, O, I2, M] Endpoint::input(self : Endpoint[S, Unit, E, O, M], i : Input[I2]) -> Endpoint[S, I2, E, O, M]
 pub fn[S, I, O, E2, M] Endpoint::errors(self : Endpoint[S, I, NoError, O, M], e : Out[E2, @client.Buffered]) -> Endpoint[S, I, E2, O, M]
 pub fn[S, I, E, O2, M, N] Endpoint::output(self : Endpoint[S, I, E, Unit, M], o : Out[O2, N]) -> Endpoint[S, I, E, O2, N]
-// operation_id, summary, tag, max_body_bytes, rate_limit_bucket(f : (@mttp.Request) -> String), doc() -> EndpointDoc
+// operation_id, summary, tag, max_body_bytes, rate_limit_bucket(f : (@mttp_core.Request) -> String), doc() -> EndpointDoc
 
 // the one definition checker (Router::new, to_openapi and testkit.verify all call it)
 pub(all) struct DefinitionProblem { template : String; message : String; fatal : Bool } derive(Eq, Debug)
@@ -826,16 +829,16 @@ pub(all) suberror DefinitionError { DefinitionError(Array[DefinitionProblem]) } 
 // server interpreter (one endpoint; the router picks it). Declared errors are values: no Error bound on E
 #non_exhaustive
 pub(all) enum FailureStage { Security; Head; Body } derive(Eq, Debug)
-pub(all) struct FailureContext { request : @mttp.Request; endpoint : EndpointDoc; failures : Array[InputFailure]; stage : FailureStage }
+pub(all) struct FailureContext { request : @mttp_core.Request; endpoint : EndpointDoc; failures : Array[InputFailure]; stage : FailureStage }
 pub(all) struct DispatchContext { max_body_bytes : Int; max_issues : Int
-  decode_failure : (FailureContext) -> @mttp.Response; unhandled : (@mttp.Request, Error) -> @mttp.Response }
-pub let route_template : @mttp.AttributeKey[String]     // set on every dispatched response
-pub let declared_headers : @mttp.AttributeKey[Array[String]]   // the encoded variant's declared header names; cors exposes them
+  decode_failure : (FailureContext) -> @mttp_core.Response; unhandled : (@mttp_core.Request, Error) -> @mttp_core.Response }
+pub let route_template : @mttp_core.AttributeKey[String]     // set on every dispatched response
+pub let declared_headers : @mttp_core.AttributeKey[Array[String]]   // the encoded variant's declared header names; cors exposes them
 pub fn[S, I, E, O, P, M] Endpoint::serve(self : Endpoint[S, I, E, O, M], authenticate : async (S) -> Result[P, E],
   handle : async (P, I) -> Result[O, E]) -> ServerEndpoint
 pub fn[I, E, O, M] Endpoint::serve_public(self : Endpoint[Unit, I, E, O, M], handle : async (I) -> Result[O, E]) -> ServerEndpoint
-// serve_with / serve_public_with: the handler also gets the request's @mttp.Attributes (remote_addr, background), so shared definitions stay the wire contract
-pub async fn ServerEndpoint::dispatch(self : ServerEndpoint, req : @mttp.Request, params : Map[String, String], ctx : DispatchContext) -> @mttp.Response noraise
+// serve_with / serve_public_with: the handler also gets the request's @mttp_core.Attributes (remote_addr, background), so shared definitions stay the wire contract
+pub async fn ServerEndpoint::dispatch(self : ServerEndpoint, req : @mttp_core.Request, params : Map[String, String], ctx : DispatchContext) -> @mttp_core.Response noraise
 
 // client interpreter: relative targets, joined onto Client's base_url
 pub fn[S, I, E, O] Endpoint::request(self : Endpoint[S, I, E, O, @client.Buffered], security : S, input : I)
@@ -860,7 +863,7 @@ Client interpreter rules (verified unless marked):
 - **Same-status variants are tried in declaration order.** `Deserialization` results only if every candidate fails (SC-04).
 - **Inside the attempt.** Output and declared-error variants are matched and decoded inside the attempt, so `call_with` (streaming) sees the same retry decisions on 503 as `call` (I-03). The streaming callback itself runs after the attempt and is never replayed (§4.4).
 - **Request attributes.** The encoded request carries `operation_id`. It sets `rate_limit_bucket` only when the endpoint declares `rate_limit_bucket(f)`; otherwise the Client uses `"default"`. GitHub and discord bucket by method, URL and route, never by operation id.
-- **Marking a call.** `@api.op.request(s, i).attribute(@mttp.replay_safe, true)`.
+- **Marking a call.** `@api.op.request(s, i).attribute(@mttp_core.replay_safe, true)`.
 - **Sync half stays internal.** `encode_request`/`decode_response` stay internal until a consumer (browser, Rabbita) needs them.
 
 Known limits, documented rather than changed:
@@ -905,23 +908,23 @@ match @api.get_user.call(client, "secret", 1) {
 
 ```moonbit
 pub using @endpoint {type FailureContext}
-pub type Middleware = async (@mttp.Request, async (@mttp.Request) -> @mttp.Response noraise) -> @mttp.Response noraise
+pub type Middleware = async (@mttp_core.Request, async (@mttp_core.Request) -> @mttp_core.Response noraise) -> @mttp_core.Response noraise
 pub(all) struct ServerOptions {
   max_body_bytes : Int                                                   // default per-endpoint limit (1 MiB); Endpoint::max_body_bytes overrides
   max_issues : Int                                                       // 100
-  decode_failure : (@endpoint.FailureContext) -> @mttp.Response?       // None = default table
-  reject : (@mttp.Request, Array[@mttp.Method]) -> @mttp.Response    // 404 / 405 + Allow
-  on_unhandled : (@mttp.Request, Error) -> @mttp.Response?            // None = plain 500 problem; never shows details by default
+  decode_failure : (@endpoint.FailureContext) -> @mttp_core.Response?       // None = default table
+  reject : (@mttp_core.Request, Array[@mttp_core.Method]) -> @mttp_core.Response    // 404 / 405 + Allow
+  on_unhandled : (@mttp_core.Request, Error) -> @mttp_core.Response?            // None = plain 500 problem; never shows details by default
   middleware : Array[Middleware]
 }
 pub fn ServerOptions::default() -> ServerOptions
 pub fn Router::new(endpoints : Array[@endpoint.ServerEndpoint], options? : ServerOptions) -> Router raise @endpoint.DefinitionError
-pub async fn Router::dispatch(self : Router, req : @mttp.Request) -> @mttp.Response noraise
-pub fn Router::handler(self : Router) -> async (@mttp.Request) -> @mttp.Response noraise
+pub async fn Router::dispatch(self : Router, req : @mttp_core.Request) -> @mttp_core.Response noraise
+pub fn Router::handler(self : Router) -> async (@mttp_core.Request) -> @mttp_core.Response noraise
 pub fn Router::docs(self : Router) -> Array[@endpoint.EndpointDoc]
-pub impl @mttp.Backend for Router
-pub fn problem(status : Int, title : String, errors? : Json) -> @mttp.Response    // RFC 9457 problem+json
-pub fn default_decode_failure(ctx : @endpoint.FailureContext) -> @mttp.Response
+pub impl @mttp_core.Backend for Router
+pub fn problem(status : Int, title : String, errors? : Json) -> @mttp_core.Response    // RFC 9457 problem+json
+pub fn default_decode_failure(ctx : @endpoint.FailureContext) -> @mttp_core.Response
 pub fn cors(allow_origins : Array[String], allow_credentials~ : Bool = false, expose_headers~ : Array[String] = []) -> Middleware  // also exposes declared_headers
 // (new) hide_endpoints_with_auth : (FailureContext) -> Response?   — a decode_failure preset (404 instead of 401)
 // (new) request_id(), access_log(clock, sink)
@@ -957,7 +960,7 @@ The pipeline. Credentials are checked first, a deliberate deviation from tapir (
 ```moonbit
 pub fn to_openapi(docs : Array[@endpoint.EndpointDoc], info : @apispec.Info, servers? : Array[@apispec.Server]) -> @apispec.OpenApi raise @endpoint.DefinitionError
 pub fn docs_endpoint(spec : @apispec.OpenApi, path? : String) -> @endpoint.ServerEndpoint
-pub fn check_documented(spec : @apispec.OpenApi, template : String, meth : @mttp.Method, status : Int) -> String?
+pub fn check_documented(spec : @apispec.OpenApi, template : String, meth : @mttp_core.Method, status : Int) -> String?
 ```
 
 Projection rules (verified in `wf3/rev` unless marked):
@@ -980,7 +983,7 @@ Projection rules (verified in `wf3/rev` unless marked):
 ### 4.10 driver, sim, testing and endpoint/testkit
 
 ```moonbit
-// gaato/mttp/driver — experimental; the only package with %async intrinsics (one file: intrinsics.mbt)
+// gaato/mttp_core/driver — experimental; the only package with %async intrinsics (one file: intrinsics.mbt)
 pub fn[X] run_sync(f : async () -> X) -> X raise          // drives f to completion on virtual time; refuses, never hangs
 pub fn Driver::new(auto_advance? : Bool, max_steps? : Int, start_ms? : Int64) -> Driver
 pub fn[X] Driver::run(self : Driver, f : async () -> X) -> X raise
@@ -991,23 +994,23 @@ pub(all) suberror DriverError { DriverError(kind~ : DriverErrorKind, detail~ : S
 pub(all) enum DriverErrorKind { Deadlock(parked~ : Int); Suspended(parked~ : Int); NoQuiescence(steps~ : Int)
   UnwindIncomplete(live~ : Int); TaskFailed(label~ : String, cause~ : Error); MainCancelled; Reentrant; NotInTask }
 
-// gaato/mttp/testing — imports @http and client only, so SDK tests do not compile the endpoint layer
+// gaato/mttp_core/testing — imports @http and client only, so SDK tests do not compile the endpoint layer
 pub fn BackendStub::new() -> BackendStub                  // expect (FIFO), when, sent, remaining, verify
-pub impl @mttp.Backend for BackendStub
-pub fn fail_sends(inner : &@mttp.Backend, e : @mttp.TransportError, times? : Int) -> &@mttp.Backend
+pub impl @mttp_core.Backend for BackendStub
+pub fn fail_sends(inner : &@mttp_core.Backend, e : @mttp_core.TransportError, times? : Int) -> &@mttp_core.Backend
 
-// gaato/mttp/endpoint/testkit
+// gaato/mttp_core/endpoint/testkit
 pub fn[S, I, E, O, M] when_endpoint(stub : @testing.BackendStub, ep : @endpoint.Endpoint[S, I, E, O, M],
   respond : async (I) -> Result[O, E]) -> @testing.BackendStub raise @endpoint.DefinitionError
 pub fn verify(docs : Array[@endpoint.EndpointDoc]) -> Array[@endpoint.DefinitionProblem]
 ```
 
-- **Cancellation is a signal, not an Error.** The Driver delivers cancellation the way core/async does: a cancelled task unwinds through its `defer`s and the canceller observes completion, but no `Error` value is raised for user code to catch and swallow. `run_sync` reports a cancelled main task as `MainCancelled`. CONTRACT.md (Driver) holds the rules; the same contract tests run against mttp_async's runtime (§5.12).
-- **One file of intrinsics.** `%async` appears only in `gaato/mttp/src/driver/intrinsics.mbt`, in a package that sets `-unused_async`. A canary diffs it against core's `async_primitive.mbt` on each toolchain (§5.6).
-- **No `async test` in portable modules.** gaato/mttp tests async code with plain `test` blocks through `run_sync`, so wasm-gc runs them too (F16). Production packages never import `driver`, `sim` or `testing` (gate).
+- **Cancellation is a signal, not an Error.** The Driver delivers cancellation the way core/async does: a cancelled task unwinds through its `defer`s and the canceller observes completion, but no `Error` value is raised for user code to catch and swallow. `run_sync` reports a cancelled main task as `MainCancelled`. CONTRACT.md (Driver) holds the rules; the same contract tests run against gaato/mttp's runtime (§5.12).
+- **One file of intrinsics.** `%async` appears only in `gaato/mttp_core/src/driver/intrinsics.mbt`, in a package that sets `-unused_async`. A canary diffs it against core's `async_primitive.mbt` on each toolchain (§5.6).
+- **No `async test` in portable modules.** gaato/mttp_core tests async code with plain `test` blocks through `run_sync`, so wasm-gc runs them too (F16). Production packages never import `driver`, `sim` or `testing` (gate).
 - `when_endpoint` encodes through a one-endpoint Router, so declared errors are classified as in `serve`.
 
-### 4.11 gaato/mttp_async
+### 4.11 gaato/mttp
 
 Every package here opts in to the core/async packages it uses with the list form of `allow-experimental-packages`. No public signature names a core/async type (principle 9); the mbti gate checks it.
 
@@ -1036,8 +1039,8 @@ pub(all) suberror ListenError {                              // frozen at releas
   Bind(detail~ : String)                                     // names the address and keeps the system's reason
   Accept(detail~ : String)                                   // keeps the runtime's reason
 } derive(Debug)
-pub async fn serve(handler : @mttp.Handler, addr~ : String, on_listen? : (String) -> Unit,
-  limits? : @h1server.ServerLimits, on_error? : (@mttp.TransportError) -> Unit) -> Unit raise ListenError
+pub async fn serve(handler : @mttp_core.Handler, addr~ : String, on_listen? : (String) -> Unit,
+  limits? : @h1server.ServerLimits, on_error? : (@mttp_core.TransportError) -> Unit) -> Unit raise ListenError
 // TcpServer accepts; each connection goes to @h1server.serve_conn with scheme~="http"
 // TcpServer binds with reuse_addr=true (SO_REUSEADDR, as Go and Node): a restart binds while the old
 // connections are in TIME-WAIT. core/async ignores it on Windows, where it would allow port takeover.
@@ -1048,26 +1051,26 @@ pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust~ : @http_async.
 // Defaults: AsyncClock and ClockTimer on the chosen clock. Socket pool expiry and
 // phase deadlines use these ports; JS uses them for upload/head/body deadlines.
 // On JS only config.max_body_bytes applies; trust and socket phase settings are ignored.
-pub impl @mttp.Backend for AsyncBackend                      // idle_connections
+pub impl @mttp_core.Backend for AsyncBackend                      // idle_connections
 // native/wasm: @h1client.Client over TcpDialer, AsyncClock, ClockTimer, RuntimeCoordination, always wrapped in Decompress
 // (a request that sets its own Accept-Encoding opts out, per the table below)
 // js: fetch over core's js_async; one type, so callers never branch on the target
 
 // codings (native, wasm, js)
-pub fn coding_plan(content_encoding : String) -> Array[Coding] raise @mttp.TransportError     // <= 5 codings
-pub fn ContentDecoder::new(plan : Array[Coding]) -> ContentDecoder raise @mttp.TransportError  // feed, pull (<= 64 KiB), end
-pub fn ContentEncoder::new(c : Coding) -> ContentEncoder raise @mttp.TransportError           // gzip, deflate, br; zstd decode-only
-pub fn negotiate_encoding(h : @mttp.Headers) -> EncodingChoice raise @mttp.TransportError
-pub fn Decompress::new(inner : &@mttp.Backend) -> Decompress  // (new) impl @mttp.Backend
-pub fn compress(handler : @mttp.Handler, min_bytes? : Int) -> @mttp.Handler   // (new) negotiates and encodes responses
+pub fn coding_plan(content_encoding : String) -> Array[Coding] raise @mttp_core.TransportError     // <= 5 codings
+pub fn ContentDecoder::new(plan : Array[Coding]) -> ContentDecoder raise @mttp_core.TransportError  // feed, pull (<= 64 KiB), end
+pub fn ContentEncoder::new(c : Coding) -> ContentEncoder raise @mttp_core.TransportError           // gzip, deflate, br; zstd decode-only
+pub fn negotiate_encoding(h : @mttp_core.Headers) -> EncodingChoice raise @mttp_core.TransportError
+pub fn Decompress::new(inner : &@mttp_core.Backend) -> Decompress  // (new) impl @mttp_core.Backend
+pub fn compress(handler : @mttp_core.Handler, min_bytes? : Int) -> @mttp_core.Handler   // (new) negotiates and encodes responses
 
 // fetch, hosts (js)
 #external pub type JsRequest
 #external pub type JsPromise
 #external pub type JsBackground
 #external pub type JsEnv
-pub let env : @mttp.AttributeKey[JsEnv]
-pub fn fetch_handler(handler : @mttp.Handler, max_body_bytes? : Int) -> (JsRequest, JsBackground) -> JsPromise
+pub let env : @mttp_core.AttributeKey[JsEnv]
+pub fn fetch_handler(handler : @mttp_core.Handler, max_body_bytes? : Int) -> (JsRequest, JsBackground) -> JsPromise
 // MoonBit entry: `pub let fetch = ...` is not exported (F20); write `pub fn fetch(req, bg) { h(req, bg) }`
 ```
 
@@ -1100,10 +1103,10 @@ The wrapper passes SendOptions through unchanged, so the engine caps **wire** by
 
 - **mbt-sdk tools/gen (Python) stays.**
 - **Phase 1** retargets the emitter mechanically:
-  - `@mttp.Request::get/post/put/patch/delete(path)` from gaato/mttp 0.5 becomes the same call on gaato/mttp 0.6 with `Method` values; anything else becomes `@mttp.Request::new(@mttp.Method::parse("X"), path)`. `.json_body` becomes `.body_json`; `@multipart.apply(request, parts, boundary)` becomes `@multipart.body(request, parts, boundary~)`.
+  - `@mttp_core.Request::get/post/put/patch/delete(path)` from gaato/mttp_core 0.5 becomes the same call on gaato/mttp_core 0.6 with `Method` values; anything else becomes `@mttp_core.Request::new(@mttp_core.Method::parse("X"), path)`. `.json_body` becomes `.body_json`; `@multipart.apply(request, parts, boundary)` becomes `@multipart.body(request, parts, boundary~)`.
   - Generated `*_request` functions stay non-raising, except multipart operations, which keep `raise @multipart.MultipartError` and their explicit `boundary` parameter. Hand-written facade encoders raise `@client.InvalidRequest`.
-  - Decoders become `*_decode(head : @mttp.ResponseHead, body : Bytes) -> Result[T, @client.ResponseFailure]`, used as `@client.ResponsePlan::new((h, b) => @gen.x_decode(h, b))` or through `map_ok`, so 403/429 still reach the retry decision as values.
-  - `@sdkjson` imports `gaato/mttp/jsonkit` directly (qualified constructors do not resolve through `pub using`, E4021).
+  - Decoders become `*_decode(head : @mttp_core.ResponseHead, body : Bytes) -> Result[T, @client.ResponseFailure]`, used as `@client.ResponsePlan::new((h, b) => @gen.x_decode(h, b))` or through `map_ok`, so 403/429 still reach the retry decision as values.
+  - `@sdkjson` imports `gaato/mttp_core/jsonkit` directly (qualified constructors do not resolve through `pub using`, E4021).
   - The output is regenerated, not hand-edited.
 - **Phase 2** (opt-in, later): Endpoint values as `pub let`; needs header outputs, nesting beyond map8 and multipart bodies.
 - **`gaato/mttp-gen`** is dropped until a consumer exists (F51).
@@ -1126,9 +1129,9 @@ The wrapper passes SendOptions through unchanged, so the engine caps **wire** by
 | `DefinitionError` | endpoint | Router::new, to_openapi, `verify` | Bad definitions are refused at construction. |
 | `h1.ParseError(kind~, detail~)` | h1 | codec | 431, 400 or 501, with close. |
 | `ServerConfigError` | h1server | `ServerLimits::validate` | Invalid limits, before any connection is served. |
-| `ListenError::{Config, Bind, Accept}` | mttp_async/server | `serve` | Configuration and listening failures. |
+| `ListenError::{Config, Bind, Accept}` | mttp/server | `serve` | Configuration and listening failures. |
 | `DriverError(kind~, detail~)` | driver | `run_sync`, `Driver::run`, `step` | The computation needed a real event source, deadlocked or could not unwind. |
-| `NoQuiescence(rounds~)` | mttp_async/runtime | `VirtualClock::settle` and friends | The simulated tasks never settled. |
+| `NoQuiescence(rounds~)` | mttp/runtime | `VirtualClock::settle` and friends | The simulated tasks never settled. |
 
 Cancellation is never converted into another error, and no test asserts on `detail` text, which differs across targets.
 
@@ -1172,7 +1175,7 @@ The old "client response head unbounded" row (F63, risk 20) is gone: the h1clien
 
 ### 5.3 Time and randomness
 
-Every policy takes `&@rt.Clock`, and where needed `&@rt.Timer`, `&@rt.Gate` and `random : () -> Double`: the Client loop, CookieJar, WindowLimiter, the multipart boundary, access logs and both engines. Portable tests use `@sim` doubles under `@driver.run_sync`; runtime tests use mttp_async's VirtualClock.
+Every policy takes `&@rt.Clock`, and where needed `&@rt.Timer`, `&@rt.Gate` and `random : () -> Double`: the Client loop, CookieJar, WindowLimiter, the multipart boundary, access logs and both engines. Portable tests use `@sim` doubles under `@driver.run_sync`; runtime tests use gaato/mttp's VirtualClock.
 
 ### 5.4 Streaming, SSE and WebSockets
 
@@ -1180,20 +1183,20 @@ Every policy takes `&@rt.Clock`, and where needed `&@rt.Timer`, `&@rt.Gate` and 
 - **Server SSE.** A handler returns an `EventStream[T]` through `sse_out` (JSON data) or `sse_body_out` (any body codec's text, such as HTML for htmx); the endpoint encodes it as a stream; the adapter writes it with backpressure; Router-as-Backend passes it through unbuffered. The stream opens with an SSE comment, because every server (ours, the fetch adapter, a host's) pulls a stream's first piece before writing the head, so that a producer failing at once still gets a 500; without it an idle stream has no head, and a host cannot attach shutdown handling to it.
 - **No push bodies.** A producer-style handler bridges through a runtime queue in the application.
 - **Client SSE.** `as_sse` with a `stop` predicate for sentinels such as OpenAI's `data: [DONE]`.
-- **WebSockets** stay deferred (§0.2). When added: a 101 Response carrying the upgrade callback in an attribute, a sans-IO frame codec in gaato/mttp, `WebSocketStub` in sim, and scheme validation before any runtime call.
+- **WebSockets** stay deferred (§0.2). When added: a 101 Response carrying the upgrade callback in an attribute, a sans-IO frame codec in gaato/mttp_core, `WebSocketStub` in sim, and scheme validation before any runtime call.
 
 ### 5.5 Target matrix
 
 | Unit | wasm-gc | wasm | js | native |
 |---|---|---|---|---|
-| all of gaato/mttp (incl. engines; async tests via `run_sync`) | ✓ | ✓ | ✓ | ✓ |
-| all of gaato/mttp, gaato/mttp_digest | ✓ | ✓ | ✓ | ✓ |
-| mttp_async/codings | – | ✓ | ✓ | ✓ |
-| mttp_async/runtime, backend | – | ✓ (moonrun) | ✓ (request bodies buffered, ≤ 16 MiB) | ✓ |
-| mttp_async/conn, server | – | ✓ | – | ✓ |
-| mttp_async/fetch, hosts | – | – | ✓ | – |
+| all of gaato/mttp_core (incl. engines; async tests via `run_sync`) | ✓ | ✓ | ✓ | ✓ |
+| all of gaato/mttp_core, gaato/mttp_digest | ✓ | ✓ | ✓ | ✓ |
+| mttp/codings | – | ✓ | ✓ | ✓ |
+| mttp/runtime, backend | – | ✓ (moonrun) | ✓ (request bodies buffered, ≤ 16 MiB) | ✓ |
+| mttp/conn, server | – | ✓ | – | ✓ |
+| mttp/fetch, hosts | – | – | ✓ | – |
 
-CI lists packages per target and **asserts the test count per package and target** (F16). gaato/mttp must produce the same mbti on all four targets.
+CI lists packages per target and **asserts the test count per package and target** (F16). gaato/mttp_core must produce the same mbti on all four targets.
 
 ### 5.6 Churn policy
 
@@ -1201,7 +1204,7 @@ CI lists packages per target and **asserts the test count per package and target
 - **Warnings.** `moon check --deny-warn` on all targets. Async-typed parameters take arrow lambdas (F6, F54); the driver package sets `-unused_async`.
 - **Deprecated forms** the toolchain warns about (`#derive`, `clamped_view`, `Map([])`, `Json(v)`, `to_owned`, Debug instead of Show) are fixed at once, and the generators emit the new forms.
 - **Snapshots.** mbti per package and target; diffs are reviewed in every PR.
-- **Containment.** Runtime API churn stays in mttp_async (its `internal/` adapters). Intrinsic churn stays in one file of `driver`.
+- **Containment.** Runtime API churn stays in gaato/mttp (its `internal/` adapters). Intrinsic churn stays in one file of `driver`.
 - **Evolution rules.**
   - **(a) Enums.** `#non_exhaustive` on Body, Method, Kind, Phase, BodyTiming, `@retry.Decision`, ResponseFailure, DecodeKind, AuthScheme, Location, FailureStage, h1 Framing, ParseKind, Version, Trust, DriverErrorKind, and any later enum that may grow.
   - **(b) Structs.** Downstream code builds `pub(all)` structs through `::new`/`::default()` plus record update. Field sets frozen at release: Request, Response, RequestHead, ResponseHead, SendOptions, RetryContext, RetryPolicy, RedirectConfig, Attempt, Reply, SseEvent, SseMeta, SseItem, multipart Part, RetryRule and its records, GlobalWindow, Pace, RateLimitState, Page, h1 Limits, ClientConfig, ServerLimits, DispatchContext, FailureContext, DefinitionProblem, InputFailure, Schema, Issue, ServerOptions, apispec records.
@@ -1213,20 +1216,20 @@ CI lists packages per target and **asserts the test count per package and target
 
 | Suite | Where | What |
 |---|---|---|
-| In-package | every gaato/mttp package | plain tests through `run_sync` on all 4 targets |
+| In-package | every gaato/mttp_core package | plain tests through `run_sync` on all 4 targets |
 | Engines over sim | `h1client`, `h1server` | Pool, slots, deadlines, proxy, CONNECT/TLS event order, early responses, half-close, peer failure, 1/17/65536-byte fragmentation, hostile heads and chunk lines, slow headers, floods, drain, 100-continue, disconnect cancellation — on all 4 targets. PR #2 checked most of this only over sockets (53 client and 31 server tests against 5 and 6 portable ones); the rebuild moves them onto sim + Driver. |
-| Contracts | `sim` checkers | Conn, Coordination, BodyStream and Backend contracts, run against the sim doubles and against mttp_async's adapters |
+| Contracts | `sim` checkers | Conn, Coordination, BodyStream and Backend contracts, run against the sim doubles and against gaato/mttp's adapters |
 | Cross-layer gate | `conformance` | definition package → Router → `Endpoint::call` through `Client`; 200/400/401/403/404/405/413/415/500, retries, SSE, `when_endpoint`, OpenAPI |
 | Corpora | `conformance` | SSE, http-state cookies, WPT URL, form decoding, router path matching, **h1 smuggling and split-read corpus**, ECMA pattern translation, `$ref` resolution |
-| Sockets | mttp_async packages (native, wasm) | loopback, verified and nested TLS, proxy, coding and upload suites; listener; adversarial probes against `serve` |
-| JS | mttp_async (js) | Node host-shim tests, Lambda empty-body POST, `scripts/browser_gate.mbtx` |
+| Sockets | gaato/mttp packages (native, wasm) | loopback, verified and nested TLS, proxy, coding and upload suites; listener; adversarial probes against `serve` |
+| JS | gaato/mttp (js) | Node host-shim tests, Lambda empty-body POST, `scripts/browser_gate.mbtx` |
 | End to end | `examples` | `get` (status, headers, gzip and br bodies on native and wasm), `serve` with curl (keep-alive 200; 20 KiB header → 431; CL+TE → 400), `fetch` |
 | Release | CI | `--deny-warn` on all targets; resolver gate; per-target test counts; mbti equality; coverage ledger |
 | Interop | `interop` (daily, canary.yml) | The client against nginx, Caddy and Apache over HTTP/1.1 and TLS, native and js under Node, Bun and Deno; the server under curl, Go, httpx, Node, Bun, Deno and raw-socket smuggling probes, directly and behind the three as reverse proxies. Images pinned by digest; expectations and known third-party quirks in `interop/cases.tsv` |
 
 ### 5.8 Versioning and release
 
-Facts the rules rest on (F26–F33): moon selects, per module, the **highest of the declared minimums**. moon.mod accepts only plain `X.Y.Z` minimums. All 0.x and 1.x versions share one compatibility set; only a new path (`/v2`) can coexist. Deprecation is module-wide and advisory, and does not affect selection; there is no per-version yank. Workspace members override requirements.
+The rows on gaato/mttp 0.5 and 0.6 below date from the 2026-11-08 rebuild, when gaato/http was the lower layer, and keep the names of their time; the modules now are gaato/mttp_core, gaato/mttp and gaato/mttp_digest (§0.0). Facts the rules rest on (F26–F33): moon selects, per module, the **highest of the declared minimums**. moon.mod accepts only plain `X.Y.Z` minimums. All 0.x and 1.x versions share one compatibility set; only a new path (`/v2`) can coexist. Deprecation is module-wide and advisory, and does not affect selection; there is no per-version yank. Workspace members override requirements.
 
 | Rule | Why |
 |---|---|
@@ -1248,7 +1251,7 @@ Facts the rules rest on (F26–F33): moon selects, per module, the **highest of 
 | The field is `meth` | `method` is reserved and warns |
 | `input`/`output`/`security`/`errors` builders | `in` is a keyword |
 | `ignore_body`, never `ignore` | shadows the prelude |
-| `router` (not `server`) in mttp; `endpoint/testkit` (not `testing`); `jsonkit` (not `json`); `sim` (not `testing`) in gaato/mttp | duplicate package aliases warn |
+| `router` (not `server`) in gaato/mttp_core; `endpoint/testkit` (not `testing`); `jsonkit` (not `json`); `sim` (not `testing`) in gaato/mttp_core | duplicate package aliases warn |
 | `@h1client.Client` vs `@client.Client` | different layers; always used through their aliases |
 | `Reply[T]`, `@retry.AttemptOutcome` | avoid a second Response and a third Outcome |
 | Rename `moonbitlang/core/async/http` (for example `@corehttp`) wherever it meets the root `@http` | equal default aliases (§3.2) |
@@ -1258,14 +1261,14 @@ Facts the rules rest on (F26–F33): moon selects, per module, the **highest of 
 
 | Removed | Replacement |
 |---|---|
-| `RequestOptions` (`timeout_ms`, `body_deadline`, `read_idle_ms`, `max_body_bytes`, `follow_redirects`, `max_redirects`, `decompress`) | `@mttp.SendOptions { timeout_ms, body : BodyTiming }`; the Client's `timeout_ms`/`max_body_bytes`/`read_idle_ms`; redirect knobs → `RedirectConfig` on FollowRedirects plus the per-request `redirect_limit` attribute; `decompress` → the `@codings.Decompress` wrapper |
-| `ServeError` (a struct passed to `on_error`) | `@mttp.TransportError` |
+| `RequestOptions` (`timeout_ms`, `body_deadline`, `read_idle_ms`, `max_body_bytes`, `follow_redirects`, `max_redirects`, `decompress`) | `@mttp_core.SendOptions { timeout_ms, body : BodyTiming }`; the Client's `timeout_ms`/`max_body_bytes`/`read_idle_ms`; redirect knobs → `RedirectConfig` on FollowRedirects plus the per-request `redirect_limit` attribute; `decompress` → the `@codings.Decompress` wrapper |
+| `ServeError` (a struct passed to `on_error`) | `@mttp_core.TransportError` |
 | `ServerConfigError::{Bind, Accept}` | `@server.ListenError::{Bind, Accept}`; configuration problems as `ListenError::Config` |
 | `serve(compression?)`, `serve_conn(compression?)` | `@codings.compress(handler)` |
 | `H1Backend` in `mttp-net/backend` and `mttp-net/h1/client` (duplicates of the engine), `mttp-net/h1`, `mttp-net/h1/client`, `mttp-net/h1/server` | `@h1client.Client`, `@h1server`; `AsyncBackend` as the one I/O backend |
-| `mttp-net/quick`, `client.quick_request`, root `new_client` (mttp-net) and the empty root `gaato/mttp` facade | none in the family; `moonbitlang/core/async/http` for trusted throwaway use (§0.1) |
+| `mttp-net/quick`, `client.quick_request`, root `new_client` (mttp-net) and the empty root `gaato/mttp_core` facade | none in the family; `moonbitlang/core/async/http` for trusted throwaway use (§0.1) |
 | `testing.run_sync`, `testing/driver`, `testing/conn`, `testing/feed`, `testing/gen`, `clock/fake` | `@driver`, `@sim` |
-| `@client.Backend`, `@model`, `@clock`, `@conn` | `@mttp.Backend`, `@http`, `@rt` |
+| `@client.Backend`, `@model`, `@clock`, `@conn` | `@mttp_core.Backend`, `@http`, `@rt` |
 | Vendor retry presets in the core (`stainless`) | the SDK that needs them |
 | Header-only idempotency (`Idempotency-Key`) | method or `replay_safe` |
 | Exception-first readers (`ResponseAs` raising `ResponseError`), `classify` for declared errors | Result readers with `ResponseFailure`; declared errors as values |
@@ -1294,13 +1297,13 @@ Binding rules:
 | Request smuggling (CL with TE, duplicate CL) | Both engines use the same `request_framing`/`response_framing`; `Smuggling` is 400 and close. Checked by the h1 conformance corpus. |
 | Memory exhaustion (head, chunk line, trailers, body, decompression bomb) | Limits, ServerLimits and ClientConfig always carry default bounds. `Exchange(max_bytes~)` cannot be built without a limit. Decoding runs in 64 KiB pulls, and decoded bytes have their own bound (§5.2). |
 | A non-idempotent request resent after it was sent | `Phase` drives `is_unsent`. Stale-connection repair resends only requests with a replayable body that are idempotent or marked `replay_safe`; the Client loop never resends a stream without a body factory. |
-| Two runtimes linked into one process | Only mttp_async imports core/async; the gate forbids `moonbitlang/async` everywhere. |
+| Two runtimes linked into one process | Only gaato/mttp imports core/async; the gate forbids `moonbitlang/async` everywhere. |
 | Experimental API leaking into the stable layer | `experimental: true`, list-form opt-in, and the gate's allow list. |
 | Runtime types in a public API | An mbti grep gate over every module; ports are `@rt` traits. |
-| Cancellation swallowed | Cancellation is a non-Error signal; contract tests run against the Driver and against mttp_async's runtime. |
+| Cancellation swallowed | Cancellation is a non-Error signal; contract tests run against the Driver and against mttp's runtime. |
 | Connection or slot leaks | StreamBody is taken once; `close_if_unclaimed`; sim and the Driver count live connections and tasks at the end of each test. |
 | An absent body confused with an empty one (two PR #2 review findings) | Framing decides `Body::Empty` versus `Stream`; the endpoint checks `Empty` first; the Lambda shim passes `undefined` for a missing body. |
-| mttp and mttp_async drifting apart | They share only gaato/mttp; the resolver gate builds both from outside. |
+| gaato/mttp_core and gaato/mttp drifting apart | gaato/mttp depends on gaato/mttp_core and re-exports its types; the resolver gate builds both, and gaato/mttp_digest, from outside the workspace in that order. |
 | A toolchain changing the intrinsics | One intrinsics file; a canary diffs it against core's `async_primitive.mbt`. |
 
 ### 5.13 Gates
@@ -1309,9 +1312,9 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 
 | Gate | Checks |
 |---|---|
-| `architecture_gate` | gaato/mttp imports no module and no `core/async*` or `core/compress*` package, and contains no `extern` and no `async test`. gaato/mttp_digest imports only gaato/mttp, moonbitlang/x and core; gaato/mttp_async only gaato/mttp, core and the codec modules. The engines never import codings. `moonbitlang/async` is forbidden everywhere. `internal/control` has no `async fn`, `mut` or `Ref`. `allow-experimental-packages` is always a list. |
-| `runtime_gates` | No public mbti of any module names a runtime type. gaato/mttp produces identical mbti on all four targets. Test counts per package and target are pinned. |
-| `test_layout` | `%async` appears only in `mttp/src/driver/intrinsics.mbt`. No production package imports `driver`, `sim` or `testing`. |
+| `architecture_gate` | gaato/mttp_core imports no module and no `core/async*` or `core/compress*` package, and contains no `extern` and no `async test`. gaato/mttp_digest imports only gaato/mttp_core, moonbitlang/x and core; gaato/mttp only gaato/mttp_core, core and the codec modules. The engines never import codings. `moonbitlang/async` is forbidden everywhere. `internal/control` has no `async fn`, `mut` or `Ref`. `allow-experimental-packages` is always a list. |
+| `runtime_gates` | No public mbti of any module names a runtime type. gaato/mttp_core produces identical mbti on all four targets. Test counts per package and target are pinned. |
+| `test_layout` | `%async` appears only in `mttp_core/src/driver/intrinsics.mbt`. No production package imports `driver`, `sim` or `testing`. |
 | `bounds_check` | Every RESOURCE_BOUNDS row names an existing test; wire and decoded bytes are separate rows. |
 | `resolver_gate` | The library modules resolve and build from a scratch consumer outside moon.work; an experimental package needs the consumer's opt-in. |
 | `type_contracts` | Compile-fail fixtures from an external package: a Streaming endpoint refuses a Buffered request; `as_both` refuses streaming readers. |
@@ -1322,18 +1325,18 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 
 | sttp / tapir concept | mttp home, or the reason it is omitted |
 |---|---|
-| sttp-model Uri, UriInterpolator | `@mttp.Url` (WPT parser) + string targets; `UriBuilder`/`UriPart` |
-| Method, StatusCode, Header(s), MediaType, Request/ResponseMetadata | `@mttp.Method`, Int status + helpers, `Headers`, `MediaType`, `RequestHead`/`ResponseHead` |
+| sttp-model Uri, UriInterpolator | `@mttp_core.Url` (WPT parser) + string targets; `UriBuilder`/`UriPart` |
+| Method, StatusCode, Header(s), MediaType, Request/ResponseMetadata | `@mttp_core.Method`, Int status + helpers, `Headers`, `MediaType`, `RequestHead`/`ResponseHead` |
 | Part, ServerSentEvent, CookieWithMeta | `multipart`, `sse`, `cookie` |
 | sttp-shared MonadError, F[_], Streams capability | omitted: direct-style async, one `BodyStream` |
-| sttp-shared AttributeMap | `@mttp.Attributes` (typed keys) on Request and Response; no type-keyed map (no TypeId) |
-| client4 PartialRequest / Request / RequestBuilder; basicRequest | `@mttp.Request` builders + `RequestPlan[T, M]` (`@client.request`, `get`, `post`); Client defaults replace the template value |
+| sttp-shared AttributeMap | `@mttp_core.Attributes` (typed keys) on Request and Response; no type-keyed map (no TypeId) |
+| client4 PartialRequest / Request / RequestBuilder; basicRequest | `@mttp_core.Request` builders + `RequestPlan[T, M]` (`@client.request`, `get`, `post`); Client defaults replace the template value |
 | quickRequest / simple client | omitted (§0.1); `moonbitlang/core/async/http` for trusted throwaway use |
-| ResponseAs: asString, asJson, asEither, fromMetadata, ignore, asStream*, asBoth, asParams, asFile | `ResponsePlan` with a Buffered/Streaming mode: `as_string`, `as_json` (Result values), `ResponsePlan::reject`/`any_status`, `from_head`, `ignore_body`, `as_stream`, `as_both`, `as_form`; `as_file` later (mttp_async) |
-| Backend / StreamBackend / SyncBackend | `@mttp.Backend` (always pull bodies; `BodyTiming` says buffered or streamed); no sync split |
+| ResponseAs: asString, asJson, asEither, fromMetadata, ignore, asStream*, asBoth, asParams, asFile | `ResponsePlan` with a Buffered/Streaming mode: `as_string`, `as_json` (Result values), `ResponsePlan::reject`/`any_status`, `from_head`, `ignore_body`, `as_stream`, `as_both`, `as_form`; `as_file` later (gaato/mttp) |
+| Backend / StreamBackend / SyncBackend | `@mttp_core.Backend` (always pull bodies; `BodyTiming` says buffered or streamed); no sync split |
 | WebSocketBackend, WebSocketStub | later (§5.4) |
-| RequestOptions, maxRedirects, redirectToGet | `@mttp.SendOptions` (set by the Client from its defaults and per-request overrides); `RedirectConfig` on FollowRedirects + the `redirect_limit` attribute |
-| compressBody / compression | `@codings.Decompress` (client) and `@codings.compress` (server) in mttp_async; request compression later |
+| RequestOptions, maxRedirects, redirectToGet | `@mttp_core.SendOptions` (set by the Client from its defaults and per-request overrides); `RedirectConfig` on FollowRedirects + the `redirect_limit` attribute |
+| compressBody / compression | `@codings.Decompress` (client) and `@codings.compress` (server) in gaato/mttp; request compression later |
 | SttpClientException / ResponseException | `TransportError` (raised) / `ResponseFailure` (a value) |
 | FollowRedirectsBackend | `FollowRedirects` (final URL and history as response attributes) |
 | DigestAuthenticationBackend | `gaato/mttp_digest` (`DigestScheme`) |
@@ -1369,9 +1372,9 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | Examples, docs extensions, Input default, deprecated params, docs UIs (swagger, redoc) | later (SC-13) |
 | auth.bearer/basic/apiKey; oauth2; openIdConnect | `bearer`, `signature_header`, basic, api keys; OAuth2/OIDC later |
 | multipartBody (client and endpoint) | client: `@multipart.body`; endpoint: `stream_body_out` for replies, multipart input later |
-| static files (files module) | later: `mttp_async/files` + sans-IO conditional/Range helpers |
+| static files (files module) | later: `mttp/files` + sans-IO conditional/Range helpers |
 | streamBody / serverSentEventsBody / webSocketBody | `stream_body` / `sse_out` + `EventStream` / later |
-| server backends (netty, jdkhttp), serverless | `mttp_async/server` (over `h1server`), `mttp_async/fetch` + `hosts` (Workers, Fastly, Vercel, Deno, Bun, Lambda URLs); `h1server.serve_conn` for any other runtime |
+| server backends (netty, jdkhttp), serverless | `mttp/server` (over `h1server`), `mttp/fetch` + `hosts` (Workers, Fastly, Vercel, Deno, Bun, Lambda URLs); `h1server.serve_conn` for any other runtime |
 | openapi-codegen | mbt-sdk tools/gen (Python) |
 | AsyncAPI | omitted for now **[needs-user-input]** |
 | per-integration modules (zio, cats, circe, ...) | omitted: one runtime, one JSON |
@@ -1729,7 +1732,7 @@ Corrections to the previous draft (from the final critique, each checked against
 | # | Risk | Mitigation |
 |---|---|---|
 | 1 | The Driver depends on undocumented `%async` intrinsics. | One file; a daily canary diffs it against core's `async_primitive.mbt`; driver is experimental, so a change does not break the stable surface. |
-| 2 | core/async is experimental and still renames APIs. | Only mttp_async imports it; its adapters are private (`internal/`), and the mbti gate keeps its types out of every public signature. |
+| 2 | core/async is experimental and still renames APIs. | Only gaato/mttp imports it; its adapters are private (`internal/`), and the mbti gate keeps its types out of every public signature. |
 | 3 | The flag day: gaato/http 0.6 breaks every graph that also holds a 0.5-only library (F28). | Publish it only in the train with the SDK re-releases (§5.8); the resolver gate builds the SDKs and discord from outside before the train. |
 | 4 | Under MVS, breaking 0.x releases propagate and patches do not. | Coordinated minimum bumps; `/v2` paths reserved. |
 | 5 | Workspace builds hide consumer resolutions. | Resolver gate outside moon.work. |
@@ -1743,7 +1746,7 @@ Corrections to the previous draft (from the final critique, each checked against
 | 13 | Unmeasured costs: immutable Headers copies, closures per request, persistent control states. | `benchmarks/` (state copies, one reused TCP connection) before release. |
 | 14 | String URLs surface invalid targets only at send time (`Kind::Invalid`, unsent). | Accepted (X-01); `uri()` for builders. |
 | 15 | The ECMA pattern translator covers only a subset. | Corpus from the three SDK specs; refusal at construction. |
-| 16 | The endpoint layer left experimental on 2026-11-11 and now follows the §5.6 evolution rules; a break needs a minor release of gaato/mttp. | `#non_exhaustive` enums, frozen field sets, apispec typing 3.2's fields already (§0.0). |
+| 16 | The endpoint layer left experimental on 2026-11-11 and now follows the §5.6 evolution rules; a break needs a minor release of gaato/mttp_core. | `#non_exhaustive` enums, frozen field sets, apispec typing 3.2's fields already (§0.0). |
 | 17 | Migration size: discord's public API, three generated SDKs (github ≈ 243k lines), discord_voice, requesto users. | Mechanical emitter changes; isolated migration worktrees; one break for discord instead of two. |
 | 18 | Users reach for `moonbitlang/core/async/http` for production work. | §0.1 and the READMEs state its gaps (F65); upstream reports are a separate, owner-approved task. |
 | 19 | Frozen old-stack graphs strand users of requesto 0.2, kbbi 0.1 and discord ≤ 0.13. | Every gaato consumer moves in the train; requesto's last release documents the migration. |

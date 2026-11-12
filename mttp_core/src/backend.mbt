@@ -1,5 +1,5 @@
 // The transport seam. A Backend moves one exchange and nothing more: the
-// connection engines of gaato/mttp_core, mttp's runtime backends, and the
+// connection engines of gaato/mttp_core, gaato/mttp's runtime backends, and the
 // wrappers and stubs of gaato/mttp_core all implement it, so a client policy is
 // written once against this trait. CONTRACT.md (Backend; SendOptions and
 // BodyTiming) states what each side may rely on.
