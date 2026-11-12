@@ -1,8 +1,9 @@
-// gaato/mttp's Backend over moonbitstack/moonfetch. One moonfetch Client
-// carries every exchange; mttp's Client owns every policy, so moonfetch's
-// own timeout, redirects, decompression and cookie jar are off and each
-// `send` is one `Client::stream` exchange. CONTRACT.md in gaato/mttp
-// (Backend; SendOptions and BodyTiming) is what this file keeps.
+// gaato/mttp's Backend over moonbitstack/moonfetch. A moonfetch Client
+// carries the exchanges, a new one every `exchanges_per_client` sends;
+// mttp's Client owns every policy, so moonfetch's own timeout, redirects,
+// decompression and cookie jar are off and each `send` is one
+// `Client::stream` exchange. CONTRACT.md in gaato/mttp (Backend;
+// SendOptions and BodyTiming) is what this file keeps.
 
 ///|
 /// The HTTP version a response arrived over: `"HTTP/1.1"`, `"HTTP/2"` or
@@ -29,7 +30,9 @@ pub let http_version : @mttp.AttributeKey[String] = @mttp.AttributeKey::new(
 ///   partway over HTTP/3.
 /// - `proxy`: send every connection through this HTTP, HTTPS or SOCKS5
 ///   proxy (`@moonfetch.Proxy::parse("http://proxy.example:3128")`). The
-///   environment's proxy variables are not read.
+///   environment's proxy variables are not read. With a proxy, `http3` is
+///   ignored: moonfetch dials QUIC straight to the origin, which would go
+///   around the proxy.
 /// - `tls`: moontls client settings, such as the roots to trust
 ///   (`@tls.Client::new(@x509.Roots::pem(pem))`). By default, the Mozilla
 ///   root store bundled with moonbitstack/mooncred.
@@ -42,8 +45,52 @@ pub fn backend(
 }
 
 ///|
+/// The sends one moonfetch Client carries before the next ones go to a new
+/// one. moonfetch 0.1.8 keeps an entry for every stream an HTTP/2 or HTTP/3
+/// connection opened, ended or not, until the connection closes, so a
+/// connection that is never replaced grows with every request. A Client is
+/// closed once it is replaced and its last response is closed; the new one
+/// opens new connections, once per 1000 requests.
+let exchanges_per_client : Int32 = 1000
+
+///|
+/// One moonfetch Client, the sends it took, and the responses it still owes.
+priv struct Generation {
+  client : @moonfetch.Client
+  mut sends : Int32
+  mut open : Int32
+  mut retired : Bool
+  mut closed : Bool
+}
+
+///|
+/// Closes the client once.
+fn Generation::shut(self : Generation) -> Unit {
+  if !self.closed {
+    self.closed = true
+    self.client.close()
+  }
+}
+
+///|
+/// One exchange of this generation ended: its send failed, or its response
+/// was closed. A replaced generation closes with its last exchange.
+fn Generation::release(self : Generation) -> Unit {
+  self.open -= 1
+  if self.retired && self.open == 0 {
+    self.shut()
+  }
+}
+
+///|
 priv struct MoonfetchBackend {
-  client : Result[@moonfetch.Client, String]
+  http3 : Bool
+  proxy : @moonfetch.Proxy?
+  tls : @tls.Client?
+  mut current : Generation?
+  /// Replaced generations with responses still open, closed with the
+  /// backend.
+  mut retired : Array[Generation]
   mut closed : Bool
 }
 
@@ -53,29 +100,60 @@ fn MoonfetchBackend::new(
   proxy? : @moonfetch.Proxy,
   tls? : @tls.Client,
 ) -> MoonfetchBackend {
-  // Only a base URL can make Client::new fail, and none is given; a failure
-  // is kept and refuses every send rather than aborting the program.
-  let client = try
-    @moonfetch.Client::new(
-      timeout=None,
-      redirects=0,
-      compression=false,
-      http2=true,
-      http3~,
-      // moonfetch keeps idle HTTP/1.1 connections without an age limit and
-      // cannot tell a stale one before writing to it, so a request on a
-      // connection the server had closed would fail after being sent, and
-      // mttp would not retry a POST. Each HTTP/1.1 exchange takes a fresh
-      // connection instead; HTTP/2 and HTTP/3 connections are still shared.
-      idle=0,
-      proxy?,
-      tls?,
-    )
-    |> Ok
-  catch {
-    e => Err(@debug.to_string(e))
+  // moonfetch 0.1.8 tries QUIC before its proxy-aware TCP path and dials the
+  // origin directly, so a proxy would be bypassed.
+  {
+    http3: http3 && proxy is None,
+    proxy,
+    tls,
+    current: None,
+    retired: [],
+    closed: false,
   }
-  { client, closed: false, }
+}
+
+///|
+/// The generation the next send takes: the current one, or a new one when
+/// it has carried `exchanges_per_client` sends.
+fn MoonfetchBackend::generation(
+  self : MoonfetchBackend,
+) -> Generation raise @mttp.TransportError {
+  match self.current {
+    Some(current) if current.sends < exchanges_per_client => return current
+    Some(current) => {
+      current.retired = true
+      if current.open == 0 {
+        current.shut()
+      }
+      self.retired = self.retired.filter(g => !g.closed)
+      if !current.closed {
+        self.retired.push(current)
+      }
+    }
+    None => ()
+  }
+  // Only a base URL can make Client::new fail, and none is given; a failure
+  // refuses the send rather than aborting the program.
+  let client = @moonfetch.Client::new(
+    timeout=None,
+    redirects=0,
+    compression=false,
+    http2=true,
+    http3=self.http3,
+    // moonfetch keeps idle HTTP/1.1 connections without an age limit and
+    // cannot tell a stale one before writing to it, so a request on a
+    // connection the server had closed would fail after being sent, and mttp
+    // would not retry a POST. Each HTTP/1.1 exchange takes a fresh connection
+    // instead; HTTP/2 and HTTP/3 connections are still shared.
+    idle=0,
+    proxy?=self.proxy,
+    tls?=self.tls,
+  ) catch {
+    e => raise invalid(@debug.to_string(e))
+  }
+  let next = { client, sends: 0, open: 0, retired: false, closed: false, }
+  self.current = Some(next)
+  next
 }
 
 ///|
@@ -93,10 +171,6 @@ impl @mttp.Backend for MoonfetchBackend with fn send(self, request, options) {
   }
   request.validate()
   options.validate()
-  let client = match self.client {
-    Ok(client) => client
-    Err(detail) => raise invalid(detail)
-  }
   let timing : Timing = match options.body {
     Exchange(max_bytes~) => Exchange(max_bytes~)
     Stream(idle_ms~) => Stream(idle_ms~)
@@ -112,6 +186,14 @@ impl @mttp.Backend for MoonfetchBackend with fn send(self, request, options) {
     raise invalid("unsupported request body")
   }
   let headers = outgoing_headers(request.headers)
+  let lease = self.generation()
+  lease.sends += 1
+  lease.open += 1
+  // Until the response owns it, every exit gives the exchange back: a
+  // failure, the deadline, cancellation.
+  let mut handed = false
+  defer (if !handed { lease.release() })
+  let client = lease.client
   let started = @async.now()
   let open = async fn() -> @moonfetch.Stream {
     let body = match upload {
@@ -127,7 +209,7 @@ impl @mttp.Backend for MoonfetchBackend with fn send(self, request, options) {
       Some(ms) => @async.with_timeout_opt(ms, open)
     }
   } catch {
-    e => raise failure(e, Unknown)
+    e => raise failure(e, Unknown, bodiless=upload is Nothing)
   }
   guard opened is Some(stream) else {
     raise @mttp.TransportError(
@@ -140,7 +222,15 @@ impl @mttp.Backend for MoonfetchBackend with fn send(self, request, options) {
     (Exchange(..), Some(ms)) => Some((started + ms.to_int64(), ms))
     _ => None
   }
-  let body = ResponseBody::{ stream, timing, deadline, seen: 0, done: false, }
+  let body = ResponseBody::{
+    stream,
+    lease,
+    timing,
+    deadline,
+    seen: 0,
+    done: false,
+  }
+  handed = true
   let version = stream.version()
   {
     ..@mttp.Response::new(
@@ -156,9 +246,13 @@ impl @mttp.Backend for MoonfetchBackend with fn send(self, request, options) {
 impl @mttp.Backend for MoonfetchBackend with fn close(self) {
   if !self.closed {
     self.closed = true
-    if self.client is Ok(client) {
-      client.close()
+    if self.current is Some(current) {
+      current.shut()
     }
+    for generation in self.retired {
+      generation.shut()
+    }
+    self.retired = []
   }
 }
 
@@ -261,6 +355,8 @@ priv enum Timing {
 ///|
 priv struct ResponseBody {
   stream : @moonfetch.Stream
+  /// The generation whose client carries the stream.
+  lease : Generation
   timing : Timing
   /// The attempt's end in `@async.now()` milliseconds, and its length, for
   /// an Exchange with a deadline.
@@ -338,6 +434,7 @@ impl @mttp.BodyStream for ResponseBody with fn close(self) {
   if !self.done {
     self.done = true
     self.stream.close()
+    self.lease.release()
   }
 }
 

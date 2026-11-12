@@ -55,7 +55,9 @@ closes the backend's connections.
   off by default, as it is in moonfetch, so `backend()` speaks HTTP/1.1 and
   HTTP/2; see [Limits](#limits) before turning it on.
 - `proxy` sends every connection through an HTTP, HTTPS or SOCKS5 proxy:
-  `proxy=@moonfetch.Proxy::parse("http://proxy.example:3128")`.
+  `proxy=@moonfetch.Proxy::parse("http://proxy.example:3128")`. With a
+  proxy, `http3=true` has no effect: moonfetch would dial QUIC straight to
+  the origin, around the proxy.
 - `tls` replaces moontls's client settings, for example to trust a private
   certificate authority:
   `tls=@tls.Client::new(@x509.Roots::pem(ca_pem))`, with
@@ -79,8 +81,12 @@ pub async fn version_of(url : String) -> String? {
 
 ## What it does
 
-- One moonfetch client per `backend()` call, and one exchange per `send`.
-  An HTTP/2 or HTTP/3 connection carries every request to its origin.
+- One exchange per `send`, on a moonfetch client of the backend's own. An
+  HTTP/2 or HTTP/3 connection carries every request to its origin, for 1000
+  requests: moonfetch 0.1.8 keeps an entry for each stream a connection
+  opened until the connection closes, so after 1000 sends the backend moves
+  to a new client with new connections and closes the old one once its last
+  response is closed.
 - An HTTP/1.1 exchange takes a fresh connection. moonfetch keeps idle
   HTTP/1.1 connections with no age limit and cannot tell that the server
   closed one until a request fails on it, after the request was written;
@@ -96,10 +102,14 @@ pub async fn version_of(url : String) -> String? {
   streamed body waits at most the idle limit for each read.
 - A failure says whether the request may have been sent. Resolving the
   host, connecting, the TLS handshake and the proxy come before the request,
-  and so does a stream the server refused before processing it (HTTP/2
-  `REFUSED_STREAM`, HTTP/3 `H3_REQUEST_REJECTED`): the Client may send those
-  again whatever the method. Any other failure may have come after the
-  request was written, and only an idempotent request is sent again.
+  and so does a request the server refused before processing it and before
+  any response head (HTTP/3 `H3_REQUEST_REJECTED`; HTTP/2 `REFUSED_STREAM`
+  for a request without a body): the Client may send those again whatever
+  the method. moonfetch raises `REFUSED_STREAM` itself too when a connection
+  dies while a request body waits for flow-control window, after part of it
+  was written, so for a request with a body that code proves nothing. Any
+  other failure may have come after the request was written, and only an
+  idempotent request is sent again.
 - A streamed request body is read once and closed. Its first piece is read
   before anything is written, so a body that fails at once sends nothing.
   Over HTTP/2 and HTTP/3 the body is sent as it is read; over HTTP/1.1

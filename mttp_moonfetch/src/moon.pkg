@@ -22,6 +22,8 @@ import {
   "moonbitstack/moontls/tls",
   "moonbitstack/mooncred/x509",
   "moonbitstack/moonnet/tcp",
+  "moonbitlang/async/socket",
+  "moonbitstack/moonfetch",
   "moonbitstack/moonhttp/http2",
   "moonbitstack/moonhttp/header",
   "moonbitlang/core/async",

@@ -30,8 +30,22 @@ test "failures that prove nothing was sent are unsent" {
   ]
   for item in unsent {
     let (label, e) = item
-    assert_true(failure(e, Unknown).is_unsent(), msg=label)
+    assert_true(failure(e, Unknown, bodiless=true).is_unsent(), msg=label)
   }
+}
+
+///|
+test "a refused stream proves nothing for a request with a body, or after the head" {
+  let refused = @moonfetch.Reset(code=7)
+  let rejected = @http3.Fault(code=RequestRejected, detail="busy")
+  // moonfetch raises REFUSED_STREAM itself when the connection dies while a
+  // request body waits for window, after the head was written.
+  assert_false(failure(refused, Unknown).is_unsent())
+  assert_eq(classified(refused, Unknown), (Network, Unknown))
+  assert_false(failure(refused, Body, bodiless=true).is_unsent())
+  // H3_REQUEST_REJECTED comes only from the server, body or not.
+  assert_true(failure(rejected, Unknown).is_unsent())
+  assert_false(failure(rejected, Body).is_unsent())
 }
 
 ///|

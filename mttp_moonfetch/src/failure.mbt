@@ -5,13 +5,20 @@
 // idempotent. moonfetch does not say how far an exchange got, so a failure
 // counts as unsent only when its kind can only happen before the request is
 // written: resolving the host, connecting, the TLS handshake, the proxy, or
-// a stream the server refused before processing it. Anything else is
-// reported in phase Unknown (or Body), which mttp treats as possibly sent.
+// a request the server refused before processing it, while no response head
+// has arrived. Anything else is reported in phase Unknown (or Body), which
+// mttp treats as possibly sent.
 
 ///|
 /// `failure(e, phase)` classifies `e`; `phase` is the phase of a failure
-/// that could have happened after the request was written.
-fn failure(e : Error, phase : @mttp.Phase) -> @mttp.TransportError {
+/// that could have happened after the request was written: Unknown before
+/// the response head, Body after it. `bodiless` says the request had no
+/// body, which a REFUSED_STREAM needs to prove it unsent (see below).
+fn failure(
+  e : Error,
+  phase : @mttp.Phase,
+  bodiless~ : Bool = false,
+) -> @mttp.TransportError {
   let detail = @debug.to_string(e)
   match e {
     @mttp.TransportError(_) as error => error
@@ -22,11 +29,17 @@ fn failure(e : Error, phase : @mttp.Phase) -> @mttp.TransportError {
         phase=Dial,
         detail~,
       )
-    // REFUSED_STREAM (RFC 9113 §8.7), raised by moonfetch both for a stream
-    // it would not open on a connection that was closing and for one the
-    // server refused or left past its GOAWAY: either way the server did not
-    // process the request, so it may be sent again whatever its method.
-    @moonfetch.Reset(code~) if code == refused_stream =>
+    // REFUSED_STREAM (RFC 9113 §8.7). moonfetch 0.1.8 raises it for a
+    // stream it would not open on a connection that was closing and for one
+    // the server refused or left past its GOAWAY, where the server did not
+    // process the request. But it raises the same code when the connection
+    // dies while a request body waits for flow-control window, after the
+    // head and maybe part of the body were written. Only a request without a
+    // body never waits for window, so only then does the code prove the
+    // request unsent; with a body it may have been processed.
+    @moonfetch.Reset(code~) if code == refused_stream &&
+      phase is Unknown &&
+      bodiless =>
       @mttp.TransportError(
         kind=Network,
         phase=Pool,
@@ -49,8 +62,9 @@ fn failure(e : Error, phase : @mttp.Phase) -> @mttp.TransportError {
       @mttp.TransportError(kind=Network, phase~, detail~)
     @http1.Malformed(why) if why.contains("closed") =>
       @mttp.TransportError(kind=Network, phase~, detail~)
-    // RFC 9114 §8.1 H3_REQUEST_REJECTED: rejected without any processing.
-    @http3.Fault(code=RequestRejected, ..) =>
+    // RFC 9114 §4.1.1, §8.1 H3_REQUEST_REJECTED: rejected without any
+    // processing. moonfetch raises it for nothing of its own.
+    @http3.Fault(code=RequestRejected, ..) if phase is Unknown =>
       @mttp.TransportError(
         kind=Network,
         phase=Pool,

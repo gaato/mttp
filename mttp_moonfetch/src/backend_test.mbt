@@ -482,7 +482,7 @@ async test "HTTP/2 over TLS: requests share one connection" {
 }
 
 ///|
-async test "HTTP/2: a stream refused before processing is unsent, so a POST is resent" {
+async test "HTTP/2: a refused stream without a body is unsent, so a POST is resent" {
   let calls = Ref(0)
   with_h2_server(
     (verb, path, fields, body) => {
@@ -498,7 +498,7 @@ async test "HTTP/2: a stream refused before processing is unsent, so a POST is r
       let backend = @mttp_moonfetch.backend(tls=trusting())
       let error = transport_error(() => {
         backend.send(
-          @mttp.Request::post("\{base}/once").body_bytes(b"x"),
+          @mttp.Request::post("\{base}/once"),
           @mttp.SendOptions::default(),
         )
       })
@@ -506,9 +506,49 @@ async test "HTTP/2: a stream refused before processing is unsent, so a POST is r
       calls.val = 0
       let api = @mttp_async.client(base_url=base, backend~)
       defer api.close()
-      let reply = api.send(@mttp_async.post("/again").body_bytes(b"y"))
-      assert_eq(reply.body, Ok("POST /again y"))
+      let reply = api.send(@mttp_async.post("/again"))
+      assert_eq(reply.body, Ok("POST /again "))
       assert_eq(calls.val, 2)
+    },
+  )
+}
+
+///|
+/// moonfetch raises the same REFUSED_STREAM when a connection dies while a
+/// request body waits for window, after part of it was written, so with a
+/// body the refusal proves nothing and a POST is not resent.
+async test "HTTP/2: a refused stream with a body may have been sent, so a POST is not resent" {
+  let calls = Ref(0)
+  with_h2_server(
+    (_, _, _, _) => {
+      calls.val += 1
+      Refuse
+    },
+    (port, _) => {
+      let base = "https://localhost:\{port}"
+      let backend = @mttp_moonfetch.backend(tls=trusting())
+      let error = transport_error(() => {
+        backend.send(
+          @mttp.Request::post("\{base}/once").body_bytes(b"x"),
+          @mttp.SendOptions::default(),
+        )
+      })
+      let @mttp.TransportError(kind~, phase~, ..) = error
+      assert_eq(kind, Network)
+      assert_eq(phase, Unknown)
+      assert_false(error.is_unsent())
+      calls.val = 0
+      let api = @mttp_async.client(base_url=base, backend~)
+      defer api.close()
+      let resent = try {
+        ignore(api.send(@mttp_async.post("/again").body_bytes(b"y")))
+        "a reply"
+      } catch {
+        @mttp.TransportError(_) as error => error.message()
+        other => raise other
+      }
+      assert_eq(resent, "Network during Unknown: Reset(code=7)")
+      assert_eq(calls.val, 1)
     },
   )
 }
@@ -604,4 +644,86 @@ async test "a body cut short fails in phase Body, with or without a deadline" {
       assert_false(error.is_unsent())
     })
   }
+}
+
+///|
+/// With a proxy, `http3=true` must not send QUIC straight to the origin:
+/// moonfetch 0.1.8 would try it before its proxied TCP path. A UDP socket
+/// on the origin's port counts the datagrams that reach it, and the proxy
+/// records the CONNECT it is asked for and refuses it.
+async test "with a proxy, HTTP/3 is not tried, so nothing goes around the proxy" {
+  let udp = @socket.UdpServer(@socket.Addr::parse("127.0.0.1:0"))
+  let port = udp.addr.port()
+  let datagrams = Ref(0)
+  let connects : Array[String] = []
+  @async.with_timeout(20000, () => {
+    @async.with_task_group(group => {
+      group.spawn_bg(no_wait=true, () => {
+        let buffer = FixedArray::make(2048, b'\x00')
+        for ;; {
+          ignore(udp.recvfrom(buffer)) catch {
+            _ => return
+          }
+          datagrams.val += 1
+        }
+      })
+      with_tcp_server(
+        conn => {
+          if conn.read_until("\r\n\r\n") is Some(head) {
+            connects.push(head.split("\r\n").next().unwrap().to_owned())
+          }
+          conn.write(b"HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\n\r\n")
+        },
+        proxy_port => {
+          let backend = @mttp_moonfetch.backend(
+            http3=true,
+            proxy=@moonfetch.Proxy::parse("http://127.0.0.1:\{proxy_port}"),
+          )
+          defer backend.close()
+          let error = transport_error(() => {
+            backend.send(
+              @mttp.Request::get("https://127.0.0.1:\{port}/"),
+              @mttp.SendOptions::default(),
+            )
+          })
+          let @mttp.TransportError(kind~, ..) = error
+          assert_eq(kind, Proxy(status=403))
+        },
+      )
+      udp.close()
+      group.return_immediately()
+    })
+  })
+  assert_eq(datagrams.val, 0)
+  assert_eq(connects, ["CONNECT 127.0.0.1:\{port} HTTP/1.1"])
+}
+
+///|
+/// moonfetch 0.1.8 keeps an entry for every stream of an HTTP/2 connection
+/// until the connection closes, so the backend moves to a new moonfetch
+/// client, with new connections, after 1000 sends. A response of the old
+/// client stays readable after the switch.
+async test "HTTP/2: after 1000 exchanges a new client takes over, and open responses still read" {
+  with_h2_server(echo, (port, connections) => {
+    let backend = @mttp_moonfetch.backend(tls=trusting())
+    defer backend.close()
+    let base = "https://localhost:\{port}"
+    let first = backend.send(
+      @mttp.Request::get("\{base}/first"),
+      @mttp.SendOptions::default(),
+    )
+    for i in 1..<1000 {
+      backend
+      .send(@mttp.Request::get("\{base}/\{i}"), @mttp.SendOptions::default())
+      .close()
+    }
+    assert_eq(connections.val, 1)
+    let next = backend.send(
+      @mttp.Request::get("\{base}/next"),
+      @mttp.SendOptions::default(),
+    )
+    assert_eq(read_text(next), "GET /next ")
+    assert_eq(connections.val, 2)
+    assert_eq(read_text(first), "GET /first ")
+  })
 }
