@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-12
+
 ### Changed
 
 - OpenAPI documents describe each server-sent event in OpenAPI 3.2's item
