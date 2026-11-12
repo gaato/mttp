@@ -35,13 +35,12 @@ import {
 
 supported_targets = "native + wasm"
 
-// Experimental, so each importer opts in: the package follows moonfetch, a
-// fast-moving 0.x module with one maintainer, and classifies failures by
-// moonfetch's error types (and, for an early close, by one error text), which
-// any moonfetch release may change.
+// Not marked experimental: the only experimental package of the family is
+// gaato/mttp/driver, which relies on compiler intrinsics. What this one
+// depends on (moonfetch's error types, one error text) is said in its README
+// and watched by the canary's moonfetch job.
 
 options(
-  experimental: true,
   "allow-experimental-packages": [
     "moonbitlang/core/async",
     "moonbitlang/core/async/cond_var",

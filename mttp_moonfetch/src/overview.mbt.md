@@ -19,19 +19,10 @@ moon add gaato/mttp_moonfetch
 moon add gaato/mttp_async
 ```
 
-The package is experimental (see [Limits](#limits)), so the package that
-imports it opts in, in its `moon.pkg`:
-
-```text
-import {
-  "gaato/mttp_async",
-  "gaato/mttp_moonfetch",
-}
-
-options(
-  "allow-experimental-packages": [ "gaato/mttp_moonfetch" ],
-)
-```
+Then import `gaato/mttp_moonfetch` beside `gaato/mttp_async` in the package
+that builds the Client; no experimental opt-in is needed. Before relying on
+it, read [Limits](#limits): it follows moonfetch, which is young and changes
+quickly.
 
 ## Use it
 
@@ -128,11 +119,13 @@ pub async fn version_of(url : String) -> String? {
 
 ## Limits
 
-- **Experimental, 0.x.** The package follows moonfetch, a module that
-  changes quickly, is still 0.x and has one maintainer. Telling a sent
-  request from an unsent one depends on moonfetch's error types, and for one
-  case on an error message, which any moonfetch release may change. A daily
-  canary builds this module against the newest moonfetch to catch that.
+- **It follows moonfetch, 0.x.** moonfetch changes quickly, is still 0.x
+  and has one maintainer. Telling a sent request from an unsent one depends
+  on moonfetch's error types, and for one case on an error message, which
+  any moonfetch release may change. A daily canary builds this module
+  against the newest moonfetch and runs it against public HTTP/2 and HTTP/3
+  servers to catch that. The package is not marked experimental, so no
+  opt-in is needed; these limits are its status instead.
 - **TLS is moonbitstack's own.** The TLS protocol (moontls), its
   cryptography (mooncrypt) and certificate validation (mooncred) are
   moonbitstack's MoonBit libraries, not a widely deployed implementation

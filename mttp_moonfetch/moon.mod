@@ -17,7 +17,7 @@ repository = "https://github.com/gaato/mttp"
 
 keywords = [ "http", "http2", "http3", "client", "backend", "async" ]
 
-description = "An HTTP/2 and HTTP/3 backend for gaato/mttp's Client on moonbitstack/moonfetch, for native and wasm. Experimental."
+description = "An HTTP/2 and HTTP/3 backend for gaato/mttp's Client on moonbitstack/moonfetch, for native and wasm."
 
 source = "src"
 
