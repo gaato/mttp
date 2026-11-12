@@ -59,10 +59,10 @@ there. A program on wasm-gc or on another runtime uses this module directly:
 implement `Backend` over that runtime's HTTP client, or implement only the
 ports in `rt` and reuse the `h1client` engine, then pass the backend, a
 `Clock` and, for deadlines, a `Timer` to `Client::new`. The client, typed
-endpoints and server-sent events work unchanged. This is also how to use it
-in an app whose framework still runs on the registry module
-`moonbitlang/async`, which cannot share a program with
-`moonbitlang/core/async`.
+endpoints and server-sent events work unchanged. A framework on the registry
+module `moonbitlang/async` can share a program with `gaato/mttp_async`: from
+0.22.6 on, that module runs on `moonbitlang/core/async`'s runtime, so an app
+that needs it requires `moonbitlang/async@0.22.6` or later.
 
 ## A client in a library
 
