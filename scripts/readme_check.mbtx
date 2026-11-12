@@ -1,0 +1,387 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/env",
+}
+----
+
+///|
+/// Keeps the repository's README.md true to the code it shows. The README is
+/// read on GitHub only (mooncakes shows each module's own overview), so no
+/// doc test covers it; this script does.
+///
+/// A check is an HTML comment on its own line, followed by a fenced block:
+///
+/// - `<!-- source: examples/tour/main.mbt -->`: the block is that file, byte
+///   for byte.
+/// - `<!-- output: examples/retries -->`: the block is exactly what
+///   `moon run examples/retries` prints.
+/// - `<!-- excerpt: examples/tour -->`: the block's lines are lines of what
+///   `moon run examples/tour` prints, in order, from its first line to its
+///   last; a line that is `...` stands for any number of lines left out.
+///
+/// The README must hold each kind at least once, so deleting a comment does
+/// not silently drop its check. Besides: every relative link names a file or
+/// directory that exists, and the MoonBit badge shows the toolchain version
+/// `moonbit-version` pins.
+///
+/// Usage, from the repository root:
+///   moon run scripts/readme_check.mbtx [-- [--self-test] [README]]
+///
+/// `--self-test` first checks the README, then changes it in memory in ways
+/// that must fail (a line of each kind of block, the badge, a link, a
+/// removed comment) and fails if any change passes.
+
+///|
+let kinds : Array[String] = ["source", "output", "excerpt"]
+
+///|
+/// The start of the MoonBit badge for `version`: its alt text and the
+/// shields.io path up to the colour.
+fn moonbit_badge(version : String) -> String {
+  "[![MoonBit \{version}](https://img.shields.io/badge/MoonBit-\{shields_escape(version)}-"
+}
+
+///|
+/// One comment and the fenced block after it.
+priv struct Check {
+  kind : String
+  target : String
+  /// The 1-based line of the comment, for messages.
+  line : Int32
+  lines : Array[String]
+}
+
+///|
+/// The checks and the relative link targets of a README, or the problems
+/// that keep it from being read.
+fn parse(
+  readme : String,
+) -> (Array[Check], Array[(Int32, String)], Array[String]) {
+  let lines = readme.split("\n").map(line => line.to_owned()).to_array()
+  let checks : Array[Check] = []
+  let links : Array[(Int32, String)] = []
+  let problems : Array[String] = []
+  let mut fence = false
+  let mut i = 0
+  while i < lines.length() {
+    let line = lines[i]
+    let trimmed = line.trim()
+    if trimmed.has_prefix("```") {
+      fence = !fence
+      i += 1
+      continue
+    }
+    if fence {
+      i += 1
+      continue
+    }
+    match marker(trimmed.to_owned()) {
+      Some((kind, target)) => {
+        let start = i + 1
+        if start >= lines.length() || !lines[start].has_prefix("```") {
+          problems.push(
+            "README.md:\{i + 1}: <!-- \{kind}: \{target} --> is not followed by a fenced block",
+          )
+          i += 1
+          continue
+        }
+        let block : Array[String] = []
+        let mut end = start + 1
+        while end < lines.length() && lines[end] != "```" {
+          block.push(lines[end])
+          end += 1
+        }
+        if end >= lines.length() {
+          problems.push("README.md:\{i + 1}: the block is not closed")
+        }
+        checks.push({ kind, target, line: i + 1, lines: block, })
+        i = end + 1
+        continue
+      }
+      None => ()
+    }
+    for target in link_targets(line) {
+      links.push((i + 1, target))
+    }
+    i += 1
+  }
+  for kind in kinds {
+    if !checks.iter().any(check => check.kind == kind) {
+      problems.push("README.md has no <!-- \{kind}: ... --> block")
+    }
+  }
+  (checks, links, problems)
+}
+
+///|
+/// `(kind, target)` of a check comment.
+fn marker(line : String) -> (String, String)? {
+  guard line.has_prefix("<!-- ") && line.has_suffix(" -->") else { None }
+  let inner = line[5:line.length() - 4].to_owned()
+  for kind in kinds {
+    if inner.has_prefix(kind + ": ") {
+      return Some((kind, inner[kind.length() + 2:].trim().to_owned()))
+    }
+  }
+  None
+}
+
+///|
+/// The relative targets of the Markdown links on one line, without their
+/// `#fragment`.
+fn link_targets(line : String) -> Array[String] {
+  let targets = []
+  for part in line.split("](").drop(1) {
+    guard part.find(")") is Some(close) else { continue }
+    let target = part[:close].to_owned()
+    if target.contains("://") ||
+      target.has_prefix("#") ||
+      target.has_prefix("mailto:") {
+      continue
+    }
+    let path = match target.find("#") {
+      Some(at) => target[:at].to_owned()
+      None => target
+    }
+    if path != "" {
+      targets.push(path)
+    }
+  }
+  targets
+}
+
+///|
+/// Whether `excerpt` matches `output` line by line, a `...` line standing for
+/// any number of lines.
+fn excerpt_matches(excerpt : Array[String], output : Array[String]) -> Bool {
+  let segments : Array[Array[String]] = [[]]
+  for line in excerpt {
+    if line.trim() == "..." {
+      segments.push([])
+    } else {
+      segments[segments.length() - 1].push(line)
+    }
+  }
+  if segments.length() == 1 {
+    return segments[0] == output
+  }
+  let at = (segment : Array[String], start : Int32) => {
+    start >= 0 &&
+    start + segment.length() <= output.length() &&
+    output[start:start + segment.length()] == segment[:]
+  }
+  let last = segments.length() - 1
+  guard at(segments[0], 0) else { false }
+  let mut pos = segments[0].length()
+  for k in 1..<last {
+    let segment = segments[k]
+    let mut found = None
+    for start in pos..<=(output.length() - segment.length()) {
+      if at(segment, start) {
+        found = Some(start)
+        break
+      }
+    }
+    guard found is Some(start) else { return false }
+    pos = start + segment.length()
+  }
+  let tail = output.length() - segments[last].length()
+  tail >= pos && at(segments[last], tail)
+}
+
+///|
+/// How shields.io's static badge path writes `text`.
+fn shields_escape(text : String) -> String {
+  text
+  .replace_all(old="-", new="--")
+  .replace_all(old="_", new="__")
+  .replace_all(old=" ", new="_")
+  .replace_all(old="+", new="%2B")
+}
+
+///|
+/// Reads files and runs examples once, for the README and every changed
+/// copy of it the self-test checks.
+priv struct Checker {
+  version : String
+  files : Map[String, String]
+  outputs : Map[String, String]
+  exists : Map[String, Bool]
+}
+
+///|
+async fn Checker::file(self : Checker, path : String) -> String {
+  match self.files.get(path) {
+    Some(text) => text
+    None => {
+      let text = @fs.read_text(path)
+      self.files[path] = text
+      text
+    }
+  }
+}
+
+///|
+/// What `moon run <dir>` prints, or a failure if it exits with an error.
+async fn Checker::output(self : Checker, dir : String) -> String {
+  match self.outputs.get(dir) {
+    Some(text) => text
+    None => {
+      println("+ moon run \{dir}")
+      let run = @shell.Cmd("moon", ["run", dir]).output(timeout_ms=600000)
+      if run.exit_code() != 0 {
+        fail(
+          "moon run \{dir} exited with status \{run.exit_code()}:\n\{run.stdout()}\{run.stderr()}",
+        )
+      }
+      self.outputs[dir] = run.stdout()
+      run.stdout()
+    }
+  }
+}
+
+///|
+async fn Checker::exists(self : Checker, path : String) -> Bool {
+  match self.exists.get(path) {
+    Some(found) => found
+    None => {
+      let found = @fs.exists(path)
+      self.exists[path] = found
+      found
+    }
+  }
+}
+
+///|
+/// Everything in `readme` that is not true of the repository.
+async fn Checker::check(self : Checker, readme : String) -> Array[String] {
+  let (checks, links, problems) = parse(readme)
+  for check in checks {
+    let block = check.lines.map(line => line + "\n").join("")
+    let place = "README.md:\{check.line}"
+    match check.kind {
+      "source" =>
+        if !self.exists(check.target) {
+          problems.push("\{place}: \{check.target} does not exist")
+        } else if self.file(check.target) != block {
+          problems.push(
+            "\{place}: the block differs from \{check.target}; copy the file into it",
+          )
+        }
+      "output" =>
+        if self.output(check.target) != block {
+          problems.push(
+            "\{place}: the block differs from what `moon run \{check.target}` prints:\n\{self.output(check.target)}",
+          )
+        }
+      _ => {
+        let printed = self.output(check.target)
+        let lines = printed.split("\n").map(line => line.to_owned()).to_array()
+        if lines.last() is Some("") {
+          lines.unsafe_pop() |> ignore
+        }
+        if !excerpt_matches(check.lines, lines) {
+          problems.push(
+            "\{place}: the block is not an excerpt of what `moon run \{check.target}` prints:\n\{printed}",
+          )
+        }
+      }
+    }
+  }
+  for link in links {
+    let (line, target) = link
+    if !self.exists(target) {
+      problems.push(
+        "README.md:\{line}: the link target \{target} does not exist",
+      )
+    }
+  }
+  let badge = moonbit_badge(self.version)
+  if !readme.contains(badge) {
+    problems.push(
+      "README.md: the MoonBit badge must show \{self.version}, the version moonbit-version pins (\{badge}...)",
+    )
+  }
+  problems
+}
+
+///|
+/// Changes `readme` in one place: the first content line of the first block
+/// of `kind` gets `suffix`.
+fn change_block(readme : String, kind : String, suffix : String) -> String {
+  let lines = readme.split("\n").map(line => line.to_owned()).to_array()
+  for i, line in lines {
+    if marker(line.trim().to_owned()) is Some((found, _)) && found == kind {
+      for k in (i + 2)..<lines.length() {
+        if lines[k].trim() != "..." {
+          lines[k] = lines[k] + suffix
+          break
+        }
+      }
+      break
+    }
+  }
+  lines.join("\n")
+}
+
+///|
+async fn self_test(checker : Checker, readme : String) -> Unit {
+  let badge = moonbit_badge(checker.version)
+  let changes = [
+    ("a changed source line", change_block(readme, "source", " // drift")),
+    ("a changed output line", change_block(readme, "output", " drift")),
+    ("a changed excerpt line", change_block(readme, "excerpt", " drift")),
+    (
+      "a stale MoonBit badge",
+      readme.replace(old=badge, new=moonbit_badge("0.0.1")),
+    ),
+    ("a broken link", readme + "\n[gone](scripts/no_such_file.md)\n"),
+    (
+      "a removed output comment",
+      readme.replace_all(old="<!-- output: ", new="<!-- shown: "),
+    ),
+  ]
+  for change in changes {
+    let (label, changed) = change
+    if changed == readme {
+      fail("self-test: \{label} left the README unchanged")
+    }
+    let problems = checker.check(changed)
+    if problems.is_empty() {
+      fail("self-test: the check accepted \{label}")
+    }
+    let first = problems[0].split("\n").next().unwrap_or("")
+    println("self-test: rejected \{label}: \{first}")
+  }
+}
+
+///|
+async fn main {
+  let args = @env.args()[1:].to_owned()
+  let self_testing = args.contains("--self-test")
+  let paths = args.filter(arg => arg != "--self-test")
+  guard paths.length() <= 1 else {
+    fail(
+      "usage: moon run scripts/readme_check.mbtx [-- [--self-test] [README]]",
+    )
+  }
+  let path = paths.get(0).unwrap_or("README.md")
+  let checker : Checker = {
+    version: @fs.read_text("moonbit-version").trim().to_owned(),
+    files: Map([]),
+    outputs: Map([]),
+    exists: Map([]),
+  }
+  let readme = @fs.read_text(path)
+  let problems = checker.check(readme)
+  if !problems.is_empty() {
+    fail("\{path}:\n" + problems.map(p => "  " + p).join("\n"))
+  }
+  println("\{path}: blocks, outputs, links and the MoonBit badge are current")
+  if self_testing {
+    self_test(checker, readme)
+  }
+}

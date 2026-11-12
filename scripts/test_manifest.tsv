@@ -120,7 +120,9 @@ gaato/mttp-conformance	gaato/mttp-conformance/url	wasm	2
 gaato/mttp-conformance	gaato/mttp-conformance/url	wasm-gc	2
 gaato/mttp-example-get	gaato/mttp-example-get	native	0
 gaato/mttp-example-get	gaato/mttp-example-get	wasm	0
+gaato/mttp-example-retries	gaato/mttp-example-retries	native	0
 gaato/mttp-example-serve	gaato/mttp-example-serve	native	0
+gaato/mttp-example-tour	gaato/mttp-example-tour	native	0
 gaato/mttp-fetch-example	gaato/mttp-fetch-example	js	0
 gaato/mttp-fetch-example	gaato/mttp-fetch-example/workers	js	0
 gaato/mttp_async	gaato/mttp_async	js	0

@@ -12,7 +12,8 @@
 #   scripts/gates.sh static                 moon fmt --check, moon info and
 #                                           the mbti diff, the generated
 #                                           sources against their
-#                                           generators, the docs,
+#                                           generators, the docs, the root
+#                                           README against its examples,
 #                                           architecture, test layout,
 #                                           bounds, interface and coverage
 #                                           audits, the manifest's own
@@ -94,6 +95,10 @@ static_gates() {
   step script scripts/gen_apispec.mbtx -- --check
   step script scripts/gen_endpoint_maps.mbtx -- --check
   step script scripts/docs_audit.mbtx --self-test
+  # The root README's code, outputs, links and MoonBit badge. It runs the
+  # README's examples (native builds, about two seconds of retry waits),
+  # cheap beside the coverage run below.
+  step script scripts/readme_check.mbtx -- --self-test
   step script scripts/architecture_gate.mbtx --self-test
   step script scripts/test_layout.mbtx --self-test
   step script scripts/bounds_check.mbtx
