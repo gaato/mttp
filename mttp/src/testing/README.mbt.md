@@ -1,6 +1,8 @@
 # gaato/mttp/testing
 
-Test doubles for code built on `gaato/mttp/client`. They import only
+Test doubles for code built on `gaato/mttp/client`.
+
+They import only
 `gaato/mttp` and the client, so an SDK's tests do not compile the endpoint
 layer.
 

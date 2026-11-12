@@ -1,7 +1,9 @@
 # gaato/mttp/h1
 
-A sans-IO HTTP/1.1 codec: it turns bytes into heads, framing and body
-payloads and back, and never performs I/O. The client and server connection
+A sans-IO HTTP/1.1 codec.
+
+It turns bytes into heads, framing and body payloads and back, and never
+performs I/O. The client and server connection
 engines of `gaato/mttp` read and write every message with it, so both refuse
 the same inputs. It follows the message syntax and framing of
 [RFC 9112](https://www.rfc-editor.org/rfc/rfc9112.html), stricter where

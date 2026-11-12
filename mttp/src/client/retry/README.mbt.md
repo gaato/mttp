@@ -1,6 +1,8 @@
 # gaato/mttp/client/retry
 
-Retry decisions as data. A `RetryRule` says which responses and transport
+Retry decisions as data.
+
+A `RetryRule` says which responses and transport
 failures may be retried, for which methods, how long to wait and when to give
 up; `RetryRule::decide` turns one failed attempt into `Wait(ms)` or
 `Stop(reason)`. The package never sleeps, sends or reads a clock: the caller

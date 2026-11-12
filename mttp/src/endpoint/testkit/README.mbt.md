@@ -1,4 +1,6 @@
-# Endpoint test helpers
+# gaato/mttp/endpoint/testkit
+
+Typed endpoint stubs for client tests, and a check of endpoint definitions.
 
 `when_endpoint` adds a typed route to BackendStub. It uses a one-endpoint Router
 to perform actual input decoding and output encoding. Security inputs are

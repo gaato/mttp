@@ -1,7 +1,8 @@
 # gaato/mttp/cookie
 
-An [RFC 6265](https://www.rfc-editor.org/rfc/rfc6265) cookie store for HTTP
-clients, without I/O. `CookieJar::store` reads every `Set-Cookie` of a
+An [RFC 6265](https://www.rfc-editor.org/rfc/rfc6265) cookie store for HTTP clients, without I/O.
+
+`CookieJar::store` reads every `Set-Cookie` of a
 response for the URL that was requested; `header_for` and `attach` give the
 `Cookie` header a request to a URL should carry. Domain and path matching,
 host-only cookies, `Secure`, `HttpOnly`, `SameSite`, the `__Secure-` and

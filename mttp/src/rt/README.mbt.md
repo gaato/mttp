@@ -1,9 +1,9 @@
 # gaato/mttp/rt
 
-The ports through which the connection engines of `gaato/mttp` and the
-client of `gaato/mttp` reach a runtime. Each is a trait; this package
-implements none of them, so code written against it imports no event loop and
-builds on every target.
+The ports through which the connection engines and the client reach a runtime.
+
+Each port is a trait; this package implements none of them, so code written
+against it imports no event loop and builds on every target.
 
 | Port | What it provides |
 |---|---|
@@ -28,8 +28,8 @@ The implementations live elsewhere:
 
 The rules each side may rely on (sticky EOF, idempotent close, who owns a
 connection after a TLS upgrade, how supervision ends, how cancellation
-travels) are in the repository's `CONTRACT.md`
-(https://github.com/gaato/mttp/blob/main/CONTRACT.md).
+travels) are in the repository's
+[CONTRACT.md](https://github.com/gaato/mttp/blob/main/CONTRACT.md).
 
 ## Example
 

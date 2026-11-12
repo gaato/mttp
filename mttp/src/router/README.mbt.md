@@ -1,4 +1,6 @@
-# In-process router
+# gaato/mttp/router
+
+Path and method dispatch for server endpoints, with middleware and server policy.
 
 Router validates definitions at construction and dispatches through ordered
 middleware. Literal segments beat captures, and a final rest capture is less
@@ -17,6 +19,23 @@ test "in-process router example" {
   router.close()
 }
 ```
+
+## Serving
+
+`Router::handler()` is the `async (@mttp.Request) -> @mttp.Response` that a
+server runs: pass it to `gaato/mttp_async`'s `@server.serve`, or to
+`@fetch.fetch_handler` for a JavaScript `fetch` export. `Router::new` raises
+a `DefinitionError` for definitions it refuses; `Router::must` aborts
+instead, so a router can be a top-level `let`.
+
+Requests and responses carry `@mttp.Attributes`: typed local metadata that is
+never sent. When a server shuts down, it lets running responses finish, but
+closes a streamed response whose `@mttp.close_on_shutdown` attribute is true
+instead of draining it. That is for endless streams such as server-sent
+events, whose clients reconnect; `@endpoint.sse_out` and `sse_body_out` set
+it.
+
+## Routing
 
 An explicit HEAD endpoint wins; otherwise GET handles HEAD and its body is
 closed and removed. The GET handler runs in full for such a HEAD request, so a
