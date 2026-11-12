@@ -1,19 +1,13 @@
 # gaato/mttp/client
 
-The HTTP client of gaato/mttp: a description of what to send and how to read
-the answer, and a `Client` that sends it through any `@mttp.Backend` with
-defaults, admission, deadlines, decoded-body limits and retries. It does no
-I/O itself; `gaato/mttp_async` provides the backends that do, and
-`gaato/mttp/testing` the stubs.
+The HTTP client: request and response plans, and a `Client` that sends them.
+
+A plan describes what to send and how to read the answer; the `Client` sends
+it through any `@mttp.Backend` with defaults, admission, deadlines,
+decoded-body limits and retries. It does no I/O itself: `gaato/mttp_async`
+provides the backends that do, and `gaato/mttp/testing` the stubs.
 
 ## Requests and response plans
-
-`ResponsePlan::prepared_stream(decode, use_)` supports a buffered interpretation
-followed by an async callback. It bounds and decodes bytes inside the attempt.
-The decoder's `Err(final_value)` reaches the retry decision immediately; its
-`Ok(value)` hands the decoded value to `use_` after release, observation and
-retry decisions. The callback runs once and its exceptions remain effects.
-This is the endpoint interpreter's bridge for buffered `call_with` outputs.
 
 A `RequestPlan[T, M]` pairs an `@mttp.Request` with a `ResponsePlan[T, M]`,
 which says how to turn the response into a `T`. The mode `M` says when the
@@ -41,11 +35,13 @@ other error stay raised, with their identity.
 `base_url`, merges default headers under the request's own, then for each
 attempt acquires the `RateLimiter`, builds the body (`body_fn` runs after
 admission, so a retry gets fresh bytes), sends, releases the limiter with that
-acquire's opaque `Admission` and the head it got, reports one `Attempt` to the observer and asks the
-`RetryPolicy`, or a typed `decide_retry` that also sees the policy's
-default. Retrying is opt-in (`RetryPolicy::none()` is the default), a stream
-body is never resent without a body factory, and idempotency comes from the
-method or the `replay_safe` attribute.
+acquire's `Admission` and the head it got, reports one `Attempt` to the
+observer and asks the `RetryPolicy`, or a typed `decide_retry` that also
+sees the policy's default. Retrying is opt-in (`RetryPolicy::none()` is the
+default), a stream body is never resent without a body factory, and
+idempotency comes from the method or the `replay_safe` attribute. Without a
+`limiter`, admission is immediate; `gaato/mttp/client/ratelimit` has one that
+follows a server's quota headers, and the rules for writing your own.
 
 `Client::close()` records closure and closes the shared backend idempotently.
 If an observer closes the client after a retry decision, the loop returns
@@ -55,13 +51,6 @@ it returns that same outcome without another acquire or attempt. An accepted
 stream is still handed to its consumer as with `Stop`. The completed attempt
 keeps its paired release. Sends begun after closure fail with `Closed` in
 phase Pool before admission.
-
-Every successful acquire returns an `Admission`, including its logical bucket
-and issuer-assigned sequence. The Client retains it through success, failure
-and cancellation cleanup; each retry acquires its own token. Custom limiters
-construct tokens with `Admission::new(bucket, sequence=...)` and inspect
-`bucket()` / `sequence()` on release. Tokens belong to their issuing limiter;
-implementations must ignore duplicate releases and bound outstanding identities.
 
 Each attempt maps the plan onto the `@mttp.SendOptions` the backend gets:
 
@@ -124,3 +113,9 @@ wrapper:
 reads an RFC 8288 `Link: <…>; rel="next"`; `parse_retry_after` and
 `retry_after_ms` read server-requested delays; `RequestPlan::to_curl` renders
 a request for diagnostics with credentials redacted.
+
+`ResponsePlan::prepared_stream(decode, use_)` joins the two modes: `decode`
+bounds and decodes the body inside the attempt, so its `Err` reaches the retry
+decision, and `use_` receives the decoded value once, after the retry
+decisions, as a streaming callback would. The typed endpoint client uses it
+for buffered outputs read with `call_with`.
