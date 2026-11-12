@@ -1,16 +1,19 @@
 # GET example
 
-Prints the status, response headers and decoded body length of one request.
-The exchange has a 30 second deadline and 64 MiB limits on both wire and
-decoded bytes. Redirects are returned to the caller.
+One GET request with the Client an app starts with: `@mttp.client()` retries
+idempotent requests within a budget, keeps a 30 s attempt and 120 s call
+deadline, follows redirects and decompresses the body. It prints the status
+and the length of the text. The package imports `gaato/mttp` and nothing
+else.
 
-## Install
+## Run
 
 Run this workspace example directly; it is not published. From the root:
 
 ```sh
-moon run --target native examples/get -- https://example.com/
-moon build --target wasm examples/get
+moon run examples/get
+moon run --target js examples/get
+moon run --target wasm examples/get
 ```
 
 ## License

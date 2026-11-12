@@ -6,13 +6,13 @@ license = "Apache-2.0"
 
 readme = "README.md"
 
-description = "A bounded HTTP GET using the asynchronous backend."
+description = "One GET request with the client an app starts with."
 
 source = "."
 
 preferred_target = "native"
 
-supported_targets = "native+wasm"
+supported_targets = "native+wasm+js"
 
 import {
   "gaato/mttp@0.3.0",
