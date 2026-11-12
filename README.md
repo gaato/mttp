@@ -163,11 +163,15 @@ above.
 | [`gaato/mttp_async`](https://mooncakes.io/docs/gaato/mttp_async) | you are building an app or a server: it sends requests over the network with the defaults above, serves handlers, and re-exports the types and client functions an app uses most. Add `gaato/mttp` beside it for typed endpoints, the router, OpenAPI documents, multipart bodies, rate limits and test stubs. |
 | [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) | you are writing a library, such as an SDK for some API: it takes a `Client` and leaves the network to the app, so its tests run without one. |
 | [`gaato/mttp_digest`](https://mooncakes.io/docs/gaato/mttp_digest) | a server asks for HTTP Digest authentication. |
+| [`gaato/mttp_moonfetch`](https://mooncakes.io/docs/gaato/mttp_moonfetch) | you want HTTP/2 or HTTP/3 under mttp's Client on native and wasm: give its `backend()` to `@mttp_async.client(backend=...)`. |
 
 `gaato/mttp` holds everything without I/O and builds on every target;
 `gaato/mttp_async` connects it to the network through `moonbitlang/core/async`;
-`gaato/mttp_digest` adds Digest authentication to either. The split follows
-Scala's [sttp](https://sttp.softwaremill.com/) family.
+`gaato/mttp_digest` adds Digest authentication to either; and
+`gaato/mttp_moonfetch` is a second network backend, over
+[moonbitstack/moonfetch](https://mooncakes.io/docs/moonbitstack/moonfetch),
+that speaks HTTP/2 and HTTP/3 as well. The split follows Scala's
+[sttp](https://sttp.softwaremill.com/) family.
 
 ### Examples
 
@@ -181,9 +185,12 @@ Scala's [sttp](https://sttp.softwaremill.com/) family.
 
 ## How it is checked
 
-[`scripts/gates.sh full`](scripts/gates.sh) runs all of the following, in CI
-on every push and pull request and daily on the latest and nightly
-toolchains:
+CI runs two jobs on every push and pull request, and runs them again daily
+on the latest and nightly toolchains: [`scripts/gates.sh`](scripts/gates.sh)
+`full` for every module but `gaato/mttp_moonfetch`, and `moonfetch` for it.
+mttp_moonfetch runs on moonbitstack's code, so when a toolchain or a
+moonbitstack release breaks that, its job fails alone. Between them they
+check:
 
 - The modules without I/O, `gaato/mttp` and `gaato/mttp_digest`, run the same
   tests on wasm-gc, wasm, js and native.
@@ -198,7 +205,12 @@ toolchains:
   and the test that drives it past that bound.
 - [CONTRACT.md](CONTRACT.md) states what a backend, a runtime adapter or a
   test double must guarantee; the same contract checks run against the
-  in-memory doubles and against `gaato/mttp_async`'s adapters.
+  in-memory doubles, against `gaato/mttp_async`'s adapters and against
+  `gaato/mttp_moonfetch`'s backend.
+- `gaato/mttp_moonfetch` runs on native and wasm against local HTTP/1.1 and
+  HTTP/2 servers. The daily run also builds it against the newest moonfetch
+  and talks to public HTTP/2 and HTTP/3 servers, which the pull-request jobs
+  never reach.
 - [TEST_COVERAGE.md](TEST_COVERAGE.md) names a reason for every line the
   tests do not cover.
 - The [Cloudflare Workers app](examples/fetch/workers) runs on real workerd,
