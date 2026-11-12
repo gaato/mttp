@@ -189,6 +189,42 @@ async test "backend(), clock() and timer() give a hand-built Client a total dead
 }
 
 ///|
+async test "client(clock=) runs the network backend's deadlines on that clock" {
+  with_local_server(
+    _ => {
+      // Real time: far longer than the virtual read deadline below.
+      @async.sleep(3000)
+      @mttp.Response::new(200)
+    },
+    address => {
+      let clock = @runtime.VirtualClock(start_ms=0L)
+      let api = @mttp_async.client(
+        base_url="http://\{address}",
+        clock~,
+        config={
+          ..@h1client.ClientConfig::default(),
+          read_timeout_ms: Some(1000),
+          proxy: @h1client.ProxyConfig::none(),
+        },
+        retry=@mttp_async.RetryPolicy::none(),
+        timeout_ms=100_000,
+        total_ms=200_000,
+      )
+      defer api.close()
+      @async.with_task_group(group => {
+        let result = send_later(group, api, @mttp_async.get("/slow"))
+        advance_at(clock, 1000L)
+        clock.settle(until=() => result.val is Some(_))
+        guard result.val is Some(Err(@mttp.TransportError(kind~, ..))) else {
+          fail("expected a transport failure")
+        }
+        assert_eq(kind, Timeout(ms=1000))
+      })
+    },
+  )
+}
+
+///|
 async test "coordination() lets an EventStream channel wait on the event loop" {
   let (sender, stream) = @endpoint.EventStream::channel(
     coordination=@mttp_async.coordination(),

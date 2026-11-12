@@ -51,9 +51,11 @@ pub fn run(main : async () -> Unit) -> Unit {
 /// clock and the event loop's timers, so a test gets the same Client, with
 /// all the defaults above, over a stub such as `@testing.BackendStub` and a
 /// virtual clock. `timer` defaults to a timer on `clock`, so a virtual clock
-/// drives the deadlines too. A given `backend` is used as it is: `trust` and
-/// `config` configure only the network backend this builds when `backend` is
-/// omitted, and are ignored otherwise.
+/// drives the deadlines too; without `backend`, the network backend runs its
+/// connection deadlines and pool expiry on the same clock and timer. A given
+/// `backend` is used as it is: `trust` and `config` configure only the
+/// network backend this builds when `backend` is omitted, and are ignored
+/// otherwise.
 pub fn client(
   base_url~ : String = "",
   headers~ : @mttp.Headers = @mttp.Headers::empty(),
@@ -72,14 +74,15 @@ pub fn client(
   timer? : &@rt.Timer,
 ) -> @client.Client {
   let clock = clock.unwrap_or_else(system_clock)
+  let timer = timer.unwrap_or_else(() => @runtime.ClockTimer::new(clock~))
   @client.Client::new(
-    backend.unwrap_or_else(() => network(trust, config)),
+    backend.unwrap_or_else(() => network(trust, config, clock, timer)),
     clock,
     base_url~,
     headers~,
     timeout_ms~,
     max_body_bytes?,
-    timer=timer.unwrap_or_else(() => @runtime.ClockTimer::new(clock~)),
+    timer~,
     retry~,
     retry_budget~,
     redirect~,
@@ -93,8 +96,8 @@ pub fn client(
 /// The real network as a `Backend`: HTTP/1.1 over TCP and TLS with
 /// connection reuse and decompressed responses. It is only the I/O: the
 /// `Client` built over it follows redirects, and keeps cookies when given a
-/// jar, as `Client::new` does over any backend. Pass it, with `clock` and `timer`,
-/// to a library that builds its own `Client`, such as an API SDK:
+/// jar, as `Client::new` does over any backend. Pass it, with `clock` and
+/// `timer`, to a library that builds its own `Client`, such as an API SDK:
 ///
 /// ```mbt nocheck
 /// let claude = @anthropic.Anthropic::new(
@@ -112,15 +115,18 @@ pub fn backend(
   trust~ : @trust.Trust = System,
   config? : @h1client.ClientConfig,
 ) -> &@mttp.Backend {
-  network(trust, config)
+  let clock = system_clock()
+  network(trust, config, clock, @runtime.ClockTimer::new(clock~))
 }
 
 ///|
 fn network(
   trust : @trust.Trust,
   config : @h1client.ClientConfig?,
+  clock : &@rt.Clock,
+  timer : &@rt.Timer,
 ) -> &@mttp.Backend {
-  @backend.AsyncBackend::new(config?, trust~, clock=system_clock())
+  @backend.AsyncBackend::new(config?, trust~, clock~, timer~)
 }
 
 ///|
