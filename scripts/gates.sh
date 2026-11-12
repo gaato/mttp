@@ -23,6 +23,15 @@
 #                                           wrangler its lockfile pins (npm
 #                                           ci, needs the network) and runs
 #                                           examples/fetch/workers/check.mjs
+#   scripts/gates.sh interop                the interoperability suite: the
+#                                           mttp client and server against
+#                                           nginx, Caddy, Apache, curl, Go,
+#                                           httpx, Node, Bun and Deno in
+#                                           containers (podman or docker;
+#                                           pulls images, needs the
+#                                           network). Not part of full: CI
+#                                           runs it daily (canary.yml).
+#                                           interop/README.md says more
 #   scripts/gates.sh full                   quick on all four targets, static,
 #                                           the self-test of this script, the
 #                                           resolver gate and workerd
@@ -79,7 +88,7 @@ static_gates() {
   # The scripts too, except docs_audit.mbtx: it is shared verbatim with every
   # gaato MoonBit repository and changes only there.
   local file
-  for file in scripts/*.mbtx; do
+  for file in scripts/*.mbtx interop/*.mbtx; do
     [ "$file" = scripts/docs_audit.mbtx ] || step moon fmt --check "$file"
   done
   local before after
@@ -166,6 +175,11 @@ case "$mode" in
   workerd)
     [ $# = 0 ] || usage
     workerd_gate
+    finish
+    ;;
+  interop)
+    # Extra arguments select runs by prefix, as interop/run.mbtx documents.
+    step script interop/run.mbtx -- "$@"
     finish
     ;;
   manifest)

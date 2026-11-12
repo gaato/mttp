@@ -72,10 +72,17 @@ test "send a request and read the response" {
 - **Uploads.** A stream body is taken and its first piece read before
   anything is written, so a stream that fails or lies about being empty
   sends nothing; it is closed on every exit. A response that arrives during
-  an upload ends the upload, and that connection is not reused.
+  an upload ends the upload, and that connection is not reused. A request
+  with `Expect: 100-continue` and a body sends its head alone, and its body
+  after the server's `100 Continue`, or after one second without an answer
+  (never past the attempt deadline); a final response that comes first is
+  the answer, and the body is not sent.
 - **Reuse.** A connection is parked only after a complete, keep-alive
   exchange with no unread bytes, and is handed only to a request with the
-  same origin and User-Agent. A request on a reused connection that fails
+  same origin and User-Agent. A connection parked for 100 ms or more is
+  checked first, waiting at most 1 ms on the Timer: if the server closed it
+  or sent anything on it, it is closed and the request goes out on another,
+  whatever its method. A request on a reused connection that still fails
   before any response byte arrived is resent once on a fresh connection, if
   its body is replayable and it is idempotent (`@mttp.is_idempotent`); such
   a response carries the `stale_resend` attribute.

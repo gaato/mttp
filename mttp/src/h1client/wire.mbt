@@ -14,11 +14,40 @@ priv struct Wire {
   /// stale.
   mut received : Int64
   mut closed : Bool
+  /// When the connection was last parked, on the client's clock.
+  mut parked_at : Int64
 }
 
 ///|
 fn Wire::new(conn : &@rt.Conn) -> Wire {
-  { conn, pending: b"", received: 0L, closed: false, }
+  { conn, pending: b"", received: 0L, closed: false, parked_at: 0L, }
+}
+
+///|
+/// A parked connection idle at least this long is checked before it is
+/// reused. Servers close idle keep-alive connections after a few seconds
+/// (Apache after 5, nginx after 75), and a request written to a connection
+/// the server has already closed fails after it was sent, so a request that
+/// may not be resent, such as a POST, would fail although the server never
+/// saw it. Back-to-back reuse, which the pool exists for, skips the check:
+/// no server closes a connection that soon after answering on it without
+/// saying so.
+let probe_after_ms : Int64 = 100L
+
+///|
+/// How long the check waits. A close or bytes the peer already sent are
+/// there at once, so waiting longer only delays a healthy connection.
+let probe_ms : Int32 = 1
+
+///|
+/// Whether the peer closed the parked connection or sent something on it,
+/// either of which makes it unusable: a read that finishes within
+/// `probe_ms` finds them. On a healthy connection there is nothing to read
+/// and the read is cancelled.
+async fn Wire::peer_gone(self : Wire, timer : &@rt.Timer) -> Bool noraise {
+  timer.within(probe_ms, () => {
+    let _ = self.conn.read(max_len=1) catch { _ => None }
+  })
 }
 
 ///|

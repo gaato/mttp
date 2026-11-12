@@ -1222,6 +1222,7 @@ CI lists packages per target and **asserts the test count per package and target
 | JS | mttp_async (js) | Node host-shim tests, Lambda empty-body POST, `scripts/browser_gate.mbtx` |
 | End to end | `examples` | `get` (status, headers, gzip and br bodies on native and wasm), `serve` with curl (keep-alive 200; 20 KiB header → 431; CL+TE → 400), `fetch` |
 | Release | CI | `--deny-warn` on all targets; resolver gate; per-target test counts; mbti equality; coverage ledger |
+| Interop | `interop` (daily, canary.yml) | The client against nginx, Caddy and Apache over HTTP/1.1 and TLS, native and js under Node, Bun and Deno; the server under curl, Go, httpx, Node, Bun, Deno and raw-socket smuggling probes, directly and behind the three as reverse proxies. Images pinned by digest; expectations and known third-party quirks in `interop/cases.tsv` |
 
 ### 5.8 Versioning and release
 
@@ -1314,6 +1315,7 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | `bounds_check` | Every RESOURCE_BOUNDS row names an existing test; wire and decoded bytes are separate rows. |
 | `resolver_gate` | The library modules resolve and build from a scratch consumer outside moon.work; an experimental package needs the consumer's opt-in. |
 | `type_contracts` | Compile-fail fixtures from an external package: a Streaming endpoint refuses a Buffered request; `as_both` refuses streaming readers. |
+| `interop` (`scripts/gates.sh interop`, not in `full`) | Third-party implementations, not mttp's own, on the other end: each case passes, or fails as `interop/cases.tsv` records with the third party's reason. A container engine and the network make it a daily canary job rather than a PR gate. |
 
 `scripts/*.mbtx` move to core/async's `fs` and shell APIs. A `.mbtx` script cannot set the experimental opt-in (front matter accepts `import` and `permission` only), so it runs with the experimental warning on stderr, which `scripts/gates.sh` filters. The release helper is `scripts/release.mbtx` too (`bump`, `note`, `check`, `publish --dry-run` for every module, and `publish [--dry-run] <module>`, whose real publish runs only in the release workflow, §5.8); only `gates.sh` stays bash, because it runs `moon` itself on every toolchain including nightly, filters that warning, and runs npm. The shared `docs_audit.mbtx` was the last script on moonbitlang/async 0.22.5; it moved in every gaato repository on 2026-11-10, and the gate has no exemption left.
 ## 6. sttp/tapir concept map

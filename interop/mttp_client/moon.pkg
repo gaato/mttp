@@ -1,0 +1,16 @@
+import {
+  "gaato/mttp",
+  "gaato/mttp/client",
+  "gaato/mttp/h1client",
+  "gaato/mttp_async",
+  "gaato/mttp_async/backend",
+  "gaato/mttp_async/codings",
+  "gaato/mttp-interop/pattern",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/env",
+  "moonbitlang/core/encoding/utf8",
+}
+
+supported_targets = "native+js"
+
+pkgtype(kind: "executable")

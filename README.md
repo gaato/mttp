@@ -181,9 +181,9 @@ Scala's [sttp](https://sttp.softwaremill.com/) family.
 
 ## How it is checked
 
-[`scripts/gates.sh full`](scripts/gates.sh) runs all of the following, in CI
-on every push and pull request and daily on the latest and nightly
-toolchains:
+[`scripts/gates.sh full`](scripts/gates.sh) runs all of the following but
+the last, in CI on every push and pull request and daily on the latest and
+nightly toolchains:
 
 - The modules without I/O, `gaato/mttp` and `gaato/mttp_digest`, run the same
   tests on wasm-gc, wasm, js and native.
@@ -205,6 +205,10 @@ toolchains:
   through the wrangler version its lockfile pins.
 - The code and outputs in this README are those of the examples;
   [scripts/readme_check.mbtx](scripts/readme_check.mbtx) compares them.
+- The [interop suite](interop) runs the client against nginx, Caddy and
+  Apache httpd, and the server under curl, Go, Python httpx, Node, Bun and
+  Deno and behind the three servers as reverse proxies, daily in CI
+  (`scripts/gates.sh interop`).
 
 ## Status
 

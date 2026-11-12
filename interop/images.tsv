@@ -1,0 +1,16 @@
+# The third-party images the interop suite runs, pinned by digest so that a
+# run tests the same implementations until someone moves a pin on purpose.
+# The tag beside each digest says what it is; to update one, pull the new
+# tag and take the digest of its multi-platform index:
+#   skopeo inspect --raw docker://<image>:<tag> | sha256sum
+# Columns, separated by one tab: the name interop/run.mbtx uses, the image.
+name	image
+nginx	docker.io/library/nginx:1.31.8-alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
+caddy	docker.io/library/caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829fb031af2cf50056ea1246559fee
+apache	docker.io/library/httpd:2.4.71@sha256:07e4ec0094d8bca9765fae74ce33d2be5341884048f265ff9dc1d1177a4256c9
+curl	docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+golang	docker.io/library/golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf
+python	docker.io/library/python:3.14.10-alpine@sha256:a18b20ad69e74df6cf6d2e1b1a260d7a1ecf5380fd83b310f83ba88c461cf894
+node	docker.io/library/node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+bun	docker.io/oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a
+deno	docker.io/denoland/deno:alpine-2.9.8@sha256:75749604f68aea01d39bead15fd1c86343639e44eb8c58ab051da8a924799d01

@@ -1,0 +1,113 @@
+# What the interop suite runs and what it expects. interop/run.mbtx reads it.
+#
+# Columns, separated by one tab:
+#   side    client: gaato/mttp_async's Client against a third-party server
+#           (interop/mttp_client/main.mbt describes each case).
+#           server: gaato/mttp_async's server driven by a third-party client
+#           (interop/clients/*), directly or through a reverse proxy.
+#   case    the case id the program understands
+#   where   which runs the row applies to. Client side:
+#           <runtime>/<server>/<scheme>, with runtime native, node, bun or
+#           deno (js under that host), server nginx, caddy or apache, scheme
+#           http or https. Server side: <client>/<target>, with client curl,
+#           go, httpx, node, bun, deno or raw (Python raw-socket probes),
+#           target direct, nginx, caddy or apache. Each part is `*` or
+#           alternatives separated by `|`.
+#   expect  pass: the case must pass.
+#           known: the case shows a documented third-party quirk; it is
+#           reported as KNOWN with the note, and fails the run if it passes,
+#           so that a pin update that fixes the quirk updates this row.
+#           n/a: not run; the note says why.
+#   note    why, for known and n/a
+#
+# For one case and run the last matching row decides, so a general row comes
+# first and its exceptions after it. A case with no matching row is not run.
+side	case	where	expect	note
+
+# Client side: gaato/mttp_async's Client against nginx, Caddy and Apache.
+client	get	*/*/*	pass
+client	keepalive	*/*/*	pass
+client	keepalive	node|bun|deno/*/*	n/a	on js the host's fetch owns the connections, so reuse is the host's, not mttp's
+client	idle-close-get	*/*/*	pass
+client	idle-close-get	node|bun|deno/*/*	n/a	on js the host's fetch owns the connections and notices closed ones itself
+client	idle-close-post	*/*/*	pass
+client	idle-close-post	node|bun|deno/*/*	n/a	on js the host's fetch owns the connections and notices closed ones itself
+client	chunked-response	*/*/*	pass
+client	gzip	native/*/*	pass
+client	gzip	node|bun|deno/*/*	n/a	on js fetch decodes every coding itself and mttp's decoders are not used; `decompress` checks the decoded body
+client	br	native/apache/*	pass
+client	br	native/nginx|caddy/*	n/a	nginx and Caddy have no Brotli encoder without third-party modules
+client	zstd	native/caddy/*	pass
+client	zstd	native/nginx|apache/*	n/a	nginx and Apache have no zstd encoder without third-party modules
+client	decompress	*/*/*	pass
+client	head	*/*/*	pass
+client	no-content	*/*/*	pass
+client	not-modified	*/*/*	pass
+client	redirect-301	*/*/*	pass
+client	redirect-302	*/*/*	pass
+client	redirect-307	*/*/*	pass
+client	redirect-308	*/*/*	pass
+client	redirect-same-origin	*/*/*	pass
+client	redirect-cross-origin	*/*/*	pass
+client	redirect-downgrade	*/*/https	pass
+client	expect-continue	*/*/*	pass
+client	expect-continue	node|bun|deno/*/*	n/a	fetch cannot send Expect: 100-continue; uploads on js are buffered and sent at once
+client	expect-refused	*/*/*	pass
+client	expect-refused	node|bun|deno/*/*	n/a	fetch cannot send Expect: 100-continue; uploads on js are buffered and sent at once
+client	large-download	*/*/*	pass
+client	large-upload	*/*/*	pass
+client	chunked-upload	*/*/*	pass
+client	slow-body	*/*/*	pass
+client	slow-deadline	*/*/*	pass
+client	head-deadline	*/*/*	pass
+client	drop-get	*/nginx|caddy/*	pass
+client	drop-get	*/apache/*	n/a	Apache has no directive that closes a connection without answering
+client	drop-post	*/nginx|caddy/*	pass
+client	drop-post	*/apache/*	n/a	Apache has no directive that closes a connection without answering
+
+# Server side: third-party clients against gaato/mttp_async's server,
+# directly and behind nginx, Caddy and Apache.
+server	get	curl|go|httpx|node|bun|deno/*	pass
+server	reuse	curl|go|httpx|node|bun|deno/direct	pass
+server	reuse	node/direct	known	Node's fetch (undici) sends a request issued right after a body was read on a second connection, then alternates between the two; it does the same against nginx and Caddy (X-Conn alternates 1, 2, 1, 2), and reuses one connection when the requests are a few milliseconds apart, so the server keeps the connection alive and the choice is undici's
+server	upstream-reuse	curl|go|httpx/nginx|caddy|apache	pass
+server	chunked-upload	curl|go|httpx|node|bun|deno/*	pass
+server	large-upload	curl|go|httpx|node|bun|deno/*	pass
+server	expect	curl|go/*	pass
+server	expect-early-body	httpx/*	pass
+server	stream	go|httpx|node|bun|deno/*	pass
+server	head	curl|go|httpx|node|bun|deno/*	pass
+server	no-content	curl|go|httpx|node|bun|deno/*	pass
+server	parallel	go|httpx|node|bun|deno/*	pass
+server	http10	curl|raw/*	pass
+server	http10-keepalive	curl|raw/*	pass
+server	pipeline	raw/*	pass
+# Request smuggling shapes (interop/clients/python/probes.py): refused
+# directly as the mttp documentation says, and through each proxy either
+# refused or forwarded unambiguously.
+server	cl-te	raw/*	pass
+server	cl-te	raw/caddy	known	Caddy (Go net/http) reads a request with both Content-Length and Transfer-Encoding by Transfer-Encoding, as RFC 9112 section 6.3 allows, but keeps the connection open where that section says MUST close it, so the bytes after the chunked body are read as the next request (src/net/http/transfer.go, fixLength). Each request reaches the mttp server well framed; the server refuses the same bytes sent directly
+server	te-cl	raw/*	pass
+server	cl-cl-same	raw/*	pass
+server	cl-cl-diff	raw/*	pass
+server	cl-list	raw/*	pass
+server	cl-plus	raw/*	pass
+server	te-chunked-twice	raw/*	pass
+server	te-two-fields	raw/*	pass
+server	te-gzip-chunked	raw/*	pass
+server	te-identity	raw/*	pass
+server	te-xchunked-cl	raw/*	pass
+server	te-space-before-colon	raw/*	pass
+server	te-obs-fold	raw/*	pass
+server	te-http10	raw/*	pass
+server	bare-lf	raw/*	pass
+server	chunk-size-0x	raw/*	pass
+server	chunk-size-overflow	raw/*	pass
+server	chunk-bare-lf	raw/*	pass
+server	host-twice	raw/*	pass
+server	host-missing	raw/*	pass
+server	nul-in-field	raw/*	pass
+server	te-tab	raw/*	pass
+server	te-tab	raw/nginx	known	nginx skips only spaces, not tabs, before a field value (src/http/ngx_http_parse.c, sw_space_before_value), so "Transfer-Encoding:<TAB>chunked" is an unknown coding to it and it answers 501; RFC 9110 section 5.6.3 allows the tab. A refusal, so nothing ambiguous reaches the server
+server	te-capitals	raw/*	pass
+server	chunk-extension	raw/*	pass

@@ -188,6 +188,10 @@ async fn Client::send_request(
   defer (if !transferred { self.slots.release(key) })
   let agent = request.headers.get("user-agent")
   let resendable = request.body.is_replayable() && @mttp.is_idempotent(request)
+  let expect_continue = request.headers
+    .get_all("expect")
+    .iter()
+    .any(value => value.trim().to_lower() == "100-continue")
   let mut fresh = false
   for ;; {
     if self.pool.control.closed {
@@ -223,6 +227,15 @@ async fn Client::send_request(
     }
     let mut owned = true
     defer (if owned { wire.close() })
+    // A connection the server closed while it was parked is dropped before
+    // anything is written to it, so the request goes out on another one
+    // whatever its method. The probe may suspend, so it runs once the
+    // connection's cleanup is in place: cancelled there, it still closes.
+    if reused &&
+      self.clock.now_unix_ms() - wire.parked_at >= probe_after_ms &&
+      wire.peer_gone(self.timer) {
+      continue
+    }
     let exchanged = exchange(
       wire,
       head,
@@ -231,6 +244,7 @@ async fn Client::send_request(
       timer,
       self.config.head_limits,
       self.coordination,
+      expect_continue~,
     ) catch {
       @mttp.TransportError(kind=Network, ..) if reused &&
         resendable &&
@@ -341,8 +355,9 @@ fn Client::release(
   reusable : Bool,
 ) -> Unit {
   if reusable && wire.pending.is_empty() && !wire.closed {
-    for
-      rejected in self.pool.put(key, agent, wire, now=self.clock.now_unix_ms()) {
+    let now = self.clock.now_unix_ms()
+    wire.parked_at = now
+    for rejected in self.pool.put(key, agent, wire, now~) {
       rejected.close()
     }
   } else {

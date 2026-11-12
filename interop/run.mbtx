@@ -1,0 +1,833 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/process",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/env",
+}
+----
+
+///|
+/// The interoperability suite: gaato/mttp_async's client against nginx,
+/// Caddy and Apache httpd, and its server against curl, Go, Python httpx,
+/// Node, Bun, Deno and raw-socket probes, directly and behind the three
+/// servers as reverse proxies. interop/README.md says what is tested.
+///
+///   moon run interop/run.mbtx [-- <prefix>...]
+///
+/// runs from the repository root (`scripts/gates.sh interop` does that) and
+/// prints one line per case, PASS, FAIL or KNOWN, as interop/cases.tsv
+/// expects. A <prefix> keeps only the runs whose `<side>/<where>` starts
+/// with it, such as `client/native/nginx` or `server/raw`.
+///
+/// It needs podman or docker (INTEROP_ENGINE chooses; podman first),
+/// openssl, a C compiler for moon's native target, and the ports 39000,
+/// 39010, 39011, 39020, 39021, 39030 and 39031 free on 127.0.0.1 and
+/// 127.0.0.2. Every third-party program runs from the image
+/// interop/images.tsv pins, on the host's network; nothing is installed on
+/// the host. Work files go to _build/interop.
+
+///|
+suberror RunError {
+  RunError(String)
+}
+
+///|
+/// The name of the module in interop/moon.mod, which moon's build paths
+/// follow. The modules under test are named only in interop/moon.mod, the
+/// moon.pkg files and scripts/modules.tsv.
+let interop_module : String = "gaato/mttp-interop"
+
+///|
+let work : String = "_build/interop"
+
+///|
+let server_addr : String = "127.0.0.1:39000"
+
+///|
+let native_client : String = "_build/native/debug/build/\{interop_module}/mttp_client/mttp_client.exe"
+
+///|
+let native_server : String = "_build/native/debug/build/\{interop_module}/mttp_server/mttp_server.exe"
+
+///|
+let js_client_dir : String = "_build/js/debug/build/\{interop_module}/mttp_client"
+
+///|
+/// The third-party servers: name (as in images.tsv), plain port (TLS is the
+/// next one), the container's mounts and command.
+priv struct Server {
+  name : String
+  port : Int32
+  config : (String, String)
+  command : Array[String]
+}
+
+///|
+let servers : Array[Server] = [
+  {
+    name: "nginx",
+    port: 39010,
+    config: ("nginx.conf", "/etc/nginx/nginx.conf"),
+    command: [],
+  },
+  {
+    name: "caddy",
+    port: 39020,
+    config: ("Caddyfile", "/etc/caddy/Caddyfile"),
+    command: [
+      "caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile",
+    ],
+  },
+  {
+    name: "apache",
+    port: 39030,
+    config: ("httpd.conf", "/usr/local/apache2/conf/httpd.conf"),
+    command: [],
+  },
+]
+
+///|
+let runtimes : Array[String] = ["native", "node", "bun", "deno"]
+
+///|
+let schemes : Array[String] = ["http", "https"]
+
+///|
+let clients : Array[String] = [
+  "curl", "go", "httpx", "node", "bun", "deno", "raw",
+]
+
+///|
+let targets : Array[String] = ["direct", "nginx", "caddy", "apache"]
+
+// The expectations.
+
+///|
+priv struct Row {
+  side : String
+  id : String
+  where_ : Array[String]
+  expect : String
+  note : String
+}
+
+///|
+async fn read_rows() -> Array[Row] {
+  let rows = []
+  for raw in @fs.read_text("interop/cases.tsv").split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line.has_prefix("side\t") {
+      continue
+    }
+    let cells = line.split("\t").map(s => s.to_owned()).to_array()
+    guard cells is [side, id, where_, expect, .. rest] else {
+      raise RunError("interop/cases.tsv: malformed row: \{line}")
+    }
+    let note = rest.join(" ")
+    guard expect is ("pass" | "known" | "n/a") else {
+      raise RunError("interop/cases.tsv: unknown expectation: \{line}")
+    }
+    if expect != "pass" && note.is_empty() {
+      raise RunError("interop/cases.tsv: \{expect} needs a note: \{line}")
+    }
+    rows.push({
+      side,
+      id,
+      where_: where_.split("/").map(s => s.to_owned()).to_array(),
+      expect,
+      note,
+    })
+  }
+  rows
+}
+
+///|
+/// Whether a `where` pattern covers a run: part by part, `*` or one of the
+/// `|`-separated alternatives.
+fn covers(pattern : Array[String], run : Array[String]) -> Bool {
+  pattern.length() == run.length() &&
+  pattern
+  .iter()
+  .zip(run.iter())
+  .all(pair => pair.0 == "*" || pair.0.split("|").any(alt => alt == pair.1))
+}
+
+///|
+/// The cases of one run, in table order, each with the last row that
+/// covers it; `n/a` cases are left out.
+fn plan(rows : Array[Row], side : String, run : String) -> Array[Row] {
+  let parts = run.split("/").map(s => s.to_owned()).to_array()
+  let order : Array[String] = []
+  let chosen : Map[String, Row] = Map([])
+  for row in rows {
+    if row.side == side && covers(row.where_, parts) {
+      if !chosen.contains(row.id) {
+        order.push(row.id)
+      }
+      chosen[row.id] = row
+    }
+  }
+  order.map(id => chosen[id]).filter(row => row.expect != "n/a")
+}
+
+// Reporting.
+
+///|
+priv struct Tally {
+  mut pass : Int32
+  mut fail : Int32
+  mut known : Int32
+  failures : Array[String]
+}
+
+///|
+/// Compares what a program printed with the plan and prints one line per
+/// case.
+fn Tally::report(
+  self : Tally,
+  side : String,
+  run : String,
+  cases : Array[Row],
+  output : String,
+  problem : String,
+) -> Unit {
+  let results : Map[String, (Bool, String)] = Map([])
+  for line in output.split("\n") {
+    guard line.has_prefix("CASE ") else { continue }
+    let parts = line["CASE ".length():]
+      .split(" ")
+      .map(s => s.to_owned())
+      .to_array()
+    guard parts is [id, verdict, .. detail] else { continue }
+    results[id] = (verdict == "ok", detail.join(" "))
+  }
+  for row in cases {
+    let name = "\{side} \{run} \{row.id}"
+    let (verdict, detail) = match results.get(row.id) {
+      None => ("FAIL", "no result: \{problem}")
+      Some((true, detail)) if row.expect == "pass" => ("PASS", detail)
+      Some((false, detail)) if row.expect == "pass" => ("FAIL", detail)
+      Some((false, detail)) => ("KNOWN", "\{detail} [\{row.note}]")
+      Some((true, detail)) =>
+        (
+          "FAIL",
+          "\{detail} [passes, though interop/cases.tsv records a known quirk: \{row.note}]",
+        )
+    }
+    match verdict {
+      "PASS" => self.pass += 1
+      "KNOWN" => self.known += 1
+      _ => {
+        self.fail += 1
+        self.failures.push(name)
+      }
+    }
+    println("\{verdict} \{name}: \{detail}")
+  }
+}
+
+// Processes and containers.
+
+///|
+/// Runs a command to its end and returns its exit status and output.
+async fn capture(
+  program : String,
+  args : Array[String],
+  timeout_ms~ : Int32 = 600000,
+) -> (Int32, String, String) {
+  let out = @shell.Cmd(program, args).output(timeout_ms~)
+  (out.exit_code(), out.stdout(), out.stderr())
+}
+
+///|
+/// Runs a setup command and stops the run if it fails.
+async fn must(program : String, args : Array[String]) -> String {
+  println("+ \{program} \{args.join(" ")}")
+  let (status, out, err) = capture(program, args)
+  if status != 0 {
+    raise RunError("\{program} exited with status \{status}:\n\{out}\{err}")
+  }
+  out
+}
+
+///|
+/// The container engine: INTEROP_ENGINE, else podman, else docker.
+async fn find_engine() -> String {
+  if @env.get_env_var("INTEROP_ENGINE") is Some(engine) && engine != "" {
+    return engine
+  }
+  for engine in ["podman", "docker"] {
+    let status = @shell.Cmd(
+      engine,
+      ["--version"],
+      stdout=Discard,
+      stderr=Discard,
+    ).status() catch {
+      _ => -1
+    }
+    if status == 0 {
+      return engine
+    }
+  }
+  raise RunError("neither podman nor docker is on PATH (or set INTEROP_ENGINE)")
+}
+
+///|
+async fn read_images() -> Map[String, String] {
+  let images : Map[String, String] = Map([])
+  for raw in @fs.read_text("interop/images.tsv").split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line.has_prefix("name\t") {
+      continue
+    }
+    guard line.split("\t").map(s => s.to_owned()).to_array() is [name, image] else {
+      raise RunError("interop/images.tsv: malformed row: \{line}")
+    }
+    guard image.contains("@sha256:") else {
+      raise RunError("interop/images.tsv: \{name} is not pinned by digest")
+    }
+    images[name] = image
+  }
+  images
+}
+
+///|
+priv struct Env {
+  engine : String
+  images : Map[String, String]
+  root : String
+  /// Extra `run` arguments for containers that write into the work tree:
+  /// docker runs them as the invoking user, so the files stay removable;
+  /// rootless podman already maps root in the container to that user.
+  user : Array[String]
+}
+
+///|
+fn Env::image(self : Env, name : String) -> String {
+  self.images[name]
+}
+
+///|
+/// A bind mount of `path` (relative to the repository) at `at`, read-only
+/// unless `writable`. `z` relabels it where SELinux is on.
+fn Env::mount(
+  self : Env,
+  path : String,
+  at : String,
+  writable~ : Bool = false,
+) -> Array[String] {
+  let mode = if writable { "z" } else { "ro,z" }
+  ["-v", "\{self.root}/\{path}:\{at}:\{mode}"]
+}
+
+///|
+/// `run --rm` on the host's network with `args` before the image and
+/// `command` after it.
+fn Env::run_args(
+  self : Env,
+  image : String,
+  args : Array[String],
+  command : Array[String],
+) -> Array[String] {
+  ["run", "--rm", "--network", "host", ..args, self.image(image), ..command]
+}
+
+///|
+/// Waits until something accepts TCP connections on `addr`.
+async fn wait_port(addr : String, what : String) -> Unit {
+  let parsed = @socket.Addr::parse(addr)
+  for _ in 0..<150 {
+    let up = try {
+      @socket.Tcp::connect(parsed).close()
+      true
+    } catch {
+      _ => false
+    }
+    if up {
+      return
+    }
+    @async.sleep(200)
+  }
+  raise RunError("\{what} does not accept connections on \{addr}")
+}
+
+///|
+/// Refuses to start when a port the suite needs is taken.
+async fn port_free(addr : String) -> Unit {
+  let taken = try {
+    @socket.Tcp::connect(@socket.Addr::parse(addr)).close()
+    true
+  } catch {
+    _ => false
+  }
+  if taken {
+    raise RunError("\{addr} is in use; the interop suite needs it")
+  }
+}
+
+///|
+/// Certificates for this run: a CA the clients trust and a server
+/// certificate for 127.0.0.1, 127.0.0.2 and localhost.
+async fn make_certs() -> Unit {
+  let dir = "\{work}/certs"
+  @fs.mkdir(dir, recursive=true, allow_exist=true)
+  let ec = [
+    "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes",
+  ]
+  ignore(
+    must(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        ..ec,
+        "-keyout",
+        "\{dir}/ca.key",
+        "-out",
+        "\{dir}/ca.pem",
+        "-days",
+        "2",
+        "-subj",
+        "/CN=mttp interop CA",
+        "-addext",
+        "basicConstraints=critical,CA:TRUE",
+        "-addext",
+        "keyUsage=critical,keyCertSign,cRLSign",
+      ],
+    ),
+  )
+  ignore(
+    must(
+      "openssl",
+      [
+        "req",
+        ..ec,
+        "-keyout",
+        "\{dir}/server.key",
+        "-out",
+        "\{dir}/server.csr",
+        "-subj",
+        "/CN=127.0.0.1",
+      ],
+    ),
+  )
+  @fs.write_text(
+    "\{dir}/server.ext",
+    "subjectAltName=IP:127.0.0.1,IP:127.0.0.2,DNS:localhost\nbasicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n",
+  )
+  ignore(
+    must("openssl", [
+      "x509",
+      "-req",
+      "-in",
+      "\{dir}/server.csr",
+      "-CA",
+      "\{dir}/ca.pem",
+      "-CAkey",
+      "\{dir}/ca.key",
+      "-CAcreateserial",
+      "-days",
+      "2",
+      "-extfile",
+      "\{dir}/server.ext",
+      "-out",
+      "\{dir}/server.pem",
+    ]),
+  )
+  // The servers in the containers read the key as whichever user they run.
+  @fs.chmod("\{dir}/server.key", 0o644)
+}
+
+///|
+/// Starts the three servers and waits for their ports.
+async fn start_servers(env : Env) -> Unit {
+  for server in servers {
+    let name = "interop-\{server.name}"
+    ignore(capture(env.engine, ["rm", "-f", name]))
+    ignore(
+      must(
+        env.engine,
+        [
+          "run",
+          "-d",
+          "--rm",
+          "--name",
+          name,
+          "--network",
+          "host",
+          ..env.mount("interop/servers/\{server.config.0}", server.config.1),
+          ..env.mount("\{work}/certs", "/certs"),
+          ..env.mount("\{work}/www", "/www"),
+          env.image(server.name),
+          ..server.command,
+        ],
+      ),
+    )
+  }
+  for server in servers {
+    for port in [server.port, server.port + 1] {
+      wait_port("127.0.0.1:\{port}", server.name) catch {
+        error => {
+          let (_, out, err) = capture(env.engine, [
+            "logs",
+            "interop-\{server.name}",
+          ])
+          raise RunError("\{error}\n\{out}\{err}")
+        }
+      }
+    }
+  }
+}
+
+///|
+async fn stop_servers(env : Env) -> Unit {
+  for server in servers {
+    ignore(capture(env.engine, ["rm", "-f", "interop-\{server.name}"]))
+  }
+}
+
+///|
+/// Builds what the server-side clients need: the Go client (a static
+/// binary the host runs) and httpx with its dependencies.
+async fn prepare_clients(env : Env) -> Unit {
+  @fs.mkdir("\{work}/go", recursive=true, allow_exist=true)
+  ignore(
+    must(
+      env.engine,
+      [
+        "run",
+        "--rm",
+        ..env.user,
+        ..env.mount("interop/clients/go", "/src"),
+        ..env.mount("\{work}/go", "/out", writable=true),
+        "-w",
+        "/src",
+        "-e",
+        "CGO_ENABLED=0",
+        "-e",
+        "GOTOOLCHAIN=local",
+        "-e",
+        "GOFLAGS=-buildvcs=false",
+        "-e",
+        "HOME=/out",
+        "-e",
+        "GOCACHE=/out/cache",
+        "-e",
+        "GOPATH=/out/gopath",
+        env.image("golang"),
+        "go",
+        "build",
+        "-o",
+        "/out/client",
+        ".",
+      ],
+    ),
+  )
+  @fs.mkdir("\{work}/python", recursive=true, allow_exist=true)
+  ignore(
+    must(
+      env.engine,
+      [
+        "run",
+        "--rm",
+        ..env.user,
+        ..env.mount("interop/clients/python", "/src"),
+        ..env.mount("\{work}/python", "/deps", writable=true),
+        "--entrypoint",
+        "pip",
+        env.image("python"),
+        "install",
+        "--quiet",
+        "--no-cache-dir",
+        "--disable-pip-version-check",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "--upgrade",
+        "--target",
+        "/deps",
+        "-r",
+        "/src/requirements.txt",
+      ],
+    ),
+  )
+}
+
+// The runs.
+
+///|
+/// The command of a client-side run: the native client, or the js client
+/// in the runtime's image.
+fn client_command(
+  env : Env,
+  runtime : String,
+  server : Server,
+  scheme : String,
+  cases : Array[String],
+) -> (String, Array[String]) {
+  let port = if scheme == "https" { server.port + 1 } else { server.port }
+  let base = "\{scheme}://127.0.0.1:\{port}"
+  let alt = "\{scheme}://127.0.0.2:\{port}"
+  let ids = cases.join(",")
+  if runtime == "native" {
+    let ca = if scheme == "https" {
+      "\{env.root}/\{work}/certs/ca.pem"
+    } else {
+      "-"
+    }
+    return (native_client, [base, alt, ca, ids])
+  }
+  // On js the host's fetch verifies certificates against its own store,
+  // extended with the run's CA.
+  let launch = match runtime {
+    "deno" => ["--entrypoint", "deno"]
+    _ => ["--entrypoint", runtime]
+  }
+  let script = match runtime {
+    "deno" => ["run", "-A", "--cert", "/certs/ca.pem", "/app/mttp_client.js"]
+    _ => ["/app/mttp_client.js"]
+  }
+  (
+    env.engine,
+    env.run_args(
+      runtime,
+      [
+        ..launch,
+        "-e",
+        "NODE_EXTRA_CA_CERTS=/certs/ca.pem",
+        ..env.mount(js_client_dir, "/app"),
+        ..env.mount("\{work}/certs", "/certs"),
+      ],
+      [..script, base, alt, "-", ids],
+    ),
+  )
+}
+
+///|
+/// The command of a server-side run: a client against the mttp server,
+/// directly or through a proxy's /up prefix.
+fn server_command(
+  env : Env,
+  client : String,
+  target : String,
+  cases : Array[String],
+) -> (String, Array[String]) {
+  let host = match target {
+    "direct" => server_addr
+    name =>
+      match servers.search_by(s => s.name == name) {
+        Some(i) => "127.0.0.1:\{servers[i].port}"
+        None => server_addr
+      }
+  }
+  let prefix = if target == "direct" { "" } else { "/up" }
+  let base = "http://\{host}\{prefix}"
+  let direct = "http://\{server_addr}"
+  let ids = cases.join(",")
+  match client {
+    "go" => ("\{work}/go/client", [base, direct, ids])
+    "curl" =>
+      (
+        env.engine,
+        env.run_args(
+          "curl",
+          [
+            "--entrypoint",
+            "sh",
+            ..env.mount("interop/clients/curl", "/src"),
+            ..env.mount("\{work}/www", "/www"),
+          ],
+          ["/src/cases.sh", base, direct, ids],
+        ),
+      )
+    "httpx" =>
+      (
+        env.engine,
+        env.run_args(
+          "python",
+          [
+            "--entrypoint",
+            "python3",
+            "-e",
+            "PYTHONPATH=/deps",
+            ..env.mount("interop/clients/python", "/src"),
+            ..env.mount("\{work}/python", "/deps"),
+          ],
+          ["/src/client.py", base, direct, ids],
+        ),
+      )
+    "raw" =>
+      (
+        env.engine,
+        env.run_args(
+          "python",
+          [
+            "--entrypoint",
+            "python3",
+            ..env.mount("interop/clients/python", "/src"),
+          ],
+          ["-I", "/src/probes.py", host, prefix, server_addr, ids],
+        ),
+      )
+    runtime => {
+      let script = match runtime {
+        "deno" => ["run", "-A", "/src/client.mjs"]
+        _ => ["/src/client.mjs"]
+      }
+      (
+        env.engine,
+        env.run_args(
+          runtime,
+          ["--entrypoint", runtime, ..env.mount("interop/clients/js", "/src")],
+          [..script, base, direct, ids],
+        ),
+      )
+    }
+  }
+}
+
+///|
+/// Runs one program and reports its cases.
+async fn run_one(
+  tally : Tally,
+  side : String,
+  run : String,
+  cases : Array[Row],
+  command : (String, Array[String]),
+) -> Unit {
+  let (program, args) = command
+  let (output, problem) = try capture(program, args, timeout_ms=600000) catch {
+    error => ("", "\{program} did not finish: \{error}")
+  } noraise {
+    (status, out, err) => {
+      let tail = err.split("\n").filter(l => !l.is_empty()).to_array()
+      let last = tail[(tail.length() - 5).max(0):].to_owned().join(" | ")
+      (out, "the program exited with status \{status}: \{last}")
+    }
+  }
+  tally.report(side, run, cases, output, problem)
+}
+
+///|
+fn selected(filters : Array[String], key : String) -> Bool {
+  filters.is_empty() || filters.any(f => key.has_prefix(f))
+}
+
+///|
+async fn main_run(filters : Array[String]) -> Int32 {
+  let engine = find_engine()
+  let images = read_images()
+  let rows = read_rows()
+  let root = @fs.realpath(".")
+  let user = if engine.contains("docker") {
+    let uid = must("id", ["-u"]).trim().to_owned()
+    let gid = must("id", ["-g"]).trim().to_owned()
+    ["--user", "\{uid}:\{gid}"]
+  } else {
+    []
+  }
+  let env = { engine, images, root, user, }
+  println("interop: \{engine}, images pinned in interop/images.tsv")
+  for
+    addr in [
+      server_addr, "127.0.0.1:39010", "127.0.0.1:39020", "127.0.0.1:39030",
+    ] {
+    port_free(addr)
+  }
+  ignore(
+    must("moon", [
+      "build", "--target", "native", "interop/mttp_client", "interop/mttp_server",
+    ]),
+  )
+  ignore(must("moon", ["build", "--target", "js", "interop/mttp_client"]))
+  @fs.mkdir(work, recursive=true, allow_exist=true)
+  ignore(must(native_server, ["www", "\{work}/www"]))
+  make_certs()
+  for name, image in images {
+    let (present, _, _) = capture(engine, ["image", "inspect", image])
+    if present != 0 {
+      println("+ \{engine} pull \{name}")
+      ignore(must(engine, ["pull", "--quiet", image]))
+    }
+  }
+  prepare_clients(env)
+  let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+  @async.with_task_group(group => {
+    let server = @process.spawn(
+      group,
+      native_server,
+      [server_addr],
+      stdout=ToFile("\{work}/mttp_server.log"),
+      stderr=ToFile("\{work}/mttp_server.log"),
+    )
+    defer server.cancel()
+    wait_port(server_addr, "the mttp interop server")
+    // Cleanup first, so that a start failing partway removes what started.
+    defer @async.protect_from_cancel(() => stop_servers(env))
+    start_servers(env)
+    for runtime in runtimes {
+      for server in servers {
+        for scheme in schemes {
+          let run = "\{runtime}/\{server.name}/\{scheme}"
+          let cases = plan(rows, "client", run)
+          if cases.is_empty() || !selected(filters, "client/\{run}") {
+            continue
+          }
+          run_one(
+            tally,
+            "client",
+            run,
+            cases,
+            client_command(env, runtime, server, scheme, cases.map(c => c.id)),
+          )
+        }
+      }
+    }
+    for client in clients {
+      for target in targets {
+        let run = "\{client}/\{target}"
+        let cases = plan(rows, "server", run)
+        if cases.is_empty() || !selected(filters, "server/\{run}") {
+          continue
+        }
+        run_one(
+          tally,
+          "server",
+          run,
+          cases,
+          server_command(env, client, target, cases.map(c => c.id)),
+        )
+      }
+    }
+  })
+  println(
+    "\ninterop: \{tally.pass} passed, \{tally.known} known, \{tally.fail} failed",
+  )
+  for name in tally.failures {
+    println("  FAIL \{name}")
+  }
+  if tally.fail > 0 {
+    1
+  } else {
+    0
+  }
+}
+
+///|
+async fn main {
+  let args = @env.args()
+  let filters = args[1:].to_owned().filter(a => a != "--")
+  let status = main_run(filters) catch {
+    RunError(message) => {
+      println("interop: \{message}")
+      2
+    }
+    error => {
+      println("interop: \{error}")
+      2
+    }
+  }
+  @env.exit(status)
+}

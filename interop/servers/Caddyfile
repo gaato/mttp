@@ -1,0 +1,70 @@
+# Caddy for the interop suite: static files, redirects and a reverse proxy
+# to the mttp interop server on 127.0.0.1:39000. interop/mttp_client/main.mbt
+# lists the URL layout every server shares. Ports: 39020 (http) and 39021
+# (https), each on 127.0.0.1 and 127.0.0.2, the second origin of the
+# cross-origin redirect.
+{
+	admin off
+	auto_https off
+	persist_config off
+	servers {
+		# Short, so that the client's idle-close cases need not wait long.
+		timeouts {
+			idle 2s
+		}
+	}
+}
+
+(layout) {
+	root * /www
+	# Names the client connection, for the keep-alive cases.
+	header X-Conn {http.request.remote.port}
+
+	@text path /text.txt
+	encode @text zstd gzip
+
+	handle_path /up/* {
+		reverse_proxy 127.0.0.1:39000 {
+			flush_interval -1
+		}
+	}
+	handle_path /limited/* {
+		request_body {
+			max_size 1KB
+		}
+		reverse_proxy 127.0.0.1:39000
+	}
+	# Caddy has no rate limit of its own: the trickle comes from the mttp
+	# server, 16 pieces of 1 KiB a quarter second apart, and Caddy relays it
+	# as it arrives.
+	handle /slow.bin {
+		rewrite * /stream?pieces=16&size=1024&delay_ms=250
+		reverse_proxy 127.0.0.1:39000 {
+			flush_interval -1
+		}
+	}
+	redir /r/301 /up/echo 301
+	redir /r/302 /up/echo 302
+	redir /r/307 /up/echo 307
+	redir /r/308 /up/echo 308
+	redir /same /up/headers 302
+	redir /xo {http.request.scheme}://127.0.0.2:{http.request.port}/up/headers 302
+	respond /s/204 204
+	# Closes the connection without a response.
+	handle /drop {
+		abort
+	}
+	file_server
+}
+
+http://127.0.0.1:39020, http://127.0.0.2:39020 {
+	bind 127.0.0.1 127.0.0.2
+	import layout
+}
+
+https://127.0.0.1:39021, https://127.0.0.2:39021 {
+	bind 127.0.0.1 127.0.0.2
+	tls /certs/server.pem /certs/server.key
+	redir /down http://127.0.0.1:39020/small.txt 302
+	import layout
+}

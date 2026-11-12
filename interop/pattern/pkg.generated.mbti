@@ -1,0 +1,31 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-interop/pattern"
+
+// Values
+pub fn binary(Int32) -> Bytes
+
+pub fn byte_at(Int32) -> Byte
+
+pub fn digest(BytesView) -> String
+
+pub fn digests() -> String
+
+pub fn files() -> Array[(String, Bytes)]
+
+pub let large_bytes : Int32
+
+pub fn text(Int32) -> Bytes
+
+// Errors
+
+// Types and methods
+pub struct Digest {
+  // private fields
+}
+pub fn Digest::new() -> Self
+pub fn Digest::summary(Self) -> String
+pub fn Digest::update(Self, BytesView) -> Unit
+
+// Type aliases
+
+// Traits

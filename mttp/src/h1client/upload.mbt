@@ -2,7 +2,20 @@
 // in the first write goes out with the head; a larger one is uploaded while
 // the response head is read, so a response that arrives early ends the
 // upload (the server refused it, or answered without needing it) and the
-// connection is not reused.
+// connection is not reused. A request that asks `Expect: 100-continue`
+// sends its head alone and its body only after the server's 100, or after
+// `continue_wait_ms` without an answer.
+
+///|
+/// How long a request with `Expect: 100-continue` waits for the server's
+/// 100 before it sends its body anyway (RFC 9110, section 10.1.1, lets a
+/// client stop waiting); curl and Go's net/http wait one second too. A final
+/// answer that comes first, such as a 413, ends the exchange with the body
+/// unsent. Sending at once instead let a server that refuses the body close
+/// the connection while it was still arriving, and the reset that follows
+/// can destroy its answer before the client reads it (seen with Apache over
+/// TLS).
+let continue_wait_ms : Int32 = 1000
 
 ///|
 /// What one exchange produced: the final response head, and whether the
@@ -31,8 +44,24 @@ async fn exchange(
   timer : PhaseTimer,
   limits : @h1.Limits,
   coordination : &@rt.Coordination,
+  expect_continue~ : Bool = false,
 ) -> Exchanged raise @mttp.TransportError {
+  let has_body = match upload {
+    Bytes(bytes) => !bytes.is_empty()
+    Stream(_, first) => first is Some(_)
+  }
   match upload {
+    _ if expect_continue && has_body =>
+      duplex(
+        wire,
+        head,
+        upload,
+        framing,
+        timer,
+        limits,
+        coordination,
+        expect_continue=true,
+      )
     Bytes(bytes) if head.length() + bytes.length() <= io_bytes => {
       timer.run(Write, () => wire.write(head + bytes))
       { head: timer.run(Head, () => final_head(wire, limits)), uploaded: true, }
@@ -43,7 +72,17 @@ async fn exchange(
       timer.run(Write, () => wire.write(head + last))
       { head: timer.run(Head, () => final_head(wire, limits)), uploaded: true, }
     }
-    _ => duplex(wire, head, upload, framing, timer, limits, coordination)
+    _ =>
+      duplex(
+        wire,
+        head,
+        upload,
+        framing,
+        timer,
+        limits,
+        coordination,
+        expect_continue=false,
+      )
   }
 }
 
@@ -68,7 +107,17 @@ async fn upload(
   upload : Upload,
   framing : @h1.Framing,
   timer : PhaseTimer,
+  before_body? : async () -> Unit,
 ) -> Unit {
+  // With `before_body`, the head goes out alone and the body after it.
+  let head = match before_body {
+    Some(wait) => {
+      wire.send(head, timer)
+      wait()
+      b""
+    }
+    None => head
+  }
   match upload {
     Bytes(bytes) => {
       let first = (io_bytes - head.length()).max(0).min(bytes.length())
@@ -99,15 +148,19 @@ async fn upload(
 
 ///|
 /// Reads response heads until a final one: 1xx heads other than 101 are
-/// skipped, at most 16 of them.
+/// skipped, at most 16 of them; `on_continue` hears each 100.
 async fn final_head(
   wire : Wire,
   limits : @h1.Limits,
+  on_continue? : () -> Unit,
 ) -> @h1.ParsedResponse raise @mttp.TransportError {
   for _ in 0..<17 {
     let head = wire.head(limits)
     if head.status >= 200 || head.status == 101 {
       return head
+    }
+    if head.status == 100 && on_continue is Some(heard) {
+      heard()
     }
   }
   raise @mttp.TransportError(
@@ -157,7 +210,22 @@ async fn duplex(
   timer : PhaseTimer,
   limits : @h1.Limits,
   coordination : &@rt.Coordination,
+  expect_continue~ : Bool,
 ) -> Exchanged raise @mttp.TransportError {
+  let continued = coordination.signal()
+  // Waits for the 100, at most `continue_wait_ms` and never past the
+  // attempt's deadline; a final head first ends the upload by cancellation.
+  let before_body : (async () -> Unit)? = if expect_continue {
+    Some(async fn() {
+      let wait = match timer.remaining() {
+        Some(left) => left.min(continue_wait_ms.to_int64()).to_int()
+        None => continue_wait_ms
+      }
+      let _ = timer.timer.within(wait, () => continued.wait())
+    })
+  } else {
+    None
+  }
   let state = Duplex::{
     head: None,
     sent: None,
@@ -171,7 +239,7 @@ async fn duplex(
       // Both halves store failures with their phase, as the one-write path
       // reports them, so a failure does not depend on the body's size.
       state.sent = Some(
-        Ok(upload(wire, head, body, framing, timer)) catch {
+        Ok(upload(wire, head, body, framing, timer, before_body?)) catch {
           ProducerFailed(error) => Err(Producer(error))
           error => Err(Connection(failure(Write, error)))
         },
@@ -182,7 +250,7 @@ async fn duplex(
       coordination.supervise(
         monitor=() => {
           state.head = Some(
-            Ok(final_head(wire, limits)) catch {
+            Ok(final_head(wire, limits, on_continue=() => continued.notify())) catch {
               error => Err(failure(Head, error))
             },
           )
