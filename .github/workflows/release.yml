@@ -3,9 +3,7 @@ name: Release
 # The library modules are released together. A tag `<module dir>-v<version>`
 # (for example `mttp-v0.2.0`) runs the release preflight; nothing here
 # publishes. Publication is a separately approved local command (see
-# scripts/release.mbtx), and so is its `publish --dry-run`: moon sends the
-# package to mooncakes to validate it, which needs registry credentials that
-# this repository does not give CI, since CI never publishes.
+# scripts/release.mbtx).
 on:
   push:
     tags:
@@ -42,3 +40,4 @@ jobs:
       # Includes the resolver gate: real archives, an isolated registry and
       # consumers outside the workspace.
       - run: scripts/gates.sh full
+      - run: moon run scripts/release.mbtx -- publish --dry-run
