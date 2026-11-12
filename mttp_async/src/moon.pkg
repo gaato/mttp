@@ -1,7 +1,6 @@
 import {
   "gaato/mttp",
   "gaato/mttp/client",
-  "gaato/mttp/client/cookies",
   "gaato/mttp/cookie",
   "gaato/mttp/h1client",
   "gaato/mttp/rt",

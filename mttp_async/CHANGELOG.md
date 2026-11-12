@@ -24,7 +24,9 @@ never does.
     module in its `moon.mod`.
   - `backend()`, `clock()` and `timer()` supply the same I/O to a library
     that builds its own Client, such as an API SDK, which keeps its own base
-    URL, authentication and retry defaults.
+    URL, authentication and retry defaults. `backend()` is the network
+    alone, HTTP/1.1 with decompression: the Client built over it follows
+    redirects and keeps cookies, as every `Client::new` does.
   - `coordination()` supplies the event loop's signals to the parts of
     `gaato/mttp` that wait without I/O, such as `EventStream::channel`.
 - `ListenError` implements `Show`.

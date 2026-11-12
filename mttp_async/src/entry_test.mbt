@@ -85,6 +85,33 @@ async test "client() follows a redirect and turns retries off on request" {
 }
 
 ///|
+async test "backend() is the I/O only and returns a redirect unfollowed" {
+  with_local_server(
+    request => {
+      if request.url.has_suffix("/old") {
+        @mttp.Response::new(
+          301,
+          headers=@mttp.Headers::of([("location", "/new")]),
+        )
+      } else {
+        @mttp.Response::new(200)
+      }
+    },
+    address => {
+      let network = @mttp_async.backend()
+      defer network.close()
+      let response = network.send(
+        @mttp.Request::get("http://\{address}/old"),
+        @mttp.SendOptions::default(),
+      )
+      defer response.close()
+      assert_eq(response.status, 301)
+      assert_eq(response.attributes.get(@client.final_url), None)
+    },
+  )
+}
+
+///|
 async test "client(cookies=) sends a cookie set on a redirect to the next hop and later calls" {
   let seen : Array[String?] = []
   with_local_server(
@@ -111,9 +138,10 @@ async test "client(cookies=) sends a cookie set on a redirect to the next hop an
       assert_eq(jar.length(), 1)
       // A second Client given the same jar sends it too.
       let other = @client.Client::new(
-        @mttp_async.backend(cookies=jar),
+        @mttp_async.backend(),
         @mttp_async.clock(),
         base_url="http://\{address}",
+        cookies=jar,
       )
       defer other.close()
       assert_eq(other.send(@mttp_async.get("/again")).status, 200)

@@ -83,7 +83,7 @@ pub async fn print_user(id : Int32) -> Unit {
 | Retries | Up to two, for idempotent requests on 408, 409, 429, 500, 502, 503 and 504 and on network failures, and for any request that was never sent; `Retry-After` is honoured, and a server that asks to wait more than 60 s is not retried; backoff is exponential with jitter | `retry=RetryPolicy::none()` or another policy |
 | Retry budget | Retries stay within 20 % of the requests of the last 10 s, plus 10 per second, so a failing server is not flooded | `retry_budget=RetryBudget::new(..)` or `RetryBudget::unlimited()` |
 | Deadlines | 30 s per attempt, 120 s for the whole call, retries included | `timeout_ms=`, `total_ms=` |
-| Redirects | Up to 10 hops, never from HTTPS to HTTP, credentials dropped across origins | `redirect=`, or `.follow_redirects(false)` on a request |
+| Redirects | Up to 10 hops, never from HTTPS to HTTP, credentials dropped across origins | `redirect=`, `redirect=RedirectConfig::none()` to turn them off, or `.follow_redirects(false)` on a request |
 | Cookies | None kept | `cookies=` a `CookieJar` |
 | Decompression | gzip, deflate, br and zstd | per request, by setting `Accept-Encoding` |
 | Body size | Buffered bodies up to 64 MiB after decoding | `max_body_bytes=` |
@@ -109,15 +109,17 @@ pub async fn account_page(token : String) -> String? {
 ```
 
 The jar belongs to the caller: several Clients may share it, and it outlives
-them. `backend(cookies=)` takes one too. The jar does not apply browsers'
-`SameSite` rules.
+them. A Client built with `Client::new` takes one the same way, `cookies=`.
+The jar does not apply browsers' `SameSite` rules.
 
 ## With an API SDK
 
 An SDK built on `gaato/mttp` (such as `gaato/openai` or `gaato/anthropic`)
 creates its own Client with the provider's base URL, authentication and retry
 rules. Give it the I/O with `backend()`, `clock()` and `timer()`; the timer
-lets it enforce its deadlines:
+lets it enforce its deadlines. `backend()` is the network alone, HTTP/1.1
+with decompression; the SDK's Client follows redirects itself, as every
+`Client` does:
 
 ```mbt nocheck
 ///|

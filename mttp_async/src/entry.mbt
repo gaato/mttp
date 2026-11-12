@@ -26,8 +26,9 @@ pub fn run(main : async () -> Unit) -> Unit {
 /// - `timeout_ms` (default 30 s) for each attempt, and `total_ms` (default
 ///   120 s) for the whole call, retries and their waits included.
 /// - `redirect` (default `RedirectConfig::default()`): up to 10 hops, no
-///   HTTPS-to-HTTP downgrade, credentials dropped across origins; a request
-///   opts out with `RequestPlan::follow_redirects(false)`.
+///   HTTPS-to-HTTP downgrade, credentials dropped across origins;
+///   `RedirectConfig::none()` turns redirects off, and a request opts out
+///   with `RequestPlan::follow_redirects(false)`.
 /// - Responses are decompressed (gzip, deflate, br, zstd) and buffered
 ///   bodies are limited to 64 MiB after decoding (`max_body_bytes`).
 /// - `cookies` (no jar by default): a `CookieJar` that stores every
@@ -59,28 +60,30 @@ pub fn client(
   config? : @h1client.ClientConfig,
   cookies? : @cookie.CookieJar,
 ) -> @client.Client {
-  let clock = clock()
+  let clock = system_clock()
   @client.Client::new(
-    backend(redirect~, trust~, config?, cookies?),
+    network(trust, config),
     clock,
     base_url~,
     headers~,
     timeout_ms~,
     max_body_bytes?,
-    timer=timer(),
+    timer=@runtime.ClockTimer::new(clock~),
     retry~,
     retry_budget~,
+    redirect~,
+    cookies?,
     limiter?,
     total_ms~,
   )
 }
 
 ///|
-/// The real network as a `Backend`, as `client` uses it: HTTP/1.1 over TCP
-/// and TLS with connection reuse, decompressed responses, and redirects
-/// followed by `redirect`; with `cookies`, the jar's cookies are sent and
-/// stored on every hop. Pass it, with `clock` and `timer`, to a library
-/// that builds its own `Client`, such as an API SDK:
+/// The real network as a `Backend`: HTTP/1.1 over TCP and TLS with
+/// connection reuse and decompressed responses. It is only the I/O: the
+/// `Client` built over it follows redirects, and keeps cookies when given a
+/// jar, as `Client::new` does over any backend. Pass it, with `clock` and `timer`,
+/// to a library that builds its own `Client`, such as an API SDK:
 ///
 /// ```mbt nocheck
 /// let claude = @anthropic.Anthropic::new(
@@ -91,36 +94,40 @@ pub fn client(
 /// )
 /// ```
 ///
-/// The libraries keep their own defaults (base URL, authentication, retries);
-/// this only supplies the I/O. Closing the library's Client closes the
-/// connections.
+/// The libraries keep their own defaults (base URL, authentication, retries)
+/// and follow redirects through `Client::new`; this only supplies the I/O.
+/// Closing the library's Client closes the connections.
 pub fn backend(
-  redirect~ : @client.RedirectConfig = @client.RedirectConfig::default(),
   trust~ : @trust.Trust = System,
   config? : @h1client.ClientConfig,
-  cookies? : @cookie.CookieJar,
 ) -> &@mttp.Backend {
-  let network = @backend.AsyncBackend::new(config?, trust~, clock=clock())
-  // The jar sits inside the redirects, so each hop sends the cookies for its
-  // own URL and stores what it receives before the next hop.
-  let inner = match cookies {
-    Some(jar) => @cookies.Cookies::new(network, jar) as &@mttp.Backend
-    None => network
-  }
-  @client.FollowRedirects::new(inner, config=redirect)
+  network(trust, config)
+}
+
+///|
+fn network(
+  trust : @trust.Trust,
+  config : @h1client.ClientConfig?,
+) -> &@mttp.Backend {
+  @backend.AsyncBackend::new(config?, trust~, clock=system_clock())
+}
+
+///|
+fn system_clock() -> &@rt.Clock {
+  @runtime.AsyncClock::new()
 }
 
 ///|
 /// The system's wall and monotonic clock, for a `Client` built by hand.
 pub fn clock() -> &@rt.Clock {
-  @runtime.AsyncClock::new()
+  system_clock()
 }
 
 ///|
 /// Timers on core/async's event loop, which let a `Client` enforce its
 /// per-attempt and total deadlines.
 pub fn timer() -> &@rt.Timer {
-  @runtime.ClockTimer::new(clock=clock())
+  @runtime.ClockTimer::new(clock=system_clock())
 }
 
 ///|
