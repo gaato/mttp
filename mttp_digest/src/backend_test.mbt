@@ -1,6 +1,9 @@
 ///|
-fn challenge(nonce~ : String = "n", stale~ : Bool = false) -> @mttp.Headers {
-  @mttp.Headers::of([
+fn challenge(
+  nonce~ : String = "n",
+  stale~ : Bool = false,
+) -> @mttp_core.Headers {
+  @mttp_core.Headers::of([
     (
       "www-authenticate",
       "Digest realm=\"r\", nonce=\"\{nonce}\", qop=auth, stale=\{stale}",
@@ -10,8 +13,8 @@ fn challenge(nonce~ : String = "n", stale~ : Bool = false) -> @mttp.Headers {
 
 ///|
 fn wrap(
-  inner : &@mttp.Backend,
-) -> @mttp_digest.DigestScheme raise @mttp.TransportError {
+  inner : &@mttp_core.Backend,
+) -> @mttp_digest.DigestScheme raise @mttp_core.TransportError {
   @mttp_digest.DigestScheme::new(inner, "u", "p", origin="https://a.test", random=() => {
     0.5
   })
@@ -28,7 +31,7 @@ test "Digest concurrent same nonce challenges allocate counts without reuse" {
       @client.from_fn((request, _) => {
         let auth = request.headers.get("authorization")
         if request.url == "https://a.test/warm" {
-          @mttp.Response::new(
+          @mttp_core.Response::new(
             if auth is None {
               401
             } else {
@@ -38,17 +41,17 @@ test "Digest concurrent same nonce challenges allocate counts without reuse" {
           )
         } else if request.url == "https://a.test/after" {
           following.push(auth)
-          @mttp.Response::new(200)
+          @mttp_core.Response::new(200)
         } else if initial.length() < 3 {
           initial.push(auth)
           // All three calls start before any challenge can update the cache.
           driver.sleep(1)
-          @mttp.Response::new(401, headers=challenge())
+          @mttp_core.Response::new(401, headers=challenge())
         } else {
           answered.push(auth.unwrap())
           // Keep challenge responses in flight while other calls adopt it.
           driver.pause()
-          @mttp.Response::new(200)
+          @mttp_core.Response::new(200)
         }
       }),
     )
@@ -57,16 +60,16 @@ test "Digest concurrent same nonce challenges allocate counts without reuse" {
       if warm {
         backend
         .send(
-          @mttp.Request::get("https://a.test/warm"),
-          @mttp.SendOptions::default(),
+          @mttp_core.Request::get("https://a.test/warm"),
+          @mttp_core.SendOptions::default(),
         )
         .close()
       }
       let tasks = [0, 1, 2].map(i => {
         driver.spawn(() => {
           let response = backend.send(
-            @mttp.Request::get("https://a.test/concurrent/\{i}"),
-            @mttp.SendOptions::default(),
+            @mttp_core.Request::get("https://a.test/concurrent/\{i}"),
+            @mttp_core.SendOptions::default(),
           )
           assert_eq(response.status, 200)
           response.close()
@@ -77,8 +80,8 @@ test "Digest concurrent same nonce challenges allocate counts without reuse" {
       }
       backend
       .send(
-        @mttp.Request::get("https://a.test/after"),
-        @mttp.SendOptions::default(),
+        @mttp_core.Request::get("https://a.test/after"),
+        @mttp_core.SendOptions::default(),
       )
       .close()
     })
@@ -115,13 +118,13 @@ test "Digest new nonce and stale same nonce reset challenge counts" {
       @client.from_fn((request, _) => {
         sent.push(request.headers.get("authorization"))
         match sent.length() {
-          1 => @mttp.Response::new(401, headers=challenge())
+          1 => @mttp_core.Response::new(401, headers=challenge())
           3 =>
-            @mttp.Response::new(
+            @mttp_core.Response::new(
               401,
               headers=challenge(nonce=if stale { "n" } else { "new" }, stale~),
             )
-          _ => @mttp.Response::new(200)
+          _ => @mttp_core.Response::new(200)
         }
       }),
     )
@@ -129,8 +132,8 @@ test "Digest new nonce and stale same nonce reset challenge counts" {
     @driver.run_sync(() => {
       for _ in 0..<3 {
         let response = backend.send(
-          @mttp.Request::get("https://a.test/"),
-          @mttp.SendOptions::default(),
+          @mttp_core.Request::get("https://a.test/"),
+          @mttp_core.SendOptions::default(),
         )
         assert_eq(response.status, 200)
         response.close()
@@ -156,13 +159,13 @@ test "Digest reuses counted nonces and closes each replaced body" {
     (request, _) => {
       seen.push(request.headers.get("authorization"))
       if seen.length() == 1 {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           401,
           headers=challenge(),
-          body=Stream(@mttp.StreamBody::new(first_body)),
+          body=Stream(@mttp_core.StreamBody::new(first_body)),
         )
       } else {
-        @mttp.Response::new(200)
+        @mttp_core.Response::new(200)
       }
     },
     on_close=() => closed.val += 1,
@@ -171,8 +174,8 @@ test "Digest reuses counted nonces and closes each replaced body" {
   @driver.run_sync(() => {
     for _ in 0..<2 {
       let response = backend.send(
-        @mttp.Request::get("https://a.test/p?q=1"),
-        @mttp.SendOptions::default(),
+        @mttp_core.Request::get("https://a.test/p?q=1"),
+        @mttp_core.SendOptions::default(),
       )
       assert_eq(response.status, 200)
       response.close()
@@ -193,34 +196,34 @@ test "Digest reuses counted nonces and closes each replaced body" {
 ///|
 test "Digest stale retry is bounded and origin credentials do not cross hosts" {
   for stale in [false, true] {
-    let sent : Array[@mttp.Request] = []
+    let sent : Array[@mttp_core.Request] = []
     let backend = wrap(
       @client.from_fn((request, _) => {
         sent.push(request)
-        @mttp.Response::new(401, headers=challenge(stale~))
+        @mttp_core.Response::new(401, headers=challenge(stale~))
       }),
     )
     @driver.run_sync(() => {
       assert_eq(
         backend.send(
-          @mttp.Request::get("https://a.test/"),
-          @mttp.SendOptions::default(),
+          @mttp_core.Request::get("https://a.test/"),
+          @mttp_core.SendOptions::default(),
         ).status,
         401,
       )
       assert_eq(sent.length(), if stale { 3 } else { 2 })
       let before = sent.length()
       let _ = backend.send(
-        @mttp.Request::get("https://b.test/"),
-        @mttp.SendOptions::default(),
+        @mttp_core.Request::get("https://b.test/"),
+        @mttp_core.SendOptions::default(),
       )
       assert_eq(sent.length(), before + 1)
       assert_eq(sent[before].headers.get("authorization"), None)
       let _ = backend.send(
-        @mttp.Request::get("https://a.test/").header(
+        @mttp_core.Request::get("https://a.test/").header(
           "authorization", "explicit",
         ),
-        @mttp.SendOptions::default(),
+        @mttp_core.SendOptions::default(),
       )
       assert_eq(sent.length(), before + 2)
       assert_eq(sent[before + 1].headers.get("authorization"), Some("explicit"))
@@ -237,13 +240,13 @@ test "Digest refuses oversized challenges and replaying stream bodies" {
   let backend = wrap(
     @client.from_fn((_, _) => {
       sent.val += 1
-      @mttp.Response::new(401, headers=challenge())
+      @mttp_core.Response::new(401, headers=challenge())
     }),
   )
   @driver.run_sync(() => {
     let response = backend.send(
-      @mttp.Request::post("https://a.test/").body_stream(upload),
-      @mttp.SendOptions::default(),
+      @mttp_core.Request::post("https://a.test/").body_stream(upload),
+      @mttp_core.SendOptions::default(),
     )
     response.close()
     assert_eq(sent.val, 1)
@@ -257,7 +260,7 @@ test "Digest refuses oversized challenges and replaying stream bodies" {
     let backend = wrap(
       @client.from_fn((_, _) => {
         sent.val += 1
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           401,
           headers=challenge().add("www-authenticate", "x".repeat(extra)),
         )
@@ -265,8 +268,8 @@ test "Digest refuses oversized challenges and replaying stream bodies" {
     )
     @driver.run_sync(() => {
       let response = backend.send(
-        @mttp.Request::get("https://a.test/"),
-        @mttp.SendOptions::default(),
+        @mttp_core.Request::get("https://a.test/"),
+        @mttp_core.SendOptions::default(),
       )
       assert_eq(response.status, 401)
       response.close()
@@ -292,7 +295,7 @@ test "Digest validates credential origins and implements backend contracts" {
       )
       fail("invalid origin accepted")
     } catch {
-      @mttp.TransportError(..) => ()
+      @mttp_core.TransportError(..) => ()
       error => raise error
     }
   }
@@ -312,7 +315,7 @@ test "Digest does not answer a challenge attributed to another origin" {
   let backend = wrap(
     @client.from_fn((_, _) => {
       sent.val += 1
-      let response = @mttp.Response::new(401, headers=challenge())
+      let response = @mttp_core.Response::new(401, headers=challenge())
       {
         ..response,
         attributes: response.attributes.put(
@@ -323,8 +326,8 @@ test "Digest does not answer a challenge attributed to another origin" {
   )
   @driver.run_sync(() => {
     let response = backend.send(
-      @mttp.Request::get("https://a.test/"),
-      @mttp.SendOptions::default(),
+      @mttp_core.Request::get("https://a.test/"),
+      @mttp_core.SendOptions::default(),
     )
     assert_eq(response.status, 401)
     response.close()
@@ -346,9 +349,9 @@ test "Digest challenge budget counts UTF8 bytes and includes every field" {
     let backend = wrap(
       @client.from_fn((_, _) => {
         sent.val += 1
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           401,
-          headers=@mttp.Headers::of([
+          headers=@mttp_core.Headers::of([
             ("x-other", "ignored"),
             ("www-authenticate", base + suffix),
           ]),
@@ -357,8 +360,8 @@ test "Digest challenge budget counts UTF8 bytes and includes every field" {
     )
     @driver.run_sync(() => {
       let response = backend.send(
-        @mttp.Request::get("https://a.test/"),
-        @mttp.SendOptions::default(),
+        @mttp_core.Request::get("https://a.test/"),
+        @mttp_core.SendOptions::default(),
       )
       response.close()
     })
@@ -373,7 +376,7 @@ test "Digest CONNECT authenticates the authority request target" {
   let backend = wrap(
     @client.from_fn((request, _) => {
       seen.push(request.headers.get("authorization"))
-      @mttp.Response::new(
+      @mttp_core.Response::new(
         if seen.length() == 1 {
           401
         } else {
@@ -385,10 +388,10 @@ test "Digest CONNECT authenticates the authority request target" {
   )
   @driver.run_sync(() => {
     let request = {
-      ..@mttp.Request::get("https://a.test/path"),
-      meth: @mttp.Method::Connect,
+      ..@mttp_core.Request::get("https://a.test/path"),
+      meth: @mttp_core.Method::Connect,
     }
-    let response = backend.send(request, @mttp.SendOptions::default())
+    let response = backend.send(request, @mttp_core.SendOptions::default())
     response.close()
   })
   assert_true(seen[1].unwrap().contains("uri=\"a.test:443\""))
@@ -400,7 +403,7 @@ test "Digest replaces lone surrogates during hashing and extended username encod
   let seen : Array[String?] = []
   let inner = @client.from_fn((request, _) => {
     seen.push(request.headers.get("authorization"))
-    @mttp.Response::new(
+    @mttp_core.Response::new(
       if seen.length() == 1 {
         401
       } else {
@@ -419,8 +422,8 @@ test "Digest replaces lone surrogates during hashing and extended username encod
   )
   @driver.run_sync(() => {
     let response = backend.send(
-      @mttp.Request::get("https://a.test/"),
-      @mttp.SendOptions::default(),
+      @mttp_core.Request::get("https://a.test/"),
+      @mttp_core.SendOptions::default(),
     )
     assert_eq(response.status, 200)
     response.close()
@@ -437,19 +440,19 @@ test "a Client over Digest follows redirects outside it, so each hop is checked 
       let authorized = request.headers.contains("authorization")
       sent.push((request.url, authorized))
       if request.url == "https://a.test/old" {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           302,
-          headers=@mttp.Headers::of([("location", "/new")]),
+          headers=@mttp_core.Headers::of([("location", "/new")]),
         )
       } else if request.url == "https://a.test/away" {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           302,
-          headers=@mttp.Headers::of([("location", "https://b.test/x")]),
+          headers=@mttp_core.Headers::of([("location", "https://b.test/x")]),
         )
       } else if authorized {
-        @mttp.Response::new(200)
+        @mttp_core.Response::new(200)
       } else {
-        @mttp.Response::new(401, headers=challenge())
+        @mttp_core.Response::new(401, headers=challenge())
       }
     }),
   )

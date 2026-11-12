@@ -1,5 +1,5 @@
 ///|
-pub using @mttp {
+pub using @mttp_core {
   type Request,
   type Response,
   type Body,

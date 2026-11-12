@@ -31,7 +31,7 @@ async test "client(backend=, clock=) retries a 503 with the default policy on vi
       _ => true,
       @testing.Canned::bytes(
         503,
-        headers=@mttp.Headers::of([("retry-after", "1")]),
+        headers=@mttp_core.Headers::of([("retry-after", "1")]),
       ),
     )
     .expect(_ => true, @testing.Canned::bytes(200, body=b"ok"))
@@ -65,7 +65,7 @@ async test "client(backend=, clock=) applies the default 30 s attempt deadline" 
     _ => true,
     Factory((_, _) => {
       clock.sleep(1_000_000)
-      @mttp.Response::new(200)
+      @mttp_core.Response::new(200)
     }),
   )
   let api = @mttp_async.client(
@@ -79,7 +79,7 @@ async test "client(backend=, clock=) applies the default 30 s attempt deadline" 
     let result = send_later(group, api, @mttp_async.get("/slow"))
     advance_at(clock, 30_000L)
     clock.settle(until=() => result.val is Some(_))
-    guard result.val is Some(Err(@mttp.TransportError(kind~, ..))) else {
+    guard result.val is Some(Err(@mttp_core.TransportError(kind~, ..))) else {
       fail("expected a transport failure")
     }
     assert_eq(kind, Timeout(ms=30_000))
@@ -97,21 +97,21 @@ async test "client(backend=, clock=) stops the whole call at the default 120 s" 
       match calls.val {
         1 => {
           clock.sleep(10_000)
-          @mttp.Response::new(
+          @mttp_core.Response::new(
             503,
-            headers=@mttp.Headers::of([("retry-after", "50")]),
+            headers=@mttp_core.Headers::of([("retry-after", "50")]),
           )
         }
         2 => {
           clock.sleep(25_000)
-          @mttp.Response::new(
+          @mttp_core.Response::new(
             503,
-            headers=@mttp.Headers::of([("retry-after", "20")]),
+            headers=@mttp_core.Headers::of([("retry-after", "20")]),
           )
         }
         _ => {
           clock.sleep(1_000_000)
-          @mttp.Response::new(200)
+          @mttp_core.Response::new(200)
         }
       }
     }),
@@ -134,7 +134,7 @@ async test "client(backend=, clock=) stops the whole call at the default 120 s" 
     assert_eq(calls.val, 3)
     advance_at(clock, 120_000L)
     clock.settle(until=() => result.val is Some(_))
-    guard result.val is Some(Err(@mttp.TransportError(kind~, ..))) else {
+    guard result.val is Some(Err(@mttp_core.TransportError(kind~, ..))) else {
       fail("expected a transport failure")
     }
     assert_eq(kind, Timeout(ms=120_000))
@@ -149,7 +149,7 @@ async test "client(backend=, cookies=) follows a redirect and keeps its cookie o
       request => request.url.has_suffix("/login"),
       @testing.Canned::bytes(
         302,
-        headers=@mttp.Headers::of([
+        headers=@mttp_core.Headers::of([
           ("location", "/home"),
           ("set-cookie", "session=abc; Path=/"),
         ]),

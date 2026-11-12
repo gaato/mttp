@@ -1,17 +1,17 @@
 ///|
-async fn body(response : @mttp.Response) -> Bytes {
+async fn body(response : @mttp_core.Response) -> Bytes {
   defer response.close()
   match response.body {
     Empty => b""
     Bytes(bytes) => bytes
-    Stream(cell) => @mttp.read_bounded(cell.take(), 20 * 1024 * 1024)
-    @mttp.Body::.. => fail("unsupported test body")
+    Stream(cell) => @mttp_core.read_bounded(cell.take(), 20 * 1024 * 1024)
+    @mttp_core.Body::.. => fail("unsupported test body")
   }
 }
 
 ///|
 async fn with_server(
-  handler : @mttp.Handler,
+  handler : @mttp_core.Handler,
   action : async (String, Ref[Int32]) -> Unit,
 ) -> Unit {
   @async.with_timeout(5000, () => {
@@ -52,7 +52,7 @@ fn new_backend(config? : @h1client.ClientConfig) -> @backend.AsyncBackend {
 async test "socket wiring decodes gzip deflate and brotli and preserves explicit opt out" {
   for coding in [@codings.Coding::Gzip, Deflate, Brotli] {
     let encoded = body(
-      @mttp.Response::new(
+      @mttp_core.Response::new(
         200,
         body=@codings.encode_body(Bytes(b"decoded"), coding),
       ),
@@ -61,26 +61,26 @@ async test "socket wiring decodes gzip deflate and brotli and preserves explicit
     with_server(
       request => {
         accepted.val = request.headers.get("accept-encoding").unwrap_or("")
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           200,
           body=Bytes(encoded),
-          headers=@mttp.Headers::of([("content-encoding", coding.name())]),
+          headers=@mttp_core.Headers::of([("content-encoding", coding.name())]),
         )
       },
       (url, _) => {
         let backend = new_backend()
         defer backend.close()
         let response = backend.send(
-          @mttp.Request::get(url),
-          @mttp.SendOptions::default(),
+          @mttp_core.Request::get(url),
+          @mttp_core.SendOptions::default(),
         )
         assert_eq(response.headers.get("content-encoding"), None)
         assert_eq(response.headers.get("content-length"), None)
         assert_eq(body(response), b"decoded")
         assert_eq(accepted.val, @codings.accept_encoding())
         let response = backend.send(
-          @mttp.Request::get(url).header("accept-encoding", coding.name()),
-          @mttp.SendOptions::default(),
+          @mttp_core.Request::get(url).header("accept-encoding", coding.name()),
+          @mttp_core.SendOptions::default(),
         )
         assert_eq(response.headers.get("content-encoding"), Some(coding.name()))
         assert_eq(body(response), encoded)
@@ -91,10 +91,10 @@ async test "socket wiring decodes gzip deflate and brotli and preserves explicit
   let zstd = b"\x28\xb5\x2f\xfd\x20\x13\x6d\x00\x00\x38\x68\x65\x6c\x6c\x6f\x2c\x20\x01\x00\xe2\x8a\x11"
   with_server(
     _ => {
-      @mttp.Response::new(
+      @mttp_core.Response::new(
         200,
         body=Bytes(zstd),
-        headers=@mttp.Headers::of([("content-encoding", "zstd")]),
+        headers=@mttp_core.Headers::of([("content-encoding", "zstd")]),
       )
     },
     (url, _) => {
@@ -102,7 +102,10 @@ async test "socket wiring decodes gzip deflate and brotli and preserves explicit
       defer backend.close()
       assert_eq(
         body(
-          backend.send(@mttp.Request::get(url), @mttp.SendOptions::default()),
+          backend.send(
+            @mttp_core.Request::get(url),
+            @mttp_core.SendOptions::default(),
+          ),
         ),
         b"hello, hello, hello",
       )
@@ -112,7 +115,7 @@ async test "socket wiring decodes gzip deflate and brotli and preserves explicit
 
 ///|
 async test "socket keep alive reuses one connection and early close discards it" {
-  with_server(_ => @mttp.Response::new(200, body=Bytes(b"reuse")), (
+  with_server(_ => @mttp_core.Response::new(200, body=Bytes(b"reuse")), (
     url,
     accepts,
   ) => {
@@ -121,7 +124,10 @@ async test "socket keep alive reuses one connection and early close discards it"
     for _ in 0..<3 {
       assert_eq(
         body(
-          backend.send(@mttp.Request::get(url), @mttp.SendOptions::default()),
+          backend.send(
+            @mttp_core.Request::get(url),
+            @mttp_core.SendOptions::default(),
+          ),
         ),
         b"reuse",
       )
@@ -129,14 +135,19 @@ async test "socket keep alive reuses one connection and early close discards it"
     }
     assert_eq(accepts.val, 1)
     let response = backend.send(
-      @mttp.Request::get(url),
-      @mttp.SendOptions::default(),
+      @mttp_core.Request::get(url),
+      @mttp_core.SendOptions::default(),
     )
     response.close()
     response.close()
     assert_eq(backend.idle_connections(), 0)
     assert_eq(
-      body(backend.send(@mttp.Request::get(url), @mttp.SendOptions::default())),
+      body(
+        backend.send(
+          @mttp_core.Request::get(url),
+          @mttp_core.SendOptions::default(),
+        ),
+      ),
       b"reuse",
     )
     assert_eq(accepts.val, 2)
@@ -169,13 +180,13 @@ async test "socket upload with Expect waits for 100 Continue" {
       })
       let backend = new_backend()
       defer backend.close()
-      let request = @mttp.Request::post(
+      let request = @mttp_core.Request::post(
           "http://127.0.0.1:\{listener.addr.port()}/",
         )
         .body_bytes(b"payload")
         .header("Expect", "100-continue")
       assert_eq(
-        body(backend.send(request, @mttp.SendOptions::default())),
+        body(backend.send(request, @mttp_core.SendOptions::default())),
         b"ok",
       )
       assert_eq(early.val, None)
@@ -217,14 +228,20 @@ async test "socket POST after the server closed the idle connection uses a new o
       let url = "http://127.0.0.1:\{listener.addr.port()}/"
       assert_eq(
         body(
-          backend.send(@mttp.Request::get(url), @mttp.SendOptions::default()),
+          backend.send(
+            @mttp_core.Request::get(url),
+            @mttp_core.SendOptions::default(),
+          ),
         ),
         b"ok",
       )
       assert_eq(backend.idle_connections(), 1)
       @async.sleep(300)
-      let post = @mttp.Request::post(url).body_bytes(b"x")
-      assert_eq(body(backend.send(post, @mttp.SendOptions::default())), b"ok")
+      let post = @mttp_core.Request::post(url).body_bytes(b"x")
+      assert_eq(
+        body(backend.send(post, @mttp_core.SendOptions::default())),
+        b"ok",
+      )
       assert_eq(requests, ["get / http/1.1", "post / http/1.1"])
       group.return_immediately()
     })
@@ -233,7 +250,7 @@ async test "socket POST after the server closed the idle connection uses a new o
 
 ///|
 async test "injected clock expires parked sockets at the idle boundary" {
-  with_server(_ => @mttp.Response::new(200, body=Bytes(b"reuse")), (
+  with_server(_ => @mttp_core.Response::new(200, body=Bytes(b"reuse")), (
     url,
     accepts,
   ) => {
@@ -247,7 +264,10 @@ async test "injected clock expires parked sockets at the idle boundary" {
       clock.advance(elapsed)
       assert_eq(
         body(
-          backend.send(@mttp.Request::get(url), @mttp.SendOptions::default()),
+          backend.send(
+            @mttp_core.Request::get(url),
+            @mttp_core.SendOptions::default(),
+          ),
         ),
         b"reuse",
       )
@@ -266,7 +286,7 @@ async test "injected clock and optional timer drive the socket Head phase timeou
       _ => {
         entered.val = true
         @async.sleep(10000)
-        @mttp.Response::new(200)
+        @mttp_core.Response::new(200)
       },
       (url, _) => {
         let clock = @runtime.VirtualClock()
@@ -293,11 +313,12 @@ async test "injected clock and optional timer drive the socket Head phase timeou
           group.spawn_bg(() => {
             try
               backend.send(
-                @mttp.Request::get(url),
-                @mttp.SendOptions::default(),
+                @mttp_core.Request::get(url),
+                @mttp_core.SendOptions::default(),
               )
             catch {
-              @mttp.TransportError(kind=Timeout(ms=75), phase=Head, ..) => ()
+              @mttp_core.TransportError(kind=Timeout(ms=75), phase=Head, ..) =>
+                ()
               error => raise error
             } noraise {
               _ => fail("stalled head succeeded")
@@ -328,13 +349,13 @@ async test "socket uploads bytes and known and unknown length streams once" {
     request => {
       let bytes = match request.body {
         Stream(cell) =>
-          @mttp.read_bounded(cell.take(), 200000) catch {
+          @mttp_core.read_bounded(cell.take(), 200000) catch {
             _ => b"failed"
           }
         Bytes(bytes) => bytes
         _ => b""
       }
-      @mttp.Response::new(200, body=Bytes(bytes))
+      @mttp_core.Response::new(200, body=Bytes(bytes))
     },
     (url, _) => {
       let backend = new_backend()
@@ -343,8 +364,8 @@ async test "socket uploads bytes and known and unknown length streams once" {
       assert_eq(
         body(
           backend.send(
-            @mttp.Request::post(url).body_bytes(payload),
-            @mttp.SendOptions::default(),
+            @mttp_core.Request::post(url).body_bytes(payload),
+            @mttp_core.SendOptions::default(),
           ),
         ),
         payload,
@@ -357,12 +378,12 @@ async test "socket uploads bytes and known and unknown length streams once" {
           wait: false,
           failing: false,
         }
-        let request = @mttp.Request::post(url).body_stream(
+        let request = @mttp_core.Request::post(url).body_stream(
           stream,
           length?=if known { Some(70000L) } else { None },
         )
         assert_eq(
-          body(backend.send(request, @mttp.SendOptions::default())),
+          body(backend.send(request, @mttp_core.SendOptions::default())),
           payload,
         )
         assert_eq(stream.closes, 1)
@@ -382,10 +403,10 @@ priv struct UploadSource {
 }
 
 ///|
-impl @mttp.BodyStream for UploadSource with fn read_some(self) {
+impl @mttp_core.BodyStream for UploadSource with fn read_some(self) {
   self.reads += 1
   if self.failing {
-    raise @mttp.TransportError(
+    raise @mttp_core.TransportError(
       kind=Unreplayable,
       phase=Write,
       detail="upload sentinel",
@@ -401,7 +422,7 @@ impl @mttp.BodyStream for UploadSource with fn read_some(self) {
 }
 
 ///|
-impl @mttp.BodyStream for UploadSource with fn close(self) {
+impl @mttp_core.BodyStream for UploadSource with fn close(self) {
   self.closes += 1
 }
 
@@ -421,19 +442,19 @@ async test "socket first read failure and false empty stream write no head" {
     defer backend.close()
     try
       backend.send(
-        @mttp.Request::post("http://127.0.0.1:\{listener.addr.port()}").body_stream(
+        @mttp_core.Request::post("http://127.0.0.1:\{listener.addr.port()}").body_stream(
           source,
           length?=if failing { None } else { Some(0L) },
         ),
-        @mttp.SendOptions::default(),
+        @mttp_core.SendOptions::default(),
       )
     catch {
-      @mttp.TransportError(
+      @mttp_core.TransportError(
         kind=Unreplayable,
         phase=Write,
         detail="upload sentinel"
       ) if failing => ()
-      @mttp.TransportError(kind=Protocol, ..) if !failing => ()
+      @mttp_core.TransportError(kind=Protocol, ..) if !failing => ()
       error => raise error
     } noraise {
       _ => fail("invalid upload succeeded")
@@ -452,7 +473,7 @@ async test "socket first read failure and false empty stream write no head" {
 
 ///|
 async test "socket early final response cancels a blocked upload and prevents reuse" {
-  with_server(_ => @mttp.Response::new(413, body=Bytes(b"no")), (url, _) => {
+  with_server(_ => @mttp_core.Response::new(413, body=Bytes(b"no")), (url, _) => {
     let backend = new_backend()
     defer backend.close()
     let source = UploadSource::{
@@ -463,8 +484,8 @@ async test "socket early final response cancels a blocked upload and prevents re
       failing: false,
     }
     let response = backend.send(
-      @mttp.Request::post(url).body_stream(source),
-      @mttp.SendOptions::default(),
+      @mttp_core.Request::post(url).body_stream(source),
+      @mttp_core.SendOptions::default(),
     )
     assert_eq(response.status, 413)
     assert_eq(body(response), b"no")
@@ -482,11 +503,11 @@ async test "socket refusal carries unsent Dial phase" {
   defer backend.close()
   try
     backend.send(
-      @mttp.Request::get("http://127.0.0.1:\{port}"),
-      @mttp.SendOptions::default(),
+      @mttp_core.Request::get("http://127.0.0.1:\{port}"),
+      @mttp_core.SendOptions::default(),
     )
   catch {
-    @mttp.TransportError(kind=Connect, phase=Dial, ..) as error =>
+    @mttp_core.TransportError(kind=Connect, phase=Dial, ..) as error =>
       assert_true(error.is_unsent())
     error => raise error
   } noraise {
@@ -501,18 +522,18 @@ async test "socket response head deadline and caller cancellation unwind sends" 
     _ => {
       entered.notify()
       @async.sleep(10000)
-      @mttp.Response::new(200)
+      @mttp_core.Response::new(200)
     },
     (url, _) => {
       let backend = new_backend()
       defer backend.close()
       try
-        backend.send(@mttp.Request::get(url), {
-          ..@mttp.SendOptions::default(),
+        backend.send(@mttp_core.Request::get(url), {
+          ..@mttp_core.SendOptions::default(),
           timeout_ms: Some(30),
         })
       catch {
-        @mttp.TransportError(kind=Timeout(ms=30), phase=Head, ..) => ()
+        @mttp_core.TransportError(kind=Timeout(ms=30), phase=Head, ..) => ()
         error => raise error
       } noraise {
         _ => fail("stalled head succeeded")
@@ -525,10 +546,13 @@ async test "socket response head deadline and caller cancellation unwind sends" 
             cleaned.val = true
           }
           ignore(
-            backend.send(@mttp.Request::get(url), @mttp.SendOptions::default()) catch {
+            backend.send(
+              @mttp_core.Request::get(url),
+              @mttp_core.SendOptions::default(),
+            ) catch {
               _ => {
                 caught.val = true
-                @mttp.Response::new(599)
+                @mttp_core.Response::new(599)
               }
             },
           )
@@ -550,7 +574,7 @@ priv struct StalledBody {
 }
 
 ///|
-impl @mttp.BodyStream for StalledBody with fn read_some(self) {
+impl @mttp_core.BodyStream for StalledBody with fn read_some(self) {
   if self.first {
     self.first = false
     return Some(b"x")
@@ -560,7 +584,7 @@ impl @mttp.BodyStream for StalledBody with fn read_some(self) {
 }
 
 ///|
-impl @mttp.BodyStream for StalledBody with fn close(_) {
+impl @mttp_core.BodyStream for StalledBody with fn close(_) {
   ()
 }
 
@@ -569,15 +593,15 @@ async test "socket Exchange deadline and Stream idle deadline cover body reads" 
   for streaming in [false, true] {
     with_server(
       _ => {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           200,
-          body=Stream(@mttp.StreamBody::new(StalledBody::{ first: true, })),
+          body=Stream(@mttp_core.StreamBody::new(StalledBody::{ first: true, })),
         )
       },
       (url, _) => {
         let backend = new_backend()
         defer backend.close()
-        let response = backend.send(@mttp.Request::get(url), {
+        let response = backend.send(@mttp_core.Request::get(url), {
           timeout_ms: if streaming {
             Some(1000)
           } else {
@@ -590,7 +614,7 @@ async test "socket Exchange deadline and Stream idle deadline cover body reads" 
           },
         })
         try body(response) catch {
-          @mttp.TransportError(kind=Timeout(ms~), phase=Body, ..) =>
+          @mttp_core.TransportError(kind=Timeout(ms~), phase=Body, ..) =>
             assert_eq(ms, if streaming { 30 } else { 50 })
           error => raise error
         } noraise {
@@ -605,15 +629,15 @@ async test "socket Exchange deadline and Stream idle deadline cover body reads" 
 ///|
 async test "socket wire caps apply before decompression and in Stream mode" {
   let encoded = body(
-    @mttp.Response::new(200, body=@codings.encode_body(Bytes(b"x"), Gzip)),
+    @mttp_core.Response::new(200, body=@codings.encode_body(Bytes(b"x"), Gzip)),
   )
   for streaming in [false, true] {
     with_server(
       _ => {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           200,
           body=Bytes(encoded),
-          headers=@mttp.Headers::of([("content-encoding", "gzip")]),
+          headers=@mttp_core.Headers::of([("content-encoding", "gzip")]),
         )
       },
       (url, _) => {
@@ -624,7 +648,7 @@ async test "socket wire caps apply before decompression and in Stream mode" {
         defer backend.close()
         try
           body(
-            backend.send(@mttp.Request::get(url), {
+            backend.send(@mttp_core.Request::get(url), {
               timeout_ms: None,
               body: if streaming {
                 Stream(idle_ms=None)
@@ -634,7 +658,7 @@ async test "socket wire caps apply before decompression and in Stream mode" {
             }),
           )
         catch {
-          @mttp.TransportError(kind=TooLarge(limit~), phase=Body, ..) =>
+          @mttp_core.TransportError(kind=TooLarge(limit~), phase=Body, ..) =>
             assert_eq(limit, encoded.length() - 1)
           error => raise error
         } noraise {
@@ -644,18 +668,18 @@ async test "socket wire caps apply before decompression and in Stream mode" {
       },
     )
   }
-  with_server(_ => @mttp.Response::new(200, body=Bytes(b"abcd")), (url, _) => {
+  with_server(_ => @mttp_core.Response::new(200, body=Bytes(b"abcd")), (url, _) => {
     let backend = new_backend()
     defer backend.close()
     try
       body(
-        backend.send(@mttp.Request::get(url), {
+        backend.send(@mttp_core.Request::get(url), {
           timeout_ms: None,
           body: Exchange(max_bytes=3),
         }),
       )
     catch {
-      @mttp.TransportError(kind=TooLarge(limit=3), phase=Body, ..) => ()
+      @mttp_core.TransportError(kind=TooLarge(limit=3), phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("Exchange cap ignored")

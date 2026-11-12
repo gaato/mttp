@@ -1,4 +1,4 @@
 {
-  "modules": ["mttp_async", "mttp", "mttp_digest"],
+  "modules": ["mttp_async", "mttp_core", "mttp_digest"],
   "generated": []
 }

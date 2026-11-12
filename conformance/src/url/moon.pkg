@@ -1,5 +1,5 @@
 import {
-  "gaato/mttp",
+  "gaato/mttp_core",
   "moonbitlang/core/json",
   "moonbitlang/core/string",
 } for "test"

@@ -4,7 +4,7 @@
 /// wrapper, so each hop is checked against the origin. In a stack built by
 /// hand, keep it inside `FollowRedirects` for the same reason.
 pub struct DigestScheme {
-  priv inner : &@mttp.Backend
+  priv inner : &@mttp_core.Backend
   priv origin : String
   priv username : String
   priv password : String
@@ -20,17 +20,17 @@ pub struct DigestScheme {
 /// `@env.rand` of `moonbitlang/core/env`; tests can inject fixed values.
 /// No network I/O occurs here. Explicit request Authorization takes precedence.
 pub fn DigestScheme::new(
-  inner : &@mttp.Backend,
+  inner : &@mttp_core.Backend,
   username : String,
   password : String,
   origin~ : String,
   random~ : () -> Double,
-) -> DigestScheme raise @mttp.TransportError {
-  @mttp.Request::get(origin).validate()
+) -> DigestScheme raise @mttp_core.TransportError {
+  @mttp_core.Request::get(origin).validate()
   guard digest_target(origin) is Some((url, origin, _)) &&
     (url.scheme == Some("http") || url.scheme == Some("https")) &&
     url.userinfo is None else {
-    raise @mttp.TransportError(
+    raise @mttp_core.TransportError(
       kind=Invalid,
       phase=Pool,
       detail="Digest requires an HTTP(S) credential origin without userinfo",
@@ -57,12 +57,12 @@ pub fn DigestScheme::new(
 /// and the detail retains the original failure, so it cannot appear unsent.
 pub async fn DigestScheme::send(
   self : DigestScheme,
-  request : @mttp.Request,
-  options : @mttp.SendOptions,
-) -> @mttp.Response raise @mttp.TransportError {
+  request : @mttp_core.Request,
+  options : @mttp_core.SendOptions,
+) -> @mttp_core.Response raise @mttp_core.TransportError {
   defer (if request.body is Stream(stream) { stream.close() })
   if self.closed {
-    raise @mttp.TransportError(
+    raise @mttp_core.TransportError(
       kind=Closed,
       phase=Pool,
       detail="Digest backend is closed",
@@ -76,7 +76,7 @@ pub async fn DigestScheme::send(
     return self.inner.send(request, options)
   }
   let body = request.body.as_bytes()
-  let uri = if request.meth == @mttp.Method::Connect {
+  let uri = if request.meth == @mttp_core.Method::Connect {
     // H1 uses authority-form for CONNECT, including an explicit port.
     let authority = origin.split("://").last().unwrap().to_owned()
     authority
@@ -127,13 +127,15 @@ pub async fn DigestScheme::send(
 ///|
 // A 401 proves the original request reached the peer. A later dial failure
 // cannot license an unsent-only retry of that original request.
-fn after_challenge(error : @mttp.TransportError) -> @mttp.TransportError {
-  let @mttp.TransportError(kind~, ..) = error
-  let kind : @mttp.Kind = match kind {
+fn after_challenge(
+  error : @mttp_core.TransportError,
+) -> @mttp_core.TransportError {
+  let @mttp_core.TransportError(kind~, ..) = error
+  let kind : @mttp_core.Kind = match kind {
     Connect | Proxy(_) => Network
     kind => kind
   }
-  @mttp.TransportError(
+  @mttp_core.TransportError(
     kind~,
     phase=Unknown,
     detail="Digest send failed after a challenge was answered: \{error.message()}",
@@ -152,12 +154,16 @@ pub fn DigestScheme::close(self : DigestScheme) -> Unit {
 
 ///|
 /// Implements the standard single-exchange Backend interface.
-pub impl @mttp.Backend for DigestScheme with fn send(self, request, options) {
+pub impl @mttp_core.Backend for DigestScheme with fn send(
+  self,
+  request,
+  options,
+) {
   self.send(request, options)
 }
 
 ///|
 /// Closes this wrapper through Backend.
-pub impl @mttp.Backend for DigestScheme with fn close(self) {
+pub impl @mttp_core.Backend for DigestScheme with fn close(self) {
   self.close()
 }

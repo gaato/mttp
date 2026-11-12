@@ -138,8 +138,8 @@ fn should_answer(answers : Int32, stale : Bool) -> Bool {
 ///|
 /// The parsed URL, its origin and the request target a Digest response
 /// names, or `None` for a URL without an origin.
-fn digest_target(url : String) -> (@mttp.Url, String, String)? {
-  let url = @mttp.Url::parse(url) catch { _ => return None }
+fn digest_target(url : String) -> (@mttp_core.Url, String, String)? {
+  let url = @mttp_core.Url::parse(url) catch { _ => return None }
   guard url.scheme is Some(scheme) && url.host is Some(host) else {
     return None
   }
@@ -158,8 +158,8 @@ fn digest_target(url : String) -> (@mttp.Url, String, String)? {
 
 ///|
 /// Whether `other` parses to a URL of the same origin as `url`.
-fn same_origin_as(url : @mttp.Url, other : String) -> Bool {
-  let other = @mttp.Url::parse(other) catch { _ => return false }
+fn same_origin_as(url : @mttp_core.Url, other : String) -> Bool {
+  let other = @mttp_core.Url::parse(other) catch { _ => return false }
   url.same_origin(other)
 }
 
@@ -167,7 +167,7 @@ fn same_origin_as(url : @mttp.Url, other : String) -> Bool {
 /// The first challenge of the `WWW-Authenticate` headers, in order, that is
 /// a Digest challenge this client can answer, as RFC 7616 §3.7 asks.
 fn find_digest_challenge(
-  headers : @mttp.Headers,
+  headers : @mttp_core.Headers,
   body_in_memory : Bool,
 ) -> DigestChallenge? {
   let mut remaining = 16384
@@ -178,7 +178,7 @@ fn find_digest_challenge(
     if value.length() > remaining {
       return None
     }
-    let size = @mttp.encode_utf8(value).length()
+    let size = @mttp_core.encode_utf8(value).length()
     if size > remaining {
       return None
     }
@@ -271,7 +271,7 @@ fn digest_authorization(
   body : Bytes?,
 ) -> String {
   let h = (text : String) => {
-    digest_hash(challenge.hash, @mttp.encode_utf8(text))
+    digest_hash(challenge.hash, @mttp_core.encode_utf8(text))
   }
   let realm = challenge.realm
   let nonce = challenge.nonce
@@ -368,7 +368,7 @@ fn quote(value : String) -> String {
 /// `attr-char`s.
 fn ext_value(value : String) -> String {
   let buffer = StringBuilder()
-  for byte in @mttp.encode_utf8(value) {
+  for byte in @mttp_core.encode_utf8(value) {
     let c = byte.to_int().unsafe_to_char()
     let keep = (c >= 'a' && c <= 'z') ||
       (c >= 'A' && c <= 'Z') ||

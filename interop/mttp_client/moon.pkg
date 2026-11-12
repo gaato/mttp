@@ -1,7 +1,7 @@
 import {
-  "gaato/mttp",
-  "gaato/mttp/client",
-  "gaato/mttp/h1client",
+  "gaato/mttp_core",
+  "gaato/mttp_core/client",
+  "gaato/mttp_core/h1client",
   "gaato/mttp_async",
   "gaato/mttp_async/backend",
   "gaato/mttp_async/codings",

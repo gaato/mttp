@@ -3,7 +3,7 @@
 /// Socket responses are decoded unless the request sets Accept-Encoding.
 /// A `Client` over it adds redirects, retries and cookies.
 pub struct AsyncBackend {
-  priv inner : &@mttp.Backend
+  priv inner : &@mttp_core.Backend
   priv idle : () -> Int32
 }
 
@@ -30,9 +30,9 @@ pub fn AsyncBackend::new(
 /// Sends one request, transferring ownership of the response to its caller.
 pub async fn AsyncBackend::send(
   self : AsyncBackend,
-  request : @mttp.Request,
-  options : @mttp.SendOptions,
-) -> @mttp.Response raise @mttp.TransportError {
+  request : @mttp_core.Request,
+  options : @mttp_core.SendOptions,
+) -> @mttp_core.Response raise @mttp_core.TransportError {
   self.inner.send(request, options)
 }
 
@@ -50,12 +50,16 @@ pub fn AsyncBackend::idle_connections(self : AsyncBackend) -> Int32 {
 
 ///|
 /// Implements the portable single-exchange transport seam.
-pub impl @mttp.Backend for AsyncBackend with fn send(self, request, options) {
+pub impl @mttp_core.Backend for AsyncBackend with fn send(
+  self,
+  request,
+  options,
+) {
   self.send(request, options)
 }
 
 ///|
 /// Releases the backend through the portable interface.
-pub impl @mttp.Backend for AsyncBackend with fn close(self) {
+pub impl @mttp_core.Backend for AsyncBackend with fn close(self) {
   self.close()
 }

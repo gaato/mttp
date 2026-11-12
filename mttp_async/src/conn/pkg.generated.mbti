@@ -2,9 +2,9 @@
 package "gaato/mttp_async/conn"
 
 import {
-  "gaato/mttp",
-  "gaato/mttp/rt",
   "gaato/mttp_async/trust",
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
 }
 
 // Values
@@ -15,9 +15,9 @@ import {
 pub struct TcpDialer {
   // private fields
 }
-pub async fn TcpDialer::connect(Self, host~ : String, port~ : Int32) -> &@rt.Conn raise @mttp.TransportError
+pub async fn TcpDialer::connect(Self, host~ : String, port~ : Int32) -> &@rt.Conn raise @mttp_core.TransportError
 pub fn TcpDialer::new(trust? : @trust.Trust) -> Self
-pub async fn TcpDialer::start_tls(Self, &@rt.Conn, host~ : String) -> &@rt.Conn raise @mttp.TransportError
+pub async fn TcpDialer::start_tls(Self, &@rt.Conn, host~ : String) -> &@rt.Conn raise @mttp_core.TransportError
 pub impl @rt.Dialer for TcpDialer
 
 // Type aliases

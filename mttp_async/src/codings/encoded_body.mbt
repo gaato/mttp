@@ -1,34 +1,34 @@
 ///|
 priv struct EncodedBody {
-  read : async () -> Bytes? raise @mttp.TransportError
+  read : async () -> Bytes? raise @mttp_core.TransportError
   close_ : () -> Unit
   encoder : ContentEncoder
   mut closed : Bool
 }
 
 ///|
-impl @mttp.BodyStream for EncodedBody with fn read_some(self) {
+impl @mttp_core.BodyStream for EncodedBody with fn read_some(self) {
   if self.closed {
     return None
   }
-  errdefer @mttp.BodyStream::close(self)
+  errdefer @mttp_core.BodyStream::close(self)
   let chunk = read_encoded(() => (self.read)(), self.encoder) catch {
-    @mttp.TransportError(..) as error => raise error
+    @mttp_core.TransportError(..) as error => raise error
     _ =>
-      raise @mttp.TransportError(
+      raise @mttp_core.TransportError(
         kind=Protocol,
         phase=Body,
         detail="content encoding failed",
       )
   }
   if chunk is None {
-    @mttp.BodyStream::close(self)
+    @mttp_core.BodyStream::close(self)
   }
   chunk
 }
 
 ///|
-impl @mttp.BodyStream for EncodedBody with fn close(self) {
+impl @mttp_core.BodyStream for EncodedBody with fn close(self) {
   if !self.closed {
     self.closed = true
     (self.close_)()
@@ -42,12 +42,17 @@ impl @mttp.BodyStream for EncodedBody with fn close(self) {
 /// failure, cancellation or explicit close. Unsupported codings are refused
 /// before taking the body. Buffered inputs are consumed in 64 KiB slices.
 pub fn encode_body(
-  body : @mttp.Body,
+  body : @mttp_core.Body,
   coding : Coding,
-) -> @mttp.Body raise @mttp.TransportError {
+) -> @mttp_core.Body raise @mttp_core.TransportError {
   let encoder = ContentEncoder::new(coding)
   let (read, close_) = body_source(body)
-  @mttp.Body::Stream(
-    @mttp.StreamBody::new(EncodedBody::{ read, close_, encoder, closed: false, }),
+  @mttp_core.Body::Stream(
+    @mttp_core.StreamBody::new(EncodedBody::{
+      read,
+      close_,
+      encoder,
+      closed: false,
+    }),
   )
 }

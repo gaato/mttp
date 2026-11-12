@@ -1,24 +1,24 @@
 import {
-  "gaato/mttp",
-  "gaato/mttp/client",
+  "gaato/mttp_core",
+  "gaato/mttp_core/client",
   "moonbitlang/x/crypto",
 }
 
 import {
   "moonbitlang/core/debug",
-  "gaato/mttp/driver",
-  "gaato/mttp/sim",
+  "gaato/mttp_core/driver",
+  "gaato/mttp_core/sim",
 } for "wbtest"
 
 import {
   "gaato/mttp_digest",
   "moonbitlang/core/env",
-  "gaato/mttp/driver",
-  "gaato/mttp/sim",
-  "gaato/mttp/client/retry",
-  "gaato/mttp/testing",
+  "gaato/mttp_core/driver",
+  "gaato/mttp_core/sim",
+  "gaato/mttp_core/client/retry",
+  "gaato/mttp_core/testing",
 } for "test"
 
 options(
-  "allow-experimental-packages": [ "gaato/mttp/driver" ],
+  "allow-experimental-packages": [ "gaato/mttp_core/driver" ],
 )

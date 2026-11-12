@@ -46,7 +46,7 @@ let urlencoded_rows : Array[(String, Array[(String, String)])] = [
 test "query_params decodes as WHATWG's urlencoded parser does" {
   for row in urlencoded_rows {
     let (input, expected) = row
-    let url = @mttp.Url::parse("http://h/?" + input)
+    let url = @mttp_core.Url::parse("http://h/?" + input)
     assert_eq(url.query_params(), expected, msg=Repr(input).to_string())
   }
 }

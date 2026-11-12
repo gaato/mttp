@@ -7,8 +7,8 @@ async test "decoded body direct close is idempotent and makes EOF sticky" {
     decoder: ContentDecoder::new([Gzip]),
     closed: false,
   }
-  @mttp.BodyStream::close(body)
-  @mttp.BodyStream::close(body)
-  assert_eq(@mttp.BodyStream::read_some(body), None)
+  @mttp_core.BodyStream::close(body)
+  @mttp_core.BodyStream::close(body)
+  assert_eq(@mttp_core.BodyStream::read_some(body), None)
   assert_eq(closes.val, 1)
 }

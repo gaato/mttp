@@ -45,7 +45,7 @@ let manifest_header : String = "module\tpackage\ttarget\tcount"
 
 ///|
 /// What a public interface may not mention: core/async types and the old
-/// runtime. A port is a trait of gaato/mttp/rt instead.
+/// runtime. A port is a trait of gaato/mttp_core/rt instead.
 let runtime_markers : Array[String] = [
   "@async.", "@socket.", "@tls.", "@io.", "@js_async.", "TaskGroup", "\"moonbitlang/core/async",
   "\"moonbitlang/async",
@@ -536,7 +536,7 @@ async fn interfaces() -> Unit {
         // still apply, while the public boundary must expose only ports.
         if !pkg.name.split("/").contains("internal") && text.contains(marker) {
           failures.push(
-            "\{pkg.name} on \{target}: the public interface mentions \{marker}; expose a gaato/mttp/rt port instead",
+            "\{pkg.name} on \{target}: the public interface mentions \{marker}; expose a gaato/mttp_core/rt port instead",
           )
         }
       }

@@ -31,7 +31,7 @@ const CHUNK_BYTES : Int32 = 65536
 /// ```mbt check
 /// async test "static_files refuses a path that leaves the root" {
 ///   let assets = @files.static_files("public", prefix="/assets/")
-///   let response = assets(@mttp.Request::get("/assets/../secret.txt"))
+///   let response = assets(@mttp_core.Request::get("/assets/../secret.txt"))
 ///   assert_eq(response.status, 404)
 /// }
 /// ```
@@ -40,7 +40,7 @@ pub fn static_files(
   prefix~ : String = "/",
   cache_control~ : String = "no-cache",
   index~ : String = "index.html",
-) -> @mttp.Handler {
+) -> @mttp_core.Handler {
   let mount = mount_segments(prefix)
   async fn(request) noraise {
     serve(root, mount, cache_control, index, request)
@@ -67,8 +67,8 @@ async fn serve(
   mount : Array[String],
   cache_control : String,
   index : String,
-  request : @mttp.Request,
-) -> @mttp.Response noraise {
+  request : @mttp_core.Request,
+) -> @mttp_core.Response noraise {
   // A handler owns its request body; a file server never reads one.
   if request.body is Stream(stream) {
     stream.close()
@@ -99,7 +99,7 @@ async fn serve(
     }
   }
   let etag = "W/\"\{size.to_string(radix=16)}-\{mtime.sec().to_string(radix=16)}.\{mtime.nsec().to_string(radix=16)}\""
-  let mut validators = @mttp.Headers::of([("etag", etag)])
+  let mut validators = @mttp_core.Headers::of([("etag", etag)])
   if !cache_control.is_empty() {
     validators = validators.set("cache-control", cache_control)
   }
@@ -108,20 +108,20 @@ async fn serve(
     .iter()
     .any(field => matches(field, etag)) {
     file.close()
-    return @mttp.Response::new(304, headers=validators)
+    return @mttp_core.Response::new(304, headers=validators)
   }
   let headers = validators
     .set("content-type", content_type(names[names.length() - 1]))
-    .set("last-modified", @mttp.format_http_date(mtime.msec()))
+    .set("last-modified", @mttp_core.format_http_date(mtime.msec()))
   if request.meth is Head {
     file.close()
-    return @mttp.Response::new(200, headers~)
+    return @mttp_core.Response::new(200, headers~)
   }
-  @mttp.Response::new(
+  @mttp_core.Response::new(
     200,
     headers~,
     body=Stream(
-      @mttp.StreamBody::new(
+      @mttp_core.StreamBody::new(
         FileBody::{ file, remaining: size, buffer: None, closed: false, },
         length=size,
       ),
@@ -173,7 +173,9 @@ fn request_segments(url : String) -> (Array[String], Bool)? {
   }
   let segments = []
   for part in parts {
-    let name = @mttp.percent_decode(part.to_owned()) catch { _ => return None }
+    let name = @mttp_core.percent_decode(part.to_owned()) catch {
+      _ => return None
+    }
     guard safe_segment(name) else { return None }
     segments.push(name)
   }
@@ -275,11 +277,13 @@ fn content_type(name : String) -> String {
 }
 
 ///|
-fn plain(status : Int32) -> @mttp.Response {
-  @mttp.Response::new(
+fn plain(status : Int32) -> @mttp_core.Response {
+  @mttp_core.Response::new(
     status,
-    headers=@mttp.Headers::of([("content-type", "text/plain; charset=utf-8")]),
-    body=Bytes(@mttp.encode_utf8("\{@mttp.reason_phrase(status)}\n")),
+    headers=@mttp_core.Headers::of([
+      ("content-type", "text/plain; charset=utf-8"),
+    ]),
+    body=Bytes(@mttp_core.encode_utf8("\{@mttp_core.reason_phrase(status)}\n")),
   )
 }
 
@@ -294,12 +298,12 @@ priv struct FileBody {
 }
 
 ///|
-impl @mttp.BodyStream for FileBody with fn read_some(self) {
+impl @mttp_core.BodyStream for FileBody with fn read_some(self) {
   if self.closed {
     return None
   }
   guard self.remaining > 0L else {
-    @mttp.BodyStream::close(self)
+    @mttp_core.BodyStream::close(self)
     return None
   }
   let want = if self.remaining < CHUNK_BYTES.to_int64() {
@@ -317,8 +321,8 @@ impl @mttp.BodyStream for FileBody with fn read_some(self) {
   }
   let n = self.file.read_into(buffer, max_len=want) catch {
     error => {
-      @mttp.BodyStream::close(self)
-      raise @mttp.TransportError(
+      @mttp_core.BodyStream::close(self)
+      raise @mttp_core.TransportError(
         kind=Network,
         phase=Body,
         detail="reading the served file failed: \{error}",
@@ -327,7 +331,7 @@ impl @mttp.BodyStream for FileBody with fn read_some(self) {
   }
   // A file that shrank ends early; the declared length reports it.
   guard n > 0 else {
-    @mttp.BodyStream::close(self)
+    @mttp_core.BodyStream::close(self)
     return None
   }
   self.remaining -= n.to_int64()
@@ -335,7 +339,7 @@ impl @mttp.BodyStream for FileBody with fn read_some(self) {
 }
 
 ///|
-impl @mttp.BodyStream for FileBody with fn close(self) {
+impl @mttp_core.BodyStream for FileBody with fn close(self) {
   if !self.closed {
     self.closed = true
     self.buffer = None

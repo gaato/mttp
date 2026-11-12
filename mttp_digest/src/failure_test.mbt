@@ -7,14 +7,18 @@ test "POST answered by a challenge is not retried as unsent after a dial failure
     @client.from_fn((request, _) => {
       sends.push(request)
       if sends.length() == 1 {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           401,
           headers=challenge(),
-          body=Stream(@mttp.StreamBody::new(unread)),
+          body=Stream(@mttp_core.StreamBody::new(unread)),
         )
       } else {
         closed_at_retry.val = unread.closes()
-        raise @mttp.TransportError(kind=Connect, phase=Dial, detail="refused")
+        raise @mttp_core.TransportError(
+          kind=Connect,
+          phase=Dial,
+          detail="refused",
+        )
       }
     }),
   )
@@ -33,7 +37,7 @@ test "POST answered by a challenge is not retried as unsent after a dial failure
     )
     fail("expected a dial failure")
   } catch {
-    @mttp.TransportError(kind~, phase~, detail~) as error => {
+    @mttp_core.TransportError(kind~, phase~, detail~) as error => {
       assert_false(error.is_unsent())
       assert_eq(kind, Network)
       assert_eq(phase, Unknown)
@@ -45,8 +49,16 @@ test "POST answered by a challenge is not retried as unsent after a dial failure
   }
   assert_eq(sends.length(), 2)
   assert_eq(sends.map(r => (r.meth, r.url, r.body)), [
-    (@mttp.Method::Post, "https://a.test/pay", @mttp.Body::Bytes(b"pay=1")),
-    (@mttp.Method::Post, "https://a.test/pay", @mttp.Body::Bytes(b"pay=1")),
+    (
+      @mttp_core.Method::Post,
+      "https://a.test/pay",
+      @mttp_core.Body::Bytes(b"pay=1"),
+    ),
+    (
+      @mttp_core.Method::Post,
+      "https://a.test/pay",
+      @mttp_core.Body::Bytes(b"pay=1"),
+    ),
   ])
   assert_eq(sends[0].headers.get("authorization"), None)
   assert_true(sends[1].headers.get("authorization") is Some(_))
@@ -57,15 +69,19 @@ test "POST answered by a challenge is not retried as unsent after a dial failure
 ///|
 test "first send failures stay unsent and stale response failures keep honest phases" {
   for fail_at in [1, 2, 3] {
-    for kind in [@mttp.Kind::Connect, Proxy(status=407), Timeout(ms=5)] {
+    for kind in [@mttp_core.Kind::Connect, Proxy(status=407), Timeout(ms=5)] {
       let mut sends = 0
       let backend = wrap(
         @client.from_fn((_, _) => {
           sends += 1
           if sends == fail_at {
-            raise @mttp.TransportError(kind~, phase=Dial, detail="original")
+            raise @mttp_core.TransportError(
+              kind~,
+              phase=Dial,
+              detail="original",
+            )
           }
-          @mttp.Response::new(401, headers=challenge(stale=true))
+          @mttp_core.Response::new(401, headers=challenge(stale=true))
         }),
       )
       defer backend.close()
@@ -73,14 +89,14 @@ test "first send failures stay unsent and stale response failures keep honest ph
         ignore(
           @driver.run_sync(() => {
             backend.send(
-              @mttp.Request::get("https://a.test/"),
-              @mttp.SendOptions::default(),
+              @mttp_core.Request::get("https://a.test/"),
+              @mttp_core.SendOptions::default(),
             )
           }),
         )
         fail("expected a transport failure")
       } catch {
-        @mttp.TransportError(kind=actual, phase~, detail~) as error => {
+        @mttp_core.TransportError(kind=actual, phase~, detail~) as error => {
           assert_eq(phase, if fail_at == 1 { Dial } else { Unknown })
           assert_eq(error.is_unsent(), fail_at == 1)
           assert_eq(
@@ -108,9 +124,9 @@ struct UncheckedBackend {
 }
 
 ///|
-impl @mttp.Backend for UncheckedBackend with fn send(self, _, _) {
+impl @mttp_core.Backend for UncheckedBackend with fn send(self, _, _) {
   self.calls.val += 1
-  @mttp.Response::new(200)
+  @mttp_core.Response::new(200)
 }
 
 ///|
@@ -119,8 +135,10 @@ test "Digest validates before delegation and closes refused request streams unre
   let backend = wrap(UncheckedBackend::{ calls, })
   for problem in 0..<7 {
     let upload = @sim.Feed::bytes(@driver.Driver::new(), [b"body"])
-    let request = @mttp.Request::post("https://a.test/").body_stream(upload)
-    let options = @mttp.SendOptions::default()
+    let request = @mttp_core.Request::post("https://a.test/").body_stream(
+      upload,
+    )
+    let options = @mttp_core.SendOptions::default()
     let (request, options) = match problem {
       0 => ({ ..request, meth: Other("BAD METHOD"), }, options)
       1 => ({ ..request, url: "https://a.test/\n", }, options)
@@ -134,7 +152,7 @@ test "Digest validates before delegation and closes refused request streams unre
       ignore(@driver.run_sync(() => backend.send(request, options)))
       fail("invalid send accepted")
     } catch {
-      @mttp.TransportError(phase~, ..) => assert_eq(phase, Pool)
+      @mttp_core.TransportError(phase~, ..) => assert_eq(phase, Pool)
       error => raise error
     }
     assert_eq(calls.val, 0)
@@ -147,14 +165,14 @@ test "Digest validates before delegation and closes refused request streams unre
     ignore(
       @driver.run_sync(() => {
         backend.send(
-          @mttp.Request::post("https://a.test/").body_stream(upload),
-          @mttp.SendOptions::default(),
+          @mttp_core.Request::post("https://a.test/").body_stream(upload),
+          @mttp_core.SendOptions::default(),
         )
       }),
     )
     fail("closed send accepted")
   } catch {
-    @mttp.TransportError(kind=Closed, phase=Pool, ..) => ()
+    @mttp_core.TransportError(kind=Closed, phase=Pool, ..) => ()
     error => raise error
   }
   assert_eq(upload.closes(), 1)
@@ -165,8 +183,11 @@ test "Digest validates before delegation and closes refused request streams unre
 ///|
 test "Digest preserves SendOptions and the final response belongs to its caller" {
   for
-    body in [@mttp.BodyTiming::Exchange(max_bytes=17), Stream(idle_ms=Some(29))] {
-    let options : @mttp.SendOptions = { timeout_ms: Some(43), body, }
+    body in [
+      @mttp_core.BodyTiming::Exchange(max_bytes=17),
+      Stream(idle_ms=Some(29)),
+    ] {
+    let options : @mttp_core.SendOptions = { timeout_ms: Some(43), body, }
     let d = @driver.Driver::new()
     let final_body = @sim.Feed::bytes(d, [b"ok"])
     let mut sends = 0
@@ -176,17 +197,17 @@ test "Digest preserves SendOptions and the final response belongs to its caller"
         seen.push(actual)
         sends += 1
         if sends <= 2 {
-          @mttp.Response::new(401, headers=challenge(stale=sends == 2))
+          @mttp_core.Response::new(401, headers=challenge(stale=sends == 2))
         } else {
-          @mttp.Response::new(
+          @mttp_core.Response::new(
             200,
-            body=Stream(@mttp.StreamBody::new(final_body)),
+            body=Stream(@mttp_core.StreamBody::new(final_body)),
           )
         }
       }),
     )
     let response = d.run(() => {
-      backend.send(@mttp.Request::get("https://a.test/"), options)
+      backend.send(@mttp_core.Request::get("https://a.test/"), options)
     })
     assert_eq(sends, 3)
     assert_eq(seen, [options, options, options])
@@ -210,24 +231,24 @@ test "Digest cancellation unwinds the inner send and closes an upload" {
       @client.from_fn((_, _) => {
         sends += 1
         if with_challenge && sends == 1 {
-          return @mttp.Response::new(401, headers=challenge())
+          return @mttp_core.Response::new(401, headers=challenge())
         }
         defer {
           unwound = true
         }
         d.sleep(100)
-        @mttp.Response::new(200)
+        @mttp_core.Response::new(200)
       }),
     )
     d.run(() => {
       let task = d.spawn(() => {
         let request = if with_challenge {
-          @mttp.Request::post("https://a.test/").body_bytes(b"body")
+          @mttp_core.Request::post("https://a.test/").body_bytes(b"body")
         } else {
-          @mttp.Request::post("https://a.test/").body_stream(upload)
+          @mttp_core.Request::post("https://a.test/").body_stream(upload)
         }
         try {
-          ignore(backend.send(request, @mttp.SendOptions::default()))
+          ignore(backend.send(request, @mttp_core.SendOptions::default()))
           returned = true
         } catch {
           _ => caught = true

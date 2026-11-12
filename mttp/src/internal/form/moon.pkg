@@ -1,4 +1,0 @@
-import {
-  "gaato/mttp/internal/text",
-  "moonbitlang/core/encoding/percent",
-}

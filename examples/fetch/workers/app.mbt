@@ -21,10 +21,10 @@ let notes : Array[String] = []
 let slow : Ref[Int32] = Ref(0)
 
 ///|
-fn json(status : Int32, value : Json) -> @mttp.Response {
-  @mttp.Response::new(
+fn json(status : Int32, value : Json) -> @mttp_core.Response {
+  @mttp_core.Response::new(
     status,
-    headers=@mttp.Headers::empty().add("content-type", "application/json"),
+    headers=@mttp_core.Headers::empty().add("content-type", "application/json"),
     body=Bytes(@utf8.encode(value.stringify())),
   )
 }
@@ -39,11 +39,11 @@ fn optional(value : String?) -> Json {
 
 ///|
 fn path_of(url : String) -> String {
-  (@mttp.Url::parse(url) catch { _ => return "" }).path
+  (@mttp_core.Url::parse(url) catch { _ => return "" }).path
 }
 
 ///|
-async fn route(request : @mttp.Request) -> @mttp.Response noraise {
+async fn route(request : @mttp_core.Request) -> @mttp_core.Response noraise {
   let env = request.attributes.get(@fetch.env)
   let binding = (key : String) => {
     match env {
@@ -61,7 +61,7 @@ async fn route(request : @mttp.Request) -> @mttp.Response noraise {
     (Post, Some("notes")) => {
       let bytes = match request.body {
         Stream(stream) =>
-          @mttp.read_bounded(stream.take(), 1024) catch {
+          @mttp_core.read_bounded(stream.take(), 1024) catch {
             _ => return json(400, { "error": "unreadable body" })
           }
         Bytes(bytes) => bytes
@@ -69,7 +69,7 @@ async fn route(request : @mttp.Request) -> @mttp.Response noraise {
       }
       let text = @utf8.decode_lossy(bytes)
       // Runs after the reply, kept alive by waitUntil.
-      if request.attributes.get(@mttp.background) is Some(schedule) {
+      if request.attributes.get(@mttp_core.background) is Some(schedule) {
         schedule(() => notes.push(text))
       }
       json(202, { "queued": Json::string(text) })
@@ -81,7 +81,7 @@ async fn route(request : @mttp.Request) -> @mttp.Response noraise {
       let bytes = match (kind, request.body) {
         ("unread", _) => b""
         ("slow", Stream(stream)) =>
-          @mttp.read_bounded(stream.take(), 1 << 20) catch {
+          @mttp_core.read_bounded(stream.take(), 1 << 20) catch {
             _ => return json(400, { "error": "unreadable body" })
           }
         (_, Stream(stream)) =>
@@ -91,7 +91,7 @@ async fn route(request : @mttp.Request) -> @mttp.Response noraise {
         (_, Bytes(bytes)) => bytes
         _ => b""
       }
-      if request.attributes.get(@mttp.background) is Some(schedule) {
+      if request.attributes.get(@mttp_core.background) is Some(schedule) {
         schedule(() => {
           @async.sleep(200)
           slow.val += 1
@@ -105,7 +105,7 @@ async fn route(request : @mttp.Request) -> @mttp.Response noraise {
       if request.body is Stream(stream) {
         stream.close()
       }
-      @mttp.Response::new(401)
+      @mttp_core.Response::new(401)
     }
     (Get, Some("slow")) =>
       json(200, { "finished": Json::number(slow.val.to_double()) })

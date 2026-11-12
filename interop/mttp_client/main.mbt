@@ -84,8 +84,8 @@ fn Ctx::client(
 /// One raw exchange on `backend`, with the body read to its end.
 async fn exchange(
   backend : @backend.AsyncBackend,
-  request : @mttp.Request,
-) -> (@mttp.Response, Bytes) {
+  request : @mttp_core.Request,
+) -> (@mttp_core.Response, Bytes) {
   let response = backend.send(request, {
     timeout_ms: Some(raw_timeout),
     body: Exchange(max_bytes=64 << 20),
@@ -95,7 +95,7 @@ async fn exchange(
 }
 
 ///|
-fn conn_of(response : @mttp.Response) -> String raise Check {
+fn conn_of(response : @mttp_core.Response) -> String raise Check {
   match response.headers.get("x-conn") {
     Some(id) => id
     None => raise Check("no X-Conn header")
@@ -153,7 +153,7 @@ priv struct Upload {
 }
 
 ///|
-impl @mttp.BodyStream for Upload with fn read_some(self) {
+impl @mttp_core.BodyStream for Upload with fn read_some(self) {
   if self.sent >= self.total {
     return None
   }
@@ -164,7 +164,7 @@ impl @mttp.BodyStream for Upload with fn read_some(self) {
 }
 
 ///|
-impl @mttp.BodyStream for Upload with fn close(self) {
+impl @mttp_core.BodyStream for Upload with fn close(self) {
   self.sent = self.total
 }
 
@@ -191,7 +191,7 @@ async fn case_keepalive(ctx : Ctx) -> String {
   for _ in 0..<3 {
     let (response, body) = exchange(
       backend,
-      @mttp.Request::get(ctx.url("/small.txt")),
+      @mttp_core.Request::get(ctx.url("/small.txt")),
     )
     check(body == b"hello interop\n", "body")
     ids.push(conn_of(response))
@@ -213,11 +213,14 @@ async fn case_keepalive(ctx : Ctx) -> String {
 async fn case_idle_close_get(ctx : Ctx) -> String {
   let backend = ctx.backend()
   defer backend.close()
-  let (first, _) = exchange(backend, @mttp.Request::get(ctx.url("/small.txt")))
+  let (first, _) = exchange(
+    backend,
+    @mttp_core.Request::get(ctx.url("/small.txt")),
+  )
   pause(past_idle_ms)
   let (second, body) = exchange(
     backend,
-    @mttp.Request::get(ctx.url("/small.txt")),
+    @mttp_core.Request::get(ctx.url("/small.txt")),
   )
   check(body == b"hello interop\n", "body")
   check(conn_of(first) != conn_of(second), "the closed connection answered")
@@ -263,7 +266,9 @@ async fn case_chunked_response(ctx : Ctx) -> String {
   defer backend.close()
   let (response, body) = exchange(
     backend,
-    @mttp.Request::get(ctx.url("/up/stream?pieces=8&size=4096&delay_ms=20")),
+    @mttp_core.Request::get(
+      ctx.url("/up/stream?pieces=8&size=4096&delay_ms=20"),
+    ),
   )
   check(response.status == 200, "status \{response.status}")
   check(
@@ -283,7 +288,9 @@ async fn case_coding(ctx : Ctx, coding : String) -> String {
   let backend = ctx.backend()
   defer backend.close()
   let response = backend.send(
-    @mttp.Request::get(ctx.url("/text.txt")).header("Accept-Encoding", coding),
+    @mttp_core.Request::get(ctx.url("/text.txt")).header(
+      "Accept-Encoding", coding,
+    ),
     { timeout_ms: Some(raw_timeout), body: Stream(idle_ms=Some(raw_timeout)), },
   )
   defer response.close()
@@ -339,12 +346,12 @@ async fn case_decompress(ctx : Ctx) -> String {
 async fn next_on_same(
   backend : @backend.AsyncBackend,
   ctx : Ctx,
-  previous : @mttp.Response,
+  previous : @mttp_core.Response,
   same_conn : Bool,
 ) -> Unit {
   let (response, body) = exchange(
     backend,
-    @mttp.Request::get(ctx.url("/small.txt")),
+    @mttp_core.Request::get(ctx.url("/small.txt")),
   )
   check(body == b"hello interop\n", "next body \{text_of(body)}")
   if same_conn {
@@ -361,7 +368,7 @@ async fn case_head(ctx : Ctx, same_conn : Bool) -> String {
   defer backend.close()
   let (response, body) = exchange(
     backend,
-    @mttp.Request::new(Head, ctx.url("/large.bin")),
+    @mttp_core.Request::new(Head, ctx.url("/large.bin")),
   )
   check(response.status == 200, "status \{response.status}")
   check(body.is_empty(), "\{body.length()} body bytes")
@@ -380,7 +387,7 @@ async fn case_no_content(ctx : Ctx, same_conn : Bool) -> String {
   defer backend.close()
   let (response, body) = exchange(
     backend,
-    @mttp.Request::get(ctx.url("/s/204")),
+    @mttp_core.Request::get(ctx.url("/s/204")),
   )
   check(response.status == 204, "status \{response.status}")
   check(body.is_empty(), "\{body.length()} body bytes")
@@ -392,11 +399,14 @@ async fn case_no_content(ctx : Ctx, same_conn : Bool) -> String {
 async fn case_not_modified(ctx : Ctx, same_conn : Bool) -> String {
   let backend = ctx.backend()
   defer backend.close()
-  let (first, _) = exchange(backend, @mttp.Request::get(ctx.url("/small.txt")))
+  let (first, _) = exchange(
+    backend,
+    @mttp_core.Request::get(ctx.url("/small.txt")),
+  )
   guard first.headers.get("etag") is Some(etag) else { raise Check("no ETag") }
   let (response, body) = exchange(
     backend,
-    @mttp.Request::get(ctx.url("/small.txt")).header("If-None-Match", etag),
+    @mttp_core.Request::get(ctx.url("/small.txt")).header("If-None-Match", etag),
   )
   check(response.status == 304, "status \{response.status}")
   check(body.is_empty(), "\{body.length()} body bytes")
@@ -467,7 +477,7 @@ async fn case_redirect_downgrade(ctx : Ctx) -> String {
   let client = ctx.client()
   defer client.close()
   let reply = @client.get(ctx.url("/down")).send(client) catch {
-    @mttp.TransportError(kind=RedirectRefused, ..) as error =>
+    @mttp_core.TransportError(kind=RedirectRefused, ..) as error =>
       return "refused: \{error}"
     error => raise error
   }
@@ -478,7 +488,7 @@ async fn case_redirect_downgrade(ctx : Ctx) -> String {
 async fn upload(
   ctx : Ctx,
   path : String,
-  request : @mttp.Request,
+  request : @mttp_core.Request,
   expected : String,
 ) -> String {
   let client = ctx.client()
@@ -498,7 +508,7 @@ async fn case_upload(ctx : Ctx, size : Int32) -> String {
   upload(
     ctx,
     "/up/echo",
-    @mttp.Request::post(ctx.url("/up/echo")).body_bytes(payload),
+    @mttp_core.Request::post(ctx.url("/up/echo")).body_bytes(payload),
     @pattern.digest(payload),
   )
 }
@@ -509,7 +519,7 @@ async fn case_chunked_upload(ctx : Ctx) -> String {
   upload(
     ctx,
     "/up/echo",
-    @mttp.Request::post(ctx.url("/up/echo")).body_stream(Upload::{
+    @mttp_core.Request::post(ctx.url("/up/echo")).body_stream(Upload::{
       total: size,
       piece: 65536,
       sent: 0,
@@ -524,7 +534,7 @@ async fn case_expect_continue(ctx : Ctx) -> String {
   upload(
     ctx,
     "/up/echo",
-    @mttp.Request::post(ctx.url("/up/echo"))
+    @mttp_core.Request::post(ctx.url("/up/echo"))
     .body_bytes(payload)
     .header("Expect", "100-continue"),
     @pattern.digest(payload),
@@ -600,7 +610,7 @@ async fn case_slow_deadline(ctx : Ctx) -> String {
   defer client.close()
   let started = now()
   let reply = @client.get(ctx.url("/slow.bin")).send(client) catch {
-    @mttp.TransportError(kind=Timeout(..), phase~, ..) => {
+    @mttp_core.TransportError(kind=Timeout(..), phase~, ..) => {
       let took = now() - started
       check(took < 2500L, "timed out only after \{took} ms")
       return "Timeout in \{@debug.to_string(phase)} after \{took} ms"
@@ -617,7 +627,7 @@ async fn case_head_deadline(ctx : Ctx) -> String {
   defer client.close()
   let started = now()
   let reply = @client.get(ctx.url("/up/delay?ms=3000")).send(client) catch {
-    @mttp.TransportError(kind=Timeout(..), phase~, ..) => {
+    @mttp_core.TransportError(kind=Timeout(..), phase~, ..) => {
       let took = now() - started
       check(took < 2500L, "timed out only after \{took} ms")
       return "Timeout in \{@debug.to_string(phase)} after \{took} ms"
@@ -638,12 +648,12 @@ async fn case_drop(ctx : Ctx, post : Bool) -> String {
   })
   defer client.close()
   let request = if post {
-    @mttp.Request::post(ctx.url("/drop")).body_bytes(b"payload")
+    @mttp_core.Request::post(ctx.url("/drop")).body_bytes(b"payload")
   } else {
-    @mttp.Request::get(ctx.url("/drop"))
+    @mttp_core.Request::get(ctx.url("/drop"))
   }
   let reply = @client.request(request).send(client) catch {
-    @mttp.TransportError(..) as error => {
+    @mttp_core.TransportError(..) as error => {
       let expected = if post { 1 } else { 3 }
       check(!error.is_unsent(), "classified as unsent: \{error}")
       check(

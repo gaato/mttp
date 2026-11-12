@@ -1,0 +1,14 @@
+import {
+  "gaato/mttp_core",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "gaato/mttp_core/driver",
+  "gaato/mttp_core/sim",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/mttp_core/driver" ],
+)

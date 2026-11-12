@@ -11,7 +11,7 @@ priv struct BlockedSource {
 }
 
 ///|
-impl @mttp.BodyStream for BlockedSource with fn read_some(self) {
+impl @mttp_core.BodyStream for BlockedSource with fn read_some(self) {
   self.reads += 1
   if self.reads == 1 {
     return Some(self.first)
@@ -21,21 +21,24 @@ impl @mttp.BodyStream for BlockedSource with fn read_some(self) {
 }
 
 ///|
-impl @mttp.BodyStream for BlockedSource with fn close(self) {
+impl @mttp_core.BodyStream for BlockedSource with fn close(self) {
   self.closes += 1
 }
 
 ///|
-fn streamed(source : &@mttp.BodyStream, cut : Bool?) -> @mttp.Response {
-  let response = @mttp.Response::new(
+fn streamed(
+  source : &@mttp_core.BodyStream,
+  cut : Bool?,
+) -> @mttp_core.Response {
+  let response = @mttp_core.Response::new(
     200,
-    body=Stream(@mttp.StreamBody::new(source)),
+    body=Stream(@mttp_core.StreamBody::new(source)),
   )
   match cut {
     Some(value) =>
       {
         ..response,
-        attributes: response.attributes.put(@mttp.close_on_shutdown, value),
+        attributes: response.attributes.put(@mttp_core.close_on_shutdown, value),
       }
     None => response
   }
@@ -82,12 +85,15 @@ async test "a Response is marked exactly when close_on_shutdown is true and it h
   // A buffered body is marked too; responses the adapter makes itself never.
   let adapter = fetch_handler(request => {
     if request.url.has_suffix("/bad") {
-      return @mttp.Response::new(200, headers=@mttp.Headers::of([("x", "\n")]))
+      return @mttp_core.Response::new(
+        200,
+        headers=@mttp_core.Headers::of([("x", "\n")]),
+      )
     }
-    let response = @mttp.Response::new(200, body=Bytes(b"data: 1\n\n"))
+    let response = @mttp_core.Response::new(200, body=Bytes(b"data: 1\n\n"))
     {
       ..response,
-      attributes: response.attributes.put(@mttp.close_on_shutdown, true),
+      attributes: response.attributes.put(@mttp_core.close_on_shutdown, true),
     }
   })
   let buffered = awaited(

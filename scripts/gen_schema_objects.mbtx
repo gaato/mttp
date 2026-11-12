@@ -6,7 +6,7 @@ import {
 }
 ----
 
-// Generates mttp/src/schema/object.mbt: object1 to object8, one named object
+// Generates mttp_core/src/schema/object.mbt: object1 to object8, one named object
 // codec per arity. Fixed arities avoid a heterogeneous field container that
 // would need runtime casts; the generated functions are ordinary MoonBit that
 // a consumer could write by hand for a larger arity.
@@ -21,7 +21,7 @@ import {
 
 ///|
 /// Where the generated source goes, relative to the repository root.
-let output : String = "mttp/src/schema/object.mbt"
+let output : String = "mttp_core/src/schema/object.mbt"
 
 ///|
 /// The largest arity generated.

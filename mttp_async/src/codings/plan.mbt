@@ -76,7 +76,7 @@ pub struct CodingPlan {
 /// codings raise `Protocol`.
 pub fn coding_plan_fields(
   values : Array[String],
-) -> CodingPlan raise @mttp.TransportError {
+) -> CodingPlan raise @mttp_core.TransportError {
   let tokens = []
   for value in values {
     for element in value.split(",") {
@@ -85,7 +85,7 @@ pub fn coding_plan_fields(
       if lowered != "" && lowered != "identity" {
         tokens.push((token, lowered))
         if tokens.length() > max_content_codings {
-          raise @mttp.TransportError(
+          raise @mttp_core.TransportError(
             kind=Protocol,
             phase=Body,
             detail="response has \{tokens.length()} content codings, more than \{max_content_codings}",
@@ -111,7 +111,9 @@ pub fn coding_plan_fields(
 ///|
 /// Plans one Content-Encoding field, returning known outer codings in
 /// decoding order. Use coding_plan_fields when the remaining header matters.
-pub fn coding_plan(value : String) -> Array[Coding] raise @mttp.TransportError {
+pub fn coding_plan(
+  value : String,
+) -> Array[Coding] raise @mttp_core.TransportError {
   coding_plan_fields([value]).undo
 }
 
@@ -132,8 +134,8 @@ pub fn has_body(http_method : String, status : Int32) -> Bool {
 /// decoded body: `Content-Length`, which counted the coded bytes, is dropped,
 /// and `Content-Encoding` names only the codings left, if any.
 pub fn decode_head(
-  head : @mttp.ResponseHead,
-) -> (@mttp.ResponseHead, ContentDecoder?) raise @mttp.TransportError {
+  head : @mttp_core.ResponseHead,
+) -> (@mttp_core.ResponseHead, ContentDecoder?) raise @mttp_core.TransportError {
   let plan = coding_plan_fields(head.headers.get_all("content-encoding"))
   if plan.undo.is_empty() {
     return (head, None)

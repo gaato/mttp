@@ -1,7 +1,7 @@
 import {
   "gaato/mttp_async/trust",
-  "gaato/mttp",
-  "gaato/mttp/rt",
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
   "gaato/mttp_async/internal/socketconn",
   "moonbitlang/core/async/io",
   "moonbitlang/core/async/socket",
@@ -9,7 +9,7 @@ import {
 }
 
 import {
-  "gaato/mttp/sim",
+  "gaato/mttp_core/sim",
   "gaato/mttp_async/runtime",
   "moonbitlang/core/async",
 } for "test"

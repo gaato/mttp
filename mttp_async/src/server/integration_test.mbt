@@ -1,9 +1,9 @@
 ///|
 async fn with_server(
-  handler : @mttp.Handler,
+  handler : @mttp_core.Handler,
   run : async (String) -> Unit,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
-  on_error~ : (@mttp.TransportError) -> Unit = _ => (),
+  on_error~ : (@mttp_core.TransportError) -> Unit = _ => (),
   addr~ : String = "127.0.0.1:0",
 ) -> Unit {
   @async.with_timeout(5000, () => {
@@ -56,9 +56,12 @@ async test "configuration is rejected before binding or calling on_listen" {
     ] {
     let called = Ref(false)
     try
-      @server.serve(_ => @mttp.Response::new(200), addr="invalid", limits~, on_listen=_ => {
-        called.val = true
-      })
+      @server.serve(
+        _ => @mttp_core.Response::new(200),
+        addr="invalid",
+        limits~,
+        on_listen=_ => called.val = true,
+      )
     catch {
       @server.Config(_) => ()
       error => raise error
@@ -75,7 +78,7 @@ async test "configuration is rejected before binding or calling on_listen" {
       "127.0.0.1:99999": "expected an IP address and port",
       "[fe80::1%nosuchif0]:80": "nosuchif0",
     } {
-    try @server.serve(_ => @mttp.Response::new(200), addr=invalid) catch {
+    try @server.serve(_ => @mttp_core.Response::new(200), addr=invalid) catch {
       @server.Bind(detail~) => {
         assert_true(
           detail.has_prefix("invalid address \"\{invalid}\": "),
@@ -96,7 +99,7 @@ async test "a bind failure names the address and the operating system's cause" {
   let occupied = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
   defer occupied.close()
   let address = occupied.addr.to_string()
-  try @server.serve(_ => @mttp.Response::new(200), addr=address) catch {
+  try @server.serve(_ => @mttp_core.Response::new(200), addr=address) catch {
     @server.Bind(detail~) => {
       assert_true(detail.has_prefix("could not bind \{address}: "), msg=detail)
       // strerror(EADDRINUSE): "Address already in use", or musl's
@@ -112,7 +115,7 @@ async test "a bind failure names the address and the operating system's cause" {
 ///|
 async test "a restart binds the port while the last server's connection is in TIME-WAIT" {
   let address = Ref("")
-  with_server(_ => @mttp.Response::new(200, body=Bytes(b"first")), bound => {
+  with_server(_ => @mttp_core.Response::new(200, body=Bytes(b"first")), bound => {
     address.val = bound
     // The server closes first, so its side of the connection, on the
     // listening port, goes to TIME-WAIT.
@@ -123,7 +126,7 @@ async test "a restart binds the port while the last server's connection is in TI
     assert_true(response.has_suffix("first"), msg=response)
   })
   with_server(
-    _ => @mttp.Response::new(200, body=Bytes(b"second")),
+    _ => @mttp_core.Response::new(200, body=Bytes(b"second")),
     addr=address.val,
     bound => {
       assert_eq(bound, address.val)
@@ -143,13 +146,16 @@ async test "bound address peer metadata and repeated keep alive requests roundtr
       calls.val += 1
       assert_true(
         request.attributes
-        .get(@mttp.remote_addr)
+        .get(@mttp_core.remote_addr)
         .unwrap()
         .has_prefix("127.0.0.1:"),
       ) catch {
         _ => abort("peer address missing")
       }
-      @mttp.Response::new(200, body=Bytes(@mttp.encode_utf8(request.url)))
+      @mttp_core.Response::new(
+        200,
+        body=Bytes(@mttp_core.encode_utf8(request.url)),
+      )
     },
     address => {
       assert_false(address.has_suffix(":0"))
@@ -157,12 +163,14 @@ async test "bound address peer metadata and repeated keep alive requests roundtr
       defer tcp.close()
       for i in 0..<3 {
         tcp.write(
-          @mttp.encode_utf8("GET /\{i} HTTP/1.1\r\nHost: example.test\r\n\r\n"),
+          @mttp_core.encode_utf8(
+            "GET /\{i} HTTP/1.1\r\nHost: example.test\r\n\r\n",
+          ),
         )
         let head = @utf8.decode(tcp.read_until(b"\r\n\r\n").unwrap())
         assert_true(head.has_prefix("HTTP/1.1 200"))
         assert_false(head.to_lower().contains("connection: close"))
-        let expected = @mttp.encode_utf8("http://example.test/\{i}")
+        let expected = @mttp_core.encode_utf8("http://example.test/\{i}")
         assert_eq(tcp.read_exactly(expected.length()), expected)
       }
       assert_eq(calls.val, 3)
@@ -176,7 +184,7 @@ async test "32 slow header connections expire and release admission slots" {
   with_server(
     _ => {
       handled.val += 1
-      @mttp.Response::new(200)
+      @mttp_core.Response::new(200)
     },
     address => {
       @async.with_task_group(group => {
@@ -221,11 +229,11 @@ async test "concurrent background jobs report failures and remain owned after th
   let started = Ref(0)
   let release = Ref(false)
   let cleaned = Ref(0)
-  let errors : Array[@mttp.TransportError] = []
+  let errors : Array[@mttp_core.TransportError] = []
   let wake = @cond_var.Cond()
   with_server(
     request => {
-      let schedule = request.attributes.get(@mttp.background).unwrap()
+      let schedule = request.attributes.get(@mttp_core.background).unwrap()
       for job in 0..<2 {
         schedule(() => {
           defer {
@@ -239,7 +247,7 @@ async test "concurrent background jobs report failures and remain owned after th
           if job == 0 {
             raise Failure("private application detail")
           } else {
-            raise @mttp.TransportError(
+            raise @mttp_core.TransportError(
               kind=Timeout(ms=7),
               phase=Body,
               detail="original",
@@ -247,7 +255,7 @@ async test "concurrent background jobs report failures and remain owned after th
           }
         })
       }
-      @mttp.Response::new(204)
+      @mttp_core.Response::new(204)
     },
     address => {
       assert_true(
@@ -268,14 +276,14 @@ async test "concurrent background jobs report failures and remain owned after th
       assert_true(
         errors
         .iter()
-        .any(error => error is @mttp.TransportError(phase=Unknown, ..)),
+        .any(error => error is @mttp_core.TransportError(phase=Unknown, ..)),
       )
       assert_true(
         errors
         .iter()
         .any(error => {
           error
-          is @mttp.TransportError(
+          is @mttp_core.TransportError(
             kind=Timeout(ms=7),
             phase=Body,
             detail="original"
@@ -300,7 +308,7 @@ async test "shutdown waits for background completion and ignores scheduling afte
   let wake = @cond_var.Cond()
   controllable(
     request => {
-      schedule.val = request.attributes.get(@mttp.background)
+      schedule.val = request.attributes.get(@mttp_core.background)
       schedule.val.unwrap()(() => {
         started.val = true
         wake.broadcast()
@@ -309,7 +317,7 @@ async test "shutdown waits for background completion and ignores scheduling afte
         }
         finished.val = true
       })
-      @mttp.Response::new(204)
+      @mttp_core.Response::new(204)
     },
     { ..@h1server.ServerLimits::default(), drain_ms: 1000, },
     (address, server) => {
@@ -337,7 +345,7 @@ async test "shutdown waits for background completion and ignores scheduling afte
 ///|
 async test "shutdown closes an idle keep alive connection without waiting for its head deadline" {
   controllable(
-    _ => @mttp.Response::new(204),
+    _ => @mttp_core.Response::new(204),
     {
       ..@h1server.ServerLimits::default(),
       drain_ms: 10000,
@@ -363,7 +371,7 @@ async test "shutdown closes an idle keep alive connection without waiting for it
 ///|
 async test "shutdown cancels admission waiting behind a full connection cap" {
   controllable(
-    _ => @mttp.Response::new(204),
+    _ => @mttp_core.Response::new(204),
     {
       ..@h1server.ServerLimits::default(),
       max_connections: 1,
@@ -396,7 +404,7 @@ async test "background work scheduled during expiry cleanup is cancelled and joi
   let wake = @cond_var.Cond()
   controllable(
     request => {
-      let schedule = request.attributes.get(@mttp.background).unwrap()
+      let schedule = request.attributes.get(@mttp_core.background).unwrap()
       schedule(() => {
         defer schedule(() => {
           defer {
@@ -409,7 +417,7 @@ async test "background work scheduled during expiry cleanup is cancelled and joi
         wake.broadcast()
         @cond_var.Cond().wait()
       })
-      @mttp.Response::new(204)
+      @mttp_core.Response::new(204)
     },
     { ..@h1server.ServerLimits::default(), drain_ms: 0, },
     (address, server) => {

@@ -1,6 +1,6 @@
 # gaato/mttp_digest
 
-HTTP Digest authentication for `gaato/mttp` backends, scoped to one origin.
+HTTP Digest authentication for `gaato/mttp_core` backends, scoped to one origin.
 
 It is a module of its own so that only the programs that use Digest depend
 on `moonbitlang/x` for its hashes.
@@ -39,7 +39,7 @@ fn api_client(user : String, password : String) -> @mttp_async.Client raise {
 
 The package importing this lists `gaato/mttp_async` and `gaato/mttp_digest`,
 and so does the app's `moon.mod`. A library builds its Client the same way
-with `Client::new` from `gaato/mttp/client`.
+with `Client::new` from `gaato/mttp_core/client`.
 
 ## Random source
 

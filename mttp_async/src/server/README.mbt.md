@@ -3,17 +3,17 @@
 An HTTP/1.1 listener for native and wasm (under moonrun).
 
 `serve(handler, addr~)` binds TCP and serves each accepted connection with
-`gaato/mttp/h1server.serve_conn`. `on_listen` receives the actual bound
+`gaato/mttp_core/h1server.serve_conn`. `on_listen` receives the actual bound
 address, including an ephemeral port chosen for `:0`. Requests carry an
-absolute URL, the peer's address as `@mttp.remote_addr` and a scheduler for
-work that outlives the response as `@mttp.background`. TLS termination
+absolute URL, the peer's address as `@mttp_core.remote_addr` and a scheduler for
+work that outlives the response as `@mttp_core.background`. TLS termination
 belongs to the deployment; use `codings.compress(handler)` when response
 compression is wanted.
 
 ```mbt check
 ///|
 async test "listener errors are distinct from connection errors" {
-  try @server.serve(_ => @mttp.Response::new(204), addr="invalid") catch {
+  try @server.serve(_ => @mttp_core.Response::new(204), addr="invalid") catch {
     @server.Bind(..) => ()
     error => raise error
   } noraise {
@@ -39,7 +39,7 @@ and a connection becomes idle only between requests. Cleanup that shields
 itself from cancellation can outlast the grace period.
 
 An endless stream, such as server-sent events, would hold shutdown for the
-whole `drain_ms`. A response that sets `@mttp.close_on_shutdown` to `true`
+whole `drain_ms`. A response that sets `@mttp_core.close_on_shutdown` to `true`
 is closed when the server starts to shut down instead of being drained: the
 stream is no longer pulled (a pull that waits is cancelled within a quarter
 second), its `close` runs once, a chunked body ends with its last chunk and
@@ -67,7 +67,7 @@ or calling `on_listen`. Bind and accept failures raise `Bind` and `Accept`,
 whose `detail` names the address and keeps the system's reason, such as
 `could not bind 127.0.0.1:8080: @socket.TcpServer::new(): Address already in
 use`; an address that does not parse says so and what is expected.
-Connection errors go to `on_error` as `@mttp.TransportError`. Background
+Connection errors go to `on_error` as `@mttp_core.TransportError`. Background
 errors preserve `TransportError`; other background errors become `Network`
 in phase `Unknown`, with application details omitted.
 

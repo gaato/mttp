@@ -24,6 +24,7 @@ name: Release
 on:
   push:
     tags:
+      - 'mttp_core-v*'
       - 'mttp-v*'
       - 'mttp_async-v*'
       - 'mttp_digest-v*'

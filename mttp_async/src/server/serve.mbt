@@ -20,11 +20,11 @@ pub extend ListenError with @debug.Debug::{to_repr}
 /// The listener sets `SO_REUSEADDR`, so a restart can bind the port while the
 /// previous process's connections are in TIME-WAIT.
 pub async fn serve(
-  handler : @mttp.Handler,
+  handler : @mttp_core.Handler,
   addr~ : String,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
   on_listen~ : (String) -> Unit = _ => (),
-  on_error~ : (@mttp.TransportError) -> Unit = _ => (),
+  on_error~ : (@mttp_core.TransportError) -> Unit = _ => (),
 ) -> Unit raise ListenError {
   limits.validate() catch {
     error => raise Config(error)
@@ -50,10 +50,10 @@ pub async fn serve(
 ///|
 async fn run_listener(
   listener : @socket.TcpServer,
-  handler : @mttp.Handler,
+  handler : @mttp_core.Handler,
   on_listen : (String) -> Unit,
   limits : @h1server.ServerLimits,
-  on_error : (@mttp.TransportError) -> Unit,
+  on_error : (@mttp_core.TransportError) -> Unit,
 ) -> Unit raise ListenError {
   let state = ServerState::new()
   let clock = @runtime.AsyncClock::new()
@@ -81,9 +81,9 @@ async fn run_listener(
                   error =>
                     on_error(
                       match error {
-                        @mttp.TransportError(..) as original => original
+                        @mttp_core.TransportError(..) as original => original
                         _ =>
-                          @mttp.TransportError(
+                          @mttp_core.TransportError(
                             kind=Network,
                             phase=Unknown,
                             detail="background job failed",
@@ -171,7 +171,7 @@ async fn run_listener(
                 ) catch {
                   _ =>
                     on_error(
-                      @mttp.TransportError(
+                      @mttp_core.TransportError(
                         kind=Invalid,
                         phase=Unknown,
                         detail="validated server limits refused",

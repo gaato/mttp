@@ -1,0 +1,24 @@
+import {
+  "gaato/mttp_core/internal/text",
+  "gaato/mttp_core/internal/form",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/percent",
+  "moonbitlang/core/encoding/base64",
+}
+
+import {
+  "gaato/mttp_core/apispec",
+  "gaato/mttp_core/client",
+  "gaato/mttp_core/driver",
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/openapi",
+  "gaato/mttp_core/router",
+  "gaato/mttp_core/schema",
+  "gaato/mttp_core/sim",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/random",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/mttp_core/driver" ],
+)

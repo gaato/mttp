@@ -2,11 +2,11 @@
 package "gaato/mttp_async/files"
 
 import {
-  "gaato/mttp",
+  "gaato/mttp_core",
 }
 
 // Values
-pub fn static_files(String, prefix? : String, cache_control? : String, index? : String) -> async (@mttp.Request) -> @mttp.Response noraise
+pub fn static_files(String, prefix? : String, cache_control? : String, index? : String) -> async (@mttp_core.Request) -> @mttp_core.Response noraise
 
 // Errors
 

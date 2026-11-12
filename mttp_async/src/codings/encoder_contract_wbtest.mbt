@@ -47,9 +47,9 @@ async test "encoded body direct close is idempotent and makes EOF sticky" {
     encoder: ContentEncoder::new(Gzip),
     closed: false,
   }
-  @mttp.BodyStream::close(body)
-  @mttp.BodyStream::close(body)
-  assert_eq(@mttp.BodyStream::read_some(body), None)
+  @mttp_core.BodyStream::close(body)
+  @mttp_core.BodyStream::close(body)
+  assert_eq(@mttp_core.BodyStream::read_some(body), None)
   assert_eq(closes.val, 1)
 }
 
@@ -73,7 +73,7 @@ test "encoder adapter accepts silent progress and retains a codec failure" {
           action()
           false
         } catch {
-          @mttp.TransportError(kind=Protocol, ..) => true
+          @mttp_core.TransportError(kind=Protocol, ..) => true
           _ => false
         }
         assert_true(failed)

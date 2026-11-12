@@ -5,7 +5,7 @@ async fn read_bounded(read : async () -> Bytes?, max_bytes : Int32) -> Bytes {
   let body = Buffer()
   while read() is Some(chunk) {
     if chunk.length() > max_bytes - body.length() {
-      raise @mttp.TransportError(
+      raise @mttp_core.TransportError(
         kind=Protocol,
         phase=Body,
         detail="response body larger than \{max_bytes} bytes",

@@ -2,7 +2,7 @@
 
 TCP and TLS connections for native and wasm (under moonrun).
 
-`TcpDialer` implements `gaato/mttp/rt.Dialer`. It connects with TCP and can
+`TcpDialer` implements `gaato/mttp_core/rt.Dialer`. It connects with TCP and can
 upgrade **any** `&Conn` to TLS, including a connection handed off by an HTTP
 CONNECT tunnel. One reader and one writer may use a connection at the same
 time; socket reads and writes use slices of at most 64 KiB.

@@ -42,7 +42,7 @@ export function vercel(fetch, waitUntil) {
 }
 
 // The fetch adapter puts this function on a Response whose body should end at
-// shutdown (gaato/mttp's close_on_shutdown, set on every SSE response). Called
+// shutdown (gaato/mttp_core's close_on_shutdown, set on every SSE response). Called
 // with an AbortSignal, it ends that body cleanly once the signal aborts; its
 // listener goes away with the body.
 const closeOnShutdown = Symbol.for('gaato.mttp.closeOnShutdown');

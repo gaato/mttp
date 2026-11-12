@@ -143,10 +143,12 @@ fn with_root_path(href : String) -> String {
 ///|
 fn parse_like_whatwg(input : String, base : String?) -> String {
   try {
-    let reference = @mttp.Url::parse(input)
+    let reference = @mttp_core.Url::parse(input)
     match base {
       Some(base) =>
-        with_root_path(@mttp.Url::parse(base).resolve(reference).to_string())
+        with_root_path(
+          @mttp_core.Url::parse(base).resolve(reference).to_string(),
+        )
       None if reference.is_absolute() => with_root_path(reference.to_string())
       None => "failure"
     }

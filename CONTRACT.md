@@ -1,16 +1,16 @@
 # Contracts
 
-What code on either side of the `gaato/mttp` traits may rely on, and what the
+What code on either side of the `gaato/mttp_core` traits may rely on, and what the
 sans-IO parsers guarantee. A backend, a runtime adapter, a test double or a
 wrapper that keeps these rules can be used with every engine and client in the
 family; a consumer written against them needs nothing more.
 
-The traits live in two packages of `gaato/mttp`: the root (`Backend`,
+The traits live in two packages of `gaato/mttp_core`: the root (`Backend`,
 `BodyStream`, `SendOptions`) and `rt` (Clock, Timer, Gate, Conn, Dialer,
-Signal, Coordination). The doubles are in `gaato/mttp/sim`, the deterministic
-scheduler in `gaato/mttp/driver`, and the runtime implementations in
+Signal, Coordination). The doubles are in `gaato/mttp_core/sim`, the deterministic
+scheduler in `gaato/mttp_core/driver`, and the runtime implementations in
 `gaato/mttp_async`. The policy rules at the end (client attempts) belong to
-`gaato/mttp/client`.
+`gaato/mttp_core/client`.
 
 Shared checks: `@sim.check_conn`, `check_coordination_contract`,
 `check_body_stream_contract` and `check_backend_contract` run against the sim
@@ -136,7 +136,7 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
 
 A backend written outside this repository, for example over another HTTP
 engine, passes `@sim.check_backend_contract(make_backend)` from
-`gaato/mttp/sim`, which exercises these rules (including rule 6's phase) on
+`gaato/mttp_core/sim`, which exercises these rules (including rule 6's phase) on
 the target it runs on.
 
 `mttp_async/backend.AsyncBackend::new` accepts optional `rt.Clock` and
@@ -178,7 +178,7 @@ on compressed wire bytes.
 
 ## Driver and cancellation
 
-`gaato/mttp/driver` runs async code without a runtime, on virtual time, on
+`gaato/mttp_core/driver` runs async code without a runtime, on virtual time, on
 all four targets. Its cancellation semantics match core/async's:
 
 1. **Cancellation is a signal, not an `Error`.** It is delivered by the
@@ -208,7 +208,7 @@ all four targets. Its cancellation semantics match core/async's:
    with the same contract tests as the sim doubles, including the
    cancellation cases.
 
-## Client attempts (gaato/mttp/client)
+## Client attempts (gaato/mttp_core/client)
 
 1. Retrying is opt-in. RetryPolicy is pure data. An optional typed decision
    function sees a Buffered reply, a StreamReady head or a TransportFailure,
@@ -256,10 +256,10 @@ all four targets. Its cancellation semantics match core/async's:
 
 | Parser | Rules |
 |---|---|
-| SSE (`gaato/mttp/sse`) | Every byte split, CR/LF/CRLF, split UTF-8, bounded retained fields, sticky finish |
-| Multipart boundary scanner (`gaato/mttp/multipart`) | Matches across chunk boundaries without emitting a colliding delimiter |
+| SSE (`gaato/mttp_core/sse`) | Every byte split, CR/LF/CRLF, split UTF-8, bounded retained fields, sticky finish |
+| Multipart boundary scanner (`gaato/mttp_core/multipart`) | Matches across chunk boundaries without emitting a colliding delimiter |
 
-## HTTP/1 codec (`gaato/mttp/h1`)
+## HTTP/1 codec (`gaato/mttp_core/h1`)
 
 The codec follows the message syntax and framing of
 [RFC 9112](https://www.rfc-editor.org/rfc/rfc9112.html), with strict CRLF and a

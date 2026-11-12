@@ -1,0 +1,50 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/h1server"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub async fn serve_conn(&@rt.Conn, async (@mttp_core.Request) -> @mttp_core.Response noraise, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, scheme~ : String, limits? : ServerLimits, peer? : String, authority? : String, on_error? : (@mttp_core.TransportError) -> Unit, stopping? : () -> Bool, background? : (async () -> Unit) -> Unit) -> Unit raise ServerConfigError
+
+// Errors
+#derive(@debug.Debug)
+pub(all) suberror ServerConfigError {
+  InvalidMaxBodyBytes(value~ : Int32)
+  InvalidBodyTimeoutMs(value~ : Int32)
+  InvalidHeaderTimeoutMs(value~ : Int32)
+  InvalidMaxConnections(value~ : Int32)
+  InvalidMaxHeaderBytes(value~ : Int32)
+  InvalidDrainMaxBytes(value~ : Int32)
+  InvalidHandlerTimeoutMs(value~ : Int32)
+  InvalidDrainMs(value~ : Int32)
+}
+pub fn ServerConfigError::output(Self, &Logger) -> Unit
+pub fn ServerConfigError::to_repr(Self) -> @debug.Repr
+pub fn ServerConfigError::to_string(Self) -> String
+pub impl Show for ServerConfigError
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct ServerLimits {
+  max_body_bytes : Int32
+  header_timeout_ms : Int32
+  body_timeout_ms : Int32
+  max_header_bytes : Int32
+  max_connections : Int32
+  drain_max_bytes : Int32
+  handler_timeout_ms : Int32?
+  drain_ms : Int32
+}
+pub fn ServerLimits::default() -> Self
+pub fn ServerLimits::equal(Self, Self) -> Bool
+pub fn ServerLimits::not_equal(Self, Self) -> Bool
+pub fn ServerLimits::to_repr(Self) -> @debug.Repr
+pub fn ServerLimits::validate(Self) -> Unit raise ServerConfigError
+
+// Type aliases
+
+// Traits

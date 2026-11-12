@@ -1,20 +1,20 @@
 ///|
 priv struct RecoveringOutput {
-  body : @mttp.Body
+  body : @mttp_core.Body
   fallback : Bool
-  failure : Ref[@mttp.TransportError?]
+  failure : Ref[@mttp_core.TransportError?]
   mut reads : Int32
   mut closes : Int32
 }
 
 ///|
-impl @mttp.BodyStream for RecoveringOutput with fn read_some(self) {
+impl @mttp_core.BodyStream for RecoveringOutput with fn read_some(self) {
   self.reads += 1
   if self.reads > 1 {
     return None
   }
   if self.body is Stream(cell) {
-    ignore(@mttp.read_bounded(cell.take(), 10)) catch {
+    ignore(@mttp_core.read_bounded(cell.take(), 10)) catch {
       error => self.failure.val = Some(error)
     }
   }
@@ -26,7 +26,7 @@ impl @mttp.BodyStream for RecoveringOutput with fn read_some(self) {
 }
 
 ///|
-impl @mttp.BodyStream for RecoveringOutput with fn close(self) {
+impl @mttp_core.BodyStream for RecoveringOutput with fn close(self) {
   self.closes += 1
 }
 
@@ -34,8 +34,8 @@ impl @mttp.BodyStream for RecoveringOutput with fn close(self) {
 async test "listener preserves caught request failures after response prefetch" {
   for fallback in [false, true] {
     let source : Ref[RecoveringOutput?] = Ref(None)
-    let failure : Ref[@mttp.TransportError?] = Ref(None)
-    let errors : Array[@mttp.TransportError] = []
+    let failure : Ref[@mttp_core.TransportError?] = Ref(None)
+    let errors : Array[@mttp_core.TransportError] = []
     with_server(
       request => {
         let output = RecoveringOutput::{
@@ -46,7 +46,10 @@ async test "listener preserves caught request failures after response prefetch" 
           closes: 0,
         }
         source.val = Some(output)
-        @mttp.Response::new(201, body=Stream(@mttp.StreamBody::new(output)))
+        @mttp_core.Response::new(
+          201,
+          body=Stream(@mttp_core.StreamBody::new(output)),
+        )
       },
       address => {
         for
@@ -58,7 +61,7 @@ async test "listener preserves caught request failures after response prefetch" 
           errors.clear()
           let response = raw(
             address,
-            @mttp.encode_utf8(
+            @mttp_core.encode_utf8(
               "POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n" +
               chunks,
             ),
@@ -71,11 +74,16 @@ async test "listener preserves caught request failures after response prefetch" 
           if status == 413 {
             assert_true(
               errors[0]
-              is @mttp.TransportError(kind=TooLarge(limit=2), phase=Body, ..),
+              is @mttp_core.TransportError(
+                kind=TooLarge(limit=2),
+                phase=Body,
+                ..
+              ),
             )
           } else {
             assert_true(
-              errors[0] is @mttp.TransportError(kind=Protocol, phase=Body, ..),
+              errors[0]
+              is @mttp_core.TransportError(kind=Protocol, phase=Body, ..),
             )
           }
           assert_eq(source.val.unwrap().reads, 1)

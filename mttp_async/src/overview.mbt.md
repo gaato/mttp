@@ -6,13 +6,13 @@ decompression and typed failures, plus an HTTP/1.1 server, on
 `moonbitlang/core/async` for native, wasm and js. It is the module an app
 starts with; an app that calls APIs and serves plain handlers needs no other.
 
-Add [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) to the app as well
+Add [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core) to the app as well
 when it uses the parts without I/O that this module does not re-export:
 typed endpoints, the router and OpenAPI documents, multipart forms, rate
-limits such as `WindowLimiter`, the request attributes `@mttp.background`
-and `@mttp.remote_addr`, or the test doubles of `gaato/mttp/testing`.
+limits such as `WindowLimiter`, the request attributes `@mttp_core.background`
+and `@mttp_core.remote_addr`, or the test doubles of `gaato/mttp_core/testing`.
 
-Writing a library, such as an SDK for some API? Depend on `gaato/mttp` only:
+Writing a library, such as an SDK for some API? Depend on `gaato/mttp_core` only:
 it has the same types and client without any I/O, so it builds on every
 target and the app chooses how requests are sent.
 
@@ -115,7 +115,7 @@ The jar does not apply browsers' `SameSite` rules.
 
 ## With an API SDK
 
-An SDK built on `gaato/mttp` (such as `gaato/openai` or `gaato/anthropic`)
+An SDK built on `gaato/mttp_core` (such as `gaato/openai` or `gaato/anthropic`)
 creates its own Client with the provider's base URL, authentication and retry
 rules. Give it the I/O with `backend()`, `clock()` and `timer()`; the timer
 lets it enforce its deadlines. `backend()` is the network alone, HTTP/1.1
@@ -179,17 +179,17 @@ alone or behind a Router's 404s.
 ## A complete app
 
 A typed endpoint validates its request and documents itself for OpenAPI; a
-Router serves a set of them as one handler. They come from `gaato/mttp`, so
-the app's `moon.mod` lists both modules (`moon add gaato/mttp`), and its
+Router serves a set of them as one handler. They come from `gaato/mttp_core`, so
+the app's `moon.mod` lists both modules (`moon add gaato/mttp_core`), and its
 `moon.pkg` imports what it uses:
 
 ```text
 import {
   "gaato/mttp_async",
   "gaato/mttp_async/server",
-  "gaato/mttp/endpoint",
-  "gaato/mttp/router",
-  "gaato/mttp/schema",
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/router",
+  "gaato/mttp_core/schema",
 }
 
 pkgtype(kind: "executable")
@@ -231,11 +231,11 @@ same handlers on JavaScript hosts, with a Cloudflare Workers app).
 ## Tests
 
 Code that takes its Client as a parameter can be tested without the network:
-give it the app's own `client()` over `BackendStub` from `gaato/mttp/testing`,
+give it the app's own `client()` over `BackendStub` from `gaato/mttp_core/testing`,
 which answers with canned responses and records what was sent. `backend=`
 replaces only the network, so the Client keeps every default above:
 retries, deadlines, redirects and cookies. The test package imports
-`gaato/mttp/testing` (`gaato/mttp` in `moon.mod`), and a plain `test` block
+`gaato/mttp_core/testing` (`gaato/mttp_core` in `moon.mod`), and a plain `test` block
 runs the async code with `run`, again without importing core/async:
 
 ```mbt check
@@ -288,7 +288,7 @@ its public API names no runtime types.
 
 native, wasm (under moonrun) and js. On js the client uses the host's `fetch`,
 which decides proxies, pooling and decompression itself. wasm-gc has no
-runtime here; use `gaato/mttp` there and provide its runtime ports.
+runtime here; use `gaato/mttp_core` there and provide its runtime ports.
 
 ## Packages
 
@@ -299,7 +299,7 @@ runtime here; use `gaato/mttp` there and provide its runtime ports.
 | `server` | native, wasm | `serve`: bounded listener, graceful shutdown, background work |
 | `files` | native, wasm | `static_files`: a directory's files for GET and HEAD, streamed, with ETag revalidation and paths kept inside the directory |
 | `fetch` | js | `fetch_handler`: a handler as a JavaScript `fetch` export |
-| `runtime` | native, wasm, js | Clocks, timers, an admission gate and coordination for `gaato/mttp`'s runtime ports |
+| `runtime` | native, wasm, js | Clocks, timers, an admission gate and coordination for `gaato/mttp_core`'s runtime ports |
 | `codings` | native, wasm, js | Bounded content codecs, `Decompress` for clients and `compress` for handlers |
 | `conn` | native, wasm | TCP and TLS dialing, including CONNECT tunnels |
 | `trust` | native, wasm, js | `Trust`: which TLS roots a socket backend accepts |

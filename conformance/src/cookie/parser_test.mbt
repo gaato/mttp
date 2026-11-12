@@ -48,11 +48,11 @@ fn run_parser_test(fields : Map[String, Json]) -> (String?, String?) raise {
     guard line is String(text) else { fail("malformed line") }
     ("Set-Cookie", text)
   })
-  jar.store(@mttp.Headers::of(lines), from)
+  jar.store(@mttp_core.Headers::of(lines), from)
   let to = match string_field(fields, "sent-to") {
     Some(target) =>
-      @mttp.Url::parse("http://home.example.org")
-      .resolve(@mttp.Url::parse(target))
+      @mttp_core.Url::parse("http://home.example.org")
+      .resolve(@mttp_core.Url::parse(target))
       .to_string()
     None => "http://home.example.org/cookie-parser-result?\{id}"
   }

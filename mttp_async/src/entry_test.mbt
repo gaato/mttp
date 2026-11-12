@@ -1,6 +1,6 @@
 ///|
 async fn with_local_server(
-  handler : @mttp.Handler,
+  handler : @mttp_core.Handler,
   run : async (String) -> Unit,
 ) -> Unit {
   @async.with_timeout(10000, () => {
@@ -29,11 +29,11 @@ async test "client() calls a JSON API, retrying a 503 once" {
     request => {
       calls.val += 1
       if calls.val == 1 {
-        @mttp.Response::new(503)
+        @mttp_core.Response::new(503)
       } else {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           200,
-          headers=@mttp.Headers::of([("content-type", "application/json")]),
+          headers=@mttp_core.Headers::of([("content-type", "application/json")]),
           body=Bytes(@utf8.encode("{\"id\": 1, \"path\": \"\{request.url}\"}")),
         )
       }
@@ -63,12 +63,12 @@ async test "client() follows a redirect and turns retries off on request" {
     request => {
       calls.val += 1
       if request.url.has_suffix("/old") {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           301,
-          headers=@mttp.Headers::of([("location", "/new")]),
+          headers=@mttp_core.Headers::of([("location", "/new")]),
         )
       } else {
-        @mttp.Response::new(500)
+        @mttp_core.Response::new(500)
       }
     },
     address => {
@@ -89,20 +89,20 @@ async test "backend() is the I/O only and returns a redirect unfollowed" {
   with_local_server(
     request => {
       if request.url.has_suffix("/old") {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           301,
-          headers=@mttp.Headers::of([("location", "/new")]),
+          headers=@mttp_core.Headers::of([("location", "/new")]),
         )
       } else {
-        @mttp.Response::new(200)
+        @mttp_core.Response::new(200)
       }
     },
     address => {
       let network = @mttp_async.backend()
       defer network.close()
       let response = network.send(
-        @mttp.Request::get("http://\{address}/old"),
-        @mttp.SendOptions::default(),
+        @mttp_core.Request::get("http://\{address}/old"),
+        @mttp_core.SendOptions::default(),
       )
       defer response.close()
       assert_eq(response.status, 301)
@@ -118,15 +118,15 @@ async test "client(cookies=) sends a cookie set on a redirect to the next hop an
     request => {
       seen.push(request.headers.get("cookie"))
       if request.url.has_suffix("/login") {
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           302,
-          headers=@mttp.Headers::of([
+          headers=@mttp_core.Headers::of([
             ("location", "/home"),
             ("set-cookie", "session=abc; Path=/; HttpOnly"),
           ]),
         )
       } else {
-        @mttp.Response::new(200)
+        @mttp_core.Response::new(200)
       }
     },
     address => {
@@ -162,7 +162,7 @@ async test "backend(), clock() and timer() give a hand-built Client a total dead
       if request.url.has_suffix("/slow") {
         @async.sleep(2000)
       }
-      @mttp.Response::new(200, body=Bytes(b"ok"))
+      @mttp_core.Response::new(200, body=Bytes(b"ok"))
     },
     address => {
       let api = @client.Client::new(
@@ -180,7 +180,7 @@ async test "backend(), clock() and timer() give a hand-built Client a total dead
         ignore(api.send(@mttp_async.get("/slow")))
         None
       } catch {
-        @mttp.TransportError(kind~, ..) => Some(kind)
+        @mttp_core.TransportError(kind~, ..) => Some(kind)
         _ => None
       }
       assert_true(kind is Some(Timeout(..)))
@@ -194,7 +194,7 @@ async test "client(clock=) runs the network backend's deadlines on that clock" {
     _ => {
       // Real time: far longer than the virtual read deadline below.
       @async.sleep(3000)
-      @mttp.Response::new(200)
+      @mttp_core.Response::new(200)
     },
     address => {
       let clock = @runtime.VirtualClock(start_ms=0L)
@@ -215,7 +215,7 @@ async test "client(clock=) runs the network backend's deadlines on that clock" {
         let result = send_later(group, api, @mttp_async.get("/slow"))
         advance_at(clock, 1000L)
         clock.settle(until=() => result.val is Some(_))
-        guard result.val is Some(Err(@mttp.TransportError(kind~, ..))) else {
+        guard result.val is Some(Err(@mttp_core.TransportError(kind~, ..))) else {
           fail("expected a transport failure")
         }
         assert_eq(kind, Timeout(ms=1000))

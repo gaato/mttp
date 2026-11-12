@@ -1,0 +1,354 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/apispec"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct Components {
+  schemas : Map[String, @json.Json]
+  responses : Map[String, ResponseObject]
+  parameters : Map[String, Parameter]
+  request_bodies : Map[String, RequestBody]
+  headers : Map[String, HeaderObject]
+  security_schemes : Map[String, SecurityScheme]
+  path_items : Map[String, PathItem]
+  media_types : Map[String, MediaTypeObject]
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn Components::equal(Self, Self) -> Bool
+pub fn Components::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Components::new(schemas? : Map[String, @json.Json], responses? : Map[String, ResponseObject], parameters? : Map[String, Parameter], request_bodies? : Map[String, RequestBody], headers? : Map[String, HeaderObject], security_schemes? : Map[String, SecurityScheme], path_items? : Map[String, PathItem], media_types? : Map[String, MediaTypeObject], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Components::not_equal(Self, Self) -> Bool
+pub fn Components::to_json(Self) -> @json.Json
+pub fn Components::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for Components
+pub impl @json.ToJson for Components
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Contact {
+  name : String?
+  url : String?
+  email : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn Contact::equal(Self, Self) -> Bool
+pub fn Contact::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Contact::new(name? : String, url? : String, email? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Contact::not_equal(Self, Self) -> Bool
+pub fn Contact::to_json(Self) -> @json.Json
+pub fn Contact::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for Contact
+pub impl @json.ToJson for Contact
+
+#derive(Eq, @debug.Debug)
+pub(all) struct ExternalDocs {
+  url : String
+  description : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn ExternalDocs::equal(Self, Self) -> Bool
+pub fn ExternalDocs::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn ExternalDocs::new(String, description? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn ExternalDocs::not_equal(Self, Self) -> Bool
+pub fn ExternalDocs::to_json(Self) -> @json.Json
+pub fn ExternalDocs::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for ExternalDocs
+pub impl @json.ToJson for ExternalDocs
+
+#derive(Eq, @debug.Debug)
+pub(all) struct HeaderObject {
+  required : Bool
+  deprecated : Bool
+  schema : @json.Json?
+  description : String?
+  style : String?
+  explode : Bool?
+  content : Map[String, MediaTypeObject]?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn HeaderObject::equal(Self, Self) -> Bool
+pub fn HeaderObject::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn HeaderObject::new(required? : Bool, deprecated? : Bool, schema? : @json.Json, description? : String, style? : String, explode? : Bool, content? : Map[String, MediaTypeObject], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn HeaderObject::not_equal(Self, Self) -> Bool
+pub fn HeaderObject::to_json(Self) -> @json.Json
+pub fn HeaderObject::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for HeaderObject
+pub impl @json.ToJson for HeaderObject
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Info {
+  title : String
+  version : String
+  summary : String?
+  description : String?
+  terms_of_service : String?
+  contact : Contact?
+  license : License?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn Info::equal(Self, Self) -> Bool
+pub fn Info::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Info::new(String, String, summary? : String, description? : String, terms_of_service? : String, contact? : Contact, license? : License, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Info::not_equal(Self, Self) -> Bool
+pub fn Info::to_json(Self) -> @json.Json
+pub fn Info::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for Info
+pub impl @json.ToJson for Info
+
+#derive(Eq, @debug.Debug)
+pub(all) struct License {
+  name : String
+  identifier : String?
+  url : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn License::equal(Self, Self) -> Bool
+pub fn License::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn License::new(String, identifier? : String, url? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn License::not_equal(Self, Self) -> Bool
+pub fn License::to_json(Self) -> @json.Json
+pub fn License::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for License
+pub impl @json.ToJson for License
+
+#derive(Eq, @debug.Debug)
+pub(all) struct MediaTypeObject {
+  schema : @json.Json?
+  item_schema : @json.Json?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn MediaTypeObject::equal(Self, Self) -> Bool
+pub fn MediaTypeObject::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn MediaTypeObject::new(schema? : @json.Json, item_schema? : @json.Json, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn MediaTypeObject::not_equal(Self, Self) -> Bool
+pub fn MediaTypeObject::to_json(Self) -> @json.Json
+pub fn MediaTypeObject::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for MediaTypeObject
+pub impl @json.ToJson for MediaTypeObject
+
+#derive(Eq, @debug.Debug)
+pub(all) struct OpenApi {
+  info : Info
+  paths : Map[String, PathItem]
+  openapi : String
+  json_schema_dialect : String?
+  servers : Array[Server]
+  webhooks : Map[String, PathItem]
+  components : Components
+  security : Array[Map[String, Array[String]]]?
+  tags : Array[Tag]
+  external_docs : ExternalDocs?
+  self_ : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn OpenApi::equal(Self, Self) -> Bool
+pub fn OpenApi::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn OpenApi::new(Info, paths? : Map[String, PathItem], openapi? : String, json_schema_dialect? : String, servers? : Array[Server], webhooks? : Map[String, PathItem], components? : Components, security? : Array[Map[String, Array[String]]], tags? : Array[Tag], external_docs? : ExternalDocs, self_? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn OpenApi::not_equal(Self, Self) -> Bool
+pub fn OpenApi::to_json(Self) -> @json.Json
+pub fn OpenApi::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for OpenApi
+pub impl @json.ToJson for OpenApi
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Operation {
+  responses : Map[String, ResponseObject]
+  operation_id : String?
+  summary : String?
+  description : String?
+  tags : Array[String]
+  deprecated : Bool
+  parameters : Array[Parameter]
+  request_body : RequestBody?
+  security : Array[Map[String, Array[String]]]?
+  servers : Array[Server]
+  external_docs : ExternalDocs?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn Operation::equal(Self, Self) -> Bool
+pub fn Operation::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Operation::new(responses? : Map[String, ResponseObject], operation_id? : String, summary? : String, description? : String, tags? : Array[String], deprecated? : Bool, parameters? : Array[Parameter], request_body? : RequestBody, security? : Array[Map[String, Array[String]]], servers? : Array[Server], external_docs? : ExternalDocs, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Operation::not_equal(Self, Self) -> Bool
+pub fn Operation::to_json(Self) -> @json.Json
+pub fn Operation::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for Operation
+pub impl @json.ToJson for Operation
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Parameter {
+  name : String
+  in_ : String
+  required : Bool
+  deprecated : Bool
+  allow_empty_value : Bool?
+  schema : @json.Json?
+  description : String?
+  style : String?
+  explode : Bool?
+  allow_reserved : Bool?
+  content : Map[String, MediaTypeObject]?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn Parameter::equal(Self, Self) -> Bool
+pub fn Parameter::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Parameter::new(String, String, required? : Bool, deprecated? : Bool, allow_empty_value? : Bool, schema? : @json.Json, description? : String, style? : String, explode? : Bool, allow_reserved? : Bool, content? : Map[String, MediaTypeObject], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Parameter::not_equal(Self, Self) -> Bool
+pub fn Parameter::to_json(Self) -> @json.Json
+pub fn Parameter::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for Parameter
+pub impl @json.ToJson for Parameter
+
+#derive(Eq, @debug.Debug)
+pub(all) struct PathItem {
+  operations : Map[String, Operation]
+  summary : String?
+  description : String?
+  servers : Array[Server]
+  parameters : Array[Parameter]
+  additional_operations : Map[String, Operation]
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn PathItem::equal(Self, Self) -> Bool
+pub fn PathItem::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn PathItem::new(operations? : Map[String, Operation], summary? : String, description? : String, servers? : Array[Server], parameters? : Array[Parameter], additional_operations? : Map[String, Operation], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn PathItem::not_equal(Self, Self) -> Bool
+pub fn PathItem::to_json(Self) -> @json.Json
+pub fn PathItem::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for PathItem
+pub impl @json.ToJson for PathItem
+
+#derive(Eq, @debug.Debug)
+pub(all) struct RequestBody {
+  content : Map[String, MediaTypeObject]
+  required : Bool
+  description : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn RequestBody::equal(Self, Self) -> Bool
+pub fn RequestBody::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn RequestBody::new(Map[String, MediaTypeObject], required? : Bool, description? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn RequestBody::not_equal(Self, Self) -> Bool
+pub fn RequestBody::to_json(Self) -> @json.Json
+pub fn RequestBody::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for RequestBody
+pub impl @json.ToJson for RequestBody
+
+#derive(Eq, @debug.Debug)
+pub(all) struct ResponseObject {
+  description : String?
+  headers : Map[String, HeaderObject]
+  content : Map[String, MediaTypeObject]
+  summary : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn ResponseObject::equal(Self, Self) -> Bool
+pub fn ResponseObject::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn ResponseObject::new(description? : String, headers? : Map[String, HeaderObject], content? : Map[String, MediaTypeObject], summary? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn ResponseObject::not_equal(Self, Self) -> Bool
+pub fn ResponseObject::to_json(Self) -> @json.Json
+pub fn ResponseObject::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for ResponseObject
+pub impl @json.ToJson for ResponseObject
+
+#derive(Eq, @debug.Debug)
+pub(all) struct SecurityScheme {
+  type_ : String
+  scheme : String?
+  name : String?
+  in_ : String?
+  bearer_format : String?
+  open_id_connect_url : String?
+  description : String?
+  deprecated : Bool
+  oauth2_metadata_url : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn SecurityScheme::equal(Self, Self) -> Bool
+pub fn SecurityScheme::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn SecurityScheme::new(String, scheme? : String, name? : String, in_? : String, bearer_format? : String, open_id_connect_url? : String, description? : String, deprecated? : Bool, oauth2_metadata_url? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn SecurityScheme::not_equal(Self, Self) -> Bool
+pub fn SecurityScheme::to_json(Self) -> @json.Json
+pub fn SecurityScheme::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for SecurityScheme
+pub impl @json.ToJson for SecurityScheme
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Server {
+  url : String
+  description : String?
+  variables : Map[String, ServerVariable]
+  name : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn Server::equal(Self, Self) -> Bool
+pub fn Server::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Server::new(String, description? : String, variables? : Map[String, ServerVariable], name? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Server::not_equal(Self, Self) -> Bool
+pub fn Server::to_json(Self) -> @json.Json
+pub fn Server::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for Server
+pub impl @json.ToJson for Server
+
+#derive(Eq, @debug.Debug)
+pub(all) struct ServerVariable {
+  default_ : String
+  enum_ : Array[String]
+  description : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn ServerVariable::equal(Self, Self) -> Bool
+pub fn ServerVariable::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn ServerVariable::new(String, enum_? : Array[String], description? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn ServerVariable::not_equal(Self, Self) -> Bool
+pub fn ServerVariable::to_json(Self) -> @json.Json
+pub fn ServerVariable::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for ServerVariable
+pub impl @json.ToJson for ServerVariable
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Tag {
+  name : String
+  description : String?
+  external_docs : ExternalDocs?
+  summary : String?
+  parent : String?
+  kind : String?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn Tag::equal(Self, Self) -> Bool
+pub fn Tag::from_json(@json.Json, @json.JsonPath) -> Self raise @json.JsonDecodeError
+pub fn Tag::new(String, description? : String, external_docs? : ExternalDocs, summary? : String, parent? : String, kind? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn Tag::not_equal(Self, Self) -> Bool
+pub fn Tag::to_json(Self) -> @json.Json
+pub fn Tag::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for Tag
+pub impl @json.ToJson for Tag
+
+// Type aliases
+
+// Traits

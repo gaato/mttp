@@ -33,7 +33,7 @@ let max_body : Int32 = 64 << 20
 
 ///|
 /// The framing a request arrived with, as its header fields say.
-fn framing(headers : @mttp.Headers) -> String {
+fn framing(headers : @mttp_core.Headers) -> String {
   let te = headers.get_all("transfer-encoding")
   let cl = headers.get_all("content-length")
   if !te.is_empty() {
@@ -47,7 +47,7 @@ fn framing(headers : @mttp.Headers) -> String {
 
 ///|
 /// The text of a field, or `-`.
-fn field(headers : @mttp.Headers, name : String) -> String {
+fn field(headers : @mttp_core.Headers, name : String) -> String {
   headers.get_all(name).join(", ") |> or_dash
 }
 
@@ -61,11 +61,11 @@ fn or_dash(s : String) -> String {
 }
 
 ///|
-fn text(status : Int32, body : String) -> @mttp.Response {
-  @mttp.Response::new(
+fn text(status : Int32, body : String) -> @mttp_core.Response {
+  @mttp_core.Response::new(
     status,
-    headers=@mttp.Headers::of([("Content-Type", "text/plain")]),
-    body=Bytes(@mttp.encode_utf8(body)),
+    headers=@mttp_core.Headers::of([("Content-Type", "text/plain")]),
+    body=Bytes(@mttp_core.encode_utf8(body)),
   )
 }
 
@@ -95,7 +95,7 @@ priv struct Pieces {
 }
 
 ///|
-impl @mttp.BodyStream for Pieces with fn read_some(self) {
+impl @mttp_core.BodyStream for Pieces with fn read_some(self) {
   if self.sent >= self.pieces {
     return None
   }
@@ -108,13 +108,13 @@ impl @mttp.BodyStream for Pieces with fn read_some(self) {
 }
 
 ///|
-impl @mttp.BodyStream for Pieces with fn close(self) {
+impl @mttp_core.BodyStream for Pieces with fn close(self) {
   self.sent = self.pieces
 }
 
 ///|
-async fn handle(request : @mttp.Request) -> @mttp.Response noraise {
-  let url = @mttp.Url::parse(request.url) catch {
+async fn handle(request : @mttp_core.Request) -> @mttp_core.Response noraise {
+  let url = @mttp_core.Url::parse(request.url) catch {
     _ => return text(400, "unparsable target\n")
   }
   let target = match url.query {
@@ -122,7 +122,7 @@ async fn handle(request : @mttp.Request) -> @mttp.Response noraise {
     None => url.path
   }
   let params = url.query_params()
-  let peer = request.attributes.get(@mttp.remote_addr).unwrap_or("-")
+  let peer = request.attributes.get(@mttp_core.remote_addr).unwrap_or("-")
   if url.path == "/log" {
     let lines = log.join("\n")
     if number(params, "reset", 0) == 1 {
@@ -160,11 +160,14 @@ async fn handle(request : @mttp.Request) -> @mttp.Response noraise {
         delay_ms: number(params, "delay_ms", 0),
         sent: 0,
       }
-      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(pieces)))
+      @mttp_core.Response::new(
+        200,
+        body=Stream(@mttp_core.StreamBody::new(pieces)),
+      )
     }
     "/bytes" => {
       let n = number(params, "n", 0)
-      @mttp.Response::new(200, body=Bytes(@pattern.binary(n)))
+      @mttp_core.Response::new(200, body=Bytes(@pattern.binary(n)))
     }
     "/delay" => {
       @async.sleep(number(params, "ms", 0))
@@ -175,7 +178,7 @@ async fn handle(request : @mttp.Request) -> @mttp.Response noraise {
         _ => 400
       }
       if code == 204 || code == 304 {
-        @mttp.Response::new(code)
+        @mttp_core.Response::new(code)
       } else {
         text(code, "status \{code}\n")
       }

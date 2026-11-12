@@ -103,7 +103,7 @@ requests to the files:
 ///|
 /// The app: its API through `api`, and the files below `public` for every
 /// path the API does not know.
-fn app(api : @router.Router) -> @mttp.Handler {
+fn app(api : @router.Router) -> @mttp_core.Handler {
   let assets = @files.static_files("public")
   async fn(request) noraise {
     let response = api.dispatch(request)
@@ -118,8 +118,11 @@ async test "the router answers first and the files after it" {
   let hello = @endpoint.endpoint.get("/hello").output(@endpoint.text_out())
   let api = @router.Router::new([hello.serve_public(_ => Ok("hello"))])
   let handler = app(api)
-  assert_eq(handler(@mttp.Request::get("/hello")).body, @mttp.Bytes(b"hello"))
-  assert_eq(handler(@mttp.Request::get("/missing.css")).status, 404)
+  assert_eq(
+    handler(@mttp_core.Request::get("/hello")).body,
+    @mttp_core.Bytes(b"hello"),
+  )
+  assert_eq(handler(@mttp_core.Request::get("/missing.css")).status, 404)
   api.close()
 }
 ```

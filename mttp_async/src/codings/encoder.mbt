@@ -10,7 +10,7 @@ pub struct ContentEncoder {
   priv mut waiting : Bool
   priv mut ended : Bool
   priv mut done : Bool
-  priv mut failure : @mttp.TransportError?
+  priv mut failure : @mttp_core.TransportError?
 }
 
 ///|
@@ -19,7 +19,7 @@ pub struct ContentEncoder {
 /// Brotli uses a 22-bit window; gzip and deflate use a 32 KiB history window.
 pub fn ContentEncoder::new(
   coding : Coding,
-) -> ContentEncoder raise @mttp.TransportError {
+) -> ContentEncoder raise @mttp_core.TransportError {
   let encoder : &@codec_bytes.Encode = match coding {
     Gzip => (@gzip.Encoder() : &@codec_bytes.Encode)
     Deflate => @zlib.Encoder()
@@ -43,7 +43,7 @@ pub fn ContentEncoder::new(
 pub fn ContentEncoder::feed(
   self : ContentEncoder,
   bytes : Bytes,
-) -> Unit raise @mttp.TransportError {
+) -> Unit raise @mttp_core.TransportError {
   if self.failure is Some(error) {
     raise error
   }
@@ -58,7 +58,7 @@ pub fn ContentEncoder::feed(
 /// Finishes the compressed stream after NeedInput. Repeated end is harmless.
 pub fn ContentEncoder::end(
   self : ContentEncoder,
-) -> Unit raise @mttp.TransportError {
+) -> Unit raise @mttp_core.TransportError {
   if self.failure is Some(error) {
     raise error
   }
@@ -77,7 +77,7 @@ pub fn ContentEncoder::end(
 /// become sticky Protocol errors; no further input is accepted after failure.
 pub fn ContentEncoder::pull(
   self : ContentEncoder,
-) -> Pulled raise @mttp.TransportError {
+) -> Pulled raise @mttp_core.TransportError {
   if self.failure is Some(error) {
     raise error
   }
@@ -94,7 +94,7 @@ pub fn ContentEncoder::pull(
       action=if self.ended { Finish } else { Flush },
     ) catch {
       CodecError(_, message) => {
-        let failure = @mttp.TransportError(
+        let failure = @mttp_core.TransportError(
           kind=Protocol,
           phase=Body,
           detail="content encoding failed: " + message,
@@ -121,8 +121,8 @@ pub fn ContentEncoder::pull(
 }
 
 ///|
-fn encoder_misuse(detail : String) -> @mttp.TransportError {
-  @mttp.TransportError(kind=Invalid, phase=Body, detail~)
+fn encoder_misuse(detail : String) -> @mttp_core.TransportError {
+  @mttp_core.TransportError(kind=Invalid, phase=Body, detail~)
 }
 
 ///|

@@ -20,7 +20,7 @@ priv struct Input {
   mut pending : Bytes
   mut offset : Int32
   mut closed : Bool
-  mut failure : @mttp.TransportError?
+  mut failure : @mttp_core.TransportError?
   mut declared : Int64?
 }
 
@@ -48,12 +48,12 @@ fn Input::reader(self : Input) -> Reader {
 }
 
 ///|
-impl @mttp.BodyStream for Input with fn close(self) {
+impl @mttp_core.BodyStream for Input with fn close(self) {
   self.close()
 }
 
 ///|
-impl @mttp.BodyStream for Input with fn read_some(self) {
+impl @mttp_core.BodyStream for Input with fn read_some(self) {
   if self.failure is Some(error) {
     raise error
   }
@@ -65,7 +65,7 @@ impl @mttp.BodyStream for Input with fn read_some(self) {
     if self.pending.is_empty() {
       for empty = 0; ; empty = empty + 1 {
         if empty >= 1024 {
-          raise @mttp.TransportError(
+          raise @mttp_core.TransportError(
             kind=Protocol,
             phase=Body,
             detail="too many empty request chunks",
@@ -75,7 +75,7 @@ impl @mttp.BodyStream for Input with fn read_some(self) {
         let chunk = @js_async.run_promise(signal => reader.read(signal))
         if chunk.done {
           if self.declared is Some(length) && length != self.count.to_int64() {
-            raise @mttp.TransportError(
+            raise @mttp_core.TransportError(
               kind=Protocol,
               phase=Body,
               detail="request length mismatch",
@@ -88,7 +88,7 @@ impl @mttp.BodyStream for Input with fn read_some(self) {
           continue
         }
         if chunk.value.length() > self.limit - self.count {
-          raise @mttp.TransportError(
+          raise @mttp_core.TransportError(
             kind=TooLarge(limit=self.limit),
             phase=Body,
             detail="request body exceeds adapter ceiling",
@@ -96,7 +96,7 @@ impl @mttp.BodyStream for Input with fn read_some(self) {
         }
         self.count += chunk.value.length()
         if self.declared is Some(length) && self.count.to_int64() > length {
-          raise @mttp.TransportError(
+          raise @mttp_core.TransportError(
             kind=Protocol,
             phase=Body,
             detail="request length mismatch",
@@ -117,9 +117,9 @@ impl @mttp.BodyStream for Input with fn read_some(self) {
   } catch {
     error => {
       let failure = match error {
-        @mttp.TransportError(..) as error => error
+        @mttp_core.TransportError(..) as error => error
         _ =>
-          @mttp.TransportError(
+          @mttp_core.TransportError(
             kind=Network,
             phase=Body,
             detail="host request stream failed",

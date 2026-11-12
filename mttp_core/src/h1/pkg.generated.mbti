@@ -1,0 +1,137 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/h1"
+
+import {
+  "gaato/mttp_core",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn encode_chunk(BytesView) -> Bytes
+
+pub fn parse_request_head(BytesView, limits? : Limits) -> ParsedRequest raise ParseError
+
+pub fn parse_response_head(BytesView, limits? : Limits) -> ParsedResponse raise ParseError
+
+pub fn request_framing(@mttp_core.Headers) -> Framing raise ParseError
+
+pub fn response_framing(@mttp_core.Headers, status~ : Int32, meth? : @mttp_core.Method) -> Framing raise ParseError
+
+pub fn scan_head(BytesView, max~ : Int32, skip_leading_crlf? : Bool) -> Int32? raise ParseError
+
+pub fn write_request_head(@mttp_core.Method, String, @mttp_core.Headers, Framing, Version) -> Bytes raise ParseError
+
+pub fn write_response_head(Int32, @mttp_core.Headers, Framing, Version, meth? : @mttp_core.Method) -> Bytes raise ParseError
+
+// Errors
+#derive(@debug.Debug)
+pub(all) suberror ParseError {
+  ParseError(kind~ : ParseKind, detail~ : String)
+}
+pub fn ParseError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub struct ChunkedDecoder {
+  // private fields
+}
+pub fn ChunkedDecoder::feed(Self, BytesView) -> Decoded raise ParseError
+pub fn ChunkedDecoder::finish(Self) -> Unit raise ParseError
+pub fn ChunkedDecoder::new(Limits) -> Self
+
+#derive(Eq, @debug.Debug)
+pub struct Decoded {
+  chunks : Array[Bytes]
+  done : Bool
+  trailers : @mttp_core.Headers
+  consumed : Int32
+}
+pub fn Decoded::equal(Self, Self) -> Bool
+pub fn Decoded::not_equal(Self, Self) -> Bool
+pub fn Decoded::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum Framing {
+  NoBody
+  Length(Int64)
+  Chunked
+  UntilClose
+}
+pub fn Framing::equal(Self, Self) -> Bool
+pub fn Framing::not_equal(Self, Self) -> Bool
+pub fn Framing::to_repr(Self) -> @debug.Repr
+
+pub struct HeadDecoder {
+  // private fields
+}
+pub fn HeadDecoder::feed(Self, BytesView) -> HeadResult raise ParseError
+pub fn HeadDecoder::finish(Self) -> Bytes raise ParseError
+pub fn HeadDecoder::new(max? : Int32, skip_leading_crlf? : Bool) -> Self
+
+#derive(Eq, @debug.Debug)
+pub struct HeadResult {
+  head : Bytes?
+  consumed : Int32
+}
+pub fn HeadResult::equal(Self, Self) -> Bool
+pub fn HeadResult::not_equal(Self, Self) -> Bool
+pub fn HeadResult::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Limits {
+  max_head_bytes : Int32
+  max_chunk_line_bytes : Int32
+  max_trailer_bytes : Int32
+  max_headers : Int32
+}
+pub fn Limits::default() -> Self
+pub fn Limits::equal(Self, Self) -> Bool
+pub fn Limits::not_equal(Self, Self) -> Bool
+pub fn Limits::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum ParseKind {
+  HeadTooLarge
+  Malformed
+  Smuggling
+  Unsupported
+}
+pub fn ParseKind::equal(Self, Self) -> Bool
+pub fn ParseKind::not_equal(Self, Self) -> Bool
+pub fn ParseKind::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub struct ParsedRequest {
+  meth : @mttp_core.Method
+  target : String
+  version : Version
+  headers : @mttp_core.Headers
+}
+pub fn ParsedRequest::equal(Self, Self) -> Bool
+pub fn ParsedRequest::not_equal(Self, Self) -> Bool
+pub fn ParsedRequest::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub struct ParsedResponse {
+  version : Version
+  status : Int32
+  headers : @mttp_core.Headers
+}
+pub fn ParsedResponse::equal(Self, Self) -> Bool
+pub fn ParsedResponse::not_equal(Self, Self) -> Bool
+pub fn ParsedResponse::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum Version {
+  Http10
+  Http11
+}
+pub fn Version::equal(Self, Self) -> Bool
+pub fn Version::not_equal(Self, Self) -> Bool
+pub fn Version::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

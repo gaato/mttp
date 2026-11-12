@@ -8,7 +8,7 @@ with <prefix> "" for the server itself and "/up" for a proxy in front of it.
 It prints `CASE <id> ok|fail <detail>` per case.
 
 Directly, every ambiguous shape must be refused as the mttp documentation
-says (CONTRACT.md, "HTTP/1 codec"; mttp/src/h1server/README.mbt.md, "Strict
+says (CONTRACT.md, "HTTP/1 codec"; mttp_core/src/h1server/README.mbt.md, "Strict
 framing"): 400, or 501 for a transfer coding other than chunked, with exactly
 one response and the connection closed, so that no byte after the head is
 read as another request.

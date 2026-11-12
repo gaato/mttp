@@ -1,0 +1,50 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/testing"
+
+import {
+  "gaato/mttp_core",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn fail_after(&@mttp_core.BodyStream, Int32, @mttp_core.TransportError) -> &@mttp_core.BodyStream raise @mttp_core.TransportError
+
+pub fn fail_sends(&@mttp_core.Backend, @mttp_core.TransportError, times? : Int32) -> &@mttp_core.Backend
+
+// Errors
+
+// Types and methods
+pub struct BackendStub {
+  // private fields
+}
+pub fn BackendStub::close(Self) -> Unit
+pub fn BackendStub::expect(Self, (@mttp_core.Request) -> Bool, Canned) -> Self
+pub fn BackendStub::new() -> Self
+pub fn BackendStub::remaining(Self) -> Int32
+pub async fn BackendStub::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
+pub fn BackendStub::sent(Self) -> Array[Recorded]
+pub fn BackendStub::verify(Self) -> Unit raise
+pub fn BackendStub::when(Self, (@mttp_core.Request) -> Bool, Canned) -> Self
+pub impl @mttp_core.Backend for BackendStub
+
+#non_exhaustive
+pub(all) enum Canned {
+  Response(status~ : Int32, headers~ : @mttp_core.Headers, body~ : Bytes)
+  Failure(@mttp_core.TransportError)
+  Factory(async (@mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError)
+}
+pub fn Canned::bytes(Int32, body? : Bytes, headers? : @mttp_core.Headers) -> Self
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Recorded {
+  request : @mttp_core.RequestHead
+  options : @mttp_core.SendOptions
+  body : Bytes?
+}
+pub fn Recorded::equal(Self, Self) -> Bool
+pub fn Recorded::not_equal(Self, Self) -> Bool
+pub fn Recorded::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

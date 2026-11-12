@@ -2,14 +2,14 @@
 
 A handler as a JavaScript `fetch` export, for Web Request/Response hosts.
 
-`fetch_handler(handler)` adapts a `@mttp.Handler` to the hosts' `fetch`
+`fetch_handler(handler)` adapts a `@mttp_core.Handler` to the hosts' `fetch`
 convention. The public externs do not expose async-runtime types.
 
 ```mbt check
 ///|
 #cfg(target="js")
 test "a fetch adapter can be assembled without a host runtime call" {
-  let adapter = @fetch.fetch_handler(_ => @mttp.Response::new(204))
+  let adapter = @fetch.fetch_handler(_ => @mttp_core.Response::new(204))
   ignore(adapter)
 }
 ```
@@ -23,7 +23,7 @@ JavaScript export). Build the adapter once, at the top level:
 ```mbt nocheck
 ///|
 let adapter : (@fetch.JsRequest, @fetch.JsBackground) -> @fetch.JsPromise = @fetch.fetch_handler(request => {
-    @mttp.Response::new(200, body=request.body)
+    @mttp_core.Response::new(200, body=request.body)
   },
 )
 
@@ -53,7 +53,7 @@ functions:
 
 ```text
 import {
-  "gaato/mttp",
+  "gaato/mttp_core",
   "gaato/mttp_async/fetch",
 }
 
@@ -74,7 +74,7 @@ gates run on workerd.
 
 The host calls `fetch(request, background)`. `background` receives exactly one
 Promise synchronously, before the adapter returns its response Promise. Work
-registered through `@mttp.background` before the handler returns is included
+registered through `@mttp_core.background` before the handler returns is included
 in that aggregate; it can outlive the response. Every registered task settles
 before the aggregate resolves or rejects. Late scheduling is ignored. Request
 abort before the response head cancels handling and rejects the response
@@ -114,7 +114,7 @@ host keeps what is left unread.
 Once a response body has ended, the adapter no longer listens to the request
 signal, so a host that aborts it after a successful response (Deno's legacy
 behavior) cancels nothing and logs nothing. A streamed response whose
-attributes set `@mttp.close_on_shutdown` (every `endpoint.sse_out` and
+attributes set `@mttp_core.close_on_shutdown` (every `endpoint.sse_out` and
 `sse_body_out` response) carries a function under
 `Symbol.for("gaato.mttp.closeOnShutdown")`. The process host shims call it
 with their shutdown signal; when that aborts, the body ends cleanly between

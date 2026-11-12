@@ -1,6 +1,6 @@
 ///|
 priv struct Output {
-  stream : &@mttp.BodyStream?
+  stream : &@mttp_core.BodyStream?
   input : Input
   mut pending : Bytes
   mut offset : Int32
@@ -48,7 +48,7 @@ async fn Output::next(self : Output) -> Chunk {
 
 ///|
 async fn adapt_response(
-  reply : @mttp.Response,
+  reply : @mttp_core.Response,
   input : Input,
   request : JsRequest,
 ) -> WebResponse {
@@ -123,7 +123,7 @@ async fn adapt_response(
     },
     () => output.close(),
     request.signal(),
-    reply.attributes.get(@mttp.close_on_shutdown) == Some(true),
+    reply.attributes.get(@mttp_core.close_on_shutdown) == Some(true),
     () => output.pending.is_empty(),
     schedule,
   ).wait()

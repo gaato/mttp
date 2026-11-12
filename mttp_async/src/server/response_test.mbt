@@ -7,7 +7,7 @@ priv struct LiveOutput {
 }
 
 ///|
-impl @mttp.BodyStream for LiveOutput with fn read_some(self) {
+impl @mttp_core.BodyStream for LiveOutput with fn read_some(self) {
   self.pulls += 1
   match self.pulls {
     1 => Some(b"first")
@@ -23,7 +23,7 @@ impl @mttp.BodyStream for LiveOutput with fn read_some(self) {
 }
 
 ///|
-impl @mttp.BodyStream for LiveOutput with fn close(self) {
+impl @mttp_core.BodyStream for LiveOutput with fn close(self) {
   self.closes += 1
 }
 
@@ -40,7 +40,10 @@ async test "shutdown preserves streamed response through its final chunk and clo
   controllable(
     _ => {
       calls.val += 1
-      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(output)))
+      @mttp_core.Response::new(
+        200,
+        body=Stream(@mttp_core.StreamBody::new(output)),
+      )
     },
     { ..@h1server.ServerLimits::default(), drain_ms: 1000, },
     (address, server) => {
@@ -79,13 +82,13 @@ async test "shutdown ends a close_on_shutdown stream well before the drain time"
   }
   controllable(
     _ => {
-      let response = @mttp.Response::new(
+      let response = @mttp_core.Response::new(
         200,
-        body=Stream(@mttp.StreamBody::new(output)),
+        body=Stream(@mttp_core.StreamBody::new(output)),
       )
       {
         ..response,
-        attributes: response.attributes.put(@mttp.close_on_shutdown, true),
+        attributes: response.attributes.put(@mttp_core.close_on_shutdown, true),
       }
     },
     // Neither the drain time nor the body deadline can end the stream within
@@ -125,7 +128,12 @@ async test "zero grace cancels streamed output and joins producer cleanup" {
     closes: 0,
   }
   controllable(
-    _ => @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(output))),
+    _ => {
+      @mttp_core.Response::new(
+        200,
+        body=Stream(@mttp_core.StreamBody::new(output)),
+      )
+    },
     { ..@h1server.ServerLimits::default(), drain_ms: 0, },
     (address, server) => {
       let tcp = @socket.Tcp::connect(@socket.Addr::parse(address))
@@ -153,7 +161,7 @@ async test "HEAD empty and zero length streams release leases and preserve pipel
   with_server(
     _ => {
       calls.val += 1
-      @mttp.Response::new(
+      @mttp_core.Response::new(
         if calls.val == 5 {
           304
         } else {
@@ -162,7 +170,7 @@ async test "HEAD empty and zero length streams release leases and preserve pipel
         body=match calls.val {
           1 | 4 | 5 => Empty
           2 => Bytes(b"")
-          _ => Stream(@mttp.StreamBody::new(output, length=0L))
+          _ => Stream(@mttp_core.StreamBody::new(output, length=0L))
         },
       )
     },

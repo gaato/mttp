@@ -1,12 +1,12 @@
 import {
-  "gaato/mttp",
+  "gaato/mttp_core",
   "moonbitlang/core/async/fs",
   "moonbitlang/core/path",
 }
 
 import {
-  "gaato/mttp/endpoint",
-  "gaato/mttp/router",
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/router",
   "gaato/mttp_async/server",
   "moonbitlang/core/async",
   "moonbitlang/core/async/socket",

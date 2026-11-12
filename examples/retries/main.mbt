@@ -1,13 +1,13 @@
 ///|
 /// A server that answers 503 to the first two requests and 200 after that.
-fn flaky() -> @mttp.Handler {
+fn flaky() -> @mttp_core.Handler {
   let served = Ref(0)
   _ => {
     served.val += 1
     if served.val <= 2 {
-      @mttp.Response::new(503)
+      @mttp_core.Response::new(503)
     } else {
-      @mttp.Response::new(200, body=Bytes(b"ready"))
+      @mttp_core.Response::new(200, body=Bytes(b"ready"))
     }
   }
 }

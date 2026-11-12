@@ -1,0 +1,16 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/schema",
+}
+
+import {
+  "gaato/mttp_core/client",
+  "gaato/mttp_core/driver",
+  "gaato/mttp_core/sim",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "gaato/mttp_core/driver" ],
+)

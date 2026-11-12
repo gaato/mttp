@@ -58,7 +58,7 @@ pub fn run(main : async () -> Unit) -> Unit {
 /// otherwise.
 pub fn client(
   base_url~ : String = "",
-  headers~ : @mttp.Headers = @mttp.Headers::empty(),
+  headers~ : @mttp_core.Headers = @mttp_core.Headers::empty(),
   timeout_ms~ : Int32 = 30_000,
   total_ms~ : Int32 = 120_000,
   max_body_bytes? : Int32,
@@ -69,7 +69,7 @@ pub fn client(
   trust~ : @trust.Trust = System,
   config? : @h1client.ClientConfig,
   cookies? : @cookie.CookieJar,
-  backend? : &@mttp.Backend,
+  backend? : &@mttp_core.Backend,
   clock? : &@rt.Clock,
   timer? : &@rt.Timer,
 ) -> @client.Client {
@@ -114,7 +114,7 @@ pub fn client(
 pub fn backend(
   trust~ : @trust.Trust = System,
   config? : @h1client.ClientConfig,
-) -> &@mttp.Backend {
+) -> &@mttp_core.Backend {
   let clock = system_clock()
   network(trust, config, clock, @runtime.ClockTimer::new(clock~))
 }
@@ -125,7 +125,7 @@ fn network(
   config : @h1client.ClientConfig?,
   clock : &@rt.Clock,
   timer : &@rt.Timer,
-) -> &@mttp.Backend {
+) -> &@mttp_core.Backend {
   @backend.AsyncBackend::new(config?, trust~, clock~, timer~)
 }
 
@@ -148,7 +148,7 @@ pub fn timer() -> &@rt.Timer {
 }
 
 ///|
-/// Signals on core/async's event loop, for the parts of `gaato/mttp` that wait
+/// Signals on core/async's event loop, for the parts of `gaato/mttp_core` that wait
 /// without doing I/O themselves, such as `@endpoint.EventStream::channel`.
 pub fn coordination() -> &@rt.Coordination {
   @runtime.RuntimeCoordination::new()

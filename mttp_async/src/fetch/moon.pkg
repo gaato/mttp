@@ -1,12 +1,12 @@
 import {
-  "gaato/mttp",
-  "gaato/mttp/h1",
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1",
   "moonbitlang/core/async/js_async",
 }
 
 import {
-  "gaato/mttp/endpoint",
-  "gaato/mttp/schema",
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/schema",
   "moonbitlang/core/async",
   "moonbitlang/core/async/cond_var",
 } for "wbtest"

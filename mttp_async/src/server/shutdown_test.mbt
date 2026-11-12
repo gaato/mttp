@@ -1,9 +1,9 @@
 ///|
 async fn controllable(
-  handler : @mttp.Handler,
+  handler : @mttp_core.Handler,
   limits : @h1server.ServerLimits,
   run : async (String, @async.Task[Unit]) -> Unit,
-  on_error~ : (@mttp.TransportError) -> Unit = _ => (),
+  on_error~ : (@mttp_core.TransportError) -> Unit = _ => (),
 ) -> Unit {
   @async.with_timeout(3000, () => {
     @async.with_task_group(group => {
@@ -45,7 +45,7 @@ async test "graceful shutdown lets an active handler finish and cancels idle acc
         wake.wait()
       }
       completed.val = true
-      @mttp.Response::new(200, body=Bytes(b"finished"))
+      @mttp_core.Response::new(200, body=Bytes(b"finished"))
     },
     { ..@h1server.ServerLimits::default(), drain_ms: 1000, },
     (address, server) => {
@@ -72,7 +72,7 @@ async test "graceful shutdown lets an active handler finish and cancels idle acc
   // Protocol refusals are active responses too, before a handler can run.
   let stop : Ref[(() -> Unit)?] = Ref(None)
   controllable(
-    _ => @mttp.Response::new(200),
+    _ => @mttp_core.Response::new(200),
     { ..@h1server.ServerLimits::default(), drain_ms: 1000, },
     (address, server) => {
       stop.val = Some(() => server.cancel())
@@ -95,7 +95,7 @@ async test "grace expiry cancels handler and response-independent background tas
     controllable(
       request => {
         if background {
-          if request.attributes.get(@mttp.background) is Some(schedule) {
+          if request.attributes.get(@mttp_core.background) is Some(schedule) {
             schedule(() => {
               defer {
                 cleaned.val = true
@@ -113,7 +113,7 @@ async test "grace expiry cancels handler and response-independent background tas
           wake.signal()
           @async.sleep(10000)
         }
-        @mttp.Response::new(200)
+        @mttp_core.Response::new(200)
       },
       { ..@h1server.ServerLimits::default(), drain_ms: 20, },
       (address, server) => {
@@ -149,7 +149,7 @@ async test "connection cap holds later requests until the active exchange finish
       while !release.val {
         wake.wait()
       }
-      @mttp.Response::new(204)
+      @mttp_core.Response::new(204)
     },
     { ..@h1server.ServerLimits::default(), max_connections: 1, },
     (address, server) => {

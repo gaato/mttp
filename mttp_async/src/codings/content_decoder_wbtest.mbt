@@ -13,7 +13,7 @@ fn decode_chunks(
   let mut next = 0
   for ;; {
     let pulled = decoder.pull() catch {
-      @mttp.TransportError(kind=Protocol, detail=message, ..) =>
+      @mttp_core.TransportError(kind=Protocol, detail=message, ..) =>
         return Err(message)
       error => return Err("unexpected \{Repr(error)}")
     }
@@ -339,7 +339,7 @@ fn pulls(undo : Array[Coding], wire : Bytes) -> (Array[Bytes], String) raise {
   let mut fed = false
   for ;; {
     let pulled = decoder.pull() catch {
-      @mttp.TransportError(kind=Protocol, detail=message, ..) =>
+      @mttp_core.TransportError(kind=Protocol, detail=message, ..) =>
         return (slices, message)
       error => return (slices, "unexpected \{Repr(error)}")
     }
@@ -629,7 +629,7 @@ async test "read_bounded refuses a decoded bomb without reading it all" {
     let outcome = try
       read_bounded(() => read_decoded(read, decoder), 256 * 1024)
     catch {
-      @mttp.TransportError(kind=Protocol, detail=message, ..) => message
+      @mttp_core.TransportError(kind=Protocol, detail=message, ..) => message
       error => "unexpected \{Repr(error)}"
     } noraise {
       body => "\{body.length()} bytes"
@@ -674,7 +674,7 @@ async fn refuses_bomb_one_slice_past(wire : Bytes, coding : Coding) -> Unit {
       256 * 1024,
     )
   catch {
-    @mttp.TransportError(kind=Protocol, detail=message, ..) => message
+    @mttp_core.TransportError(kind=Protocol, detail=message, ..) => message
     error => "unexpected \{Repr(error)}"
   } noraise {
     body => "\{body.length()} bytes"

@@ -1,0 +1,21 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/endpoint/testkit"
+
+import {
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/rt",
+  "gaato/mttp_core/testing",
+}
+
+// Values
+pub fn verify(Array[@endpoint.EndpointDoc], adapter_max_body_bytes? : Int32) -> Array[@endpoint.DefinitionProblem]
+
+pub fn[S, I, E, O, M] when_endpoint(@testing.BackendStub, @endpoint.Endpoint[S, I, E, O, M], async (I) -> Result[O, E], clock? : &@rt.Clock, timer? : &@rt.Timer) -> @testing.BackendStub raise @endpoint.DefinitionError
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

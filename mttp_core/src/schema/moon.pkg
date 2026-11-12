@@ -1,0 +1,13 @@
+import {
+  "gaato/mttp_core/internal/text",
+  "gaato/mttp_core/internal/form",
+  "gaato/mttp_core/jsonkit",
+  "moonbitlang/core/json",
+  "moonbitlang/core/string",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/debug",
+}
+
+import {
+  "moonbitlang/core/encoding/utf8",
+} for "test"

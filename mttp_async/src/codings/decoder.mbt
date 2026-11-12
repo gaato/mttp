@@ -41,7 +41,7 @@ priv struct Stage {
   /// The error of a step that wrote output before it raised. That output
   /// goes out as a slice and the error on the next pull, so what a stream's
   /// reader gets before the error does not depend on how the wire is chunked.
-  mut failure : @mttp.TransportError?
+  mut failure : @mttp_core.TransportError?
   output : FixedArray[Byte]
 }
 
@@ -63,7 +63,7 @@ pub struct ContentDecoder {
   priv stages : Array[Stage]
   priv mut waiting : Bool
   priv mut ended : Bool
-  priv mut failure : @mttp.TransportError?
+  priv mut failure : @mttp_core.TransportError?
 }
 
 ///|
@@ -83,9 +83,9 @@ pub(all) enum Pulled {
 /// codings are required; an empty or oversized plan raises Invalid.
 pub fn ContentDecoder::new(
   undo : Array[Coding],
-) -> ContentDecoder raise @mttp.TransportError {
+) -> ContentDecoder raise @mttp_core.TransportError {
   if undo.is_empty() || undo.length() > max_content_codings {
-    raise @mttp.TransportError(
+    raise @mttp_core.TransportError(
       kind=Invalid,
       phase=Body,
       detail="decoder needs one to five codings",
@@ -118,12 +118,12 @@ pub fn ContentDecoder::new(
 pub fn ContentDecoder::feed(
   self : ContentDecoder,
   chunk : Bytes,
-) -> Unit raise @mttp.TransportError {
+) -> Unit raise @mttp_core.TransportError {
   if self.failure is Some(error) {
     raise error
   }
   if !self.waiting || self.ended {
-    raise @mttp.TransportError(
+    raise @mttp_core.TransportError(
       kind=Invalid,
       phase=Body,
       detail="feed requires NeedInput before EOF",
@@ -139,7 +139,7 @@ pub fn ContentDecoder::feed(
 /// Repeated end calls are harmless. Ending before NeedInput is refused.
 pub fn ContentDecoder::end(
   self : ContentDecoder,
-) -> Unit raise @mttp.TransportError {
+) -> Unit raise @mttp_core.TransportError {
   if self.failure is Some(error) {
     raise error
   }
@@ -147,7 +147,7 @@ pub fn ContentDecoder::end(
     return
   }
   if !self.waiting {
-    raise @mttp.TransportError(
+    raise @mttp_core.TransportError(
       kind=Invalid,
       phase=Body,
       detail="end requires NeedInput",
@@ -166,7 +166,7 @@ pub fn ContentDecoder::end(
 #warnings("-fragile_catch_all")
 pub fn ContentDecoder::pull(
   self : ContentDecoder,
-) -> Pulled raise @mttp.TransportError {
+) -> Pulled raise @mttp_core.TransportError {
   if self.failure is Some(error) {
     raise error
   }
@@ -189,7 +189,7 @@ pub fn ContentDecoder::pull(
 fn ContentDecoder::pull_stage(
   self : ContentDecoder,
   index : Int32,
-) -> Pulled raise @mttp.TransportError {
+) -> Pulled raise @mttp_core.TransportError {
   let stage = self.stages[index]
   if stage.failure is Some(error) {
     raise error
@@ -261,8 +261,8 @@ fn ContentDecoder::pull_stage(
 }
 
 ///|
-fn malformed(coding : Coding, message : String) -> @mttp.TransportError {
-  @mttp.TransportError(
+fn malformed(coding : Coding, message : String) -> @mttp_core.TransportError {
+  @mttp_core.TransportError(
     kind=Protocol,
     phase=Body,
     detail="malformed \{coding.name()} response body: \{message}",

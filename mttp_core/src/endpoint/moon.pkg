@@ -1,0 +1,26 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/schema",
+  "gaato/mttp_core/client",
+  "gaato/mttp_core/rt",
+  "gaato/mttp_core/sse",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/queue",
+  "moonbitlang/core/encoding/base64",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "gaato/mttp_core/driver",
+  "gaato/mttp_core/sim",
+  "moonbitlang/core/json",
+} for "test"
+
+import {
+  "gaato/mttp_core/driver",
+  "gaato/mttp_core/sim",
+} for "wbtest"
+
+options(
+  "allow-experimental-packages": [ "gaato/mttp_core/driver" ],
+)

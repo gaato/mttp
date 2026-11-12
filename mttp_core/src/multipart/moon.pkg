@@ -1,0 +1,18 @@
+import {
+  "gaato/mttp_core",
+  "moonbitlang/core/debug",
+}
+
+import {
+  "moonbitlang/core/encoding/utf8",
+  "gaato/mttp_core/driver",
+  "moonbitlang/core/random",
+} for "test"
+
+import {
+  "moonbitlang/core/random" @core_random,
+} for "wbtest"
+
+options(
+  "allow-experimental-packages": [ "gaato/mttp_core/driver" ],
+)

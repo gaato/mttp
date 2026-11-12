@@ -20,7 +20,9 @@ pub type JsEnv
 
 ///|
 /// Optional host environment; absent unless with_env was used for this request.
-pub let env : @mttp.AttributeKey[JsEnv] = @mttp.AttributeKey::new("fetch.env")
+pub let env : @mttp_core.AttributeKey[JsEnv] = @mttp_core.AttributeKey::new(
+  "fetch.env",
+)
 
 ///|
 #external
@@ -225,7 +227,7 @@ extern "js" fn exported(promise : @js_async.Promise[WebResponse]) -> JsPromise =
 /// listener on it is removed when the body ends, so a host that aborts it
 /// after a successful response (Deno's legacy behavior) changes nothing.
 ///
-/// When `cut` holds (the reply has `@mttp.close_on_shutdown`), the Response
+/// When `cut` holds (the reply has `@mttp_core.close_on_shutdown`), the Response
 /// carries a non-enumerable function under
 /// `Symbol.for("gaato.mttp.closeOnShutdown")`. A process host shim calls it
 /// with its shutdown AbortSignal; once that aborts, the body ends cleanly at

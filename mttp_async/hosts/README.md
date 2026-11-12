@@ -19,7 +19,7 @@ first:
 ```moonbit
 ///|
 let adapter : (@fetch.JsRequest, @fetch.JsBackground) -> @fetch.JsPromise = @fetch.fetch_handler(request => {
-    @mttp.Response::new(200, body=request.body)
+    @mttp_core.Response::new(200, body=request.body)
   },
 )
 
@@ -122,8 +122,8 @@ Deno.addSignalListener('SIGINT', async () => {
 
 On Bun the middle step is `await server.stop()`; on Node, close your HTTP
 server. `shutdown()` ends the body of every in-flight response whose
-`@mttp.Response` set `@mttp.close_on_shutdown`, such as every SSE response
-from gaato/mttp's `endpoint.sse_out` or `sse_body_out`, also one that has no
+`@mttp_core.Response` set `@mttp_core.close_on_shutdown`, such as every SSE response
+from gaato/mttp_core's `endpoint.sse_out` or `sse_body_out`, also one that has no
 event yet: the stream ends cleanly after a whole event, its MoonBit body is closed once, and clients reconnect with
 `Last-Event-ID`. Without it, the host's shutdown waits for such a stream
 forever. Other responses are left to finish. The fetch adapter marks those

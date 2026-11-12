@@ -6,9 +6,9 @@
 /// bodyless statuses, Range/206/Content-Range and already encoded responses.
 /// Invalid negotiation returns 400; refusal of every encoding returns 406.
 pub fn compress(
-  handler : @mttp.Handler,
+  handler : @mttp_core.Handler,
   min_bytes~ : Int32 = 1024,
-) -> @mttp.Handler {
+) -> @mttp_core.Handler {
   request => {
     let response = handler(request)
     if !has_body(request.meth.to_string(), response.status) ||
@@ -26,7 +26,7 @@ pub fn compress(
     let (choice, identity_ok) = choose_encoding(request.headers) catch {
       _ => {
         response.close()
-        return @mttp.Response::new(400)
+        return @mttp_core.Response::new(400)
       }
     }
     let vary = response.headers.get_all("vary").join(", ")
@@ -44,9 +44,9 @@ pub fn compress(
       Identity => { ..response, headers, }
       Unacceptable => {
         response.close()
-        @mttp.Response::new(
+        @mttp_core.Response::new(
           406,
-          headers=@mttp.Headers::of([("vary", "Accept-Encoding")]),
+          headers=@mttp_core.Headers::of([("vary", "Accept-Encoding")]),
         )
       }
       Encoded(coding) => {
@@ -58,7 +58,7 @@ pub fn compress(
         let body = encode_body(response.body, coding) catch {
           _ => {
             response.close()
-            return @mttp.Response::new(500)
+            return @mttp_core.Response::new(500)
           }
         }
         let headers = headers

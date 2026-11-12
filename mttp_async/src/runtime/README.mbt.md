@@ -1,10 +1,10 @@
 # gaato/mttp_async/runtime
 
-`gaato/mttp`'s runtime ports on `moonbitlang/core/async`, for native, wasm
+`gaato/mttp_core`'s runtime ports on `moonbitlang/core/async`, for native, wasm
 (under moonrun) and js.
 
 `AsyncClock`, `ClockTimer`, `SemaphoreGate` and `RuntimeCoordination`
-implement the ports in `gaato/mttp/rt`. Their public APIs contain no core
+implement the ports in `gaato/mttp_core/rt`. Their public APIs contain no core
 runtime handles, so a package importing only this one needs no experimental
 opt-in; a test that imports core/async itself lists that exact package.
 

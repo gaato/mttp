@@ -1,5 +1,5 @@
 import {
-  "gaato/mttp",
+  "gaato/mttp_core",
   "gaato/codec_bytes",
   "gaato/deflate",
   "gaato/deflate/gzip",
@@ -16,15 +16,15 @@ import {
 } for "wbtest"
 
 import {
-  "gaato/mttp/driver",
-  "gaato/mttp/sim",
+  "gaato/mttp_core/driver",
+  "gaato/mttp_core/sim",
 } for "test"
 
 supported_targets = "native+wasm+js"
 
 options(
   "allow-experimental-packages": [
-    "gaato/mttp/driver",
+    "gaato/mttp_core/driver",
     "moonbitlang/core/async",
   ],
 )

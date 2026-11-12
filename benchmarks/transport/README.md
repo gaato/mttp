@@ -7,7 +7,7 @@ MOON_CC=cc moon run benchmarks/transport --target native --release
 ```
 
 Measures microseconds per request over one reused TCP connection using
-`gaato/mttp_async/backend` and `gaato/mttp/h1server`. Each sample warms up
+`gaato/mttp_async/backend` and `gaato/mttp_core/h1server`. Each sample warms up
 with 32 requests, measures 500 GETs returning `pong`, and checks the response
 and connection reuse. The output is the median of three samples for each
 server write size (65536 bytes and one byte), matching the old workload.

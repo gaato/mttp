@@ -1,0 +1,24 @@
+///|
+test "the stub, the function wrappers and the fault wrapper keep the backend contract" {
+  @driver.run_sync(() => {
+    @sim.check_backend_contract(() => @testing.BackendStub::new())
+    @sim.check_backend_contract(() => {
+      @client.from_handler(_ => @mttp_core.Response::new(200))
+    })
+    @sim.check_backend_contract(() => {
+      @client.from_fn((_, _) => @mttp_core.Response::new(200))
+    })
+    @sim.check_backend_contract(() => {
+      @testing.fail_sends(
+        @testing.BackendStub::new(),
+        @mttp_core.TransportError(kind=Network, phase=Dial, detail="fixture"),
+        times=0,
+      )
+    })
+    @sim.check_backend_contract(() => {
+      @client.FollowRedirects::new(
+        @client.from_handler(_ => @mttp_core.Response::new(200)),
+      )
+    })
+  })
+}

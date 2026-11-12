@@ -6,7 +6,7 @@ test "decoder admits five stages and refuses six before allocation" {
   }
   assert_eq(decode_chunks(Array::make(5, Gzip), [wire]), Ok(b"x"))
   try ContentDecoder::new(Array::make(6, Gzip)) catch {
-    @mttp.TransportError(kind=Invalid, phase=Body, ..) => ()
+    @mttp_core.TransportError(kind=Invalid, phase=Body, ..) => ()
     error => raise error
   } noraise {
     _ => fail("accepted six stages")

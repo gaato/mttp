@@ -18,7 +18,7 @@ fn render(events : Array[@events.SseEvent]) -> Array[String] {
 ///|
 fn failed(error : Error) -> @harness.Failed {
   match error {
-    @mttp.TransportError(kind=TooLarge(..), ..) => Failed("TooLarge")
+    @mttp_core.TransportError(kind=TooLarge(..), ..) => Failed("TooLarge")
     _ => Failed("unexpected")
   }
 }

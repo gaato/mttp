@@ -1,6 +1,6 @@
 # HTTP conformance corpora
 
-This unpublished module checks `gaato/mttp` through public
+This unpublished module checks `gaato/mttp_core` through public
 APIs on all four targets. It retains the HTTP-only suites from mbt-sdk
 commit `43f92f0`:
 

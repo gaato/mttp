@@ -1,23 +1,23 @@
 ///|
 priv struct BackendFixture {
-  response : @mttp.Response
-  sent : Array[(@mttp.Request, @mttp.SendOptions)]
+  response : @mttp_core.Response
+  sent : Array[(@mttp_core.Request, @mttp_core.SendOptions)]
   closes : Ref[Int32]
 }
 
 ///|
-impl @mttp.Backend for BackendFixture with fn send(self, request, options) {
+impl @mttp_core.Backend for BackendFixture with fn send(self, request, options) {
   self.sent.push((request, options))
   self.response
 }
 
 ///|
-impl @mttp.Backend for BackendFixture with fn close(self) {
+impl @mttp_core.Backend for BackendFixture with fn close(self) {
   self.closes.val += 1
 }
 
 ///|
-fn fixture(response : @mttp.Response) -> BackendFixture {
+fn fixture(response : @mttp_core.Response) -> BackendFixture {
   { response, sent: [], closes: Ref(0), }
 }
 
@@ -42,9 +42,11 @@ fn encoded(bytes : Bytes, coding : @codings.Coding) -> Bytes raise {
 }
 
 ///|
-async fn read_body(body : @mttp.Body) -> Bytes raise @mttp.TransportError {
+async fn read_body(
+  body : @mttp_core.Body,
+) -> Bytes raise @mttp_core.TransportError {
   match body {
-    Stream(stream) => @mttp.read_bounded(stream.take(), 2 * 1024 * 1024)
+    Stream(stream) => @mttp_core.read_bounded(stream.take(), 2 * 1024 * 1024)
     _ => body.as_bytes().unwrap_or(b"")
   }
 }
@@ -53,22 +55,22 @@ async fn read_body(body : @mttp.Body) -> Bytes raise @mttp.TransportError {
 test "Decompress negotiates only when absent and passes both SendOptions through unchanged" {
   @driver.run_sync(() => {
     let wire = encoded(b"hello", Gzip)
-    let head = @mttp.Headers::of([
+    let head = @mttp_core.Headers::of([
       ("content-encoding", "gzip"),
       ("content-length", wire.length().to_string()),
     ])
     for
       body in [
-        @mttp.BodyTiming::Exchange(max_bytes=wire.length()),
+        @mttp_core.BodyTiming::Exchange(max_bytes=wire.length()),
         Stream(idle_ms=Some(7)),
       ] {
       let inner = fixture(
-        @mttp.Response::new(200, headers=head, body=Bytes(wire)),
+        @mttp_core.Response::new(200, headers=head, body=Bytes(wire)),
       )
       let backend = @codings.Decompress::new(inner)
-      let options : @mttp.SendOptions = { timeout_ms: Some(42), body, }
+      let options : @mttp_core.SendOptions = { timeout_ms: Some(42), body, }
       let response = backend.send(
-        @mttp.Request::get("https://example.test/"),
+        @mttp_core.Request::get("https://example.test/"),
         options,
       )
       assert_eq(inner.sent[0].1, options)
@@ -86,11 +88,11 @@ test "Decompress negotiates only when absent and passes both SendOptions through
     }
     for value in ["identity", "gzip", ""] {
       let inner = fixture(
-        @mttp.Response::new(200, headers=head, body=Bytes(wire)),
+        @mttp_core.Response::new(200, headers=head, body=Bytes(wire)),
       )
       let response = @codings.Decompress::new(inner).send(
-        @mttp.Request::get("/").header("accept-encoding", value),
-        @mttp.SendOptions::default(),
+        @mttp_core.Request::get("/").header("accept-encoding", value),
+        @mttp_core.SendOptions::default(),
       )
       assert_eq(inner.sent[0].0.headers.get("accept-encoding"), Some(value))
       assert_eq(response.headers, head)
@@ -102,47 +104,47 @@ test "Decompress negotiates only when absent and passes both SendOptions through
 ///|
 test "Decompress keeps unknown codings and bodyless metadata and removes only decoded outer codings" {
   @driver.run_sync(() => {
-    let options = @mttp.SendOptions::default()
+    let options = @mttp_core.SendOptions::default()
     for status in [100, 101, 199, 204, 304] {
-      let original = @mttp.Response::new(
+      let original = @mttp_core.Response::new(
         status,
-        headers=@mttp.Headers::of([
+        headers=@mttp_core.Headers::of([
           ("content-encoding", "gzip"),
           ("content-length", "55"),
         ]),
       )
       let response = @codings.Decompress::new(fixture(original)).send(
-        @mttp.Request::get("/"),
+        @mttp_core.Request::get("/"),
         options,
       )
       assert_eq(response.headers, original.headers)
     }
-    let response = @mttp.Response::new(
+    let response = @mttp_core.Response::new(
       200,
-      headers=@mttp.Headers::of([
+      headers=@mttp_core.Headers::of([
         ("content-encoding", "gzip"),
         ("content-length", "55"),
       ]),
     )
     let head = @codings.Decompress::new(fixture(response)).send(
-      @mttp.Request::new(Head, "/"),
+      @mttp_core.Request::new(Head, "/"),
       options,
     )
     assert_eq(head.headers, response.headers)
-    let unknown = @mttp.Response::new(
+    let unknown = @mttp_core.Response::new(
       200,
-      headers=@mttp.Headers::of([("content-encoding", "custom")]),
+      headers=@mttp_core.Headers::of([("content-encoding", "custom")]),
       body=Bytes(b"opaque"),
     )
     let response = @codings.Decompress::new(fixture(unknown)).send(
-      @mttp.Request::get("/"),
+      @mttp_core.Request::get("/"),
       options,
     )
     assert_eq(response.body, unknown.body)
     assert_eq(response.headers, unknown.headers)
-    let response = @mttp.Response::new(
+    let response = @mttp_core.Response::new(
       200,
-      headers=@mttp.Headers::of([
+      headers=@mttp_core.Headers::of([
         ("content-encoding", "custom"),
         ("content-encoding", "gzip"),
         ("content-length", "55"),
@@ -150,7 +152,7 @@ test "Decompress keeps unknown codings and bodyless metadata and removes only de
       body=Bytes(encoded(b"opaque", Gzip)),
     )
     let response = @codings.Decompress::new(fixture(response)).send(
-      @mttp.Request::get("/"),
+      @mttp_core.Request::get("/"),
       options,
     )
     assert_eq(response.headers.get_all("content-encoding"), ["custom"])
@@ -163,19 +165,19 @@ test "Decompress keeps unknown codings and bodyless metadata and removes only de
 test "Decompress satisfies Backend validation and decoded BodyStream contracts" {
   @driver.run_sync(() => {
     @sim.check_backend_contract(() => {
-      @codings.Decompress::new(fixture(@mttp.Response::new(200)))
+      @codings.Decompress::new(fixture(@mttp_core.Response::new(200)))
     })
     let wire = encoded(b"hello", Gzip)
     let make = () => {
       let response = @codings.Decompress::new(
         fixture(
-          @mttp.Response::new(
+          @mttp_core.Response::new(
             200,
-            headers=@mttp.Headers::of([("content-encoding", "gzip")]),
+            headers=@mttp_core.Headers::of([("content-encoding", "gzip")]),
             body=Bytes(wire),
           ),
         ),
-      ).send(@mttp.Request::get("/"), @mttp.SendOptions::default())
+      ).send(@mttp_core.Request::get("/"), @mttp_core.SendOptions::default())
       guard response.body is Stream(stream) else {
         fail("expected decoded stream")
       }
@@ -194,20 +196,21 @@ test "Decompress slices bombs at 64 KiB and a decoded reader closes at its own b
     let driver = @driver.Driver::new()
     let wire = encoded(Bytes::make(131073, b'a'), Gzip)
     let feed = @sim.Feed::bytes(driver, [wire])
-    let response = @mttp.Response::new(
+    let response = @mttp_core.Response::new(
       200,
-      headers=@mttp.Headers::of([("content-encoding", "gzip")]),
-      body=Stream(@mttp.StreamBody::new(feed)),
+      headers=@mttp_core.Headers::of([("content-encoding", "gzip")]),
+      body=Stream(@mttp_core.StreamBody::new(feed)),
     )
     let response = @codings.Decompress::new(fixture(response)).send(
-      @mttp.Request::get("/"),
-      @mttp.SendOptions::default(),
+      @mttp_core.Request::get("/"),
+      @mttp_core.SendOptions::default(),
     )
     guard response.body is Stream(stream) else { fail("expected decoded body") }
     let reader = stream.take()
     assert_eq(reader.read_some().map(Bytes::length), Some(65536))
-    try @mttp.read_bounded(reader, 65536) catch {
-      @mttp.TransportError(kind=TooLarge(limit=65536), phase=Body, ..) => ()
+    try @mttp_core.read_bounded(reader, 65536) catch {
+      @mttp_core.TransportError(kind=TooLarge(limit=65536), phase=Body, ..) =>
+        ()
       error => raise error
     } noraise {
       _ => fail("decoded bound ignored")
@@ -226,21 +229,25 @@ test "Decompress closes upstream on early close codec failure upstream failure a
       2 =>
         [
           Fail(
-            @mttp.TransportError(kind=Network, phase=Body, detail="upstream"),
+            @mttp_core.TransportError(
+              kind=Network,
+              phase=Body,
+              detail="upstream",
+            ),
           ),
         ]
       _ => [Wait(1000), Chunk(encoded(b"hello", Gzip))]
     }
     let feed = @sim.Feed::new(driver, steps)
     driver.run(() => {
-      let response = @mttp.Response::new(
+      let response = @mttp_core.Response::new(
         200,
-        headers=@mttp.Headers::of([("content-encoding", "gzip")]),
-        body=Stream(@mttp.StreamBody::new(feed)),
+        headers=@mttp_core.Headers::of([("content-encoding", "gzip")]),
+        body=Stream(@mttp_core.StreamBody::new(feed)),
       )
       let response = @codings.Decompress::new(fixture(response)).send(
-        @mttp.Request::get("/"),
-        @mttp.SendOptions::default(),
+        @mttp_core.Request::get("/"),
+        @mttp_core.SendOptions::default(),
       )
       assert_eq(feed.reads(), 0)
       if mode == 0 {
@@ -249,9 +256,9 @@ test "Decompress closes upstream on early close codec failure upstream failure a
       } else {
         let task = driver.spawn(() => {
           try read_body(response.body) catch {
-            @mttp.TransportError(kind=Protocol, phase=Body, ..) if mode == 1 =>
-              ()
-            @mttp.TransportError(kind=Network, phase=Body, ..) if mode == 2 =>
+            @mttp_core.TransportError(kind=Protocol, phase=Body, ..) if mode ==
+              1 => ()
+            @mttp_core.TransportError(kind=Network, phase=Body, ..) if mode == 2 =>
               ()
             error => raise error
           } noraise {
@@ -273,20 +280,20 @@ test "Decompress closes upstream on early close codec failure upstream failure a
 test "Decompress closes a response refused for too many content codings" {
   @driver.run_sync(() => {
     let feed = @sim.Feed::bytes(@driver.Driver::new(), [b"unread"])
-    let response = @mttp.Response::new(
+    let response = @mttp_core.Response::new(
       200,
-      headers=@mttp.Headers::of([
+      headers=@mttp_core.Headers::of([
         ("content-encoding", Array::make(6, "gzip").join(",")),
       ]),
-      body=Stream(@mttp.StreamBody::new(feed)),
+      body=Stream(@mttp_core.StreamBody::new(feed)),
     )
     try
       @codings.Decompress::new(fixture(response)).send(
-        @mttp.Request::get("/"),
-        @mttp.SendOptions::default(),
+        @mttp_core.Request::get("/"),
+        @mttp_core.SendOptions::default(),
       )
     catch {
-      @mttp.TransportError(kind=Protocol, phase=Body, ..) => ()
+      @mttp_core.TransportError(kind=Protocol, phase=Body, ..) => ()
       error => raise error
     } noraise {
       _ => fail("accepted six codings")
@@ -299,14 +306,14 @@ test "Decompress closes a response refused for too many content codings" {
 ///|
 test "compress negotiates each encoder and preserves representation attributes" {
   @driver.run_sync(() => {
-    let attribute : @mttp.AttributeKey[Int32] = @mttp.AttributeKey::new(
+    let attribute : @mttp_core.AttributeKey[Int32] = @mttp_core.AttributeKey::new(
       "coding-test",
     )
     for name in ["gzip", "deflate", "br"] {
       let original = {
-        ..@mttp.Response::new(
+        ..@mttp_core.Response::new(
           200,
-          headers=@mttp.Headers::of([
+          headers=@mttp_core.Headers::of([
             ("content-length", "1024"),
             ("etag", "\"strong\""),
             ("content-md5", "old"),
@@ -314,11 +321,11 @@ test "compress negotiates each encoder and preserves representation attributes" 
           ]),
           body=Bytes(Bytes::make(1024, b'a')),
         ),
-        attributes: @mttp.Attributes::empty().put(attribute, 7),
+        attributes: @mttp_core.Attributes::empty().put(attribute, 7),
       }
       let handler = @codings.compress(_ => original)
       let response = handler(
-        @mttp.Request::get("/").header("accept-encoding", name),
+        @mttp_core.Request::get("/").header("accept-encoding", name),
       )
       assert_eq(response.headers.get("content-encoding"), Some(name))
       assert_eq(response.headers.get("content-length"), None)
@@ -350,9 +357,9 @@ test "compress negotiates each encoder and preserves representation attributes" 
 ///|
 test "compress skips bodyless statuses HEAD ranges existing codings and no-transform" {
   @driver.run_sync(() => {
-    let request = @mttp.Request::get("/").header("accept-encoding", "gzip")
+    let request = @mttp_core.Request::get("/").header("accept-encoding", "gzip")
     for status in [100, 101, 103, 199, 204, 206, 304] {
-      let original = @mttp.Response::new(status, body=Bytes(b"unchanged"))
+      let original = @mttp_core.Response::new(status, body=Bytes(b"unchanged"))
       let response = @codings.compress(_ => original, min_bytes=0)(request)
       assert_eq(response.body, original.body)
       assert_eq(response.headers, original.headers)
@@ -360,19 +367,19 @@ test "compress skips bodyless statuses HEAD ranges existing codings and no-trans
     for
       (req, headers) in [
         (
-          @mttp.Request::new(Head, "/").header("accept-encoding", "gzip"),
-          @mttp.Headers::empty(),
+          @mttp_core.Request::new(Head, "/").header("accept-encoding", "gzip"),
+          @mttp_core.Headers::empty(),
         ),
-        (request.header("range", "bytes=0-1"), @mttp.Headers::empty()),
-        (request, @mttp.Headers::of([("content-encoding", "custom")])),
-        (request, @mttp.Headers::of([("content-range", "bytes 0-1/4")])),
+        (request.header("range", "bytes=0-1"), @mttp_core.Headers::empty()),
+        (request, @mttp_core.Headers::of([("content-encoding", "custom")])),
+        (request, @mttp_core.Headers::of([("content-range", "bytes 0-1/4")])),
         (
           request,
-          @mttp.Headers::of([("cache-control", "public, No-Transform")]),
+          @mttp_core.Headers::of([("cache-control", "public, No-Transform")]),
         ),
       ] {
       let response = @codings.compress(
-        _ => @mttp.Response::new(200, headers~, body=Bytes(b"unchanged")),
+        _ => @mttp_core.Response::new(200, headers~, body=Bytes(b"unchanged")),
         min_bytes=0,
       )(req)
       assert_eq(response.body, Bytes(b"unchanged"))
@@ -386,29 +393,36 @@ test "compress threshold is inclusive and Vary and weak validators are preserved
   @driver.run_sync(() => {
     for (size, compressed) in [(1023, false), (1024, true), (1025, true)] {
       let response = @codings.compress(_ => {
-        @mttp.Response::new(200, body=Bytes(Bytes::make(size, b'a')))
-      })(@mttp.Request::get("/").header("accept-encoding", "gzip"))
+        @mttp_core.Response::new(200, body=Bytes(Bytes::make(size, b'a')))
+      })(@mttp_core.Request::get("/").header("accept-encoding", "gzip"))
       assert_eq(response.headers.contains("content-encoding"), compressed)
       response.close()
     }
     for vary in ["*", "Accept-Encoding", "accept-encoding, origin"] {
       let response = @codings.compress(
         _ => {
-          @mttp.Response::new(
+          @mttp_core.Response::new(
             200,
-            headers=@mttp.Headers::of([("vary", vary), ("etag", "W/\"weak\"")]),
+            headers=@mttp_core.Headers::of([
+              ("vary", vary),
+              ("etag", "W/\"weak\""),
+            ]),
             body=Bytes(b"x"),
           )
         },
         min_bytes=-1,
-      )(@mttp.Request::get("/").header("accept-encoding", "gzip"))
+      )(@mttp_core.Request::get("/").header("accept-encoding", "gzip"))
       assert_eq(response.headers.get_all("vary"), [vary])
       assert_eq(response.headers.get("etag"), Some("W/\"weak\""))
       response.close()
     }
     let small = @codings.compress(_ => {
-      @mttp.Response::new(200, body=Bytes(b"x"))
-    })(@mttp.Request::get("/").header("accept-encoding", "gzip, identity;q=0"))
+      @mttp_core.Response::new(200, body=Bytes(b"x"))
+    })(
+      @mttp_core.Request::get("/").header(
+        "accept-encoding", "gzip, identity;q=0",
+      ),
+    )
     assert_eq(small.headers.get("content-encoding"), Some("gzip"))
     small.close()
   })
@@ -418,25 +432,28 @@ test "compress threshold is inclusive and Vary and weak validators are preserved
 test "compress identity invalid negotiation and refusal close abandoned response bodies" {
   @driver.run_sync(() => {
     let response = @codings.compress(_ => {
-      @mttp.Response::new(200, body=Bytes(b"plain"))
-    })(@mttp.Request::get("/"))
+      @mttp_core.Response::new(200, body=Bytes(b"plain"))
+    })(@mttp_core.Request::get("/"))
     assert_eq(response.body, Bytes(b"plain"))
     for (value, status) in [("gzip;q=bad", 400), ("identity;q=0, *;q=0", 406)] {
       let feed = @sim.Feed::bytes(@driver.Driver::new(), [b"unread"])
       let response = @codings.compress(_ => {
-        @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(feed)))
-      })(@mttp.Request::get("/").header("accept-encoding", value))
+        @mttp_core.Response::new(
+          200,
+          body=Stream(@mttp_core.StreamBody::new(feed)),
+        )
+      })(@mttp_core.Request::get("/").header("accept-encoding", value))
       assert_eq(response.status, status)
       assert_eq(feed.closes(), 1)
       assert_eq(feed.reads(), 0)
     }
     let feed = @sim.Feed::bytes(@driver.Driver::new(), [b"unread"])
-    let body = @mttp.StreamBody::new(feed)
+    let body = @mttp_core.StreamBody::new(feed)
     let _ = body.take()
     let response = @codings.compress(
-      _ => @mttp.Response::new(200, body=Stream(body)),
+      _ => @mttp_core.Response::new(200, body=Stream(body)),
       min_bytes=0,
-    )(@mttp.Request::get("/").header("accept-encoding", "gzip"))
+    )(@mttp_core.Request::get("/").header("accept-encoding", "gzip"))
     assert_eq(response.status, 500)
     assert_eq(feed.closes(), 1)
   })
@@ -447,8 +464,11 @@ test "compress streams without prefetch and its output is closed without reading
   @driver.run_sync(() => {
     let feed = @sim.Feed::bytes(@driver.Driver::new(), [b"hello"])
     let response = @codings.compress(_ => {
-      @mttp.Response::new(200, body=Stream(@mttp.StreamBody::new(feed)))
-    })(@mttp.Request::get("/").header("accept-encoding", "gzip"))
+      @mttp_core.Response::new(
+        200,
+        body=Stream(@mttp_core.StreamBody::new(feed)),
+      )
+    })(@mttp_core.Request::get("/").header("accept-encoding", "gzip"))
     assert_eq(feed.reads(), 0)
     assert_eq(response.headers.get("content-encoding"), Some("gzip"))
     response.close()

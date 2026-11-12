@@ -6,7 +6,7 @@ async fn main {
     @env.exit(2)
   }
   @server.serve(
-    _ => @mttp.Response::new(200, body=Bytes(b"hello\n")),
+    _ => @mttp_core.Response::new(200, body=Bytes(b"hello\n")),
     addr=args[1],
     on_listen=addr => println("listening on \{addr}"),
   )

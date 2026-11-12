@@ -12,7 +12,7 @@ priv struct LoopbackConn {
 ///|
 impl @rt.Conn for LoopbackConn with fn read(self, max_len~) {
   if max_len <= 0 {
-    raise @mttp.TransportError(
+    raise @mttp_core.TransportError(
       kind=Invalid,
       phase=Body,
       detail="max_len must be positive",
@@ -24,7 +24,7 @@ impl @rt.Conn for LoopbackConn with fn read(self, max_len~) {
   let buffer = FixedArray::make(max_len.min(65536), b'\x00')
   let n = self.tcp.read_into(buffer) catch {
     error =>
-      raise @mttp.TransportError(
+      raise @mttp_core.TransportError(
         kind=Network,
         phase=Body,
         detail=error.to_string(),
@@ -41,7 +41,7 @@ impl @rt.Conn for LoopbackConn with fn read(self, max_len~) {
 ///|
 impl @rt.Conn for LoopbackConn with fn write(self, bytes) {
   if self.closed {
-    raise @mttp.TransportError(
+    raise @mttp_core.TransportError(
       kind=Closed,
       phase=Body,
       detail="connection closed",
@@ -51,7 +51,7 @@ impl @rt.Conn for LoopbackConn with fn write(self, bytes) {
     let end = offset + (bytes.length() - offset).min(self.chunk_bytes)
     self.tcp.write(bytes[offset:end]) catch {
       error =>
-        raise @mttp.TransportError(
+        raise @mttp_core.TransportError(
           kind=Network,
           phase=Body,
           detail=error.to_string(),
@@ -82,7 +82,7 @@ async fn sample(chunk_bytes : Int32) -> Double {
         LoopbackConn::{ tcp, chunk_bytes, closed: false, eof: false, },
         _ => {
           served.val += 1
-          @mttp.Response::new(200, body=Bytes(b"pong"))
+          @mttp_core.Response::new(200, body=Bytes(b"pong"))
         },
         clock=@runtime.AsyncClock::new(),
         timer=@runtime.ClockTimer::new(),
@@ -95,18 +95,18 @@ async fn sample(chunk_bytes : Int32) -> Double {
       config=@h1client.ClientConfig::default(),
     )
     defer backend.close()
-    let request = @mttp.Request::get(
+    let request = @mttp_core.Request::get(
       "http://127.0.0.1:\{listener.addr.port()}/",
     )
     let exchange : async () -> Unit = () => {
-      let response = backend.send(request, @mttp.SendOptions::default())
+      let response = backend.send(request, @mttp_core.SendOptions::default())
       defer response.close()
       assert_eq(response.status, 200)
       let bytes = match response.body {
         Empty => b""
         Bytes(bytes) => bytes
-        Stream(cell) => @mttp.read_bounded(cell.take(), 10)
-        @mttp.Body::.. => abort("unsupported body kind")
+        Stream(cell) => @mttp_core.read_bounded(cell.take(), 10)
+        @mttp_core.Body::.. => abort("unsupported body kind")
       }
       assert_eq(bytes, b"pong")
     }

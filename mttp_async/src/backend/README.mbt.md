@@ -2,7 +2,7 @@
 
 The network as a `Backend`, for native, wasm (under moonrun) and js.
 
-`AsyncBackend` implements `@mttp.Backend`. Each send performs one exchange.
+`AsyncBackend` implements `@mttp_core.Backend`. Each send performs one exchange.
 It returns redirects and does not retry or store cookies. Close every
 response after reading it or when abandoning its body; close the backend
 when finished.
@@ -17,13 +17,13 @@ test "construct and close a cross target backend" {
 }
 ```
 
-On native and wasm the backend is `gaato/mttp`'s HTTP/1.1 client engine over
+On native and wasm the backend is `gaato/mttp_core`'s HTTP/1.1 client engine over
 TCP and TLS, with decompression. It negotiates gzip, deflate, Brotli and
 zstd and decodes lazily in bounded slices. A request that supplies
 `Accept-Encoding` opts out: its returned body and coding headers are
 unchanged. `SendOptions` pass through unchanged, so byte limits in the
 engine count wire bytes before decoding. Bound decoded bytes separately
-with `@mttp.read_bounded`. Reading to EOF permits connection reuse; closing
+with `@mttp_core.read_bounded`. Reading to EOF permits connection reuse; closing
 early discards the connection.
 
 With no `config`, proxy variables are captured from the process environment
@@ -36,7 +36,7 @@ a `Trust` (from `gaato/mttp_async/trust`, re-exported by the root package),
 defaulting to `System`. `PemFile` replaces system roots; combine roots in
 that file when necessary.
 
-The optional `clock` and `timer` arguments accept `gaato/mttp/rt` ports on
+The optional `clock` and `timer` arguments accept `gaato/mttp_core/rt` ports on
 every target. The clock defaults to `runtime.AsyncClock`; the timer defaults
 to `runtime.ClockTimer` built on the chosen clock. On native and wasm they
 drive pool idle expiry (checked when the pool is used) and phase deadlines.

@@ -6,7 +6,7 @@ import {
 }
 ----
 
-// Generates mttp/src/apispec/models.mbt: the OpenAPI records with
+// Generates mttp_core/src/apispec/models.mbt: the OpenAPI records with
 // explicit JSON codecs, from the table in `records` below. Explicit codecs
 // keep wire names (`in`, `operationId`) apart from MoonBit names, omit absent
 // optional fields and fields at their empty default, and flatten `x-*`
@@ -22,7 +22,7 @@ import {
 
 ///|
 /// Where the generated source goes, relative to the repository root.
-let output : String = "mttp/src/apispec/models.mbt"
+let output : String = "mttp_core/src/apispec/models.mbt"
 
 ///|
 /// How a field is constructed, encoded and decoded.

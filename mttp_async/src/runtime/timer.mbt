@@ -1,6 +1,6 @@
 ///|
 /// A `@rt.Timer` that bounds work on a clock, so sans-IO code such as
-/// `gaato/mttp/client` can put a deadline on an attempt without importing
+/// `gaato/mttp_core/client` can put a deadline on an attempt without importing
 /// an async runtime.
 pub struct ClockTimer {
   priv clock : &@rt.Clock
