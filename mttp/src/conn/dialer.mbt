@@ -33,8 +33,9 @@ pub impl @rt.Dialer for TcpDialer with fn connect(_, host~, port~) {
 /// On success the TLS connection owns inner. Failure and cancellation leave
 /// inner with the caller, which must close it during unwind.
 pub impl @rt.Dialer for TcpDialer with fn start_tls(self, inner, host~) {
+  let io = ConnIo::new(inner)
   let tls = @tls.Tls::client(
-    ConnIo::new(inner),
+    io,
     host~,
     trust=match self.trust {
       System => SystemRoot
@@ -50,5 +51,5 @@ pub impl @rt.Dialer for TcpDialer with fn start_tls(self, inner, host~) {
   ) catch {
     error => raise dial_error(error)
   }
-  @socketconn.from_tls(tls, inner)
+  @socketconn.from_tls(tls, inner, lower_writes=() => io.writes)
 }

@@ -8,6 +8,9 @@ priv struct SocketConn[R, W] {
   mut pending : Bytes
   mut cancel_read : (() -> Unit)?
   mut cancel_write : (() -> Unit)?
+  /// For a TLS session, how many writes it has started on the connection
+  /// beneath, which every byte it sends goes through; `None` over TCP.
+  lower_writes : (() -> Int64)?
 }
 
 ///|
@@ -90,6 +93,7 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
       detail="connection closed",
     )
   }
+  let lower_before = self.lower_writes.map(count => count())
   @async.with_task_group(group => {
     let task = group.spawn(
       () => {
@@ -110,16 +114,40 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
       task.cancel()
     }
     task.wait() catch {
+      // Part of `bytes` may have left: not `Closed`, which promises none.
       @async.WaitedTaskAlreadyCancelled if self.closed =>
         raise @mttp_core.TransportError(
-          kind=Closed,
+          kind=Network,
           phase=Unknown,
           detail="connection closed during write",
         )
       error => raise error
     }
   }) catch {
-    error => raise transport_error(error)
+    error => raise self.write_failure(error, lower_before)
+  }
+}
+
+///|
+/// The failure of a write. A TLS session that refused it without starting
+/// a write on the connection beneath sent none of it, which `Closed` says:
+/// OpenSSL refuses every write once the session is shut down, as it is
+/// after a read took the peer's close_notify, even a read whose caller was
+/// cancelled before it returned EOF.
+fn[R, W] SocketConn::write_failure(
+  self : SocketConn[R, W],
+  error : Error,
+  lower_before : Int64?,
+) -> @mttp_core.TransportError {
+  match (error, lower_before, self.lower_writes) {
+    (@mttp_core.TransportError(..), _, _) => transport_error(error)
+    (_, Some(before), Some(count)) if count() == before =>
+      @mttp_core.TransportError(
+        kind=Closed,
+        phase=Unknown,
+        detail="the TLS session refused the write: \{error}",
+      )
+    _ => transport_error(error)
   }
 }
 
@@ -165,12 +193,20 @@ pub fn from_tcp(tcp : @socket.Tcp) -> &@rt.Conn {
     pending: b"",
     cancel_read: None,
     cancel_write: None,
+    lower_writes: None,
   }
 }
 
 ///|
 /// Successful TLS owns both the TLS session and the underlying tunnel.
-pub fn from_tls(tls : @tls.Tls, inner : &@rt.Conn) -> &@rt.Conn {
+/// `lower_writes`, when given, counts the writes the session has started on
+/// `inner`: a write the session fails without starting one is reported as
+/// `Closed`, which `rt.Conn` reserves for a write that sent nothing.
+pub fn from_tls(
+  tls : @tls.Tls,
+  inner : &@rt.Conn,
+  lower_writes? : () -> Int64,
+) -> &@rt.Conn {
   SocketConn::{
     reader: tls,
     writer: tls,
@@ -183,5 +219,6 @@ pub fn from_tls(tls : @tls.Tls, inner : &@rt.Conn) -> &@rt.Conn {
     pending: b"",
     cancel_read: None,
     cancel_write: None,
+    lower_writes,
   }
 }

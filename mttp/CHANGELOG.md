@@ -45,6 +45,17 @@ never does.
   endpoints, the router, OpenAPI, multipart, rate limiters and the test
   doubles stay in gaato/mttp_core, which an app that uses them adds too.
 
+### Fixed
+
+- A POST over TLS a few seconds after the server closed the idle
+  connection no longer fails in phase Write with `protocol is shutdown`
+  (seen in the interop suite with nginx and Caddy, under load). A TLS
+  session that refuses a write before passing any of it to the connection
+  beneath now raises `Closed`, which gaato/mttp_core's `rt.Conn` reserves
+  for a write that sent nothing, and the client sends the request on a new
+  connection. A write cut off by closing the connection raises `Network`
+  instead of `Closed`, since part of it may have left.
+
 ## Earlier versions, as gaato/mttp_async
 
 ## [0.1.0] - 2026-11-12

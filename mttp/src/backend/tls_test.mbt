@@ -334,3 +334,133 @@ async test "socket default reads process proxy environment once and explicit con
     )
   })
 }
+
+///|
+/// The connection beneath TLS, with writes that take `delay_ms` when it is
+/// set.
+priv struct SlowWrites {
+  inner : &@rt.Conn
+  delay_ms : Ref[Int32]
+}
+
+///|
+impl @rt.Conn for SlowWrites with fn read(self, max_len~) {
+  self.inner.read(max_len~)
+}
+
+///|
+impl @rt.Conn for SlowWrites with fn write(self, bytes) {
+  if self.delay_ms.val > 0 {
+    @async.sleep(self.delay_ms.val)
+  }
+  self.inner.write(bytes)
+}
+
+///|
+impl @rt.Conn for SlowWrites with fn close(self) {
+  self.inner.close()
+}
+
+///|
+/// TcpDialer with SlowWrites beneath its TLS sessions.
+priv struct SlowDialer {
+  tcp : @conn.TcpDialer
+  delay_ms : Ref[Int32]
+}
+
+///|
+impl @rt.Dialer for SlowDialer with fn connect(self, host~, port~) {
+  SlowWrites::{
+    inner: self.tcp.connect(host~, port~),
+    delay_ms: self.delay_ms,
+  }
+}
+
+///|
+impl @rt.Dialer for SlowDialer with fn start_tls(self, conn, host~) {
+  self.tcp.start_tls(conn, host~)
+}
+
+///|
+/// Found by the interop suite against nginx and Caddy under load. The
+/// server closes the idle TLS connection with close_notify. The client's
+/// check before reuse reads it, and OpenSSL answers with its own
+/// close_notify, a write on the connection beneath; when that write is slow
+/// (here made slow on purpose, under load by the scheduler), the check's
+/// deadline cancels the read before it returns EOF. The check passed, and
+/// the session, now shut down, refused the POST before sending any of it:
+/// that was reported as sent, so the POST failed although the server never
+/// saw it. Now the refusal sends the POST on a new connection.
+async test "socket TLS POST after the server's close_notify uses a new connection" {
+  @async.with_timeout(5000, () => {
+    let listener = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
+    defer listener.close()
+    let requests = []
+    let closed = Ref(0)
+    @async.with_task_group(group => {
+      group.spawn_bg(() => {
+        for connection = 0; ; connection = connection + 1 {
+          let (tcp, _) = listener.accept()
+          group.spawn_bg(allow_failure=true, () => {
+            // One request per connection, answered as kept alive; 50 ms
+            // later the server closes it with close_notify, as nginx and
+            // Caddy close an idle connection.
+            defer tcp.close()
+            let tls = test_tls(tcp)
+            defer tls.close()
+            guard tls.read_until(b"\r\n\r\n") is Some(head) else { return }
+            let head = @utf8.decode_lossy(head).to_lower()
+            requests.push(
+              (connection, head.split("\r\n").next().unwrap_or("").to_owned()),
+            )
+            if head.contains("content-length: 1") {
+              ignore(tls.read_exactly(1))
+            }
+            tls.write(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok")
+            @async.sleep(50)
+            tls.shutdown()
+            closed.val += 1
+          })
+        }
+      })
+      let delay_ms = Ref(0)
+      let client = @h1client.Client::new(
+        dialer=SlowDialer::{
+          tcp: @conn.TcpDialer::new(
+            trust=PemFile("src/conn/testdata/localhost.pem"),
+          ),
+          delay_ms,
+        },
+        clock=@runtime.AsyncClock::new(),
+        timer=@runtime.ClockTimer::new(),
+        coordination=@runtime.RuntimeCoordination::new(),
+        config=@h1client.ClientConfig::default(),
+      )
+      defer client.close()
+      let url = "https://localhost:\{listener.addr.port()}/"
+      assert_eq(
+        body(
+          client.send(
+            @mttp_core.Request::get(url),
+            @mttp_core.SendOptions::default(),
+          ),
+        ),
+        b"ok",
+      )
+      assert_eq(client.idle_connections(), 1)
+      while closed.val == 0 {
+        @async.sleep(5)
+      }
+      // Past the pause after which a parked connection is checked.
+      @async.sleep(150)
+      delay_ms.val = 20
+      let post = @mttp_core.Request::post(url).body_bytes(b"x")
+      assert_eq(
+        body(client.send(post, @mttp_core.SendOptions::default())),
+        b"ok",
+      )
+      assert_eq(requests, [(0, "get / http/1.1"), (1, "post / http/1.1")])
+      group.return_immediately()
+    })
+  })
+}

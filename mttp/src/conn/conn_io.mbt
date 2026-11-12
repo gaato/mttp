@@ -5,6 +5,9 @@ priv struct ConnIo {
   inner : &@rt.Conn
   reader : @io.BinaryReaderController
   writer : @io.BinaryWriterController
+  /// How many writes the TLS layer has started on `inner`: counted before
+  /// each starts, so a write that fails or is cancelled midway counts.
+  mut writes : Int64
 }
 
 ///|
@@ -13,6 +16,7 @@ fn ConnIo::new(inner : &@rt.Conn) -> ConnIo {
     inner,
     reader: @io.BinaryReaderController(),
     writer: @io.BinaryWriterController(),
+    writes: 0L,
   }
 }
 
@@ -51,6 +55,7 @@ impl @io.BinaryWriterImpl for ConnIo with fn raw_write_impl(
   offset~,
   len~,
 ) {
+  self.writes += 1L
   self.inner.write(bytes[offset:offset + len].to_owned())
   len
 }
