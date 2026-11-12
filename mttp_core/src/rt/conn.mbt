@@ -15,6 +15,10 @@ pub(open) trait Conn {
   /// A cancelled read finishes its cleanup before the next read begins.
   async fn read(Self, max_len~ : Int32) -> Bytes? raise @mttp_core.TransportError
   /// Writes all of `bytes`, or raises. A write after `close` raises.
+  /// Raising `Closed` promises that none of `bytes` was sent: the
+  /// connection was already closed, by this end or by the peer (a TLS
+  /// session the peer shut down refuses writes). Any other failure may come
+  /// after part of `bytes` was sent.
   async fn write(Self, Bytes) -> Unit raise @mttp_core.TransportError
   /// Closes both halves and wakes pending operations. Idempotent.
   fn close(Self) -> Unit

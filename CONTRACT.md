@@ -74,8 +74,13 @@ suites. For the implementations in this repository,
 Conn reads return nonempty chunks of at most `max_len`; EOF permanently ends
 only the read half. Writes consume all supplied bytes. One reader and one
 writer may run concurrently. Close is idempotent and wakes pending operations;
-a write after close raises TransportError. Cancellation finishes an
-operation's cleanup before another operation in that direction begins.
+a write after close raises TransportError. A write that raises `Closed` sent
+none of its bytes: the connection was already closed, by this end or by the
+peer, as a TLS session the peer shut down refuses writes. Any other write
+failure may follow a partial write. The HTTP/1.1 client relies on this to
+send a request on another connection when a reused one refuses its first
+write. Cancellation finishes an operation's cleanup before another operation
+in that direction begins.
 
 `rt.Conn` has no write-half shutdown, because core/async offers none for
 sockets or TLS. `@sim.SimConn::shutdown_write` exists only to test how peers

@@ -32,6 +32,16 @@ never does.
   answer to the next request. A connection parked for 100 ms or more is now
   checked before reuse, waiting at most 1 ms, and dropped if the server
   closed it or wrote to it.
+- `h1client` sends a request on another connection, whatever its method,
+  when a reused connection refuses its first write with nothing sent. Over
+  TLS the check above can miss a server's close: its read takes the
+  close_notify, OpenSSL answers with its own, and when that write is slow
+  (under load) the 1 ms deadline cancels the read before it returns EOF.
+  The session then refuses every write, so a POST failed in phase Write as
+  if sent and was not resent, though the server never saw it (seen with
+  nginx and Caddy). `rt.Conn` states what makes this safe: a write that
+  raises `Closed` sent none of its bytes. The refusal is reported as
+  `Network`, not `Closed`, when it does surface.
 - `h1client` honours `Expect: 100-continue` on a request that sets it: the
   body follows the server's 100, or one second without an answer, and a
   final answer that comes first (a 413, say) leaves it unsent. It used to

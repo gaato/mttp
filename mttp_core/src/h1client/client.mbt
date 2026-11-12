@@ -113,7 +113,8 @@ pub impl @mttp_core.Backend for Client with fn close(self) {
 /// one with the same User-Agent is parked for the origin, otherwise it is
 /// dialled; a reused connection that fails before any response byte arrived
 /// is replaced once by a fresh one, if the body is replayable and the
-/// request idempotent (`@mttp_core.is_idempotent`).
+/// request idempotent (`@mttp_core.is_idempotent`). One that refuses the
+/// first write with nothing sent is replaced whatever the method.
 ///
 /// With `Exchange(max_bytes)`, `timeout_ms` covers the head and the whole
 /// body, and at most `max_bytes` (and `ClientConfig.max_body_bytes`) body
@@ -218,7 +219,7 @@ async fn Client::send_request(
     let reused = cached is Some(_)
     let wire = match cached {
       Some(wire) => {
-        wire.received = 0L
+        wire.reuse()
         wire
       }
       None =>
@@ -247,6 +248,13 @@ async fn Client::send_request(
       self.coordination,
       expect_continue~,
     ) catch {
+      // The connection refused the request's first write before any byte
+      // left: it was closed while parked and the check missed it (over TLS,
+      // the check's read can be cut off by its deadline after it took the
+      // peer's close_notify, which leaves the session refusing writes).
+      // Nothing reached the server, so, as after the check, the request
+      // goes out on another connection whatever its method.
+      _ if reused && wire.refused => continue
       @mttp_core.TransportError(kind=Network, ..) if reused &&
         resendable &&
         wire.received == 0L => {

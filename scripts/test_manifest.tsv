@@ -46,10 +46,10 @@ gaato/mttp_core	gaato/mttp_core/h1	js	39
 gaato/mttp_core	gaato/mttp_core/h1	native	39
 gaato/mttp_core	gaato/mttp_core/h1	wasm	39
 gaato/mttp_core	gaato/mttp_core/h1	wasm-gc	39
-gaato/mttp_core	gaato/mttp_core/h1client	js	97
-gaato/mttp_core	gaato/mttp_core/h1client	native	97
-gaato/mttp_core	gaato/mttp_core/h1client	wasm	97
-gaato/mttp_core	gaato/mttp_core/h1client	wasm-gc	97
+gaato/mttp_core	gaato/mttp_core/h1client	js	99
+gaato/mttp_core	gaato/mttp_core/h1client	native	99
+gaato/mttp_core	gaato/mttp_core/h1client	wasm	99
+gaato/mttp_core	gaato/mttp_core/h1client	wasm-gc	99
 gaato/mttp_core	gaato/mttp_core/h1server	js	79
 gaato/mttp_core	gaato/mttp_core/h1server	native	79
 gaato/mttp_core	gaato/mttp_core/h1server	wasm	79

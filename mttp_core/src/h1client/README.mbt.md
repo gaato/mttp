@@ -82,10 +82,13 @@ test "send a request and read the response" {
   same origin and User-Agent. A connection parked for 100 ms or more is
   checked first, waiting at most 1 ms on the Timer: if the server closed it
   or sent anything on it, it is closed and the request goes out on another,
-  whatever its method. A request on a reused connection that still fails
-  before any response byte arrived is resent once on a fresh connection, if
-  its body is replayable and it is idempotent (`@mttp_core.is_idempotent`); such
-  a response carries the `stale_resend` attribute.
+  whatever its method. So does a request whose first write the reused
+  connection refuses with nothing sent (it raised `Closed`, as a TLS session
+  the server shut down does when the check missed the close). A request on
+  a reused connection that still fails before any response byte arrived is
+  resent once on a fresh connection, if its body is replayable and it is
+  idempotent (`@mttp_core.is_idempotent`); such a response carries the
+  `stale_resend` attribute.
 - **Proxies.** `ClientConfig.proxy` names an HTTP proxy per scheme and a
   `NO_PROXY` list, as data: `ProxyConfig::from_env(lookup)` reads the usual
   environment variables once, through a lookup the caller passes, and the

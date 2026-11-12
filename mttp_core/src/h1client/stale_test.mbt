@@ -288,3 +288,125 @@ test "an open parked connection is checked only after it idled" {
   })
   assert_eq(h.dialer.dialed.length(), 1)
 }
+
+///|
+/// A connection that reads its script and accepts `open_writes` writes;
+/// later writes raise `Closed` and send nothing, as a TLS session the peer
+/// shut down refuses them.
+priv struct RefusingConn {
+  inner : @sim.ScriptedConn
+  mut open_writes : Int32
+  writes : Array[Bytes]
+}
+
+///|
+impl @rt.Conn for RefusingConn with fn read(self, max_len~) {
+  self.inner.read(max_len~)
+}
+
+///|
+impl @rt.Conn for RefusingConn with fn write(self, bytes) {
+  if self.open_writes <= 0 {
+    raise @mttp_core.TransportError(
+      kind=Closed,
+      phase=Unknown,
+      detail="protocol is shutdown",
+    )
+  }
+  self.open_writes -= 1
+  self.writes.push(bytes)
+}
+
+///|
+impl @rt.Conn for RefusingConn with fn close(self) {
+  self.inner.close()
+}
+
+///|
+/// Prepares a connection that answers one request and then refuses every
+/// write after `open_writes` more.
+fn Harness::refusing(self : Harness, open_writes~ : Int32) -> RefusingConn {
+  let conn = RefusingConn::{
+    inner: @sim.ScriptedConn::new([Chunk(ok("old"))]),
+    open_writes: 1 + open_writes,
+    writes: [],
+  }
+  self.dialer.queue.push(Hand(conn))
+  self.closes.push(() => conn.inner.closes())
+  conn
+}
+
+///|
+/// The interop suite found this against nginx and Caddy over TLS under
+/// load: the check's read was cut off by its deadline after it had taken
+/// the server's close_notify, so the check passed, and the TLS session then
+/// refused the POST before sending any of it. The failure was reported as
+/// sent, so neither the engine nor the Client resent the POST. A first
+/// write refused with nothing sent goes out on another connection, whatever
+/// the method and however the request is written.
+test "a reused connection that refuses the first write sends on another" {
+  let rows : Array[(String, Bytes, Bool)] = [
+    ("one write", b"x", false),
+    ("concurrent upload", Bytes::make(70000, b'x'), false),
+    ("Expect: 100-continue", b"x", true),
+  ]
+  for row in rows {
+    let (label, payload, expect) = row
+    let h = Harness::new()
+    let refusing = h.refusing(open_writes=0)
+    let fresh = h.peer()
+    h.run(() => {
+      let server = h.driver.spawn(() => {
+        let seen = fresh.serve(ok("new"))
+        assert_eq(seen.length(), 1, msg=label)
+        assert_eq(seen[0].body, payload, msg=label)
+      })
+      assert_eq(
+        fetch(h.client, @mttp_core.Request::get("http://example.test/")),
+        "old",
+      )
+      // Reused at once, so no check runs: the refusal is the only sign.
+      let post = @mttp_core.Request::post("http://example.test/").body_bytes(
+        payload,
+      )
+      let post = if expect {
+        post.header("expect", "100-continue")
+      } else {
+        post
+      }
+      let response = h.client.send(post, exchange())
+      // Not a resend: nothing went out on the refused connection.
+      assert_eq(
+        response.attributes.get(@h1client.stale_resend),
+        None,
+        msg=label,
+      )
+      assert_eq(body_of(response), b"new", msg=label)
+      assert_eq(refusing.writes.length(), 1, msg=label)
+      assert_eq(refusing.inner.closes(), 1, msg=label)
+      h.finish()
+      ignore(server.wait())
+    })
+    assert_eq(h.dialer.dialed.length(), 2, msg=label)
+  }
+}
+
+///|
+/// A refusal after part of the request went out is a failure after
+/// sending: the server may have the head, so a POST is not sent again.
+test "a refusal after the first write is reported as sent" {
+  let h = Harness::new()
+  ignore(h.refusing(open_writes=1))
+  h.run(() => {
+    assert_eq(
+      fetch(h.client, @mttp_core.Request::get("http://example.test/")),
+      "old",
+    )
+    let post = @mttp_core.Request::post("http://example.test/").body_bytes(
+      Bytes::make(70000, b'x'),
+    )
+    assert_eq(failing(() => ignore(fetch(h.client, post))), (Network, Write))
+    h.finish()
+  })
+  assert_eq(h.dialer.dialed.length(), 1)
+}

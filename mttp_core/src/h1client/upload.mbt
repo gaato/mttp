@@ -197,7 +197,9 @@ priv struct Duplex {
 /// Uploads while reading the response head. The upload is the monitor of
 /// the exchange, so a final head that arrives first ends it by cancellation.
 /// A network failure of a connection write may be the server closing after
-/// an early answer, so the head is still awaited. A failure of the body
+/// an early answer, so the head is still awaited, unless the write was
+/// refused before any of the request left: then no head can answer it. A
+/// failure of the body
 /// stream fails the exchange at once with the stream's own error, whatever
 /// it is: the request on the wire is incomplete, so no answer can be
 /// expected, and none would make it valid. The head limit starts once the
@@ -261,10 +263,11 @@ async fn duplex(
           while state.head is None && state.sent is None {
             state.changed.wait()
           }
+          // A head can answer this request only if some of it was sent.
           match state.sent {
             Some(Err(Producer(error))) => raise error
-            Some(Err(Connection(error))) if !(kind_of(error) is Network) =>
-              raise error
+            Some(Err(Connection(error))) if !(kind_of(error) is Network) ||
+              wire.refused => raise error
             _ => ()
           }
           if state.head is None {

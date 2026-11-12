@@ -13,6 +13,12 @@ priv struct Wire {
   /// exchange; a reused connection that fails before any arrived may be
   /// stale.
   mut received : Int64
+  /// Whether a write has started since the connection was last taken.
+  mut wrote : Bool
+  /// Whether the first write since the connection was last taken was
+  /// refused with none of its bytes sent: nothing of the request reached
+  /// the peer.
+  mut refused : Bool
   mut closed : Bool
   /// When the connection was last parked, on the client's clock.
   mut parked_at : Int64
@@ -20,7 +26,24 @@ priv struct Wire {
 
 ///|
 fn Wire::new(conn : &@rt.Conn) -> Wire {
-  { conn, pending: b"", received: 0L, closed: false, parked_at: 0L, }
+  {
+    conn,
+    pending: b"",
+    received: 0L,
+    wrote: false,
+    refused: false,
+    closed: false,
+    parked_at: 0L,
+  }
+}
+
+///|
+/// Starts counting what an exchange on a parked connection reads and
+/// writes.
+fn Wire::reuse(self : Wire) -> Unit {
+  self.received = 0L
+  self.wrote = false
+  self.refused = false
 }
 
 ///|
@@ -78,11 +101,23 @@ fn Wire::close(self : Wire) -> Unit {
 }
 
 ///|
+/// Writes `bytes`. A connection that raises `Closed` sent none of them
+/// (`rt.Conn` promises it), so when that write was the first, `refused`
+/// records that the peer got nothing. The failure is reported as `Network`:
+/// the connection was closed, not the client.
 async fn Wire::write(
   self : Wire,
   bytes : Bytes,
 ) -> Unit raise @mttp_core.TransportError {
-  self.conn.write(bytes)
+  let first = !self.wrote
+  self.wrote = true
+  self.conn.write(bytes) catch {
+    @mttp_core.TransportError(kind=Closed, phase~, detail~) => {
+      self.refused = first
+      raise @mttp_core.TransportError(kind=Network, phase~, detail~)
+    }
+    error => raise error
+  }
 }
 
 ///|
