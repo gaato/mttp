@@ -123,6 +123,7 @@ uncovered-line budget is needed for these additions.
 | File | Budget | Reason |
 | --- | --- | --- |
 | mttp/src/conn/dialer.mbt | 2 | Forward-compatible Trust arm: Trust belongs to the cross-target trust package, so the dialer must refuse future constructors that cannot be constructed in this release. The `SocketPort` impl the toolchain does not use: `Tcp::connect_to_host` takes an `Int` port on MoonBit 0.10.20 and a `UInt16` later, so one impl per toolchain is never called. |
+| mttp/src/conn/conn_io_next.mbt | 1 | Present only when the canary copies it from compat/core_async_next. `flush_partial_data` is not called: mttp never flushes a TLS session, and ConnIo holds no bytes to flush. |
 | mttp/src/conn/conn_io.mbt | 1 | BinaryWriterImpl::get_controller is not called by core's current writer defaults; the controller is a stateless marker reserved for future buffering/locking. Each bridge still constructs and owns its controller as required by the core trait. |
 | mttp/src/codings/body_source.mbt | 1 | Forward-compatible Body arm: a future body representation is refused instead of silently treated as empty. |
 | mttp/src/codings/decompress.mbt | 1 | Defensive fallback for a non-TransportError from read_decoded: this wrapper supplies a TransportError-only reader and ContentDecoder translates codec errors to TransportError. Cancellation is a scheduler signal. |

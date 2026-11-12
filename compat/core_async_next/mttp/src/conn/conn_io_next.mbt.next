@@ -1,0 +1,21 @@
+// The impls core/async's IO traits require after MoonBit 0.10.20, which
+// 0.10.20 refuses, so no source file builds on both. On a toolchain that
+// requires them, .github/workflows/canary.yml copies this file to
+// mttp/src/conn/conn_io_next.mbt. When moonbit-version moves past 0.10.20,
+// move it there for good and delete compat/.
+
+///|
+impl @io.BinaryReaderImpl for ConnIo with fn name(_) {
+  "@conn.ConnIo"
+}
+
+///|
+impl @io.BinaryWriterImpl for ConnIo with fn name(_) {
+  "@conn.ConnIo"
+}
+
+///|
+/// ConnIo keeps no bytes of its own: each write goes to `inner` whole.
+impl @io.BinaryWriterImpl for ConnIo with fn flush_partial_data(_) {
+
+}

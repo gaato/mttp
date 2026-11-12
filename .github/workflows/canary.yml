@@ -26,6 +26,21 @@ jobs:
       # tests before its static registry refresh (as in ci.yml).
       - name: Update registry index before testing
         run: moon update
+      # MoonBit after 0.10.20 adds methods to core/async's IO traits that
+      # 0.10.20 refuses, so mttp's impls of them cannot sit in the tree
+      # yet. compat/core_async_next keeps them at the paths they take in
+      # the tree, with `.next` appended; this copies them in on a toolchain
+      # that has the methods.
+      - name: Adopt core/async's newer IO traits if this toolchain has them
+        run: |
+          traits="${MOON_HOME:-$HOME/.moon}/lib/core/async/io/pkg.generated.mbti"
+          if grep -q 'fn name(Self) -> String' "$traits"; then
+            cd compat/core_async_next
+            find . -name '*.mbt.next' | while read -r next; do
+              cp "$next" "../../${next%.next}"
+              echo "adopted ${next%.next}"
+            done
+          fi
       - name: Validate all targets and ledgers
         run: scripts/gates.sh full
 

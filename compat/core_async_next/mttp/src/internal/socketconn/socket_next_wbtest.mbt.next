@@ -1,0 +1,20 @@
+// The impls core/async's IO traits require after MoonBit 0.10.20, which
+// 0.10.20 refuses, so no source file builds on both. On a toolchain that
+// requires them, .github/workflows/canary.yml copies this file to
+// mttp/src/internal/socketconn/socket_next_wbtest.mbt. When moonbit-version
+// moves past 0.10.20, move it there for good and delete compat/.
+
+///|
+impl @io.BinaryReaderImpl for ProbeIo with fn name(_) {
+  "ProbeIo"
+}
+
+///|
+impl @io.BinaryWriterImpl for ProbeIo with fn name(_) {
+  "ProbeIo"
+}
+
+///|
+impl @io.BinaryWriterImpl for ProbeIo with fn flush_partial_data(_) {
+
+}
