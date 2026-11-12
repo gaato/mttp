@@ -186,6 +186,10 @@ test "unsent classification is conservative" {
     (Timeout(ms=1), Head, false),
     (Network, Write, false),
     (Network, Dial, true),
+    // A stream the server refused before processing it (HTTP/2
+    // REFUSED_STREAM, HTTP/3 H3_REQUEST_REJECTED) is reported in Pool, so it
+    // is unsent although bytes reached the peer (CONTRACT.md, Backend rule 2).
+    (Network, Pool, true),
     (Protocol, Head, false),
     (Invalid, Pool, true),
     (Unreplayable, Pool, true),

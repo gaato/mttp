@@ -14,7 +14,8 @@ scheduler in `gaato/mttp/driver`, and the runtime implementations in
 
 Shared checks: `@sim.check_conn`, `check_coordination_contract`,
 `check_body_stream_contract` and `check_backend_contract` run against the sim
-doubles and against mttp_async's adapters. Transport-specific rules (wire
+doubles and against mttp_async's adapters; `check_backend_contract` runs
+against mttp_moonfetch's backend too. Transport-specific rules (wire
 framing, socket deadlines, TLS) are checked by each implementation's own
 suites. For the implementations in this repository,
 [TEST_COVERAGE.md](TEST_COVERAGE.md) names the tests behind each rule and
@@ -107,7 +108,11 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
    which is unsent.
 2. **Phases are honest.** Every failure carries the phase in which it
    happened. A failure reported in Pool or Dial means no request byte reached
-   the peer; `is_unsent` relies on this.
+   the peer; `is_unsent` relies on this. A refusal that the protocol
+   guarantees the server did not process, HTTP/2 `REFUSED_STREAM` (RFC 9113
+   §8.7) or HTTP/3 `H3_REQUEST_REJECTED` (RFC 9114 §4.1.1, §8.1), is reported
+   in Pool and counts as unsent although request bytes may have reached the
+   peer.
 3. **Request bodies.** The backend takes a stream body at most once and closes
    it on success, failure and cancellation. It performs the stream's first
    read before writing the request head, so a failing stream or one falsely
