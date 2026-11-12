@@ -249,6 +249,36 @@ async fn probe_release(parent : String) -> Unit {
       "release bump left a nested workspace member on the old version",
     )
   }
+  // A renamed module keeps its history under an earlier name, whose version
+  // numbers come back: that history's [0.0.3] neither answers for the
+  // module's own 0.0.3 nor stops its bump.
+  @fs.write_text(
+    root + "/library/CHANGELOG.md",
+    "# Changelog\n\n## [Unreleased]\n\n- Next.\n\n## [0.0.2] - 2026-01-01\n\n- New name.\n\n## Earlier versions, as probe/old\n\n## [0.0.3] - 2020-01-01\n\n- Old.\n",
+  )
+  @fs.write_text(
+    root + "/library/moon.mod",
+    @fs.read_text(root + "/library/moon.mod").replace(
+      old="version = \"0.0.2\"",
+      new="version = \"0.0.3\"",
+    ),
+  )
+  refused(
+    root,
+    "a dry run answered by an earlier name's section",
+    ["publish", "--dry-run", "library"],
+    1,
+    "no '## [0.0.3] - <date>' heading",
+  )
+  let renamed = release(root, ["bump", "library", "0.0.3"])
+  let history = @fs.read_text(root + "/library/CHANGELOG.md")
+  guard renamed.exit_code() == 0 &&
+    history.contains("## [Unreleased]\n\n## [0.0.3] - ") &&
+    history.contains("## [0.0.3] - 2020-01-01") else {
+    raise SelfTestFailed(
+      "release bump took an earlier name's section for the module's own",
+    )
+  }
   println(
     "gate self-test: release selection, bump and publish guards and nested members OK",
   )

@@ -251,6 +251,28 @@ async fn today() -> String {
 }
 
 ///|
+/// The heading that starts the history a module had under an earlier name,
+/// as in `## Earlier versions, as gaato/mttp`.
+let earlier_versions : String = "## Earlier versions"
+
+///|
+/// The part of a CHANGELOG that is the module's own history: everything
+/// before the first `## Earlier versions` heading. The sections after it
+/// belong to an earlier name and repeat version numbers (gaato/mttp_core
+/// 0.1.0 follows gaato/mttp's 0.2.0 and 0.1.0), so they must neither stop a
+/// bump nor stand in for the section a release needs.
+fn own_history(text : String) -> String {
+  let out = []
+  for line in lines(text) {
+    if line.has_prefix(earlier_versions) {
+      break
+    }
+    out.push(line)
+  }
+  unlines(out)
+}
+
+///|
 /// Turns the [Unreleased] heading into [Unreleased] followed by a dated
 /// heading for `version`, so the entries that were under it now belong to
 /// `version`.
@@ -263,7 +285,7 @@ async fn changelog_release(dir : String, version : String) -> Unit {
     eprintln("warning: \{file} has no '\{unreleased}' heading; not updated")
     return
   }
-  if text.contains("## [\{version}] - ") {
+  if own_history(text).contains("## [\{version}] - ") {
     println("  \{file} already has [\{version}]")
     return
   }
@@ -515,11 +537,11 @@ fn waits_for(out : String, pending : Array[String]) -> Bool {
 
 ///|
 /// Whether the module's CHANGELOG has the dated heading `bump` writes for
-/// `version`; the GitHub Release takes its notes from that section. Says
-/// what is missing when it has not.
+/// `version` in its own history; the GitHub Release takes its notes from
+/// that section. Says what is missing when it has not.
 async fn has_release_heading(dir : String, version : String) -> Bool {
   let changelog = @fs.read_text("\{dir}/CHANGELOG.md") catch { _ => "" }
-  if changelog.contains("## [\{version}] - ") {
+  if own_history(changelog).contains("## [\{version}] - ") {
     return true
   }
   eprintln(

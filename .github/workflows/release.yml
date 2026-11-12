@@ -1,14 +1,15 @@
 name: Release
 
 # Publishes one module to mooncakes.io when its release tag is pushed:
-# `mttp-v<version>`, `mttp_async-v<version>` or `mttp_digest-v<version>`.
+# `mttp_core-v<version>`, `mttp-v<version>` or `mttp_digest-v<version>`. The
+# module's directory is the tag before `-v`.
 # Pushing the tag is the approval; nothing else publishes. The tag must name a
 # release module of scripts/modules.tsv at the version in its moon.mod and
 # point at a commit on main, which the publish job checks before it runs the
 # full gates. `scripts/release.mbtx publish <module>` then publishes that
 # module alone, built outside the workspace so it resolves its dependencies
 # from the registry as consumers do: a module whose new version imports
-# another's new version (mttp_async on mttp) is tagged after that one is
+# another's new version (mttp on mttp_core) is tagged after that one is
 # published.
 #
 # A new release module needs its tag pattern below and in the deployment
@@ -17,21 +18,23 @@ name: Release
 # without a trigger here.
 #
 # After the publish, a GitHub Release is created for the tag from that
-# version's section of `<module>/CHANGELOG.md`. Only gaato/mttp_async releases
-# are marked latest. Run the workflow by hand with a tag to create a missing
-# Release for a version already published; that run does not publish.
+# version's section of `<module>/CHANGELOG.md`. Only gaato/mttp releases from
+# 0.3 on are marked latest. Run the workflow by hand with a tag to create a
+# missing Release for a version already published; that run does not
+# publish. It reads scripts/modules.tsv and the CHANGELOG of the tagged
+# commit, so a tag from before the 0.3 rename (`mttp-v0.2.0`, the core then;
+# `mttp_async-v0.1.0`) gets the notes and name of its own time.
 
 on:
   push:
     tags:
       - 'mttp_core-v*'
       - 'mttp-v*'
-      - 'mttp_async-v*'
       - 'mttp_digest-v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag of a published version, such as mttp-v0.2.0
+        description: Release tag of a published version, such as mttp-v0.3.0
         required: true
         type: string
 
@@ -158,10 +161,14 @@ jobs:
             exit 0
           fi
           notes="$RUNNER_TEMP/notes.md"
-          # The section runs from `## [<version>]` to the next `## [` heading.
+          # The section runs from `## [<version>]` to the next second-level
+          # heading. A history kept under an earlier name, after
+          # `## Earlier versions`, repeats version numbers and ends the
+          # search: gaato/mttp_core 0.1.0 is not gaato/mttp's 0.1.0 below it.
           awk -v heading="## [$version]" '
+            !found && /^## Earlier versions/ { exit }
             index($0, heading) == 1 { found = 1; next }
-            found && /^## \[/ { exit }
+            found && /^## / { exit }
             found { print }
           ' "$module/CHANGELOG.md" > "$notes"
           if ! grep -q '[^[:space:]]' "$notes"; then
@@ -170,21 +177,29 @@ jobs:
           fi
           printf '\nPublished as [%s@%s](https://mooncakes.io/docs/%s).\n' \
             "$name" "$version" "$name" >> "$notes"
-          # gaato/mttp_async is the module an app starts with (the README
-          # lists it first), so only its stable versions take the Latest
-          # badge; a backfill of an older one leaves it on the newer Release.
+          # gaato/mttp is the module an app starts with (the README lists it
+          # first), so only its stable versions take the Latest badge; a
+          # backfill of an older one leaves it on the newer Release. Before
+          # 0.3 the name gaato/mttp was the core and gaato/mttp_async the
+          # app module, so an `mttp-v` tag below 0.3.0 is never latest, and
+          # one from 0.3.0 on replaces any Latest that is not such a tag.
           # A version with a SemVer prerelease part (`-rc.1`) is a
           # prerelease, which GitHub never marks latest; that also keeps
           # `sort -V`, which orders `1.0.0-rc.1` after `1.0.0`, comparing
           # stable versions only.
+          app_since=0.3.0
+          is_app_version() {
+            [[ "$1" != *-* ]] &&
+              [ "$(printf '%s\n%s\n' "$app_since" "$1" | sort -V | head -n 1)" = "$app_since" ]
+          }
           latest=false
           prerelease=()
           if [[ "$version" == *-* ]]; then
             prerelease=(--prerelease)
-          elif [ "$module" = mttp_async ]; then
+          elif [ "$module" = mttp ] && is_app_version "$version"; then
             current=$(gh release view --json tagName --jq .tagName 2> /dev/null || true)
-            if [[ "$current" == mttp_async-v* ]]; then
-              newest=$(printf '%s\n%s\n' "${current#mttp_async-v}" "$version" | sort -V | tail -n 1)
+            if [[ "$current" == mttp-v* ]] && is_app_version "${current#mttp-v}"; then
+              newest=$(printf '%s\n%s\n' "${current#mttp-v}" "$version" | sort -V | tail -n 1)
               if [ "$newest" = "$version" ]; then latest=true; fi
             else
               latest=true
