@@ -54,14 +54,19 @@ async test "ConnIo owns independent controllers buffers read ahead and writes of
 
 ///|
 /// A connection whose writes fail with the next of `failures`, or go
-/// through once those run out.
+/// through once those run out, and whose reads fail with `read_failure`,
+/// or find EOF without one.
 priv struct ScriptedWrites {
   failures : Array[@mttp_core.Kind]
+  read_failure : @mttp_core.Kind?
 }
 
 ///|
-impl @rt.Conn for ScriptedWrites with fn read(_, max_len~) {
+impl @rt.Conn for ScriptedWrites with fn read(self, max_len~) {
   ignore(max_len)
+  if self.read_failure is Some(kind) {
+    raise @mttp_core.TransportError(kind~, phase=Unknown, detail="scripted")
+  }
   None
 }
 
@@ -80,15 +85,40 @@ impl @rt.Conn for ScriptedWrites with fn close(_) {
 ///|
 async test "ConnIo counts the writes beneath that may have sent bytes" {
   // Popped from the end: Network, then Closed, then success.
-  let bridge = ConnIo::new(ScriptedWrites::{ failures: [Closed, Network], })
+  let bridge = ConnIo::new(ScriptedWrites::{
+    failures: [Closed, Network],
+    read_failure: None,
+  })
   let sends = []
+  let failures = []
   for _ in 0..<3 {
     @io.BinaryWriter::write(bridge, b"x") catch {
       _ => ()
     }
     sends.push(bridge.sends)
+    failures.push(
+      match bridge.failure {
+        Some(@mttp_core.TransportError(kind~, ..)) => Some(kind)
+        None => None
+      },
+    )
   }
   // A write that failed with `Network` may have sent part; one refused with
   // `Closed` sent nothing; one that went through did.
   assert_eq(sends, [1L, 1L, 2L])
+  // The last failure beneath stays recorded after a write that went through.
+  assert_eq(failures, [Some(Network), Some(Closed), Some(Closed)])
+  // So does a failed read.
+  let reads = ConnIo::new(ScriptedWrites::{
+    failures: [],
+    read_failure: Some(Timeout(ms=3)),
+  })
+  try @io.BinaryReader::read(reads) catch {
+    _ => ()
+  } noraise {
+    _ => fail("the failing read succeeded")
+  }
+  assert_true(
+    reads.failure is Some(@mttp_core.TransportError(kind=Timeout(ms=3), ..)),
+  )
 }

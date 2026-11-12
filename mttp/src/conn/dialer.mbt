@@ -81,5 +81,7 @@ pub impl @rt.Dialer for TcpDialer with fn start_tls(self, inner, host~) {
   ) catch {
     error => raise dial_error(error)
   }
-  @socketconn.from_tls(tls, inner, lower_sends=() => io.sends)
+  @socketconn.from_tls(tls, inner, lower_sends=() => io.sends, lower_failure=() => {
+    io.failure
+  })
 }

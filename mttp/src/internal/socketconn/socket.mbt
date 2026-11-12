@@ -12,6 +12,9 @@ priv struct SocketConn[R, W] {
   /// beneath, which every byte it sends goes through, that may have sent
   /// bytes; `None` over TCP.
   lower_sends : (() -> Int64)?
+  /// For a TLS session, the last error the connection beneath raised to
+  /// it; `None` over TCP. See `cause`.
+  lower_failure : (() -> @mttp_core.TransportError?)?
 }
 
 ///|
@@ -62,7 +65,7 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
       error => raise error
     }
   }) catch {
-    error => raise transport_error(error)
+    error => raise transport_error(self.cause(error))
   }
   if self.closed || self.pending.is_empty() {
     None
@@ -125,7 +128,32 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
       error => raise error
     }
   }) catch {
-    error => raise self.write_failure(error, lower_before)
+    error => raise self.write_failure(self.cause(error), lower_before)
+  }
+}
+
+///|
+/// The error to report for `error`, which the reader or writer raised.
+///
+/// A TLS session fails because the connection beneath it did, or on its
+/// own. MoonBit 0.10.20's core/async raises the error from beneath as it
+/// is, a `TransportError`. Later toolchains wrap it in `@io.ReaderError`
+/// or `@io.WriterError`, which source that builds on both toolchains
+/// cannot match, so an error other than a `TransportError` stands for the
+/// last failure beneath, if there was one: the session raises that failure
+/// again from every operation after it.
+fn[R, W] SocketConn::cause(self : SocketConn[R, W], error : Error) -> Error {
+  match error {
+    @mttp_core.TransportError(..) => error
+    _ =>
+      match self.lower_failure {
+        Some(failure) =>
+          match failure() {
+            Some(lower) => lower
+            None => error
+          }
+        None => error
+      }
   }
 }
 
@@ -209,6 +237,7 @@ pub fn from_tcp(tcp : @socket.Tcp) -> &@rt.Conn {
     cancel_read: None,
     cancel_write: None,
     lower_sends: None,
+    lower_failure: None,
   }
 }
 
@@ -218,11 +247,14 @@ pub fn from_tcp(tcp : @socket.Tcp) -> &@rt.Conn {
 /// `inner` that may have sent bytes, leaving out those that raised
 /// `Closed`: a write the session fails while that count stays put is
 /// reported as `Closed`, which `rt.Conn` reserves for a write that sent
-/// nothing.
+/// nothing. `lower_failure`, when given, returns the last error `inner`
+/// raised to the session, which a failure of the session reports when
+/// core/async wraps it.
 pub fn from_tls(
   tls : @tls.Tls,
   inner : &@rt.Conn,
   lower_sends? : () -> Int64,
+  lower_failure? : () -> @mttp_core.TransportError?,
 ) -> &@rt.Conn {
   SocketConn::{
     reader: tls,
@@ -237,5 +269,6 @@ pub fn from_tls(
     cancel_read: None,
     cancel_write: None,
     lower_sends,
+    lower_failure,
   }
 }

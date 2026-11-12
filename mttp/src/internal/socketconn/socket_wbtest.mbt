@@ -149,6 +149,7 @@ fn wrap(
   io : ProbeIo,
   closes : Ref[Int32],
   lower_sends? : () -> Int64,
+  lower_failure? : () -> @mttp_core.TransportError?,
 ) -> SocketConn[ProbeIo, ProbeIo] {
   {
     reader: io,
@@ -160,6 +161,7 @@ fn wrap(
     cancel_read: None,
     cancel_write: None,
     lower_sends,
+    lower_failure,
   }
 }
 
@@ -226,6 +228,45 @@ async test "socket adapter translates runtime I O failures and preserves transpo
       detail="original"
     ),
   )
+}
+
+///|
+/// A TLS session fails with an error of its own, or wraps the error of
+/// the connection beneath on toolchains after MoonBit 0.10.20. The adapter
+/// reports the last failure beneath for an error that is not a
+/// `TransportError`, and keeps a `TransportError` as it is.
+async test "a TLS failure reports the last failure beneath instead of a wrapped one" {
+  let beneath = @mttp_core.TransportError(
+    kind=Timeout(ms=7),
+    phase=Body,
+    detail="beneath",
+  )
+  let none : () -> @mttp_core.TransportError? = () => None
+  let failed : () -> @mttp_core.TransportError? = () => Some(beneath)
+  for row in [(none, @mttp_core.Kind::Network), (failed, Timeout(ms=7))] {
+    let (lower_failure, expected) = row
+    let conn : &@rt.Conn = wrap(
+      probe(fail_read=true, fail_write=true),
+      Ref(0),
+      lower_failure~,
+    )
+    for
+      action in [
+        () => {
+          let _ = conn.read(max_len=1)
+        },
+        () => conn.write(b"x"),
+      ] {
+      try action() catch {
+        @mttp_core.TransportError(kind~, ..) => assert_eq(kind, expected)
+      } noraise {
+        _ => fail("the failing operation succeeded")
+      }
+    }
+  }
+  let own = @mttp_core.TransportError(kind=Closed, phase=Write, detail="own")
+  let conn = wrap(probe(), Ref(0), lower_failure=failed)
+  assert_true(conn.cause(own) is @mttp_core.TransportError(kind=Closed, ..))
 }
 
 ///|

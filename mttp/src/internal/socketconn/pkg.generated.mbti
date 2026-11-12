@@ -11,7 +11,7 @@ import {
 // Values
 pub fn from_tcp(@socket.Tcp) -> &@rt.Conn
 
-pub fn from_tls(@tls.Tls, &@rt.Conn, lower_sends? : () -> Int64) -> &@rt.Conn
+pub fn from_tls(@tls.Tls, &@rt.Conn, lower_sends? : () -> Int64, lower_failure? : () -> @mttp_core.TransportError?) -> &@rt.Conn
 
 pub fn transport_error(Error) -> @mttp_core.TransportError
 
