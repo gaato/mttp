@@ -214,15 +214,6 @@ async fn Client::send_request(
     } else {
       cached
     }
-    // A connection the server closed while it was parked is dropped before
-    // anything is written to it, so the request goes out on another one
-    // whatever its method.
-    if cached is Some(old) &&
-      self.clock.now_unix_ms() - old.parked_at >= probe_after_ms &&
-      old.peer_gone(self.timer) {
-      old.close()
-      continue
-    }
     let reused = cached is Some(_)
     let wire = match cached {
       Some(wire) => {
@@ -236,6 +227,15 @@ async fn Client::send_request(
     }
     let mut owned = true
     defer (if owned { wire.close() })
+    // A connection the server closed while it was parked is dropped before
+    // anything is written to it, so the request goes out on another one
+    // whatever its method. The probe may suspend, so it runs once the
+    // connection's cleanup is in place: cancelled there, it still closes.
+    if reused &&
+      self.clock.now_unix_ms() - wire.parked_at >= probe_after_ms &&
+      wire.peer_gone(self.timer) {
+      continue
+    }
     let exchanged = exchange(
       wire,
       head,

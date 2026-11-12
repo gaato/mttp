@@ -46,10 +46,10 @@ gaato/mttp	gaato/mttp/h1	js	39
 gaato/mttp	gaato/mttp/h1	native	39
 gaato/mttp	gaato/mttp/h1	wasm	39
 gaato/mttp	gaato/mttp/h1	wasm-gc	39
-gaato/mttp	gaato/mttp/h1client	js	96
-gaato/mttp	gaato/mttp/h1client	native	96
-gaato/mttp	gaato/mttp/h1client	wasm	96
-gaato/mttp	gaato/mttp/h1client	wasm-gc	96
+gaato/mttp	gaato/mttp/h1client	js	97
+gaato/mttp	gaato/mttp/h1client	native	97
+gaato/mttp	gaato/mttp/h1client	wasm	97
+gaato/mttp	gaato/mttp/h1client	wasm-gc	97
 gaato/mttp	gaato/mttp/h1server	js	79
 gaato/mttp	gaato/mttp/h1server	native	79
 gaato/mttp	gaato/mttp/h1server	wasm	79

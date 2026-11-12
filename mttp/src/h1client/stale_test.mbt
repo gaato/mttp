@@ -232,6 +232,33 @@ test "a parked connection the server wrote to or that failed is not reused" {
 }
 
 ///|
+/// The probe suspends while the connection is out of the pool: a send
+/// cancelled there must still close it, or neither the pool nor
+/// `Client::close` would ever reach it again.
+test "a send cancelled during the check closes the connection it took" {
+  let h = Harness::new()
+  let idle = h.scripted([Chunk(ok("old")), Wait(h.coordination.signal())])
+  h.run(() => {
+    assert_eq(
+      fetch(h.client, @mttp.Request::get("http://example.test/")),
+      "old",
+    )
+    h.driver.sleep(1000)
+    let send = h.driver.spawn(() => {
+      ignore(fetch(h.client, @mttp.Request::get("http://example.test/")))
+    })
+    // The send took the connection and waits in the check's read.
+    h.driver.pause()
+    assert_true(send.is_parked())
+    assert_eq(h.client.idle_connections(), 0)
+    h.driver.cancel_and_join([send])
+    assert_eq(idle.closes(), 1)
+    h.finish()
+  })
+  assert_eq(h.dialer.dialed.length(), 1)
+}
+
+///|
 test "an open parked connection is checked only after it idled" {
   let h = Harness::new()
   let peer = h.peer()
