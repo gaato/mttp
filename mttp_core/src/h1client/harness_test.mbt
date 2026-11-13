@@ -295,3 +295,16 @@ fn ok(body : String, status~ : Int32 = 200, fields~ : String = "") -> Bytes {
   ) +
   payload
 }
+
+///|
+/// The read failure of a connection whose TLS peer closed it without
+/// close_notify.
+fn incomplete_close() -> @sim.ReadStep {
+  Failure(
+    @mttp_core.TransportError(
+      kind=IncompleteClose,
+      phase=Unknown,
+      detail="no close_notify",
+    ),
+  )
+}

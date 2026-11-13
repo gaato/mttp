@@ -73,8 +73,9 @@ let probe_ms : Int32 = 2
 ///|
 /// Whether the peer closed the parked connection or sent something on it,
 /// either of which makes it unusable: a read that finishes within
-/// `probe_ms` finds them. On a healthy connection there is nothing to read
-/// and the read is cancelled.
+/// `probe_ms` finds them, and so does one that fails, `IncompleteClose`
+/// among the failures. On a healthy connection there is nothing to read and
+/// the read is cancelled.
 async fn Wire::peer_gone(self : Wire, timer : &@rt.Timer) -> Bool noraise {
   timer.within(probe_ms, () => {
     let _ = self.conn.read(max_len=1) catch { _ => None }
@@ -129,23 +130,43 @@ async fn Wire::write(
 }
 
 ///|
+/// What a read of the wire found.
+priv enum Read {
+  /// A nonempty chunk.
+  Data(Bytes)
+  /// The end of the connection's read half. `clean` is false when the
+  /// transport ended without its own end-of-stream signal
+  /// (`IncompleteClose`: a TLS peer closed without close_notify). Where the
+  /// framing delimits the message, either end is EOF; a body delimited by
+  /// the close is truncated by an unclean one (RFC 9112, section 9.8).
+  End(clean~ : Bool)
+}
+
+///|
 /// Pending bytes first, then a read of at most `max_len` from the
 /// connection.
 async fn Wire::read(
   self : Wire,
   max_len : Int32,
-) -> Bytes? raise @mttp_core.TransportError {
+) -> Read raise @mttp_core.TransportError {
   if !self.pending.is_empty() {
     let n = self.pending.length().min(max_len)
     let bytes = self.pending[:n].to_owned()
     self.pending = self.pending[n:].to_owned()
-    return Some(bytes)
+    return Data(bytes)
   }
-  let bytes = self.conn.read(max_len~)
-  if bytes is Some(bytes) {
-    self.received += bytes.length().to_int64()
+  let read = self.conn.read(max_len~) catch {
+    @mttp_core.TransportError(kind=IncompleteClose, ..) =>
+      return End(clean=false)
+    error => raise error
   }
-  bytes
+  match read {
+    Some(bytes) => {
+      self.received += bytes.length().to_int64()
+      Data(bytes)
+    }
+    None => End(clean=true)
+  }
 }
 
 ///|
@@ -158,9 +179,9 @@ fn Wire::unread(self : Wire, bytes : BytesView) -> Unit {
 
 ///|
 /// Reads one response head within `limits`, leaving the bytes after it
-/// pending. Every failure is one of `phase`: EOF first is `Network`, a
-/// read failure without a phase takes `phase`, a codec error is
-/// `Protocol`.
+/// pending. Every failure is one of `phase`: the end of the connection
+/// first, clean or not, is `Network`, a read failure without a phase takes
+/// `phase`, a codec error is `Protocol`.
 async fn Wire::head(
   self : Wire,
   limits : @h1.Limits,
@@ -173,12 +194,19 @@ async fn Wire::head(
     let read = self.read(io_bytes) catch {
       error => raise failure(phase, error)
     }
-    guard read is Some(bytes) else {
-      raise @mttp_core.TransportError(
-        kind=Network,
-        phase~,
-        detail="EOF before the response head",
-      )
+    // An unclean end is EOF here: the head delimits itself.
+    let bytes = match read {
+      Data(bytes) => bytes
+      End(clean~) =>
+        raise @mttp_core.TransportError(
+          kind=Network,
+          phase~,
+          detail=if clean {
+            "EOF before the response head"
+          } else {
+            "EOF before the response head, without TLS close_notify"
+          },
+        )
     }
     let result = decoder.feed(bytes) catch {
       error => raise failure(phase, error)

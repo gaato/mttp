@@ -108,6 +108,77 @@ test "short or malformed bodies fail in phase Body and discard the connection" {
 }
 
 ///|
+/// RFC 9112, section 9.8: a close without the transport's own end-of-stream
+/// signal is EOF where the framing delimits the message, and truncates only
+/// a body that the close delimits.
+test "an incomplete close truncates only a close-delimited body" {
+  for options in [exchange(), streaming()] {
+    let h = Harness::new()
+    let conn = h.scripted([
+      Chunk(b"HTTP/1.0 200 OK\r\n\r\nabc"),
+      incomplete_close(),
+    ])
+    h.run(() => {
+      let outcome = failing(() => {
+        ignore(
+          fetch(
+            h.client,
+            @mttp_core.Request::get("http://example.test/"),
+            options~,
+          ),
+        )
+      })
+      assert_eq(outcome, (Protocol, Body), msg=Repr(options).to_string())
+      assert_eq(h.client.idle_connections(), 0)
+      assert_eq(conn.closes(), 1)
+      h.finish()
+    })
+  }
+  // Framed bodies read to their end succeed, and a reusable connection is
+  // parked; one cut short fails as it does at EOF.
+  let rows : Array[
+    (Bytes, Result[String, (@mttp_core.Kind, @mttp_core.Phase)], Int32),
+  ] = [
+    (b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc", Ok("abc"), 1),
+    (
+      b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 3\r\n\r\nabc",
+      Ok("abc"),
+      0,
+    ),
+    (
+      b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n",
+      Ok("abc"),
+      1,
+    ),
+    (
+      b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nabc",
+      Err((Protocol, Body)),
+      0,
+    ),
+    (
+      b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\na",
+      Err((Protocol, Body)),
+      0,
+    ),
+  ]
+  for row in rows {
+    let (wire, expected, parked) = row
+    let h = Harness::new()
+    ignore(h.scripted([Chunk(wire), incomplete_close()]))
+    h.run(() => {
+      let result = Ok(
+        fetch(h.client, @mttp_core.Request::get("http://example.test/")),
+      ) catch {
+        error => Err(kind_phase(error))
+      }
+      assert_eq(result, expected, msg=@utf8.decode(wire))
+      assert_eq(h.client.idle_connections(), parked)
+      h.finish()
+    })
+  }
+}
+
+///|
 test "close-delimited and explicitly closed responses are never parked" {
   for
     wire in [

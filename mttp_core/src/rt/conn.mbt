@@ -13,6 +13,12 @@ pub(open) trait Conn {
   /// Reads a nonempty chunk of at most `max_len` bytes, or `None` at EOF.
   /// EOF is permanent and ends only the read half: writes may continue.
   /// A cancelled read finishes its cleanup before the next read begins.
+  ///
+  /// A read raises `IncompleteClose` when the transport ended without its
+  /// own end-of-stream signal, such as a TLS session whose peer closed the
+  /// connection beneath without close_notify. It is permanent like EOF:
+  /// every later read raises it again until `close`. A caller whose message
+  /// framing delimits the message treats it as EOF (RFC 9112, section 9.8).
   async fn read(Self, max_len~ : Int32) -> Bytes? raise @mttp_core.TransportError
   /// Writes all of `bytes`, or raises. A write after `close` raises.
   /// Raising `Closed` promises that none of `bytes` was sent: the

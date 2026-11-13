@@ -297,3 +297,134 @@ test "head and body truncation are reported even when no answer arrives" {
     assert_eq(kind_phase(h.errors[0]).0, Protocol)
   }
 }
+
+///|
+/// The read failure of a connection whose TLS client closed it without
+/// close_notify.
+fn incomplete_close() -> @sim.ReadStep {
+  Failure(
+    @mttp_core.TransportError(
+      kind=IncompleteClose,
+      phase=Unknown,
+      detail="no close_notify",
+    ),
+  )
+}
+
+///|
+/// How a client went: a clean EOF, or a TLS session closed without
+/// close_notify, which the server engine treats the same.
+let gone : Array[(String, @sim.ReadStep)] = [
+  ("EOF", Eof),
+  ("incomplete close", incomplete_close()),
+]
+
+///|
+/// RFC 9112, section 9.8: a request is never delimited by the close of its
+/// connection, so a client that drops its TLS session without close_notify
+/// ends the connection as one at EOF does. Idle, it is a quiet end; inside
+/// a head or a body, the framing reports the truncation.
+test "an incomplete close is EOF to the server engine" {
+  // (where the client goes, the steps before, the status answered or none,
+  // the failures reported, what the handler's body read raised)
+  let points : Array[
+    (
+      String,
+      Array[@sim.ReadStep],
+      String?,
+      Array[(@mttp_core.Kind, @mttp_core.Phase)],
+      Array[(@mttp_core.Kind, @mttp_core.Phase)],
+    ),
+  ] = [
+    ("idle", [], None, [], []),
+    (
+      "after a request",
+      [Chunk(@mttp_core.encode_utf8(get("/")))],
+      Some("HTTP/1.1 200 "),
+      [],
+      [],
+    ),
+    (
+      "inside a head",
+      [Chunk(b"GET / HTTP/1.1\r\nHost:")],
+      Some("HTTP/1.1 400 "),
+      [(Protocol, Head)],
+      [],
+    ),
+    (
+      "inside a body",
+      [
+        Chunk(
+          b"POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 10\r\n\r\nab",
+        ),
+      ],
+      Some("HTTP/1.1 400 "),
+      [(Protocol, Body)],
+      [(Protocol, Body)],
+    ),
+  ]
+  for point in points {
+    let (at, before, status, errors, body_errors) = point
+    for end in gone {
+      let (how, tail) = end
+      let label = "\{how} \{at}"
+      let h = Harness::new()
+      let conn = @sim.ScriptedConn::new([..before, tail])
+      let seen = []
+      h.run(() => {
+        let task = h.serve_on(conn, request => {
+          let body = body_of(request) catch {
+            error => {
+              seen.push(kind_phase(error))
+              b""
+            }
+          }
+          @mttp_core.Response::new(200, body=Bytes(body))
+        })
+        ignore(task.wait())
+      })
+      let written = @utf8.decode(
+        conn.written().fold(init=b"", (out, bytes) => out + bytes),
+      )
+      match status {
+        Some(status) => assert_true(written.has_prefix(status), msg=label)
+        None => assert_eq(written, "", msg=label)
+      }
+      assert_eq(h.errors.map(kind_phase), errors, msg=label)
+      assert_eq(seen, body_errors, msg=label)
+      assert_eq(conn.closes(), 1, msg=label)
+    }
+  }
+}
+
+///|
+/// A client that drops its TLS session while the handler runs has ended
+/// its sending half, as at EOF: the handler finishes and is answered.
+test "an incomplete close while the handler runs does not cancel it" {
+  for end in gone {
+    let (how, tail) = end
+    let h = Harness::new()
+    let dropped = h.coordination.signal()
+    let conn = @sim.ScriptedConn::new([
+      Chunk(@mttp_core.encode_utf8(get("/"))),
+      Wait(dropped),
+      tail,
+    ])
+    let finished = Ref(false)
+    h.run(() => {
+      let task = h.serve_on(conn, _ => {
+        h.driver.sleep(1000)
+        finished.val = true
+        @mttp_core.Response::new(200)
+      })
+      h.driver.sleep(10)
+      dropped.notify()
+      ignore(task.wait())
+      assert_eq(h.driver.now(), 1000L, msg=how)
+    })
+    assert_true(finished.val, msg=how)
+    assert_eq(conn.written().length() > 0, true, msg=how)
+    assert_eq(h.errors.length(), 0, msg=how)
+    assert_eq(conn.closes(), 1, msg=how)
+  }
+}

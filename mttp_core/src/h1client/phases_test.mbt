@@ -152,3 +152,119 @@ test "a failure on the way to a proxy reports the same phase on every path" {
     }
   }
 }
+
+///|
+/// RFC 9112, section 9.8: a connection whose TLS peer closed it without
+/// close_notify ends where the framing delimits the message as one at EOF
+/// does, with the same kind and phase on every path. Only a body the close
+/// delimits is cut short by it.
+test "an incomplete close reports what EOF reports on every path" {
+  let modes = [exchange(), streaming()]
+  let proxied = {
+    ..@h1client.ClientConfig::default(),
+    proxy: @h1client.ProxyConfig::fixed("http://proxy.test:3128"),
+  }
+  // (where the connection ends, the URL, the configuration, the steps
+  // before the end, the outcome at EOF, the outcome at an incomplete close)
+  let points : Array[
+    (
+      String,
+      String,
+      @h1client.ClientConfig,
+      Array[@sim.ReadStep],
+      Result[String, (@mttp_core.Kind, @mttp_core.Phase)],
+      Result[String, (@mttp_core.Kind, @mttp_core.Phase)],
+    ),
+  ] = [
+    (
+      "before the head",
+      "http://example.test/",
+      @h1client.ClientConfig::default(),
+      [],
+      Err((Network, Head)),
+      Err((Network, Head)),
+    ),
+    (
+      "inside the head",
+      "http://example.test/",
+      @h1client.ClientConfig::default(),
+      [Chunk(b"HTTP/1.1 200 OK\r\n")],
+      Err((Network, Head)),
+      Err((Network, Head)),
+    ),
+    (
+      "before the CONNECT answer",
+      "https://example.test/",
+      proxied,
+      [],
+      Err((Network, Dial)),
+      Err((Network, Dial)),
+    ),
+    (
+      "inside a Content-Length body",
+      "http://example.test/",
+      @h1client.ClientConfig::default(),
+      [Chunk(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\na")],
+      Err((Protocol, Body)),
+      Err((Protocol, Body)),
+    ),
+    (
+      "inside a chunked body",
+      "http://example.test/",
+      @h1client.ClientConfig::default(),
+      [
+        Chunk(
+          b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n",
+        ),
+      ],
+      Err((Protocol, Body)),
+      Err((Protocol, Body)),
+    ),
+    (
+      "after a complete Content-Length body",
+      "http://example.test/",
+      @h1client.ClientConfig::default(),
+      [
+        Chunk(
+          b"HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 1\r\n\r\na",
+        ),
+      ],
+      Ok("a"),
+      Ok("a"),
+    ),
+    (
+      "after a close-delimited body",
+      "http://example.test/",
+      @h1client.ClientConfig::default(),
+      [Chunk(b"HTTP/1.0 200 OK\r\n\r\na")],
+      Ok("a"),
+      Err((Protocol, Body)),
+    ),
+  ]
+  for point in points {
+    let (at, url, config, before, at_eof, at_incomplete) = point
+    for shape in shapes {
+      for options in modes {
+        for
+          end in [
+            (@sim.ReadStep::Eof, at_eof),
+            (incomplete_close(), at_incomplete),
+          ] {
+          let (tail, expected) = end
+          let h = Harness::new(config~)
+          ignore(h.scripted([..before, tail]))
+          h.run(() => {
+            let request = shaped(h, shape)
+            let request = { ..request, url, }
+            assert_eq(
+              attempt(h, request, options),
+              expected,
+              msg="\{at} \{shape} \{Repr(options)}",
+            )
+            h.finish()
+          })
+        }
+      }
+    }
+  }
+}

@@ -131,7 +131,7 @@ async fn ResponseBody::read_raw(self : ResponseBody) -> Bytes? {
         return None
       }
       let max = self.remaining.min(io_bytes.to_int64()).to_int()
-      guard self.wire.read(max) is Some(bytes) else {
+      guard self.wire.read(max) is Data(bytes) else {
         raise @mttp_core.TransportError(
           kind=Protocol,
           phase=Body,
@@ -156,7 +156,7 @@ async fn ResponseBody::read_raw(self : ResponseBody) -> Bytes? {
         if self.raw_done {
           return None
         }
-        guard self.wire.read(io_bytes) is Some(bytes) else {
+        guard self.wire.read(io_bytes) is Data(bytes) else {
           self.chunked.finish()
           self.raw_done = true
           return None
@@ -166,13 +166,22 @@ async fn ResponseBody::read_raw(self : ResponseBody) -> Bytes? {
         self.raw_done = decoded.done
         self.wire.unread(bytes[decoded.consumed:])
       }
-    UntilClose => {
-      let bytes = self.wire.read(io_bytes)
-      if bytes is None {
-        self.raw_done = true
+    // The close ends this body, so a close without the transport's own
+    // end-of-stream signal may have cut it short (RFC 9112, section 9.8).
+    UntilClose =>
+      match self.wire.read(io_bytes) {
+        Data(bytes) => Some(bytes)
+        End(clean=true) => {
+          self.raw_done = true
+          None
+        }
+        End(clean=false) =>
+          raise @mttp_core.TransportError(
+            kind=Protocol,
+            phase=Body,
+            detail="the TLS peer closed without close_notify before the end of a close-delimited body",
+          )
       }
-      bytes
-    }
     _ => {
       self.raw_done = true
       None

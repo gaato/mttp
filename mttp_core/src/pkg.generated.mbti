@@ -145,6 +145,7 @@ pub(all) enum Kind {
   RedirectRefused
   Unreplayable
   Closed
+  IncompleteClose
 }
 pub fn Kind::equal(Self, Self) -> Bool
 pub fn Kind::not_equal(Self, Self) -> Bool

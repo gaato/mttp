@@ -72,7 +72,12 @@ suites. For the implementations in this repository,
 ## Connections and coordination
 
 Conn reads return nonempty chunks of at most `max_len`; EOF permanently ends
-only the read half. Writes consume all supplied bytes. One reader and one
+only the read half. A read raises `IncompleteClose` when the transport ended
+without its own end-of-stream signal (a TLS peer that closed the connection
+beneath without close_notify); like EOF it is permanent, and every later read
+raises it again until close. A caller whose message framing delimits the
+message treats it as EOF; only a message delimited by the close itself is
+truncated (RFC 9112, section 9.8). Writes consume all supplied bytes. One reader and one
 writer may run concurrently. Close is idempotent and wakes pending operations;
 a write after close raises TransportError. A write that raises `Closed` sent
 none of its bytes: the connection was already closed, by this end or by the

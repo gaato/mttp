@@ -356,7 +356,8 @@ pub fn Headers::validate(self : Headers) -> Unit raise TransportError // CR/LF/N
 pub(all) enum Phase { Pool; Dial; Write; Head; Body; Unknown } derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Kind { Invalid; Connect; Timeout(ms~ : Int); Network; Protocol; Proxy(status~ : Int)
-  TooLarge(limit~ : Int); TooManyRedirects(max~ : Int); RedirectRefused; Unreplayable; Closed } derive(Eq, Debug)
+  TooLarge(limit~ : Int); TooManyRedirects(max~ : Int); RedirectRefused; Unreplayable; Closed
+  IncompleteClose } derive(Eq, Debug) // IncompleteClose: a TLS peer closed without close_notify; EOF where framing delimits (RFC 9112 §9.8)
 pub(all) suberror TransportError { TransportError(kind~ : Kind, phase~ : Phase, detail~ : String) } derive(Debug)
 pub fn TransportError::is_unsent(self : TransportError) -> Bool        // message
 
@@ -708,6 +709,7 @@ Engine rules:
 - **Client engine.** Pool, slots, wire, body and deadlines run over the ports; the Buffered/Streaming choice comes from `BodyTiming`. It reads response heads, chunk lines, trailers and a proxy's CONNECT answer within `head_limits`, so the old "unbounded client head" gap (F63, risk 20) is closed for every target that uses the engine. A response that arrives early during an upload cancels the unfinished upload and excludes the socket from reuse; informational responses keep upload progress. The outgoing stream's first read happens before the head is written, so a stream that fails or lies about being empty sends nothing.
 - **Stale-connection repair.** A failure on a reused idle connection before any response byte is resent once on a fresh connection only if the body is replayable *and* the request is resend-safe (`@mttp_core.is_idempotent`: an idempotent method or the `replay_safe` attribute). Receiving no response bytes does not prove the request was unprocessed, so replayability alone never licenses a resend; otherwise the failure surfaces with its phase. This repair is not a policy attempt and is reported separately (§4.4 rule 8).
 - **Server engine.** `serve_conn` owns the accepted connection and closes it on every exit. The handler gets an absolute `Request.url` from `scheme~` and the `Host` header. A supplied background scheduler owns detached work; without one, no `background` attribute is advertised. A client disconnect cancels the handler. Failures reported through `on_error` are `TransportError` values; runtime error identities never escape. Compression is not an engine concern: wrap the handler with `@codings.compress` (§4.11).
+- **Incomplete close.** A read that ends without the transport's own end-of-stream signal (`IncompleteClose`: a TLS peer closed without close_notify) is EOF wherever the framing delimits the message: response heads, a proxy's CONNECT answer, Content-Length and chunked bodies, the stale-connection repair and every read of the server engine. Only a response body framed `UntilClose` fails then, `Protocol` in phase Body, since its end cannot be told from a truncation (RFC 9112 §9.8).
 - **Control.** Admission, pool metadata, peer EOF/failure and listener lifecycle are transitions of `internal/control` (§5.11).
 ### 4.6 schema
 

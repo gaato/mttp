@@ -292,7 +292,7 @@ async fn Session::read_peer(
   self : Session,
   max_len : Int32,
 ) -> Bytes? raise @mttp_core.TransportError {
-  let next = self.wire.conn.read(max_len~) catch {
+  let next = read_conn(self.wire.conn, max_len) catch {
     error => {
       let change = self.control.step(PeerFailure)
       self.control = change.state

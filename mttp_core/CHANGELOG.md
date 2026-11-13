@@ -7,6 +7,27 @@ never does.
 
 ## [Unreleased]
 
+### Added
+
+- `Kind::IncompleteClose`: a transport ended without its own end-of-stream
+  signal, as a TLS session does when its peer closes the connection beneath
+  without close_notify (RFC 9112, section 9.8 calls this an incomplete
+  close). `rt.Conn` reads may raise it; like EOF it is permanent
+  (CONTRACT.md, Connections and coordination).
+
+### Changed
+
+- `h1client` and `h1server` treat `IncompleteClose` as EOF wherever the
+  message framing delimits the message: response heads, a proxy's CONNECT
+  answer, Content-Length and chunked bodies, every read of the server
+  engine, and the resend of a request whose reused connection closed before
+  the response, which happens once whether the close was clean or not. Only
+  a response body delimited by the close itself (no Content-Length, not
+  chunked) now fails with `Protocol` in phase Body, since it may have been
+  cut short. gaato/mttp's TLS connections raise it on MoonBit toolchains
+  after 0.10.20, whose core/async reports such a close where 0.10.20
+  returned EOF.
+
 ## [0.1.0] - 2026-11-12
 
 ### Changed

@@ -36,9 +36,25 @@ async fn Wire::read(
     self.pending = self.pending[n:].to_owned()
     return Some(bytes)
   }
-  self.conn.read(max_len~) catch {
+  read_conn(self.conn, max_len) catch {
     @mttp_core.TransportError(kind~, detail~, ..) =>
       raise @mttp_core.TransportError(kind~, phase~, detail~)
+  }
+}
+
+///|
+/// A read of at most `max_len` from `conn`, where an end without the
+/// transport's own end-of-stream signal (`IncompleteClose`) is EOF. A
+/// request is never delimited by the close of its connection: its framing
+/// catches a head or body cut short, and an idle client that drops its TLS
+/// session without close_notify has simply gone (RFC 9112, section 9.8).
+async fn read_conn(
+  conn : &@rt.Conn,
+  max_len : Int32,
+) -> Bytes? raise @mttp_core.TransportError {
+  conn.read(max_len~) catch {
+    @mttp_core.TransportError(kind=IncompleteClose, ..) => None
+    error => raise error
   }
 }
 

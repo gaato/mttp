@@ -27,6 +27,12 @@ pub(all) enum Kind {
   RedirectRefused
   Unreplayable
   Closed
+  /// The transport ended without its own end-of-stream signal: a TLS
+  /// session's peer closed the connection beneath without sending
+  /// close_notify. RFC 9112, section 9.8 calls this an incomplete close.
+  /// Where the message framing delimits the message, it counts as EOF;
+  /// only a body delimited by the close itself is then truncated.
+  IncompleteClose
 }
 
 ///|
