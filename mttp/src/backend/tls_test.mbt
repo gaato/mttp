@@ -459,3 +459,100 @@ async test "socket TLS POST after the server's close_notify uses a new connectio
     })
   })
 }
+
+///|
+/// A TLS server that answers the first request on each connection with
+/// `answer` and ends the connection, with close_notify first or without it.
+/// `action` gets the URL and the count of connections accepted so far.
+#cfg(not(platform="windows"))
+async fn with_closing_tls_server(
+  answer : Bytes,
+  close_notify~ : Bool,
+  action : async (String, Ref[Int32]) -> Unit,
+) -> Unit {
+  @async.with_timeout(5000, () => {
+    let listener = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
+    defer listener.close()
+    let connections = Ref(0)
+    @async.with_task_group(group => {
+      group.spawn_bg(() => {
+        while true {
+          let (tcp, _) = listener.accept()
+          connections.val += 1
+          group.spawn_bg(allow_failure=true, () => {
+            let tls = test_tls(@socketconn.from_tcp(tcp))
+            defer tls.close()
+            guard tls.read_until(b"\r\n\r\n") is Some(_) else { return }
+            tls.write(answer)
+            if close_notify {
+              tls.shutdown()
+            }
+          })
+        }
+      })
+      action("https://localhost:\{port_of(listener.addr)}/", connections)
+      group.return_immediately()
+    })
+  })
+}
+
+///|
+#cfg(not(platform="windows"))
+fn closing_backend() -> @backend.AsyncBackend {
+  @backend.AsyncBackend::new(
+    config=@h1client.ClientConfig::default(),
+    trust=PemFile("src/conn/testdata/localhost.pem"),
+  )
+}
+
+///|
+/// RFC 9112, section 9.8: a close without close_notify after a response
+/// its framing delimits ends nothing early. The parked connection's end is
+/// found when the next request is sent on it, which goes again on a new
+/// connection.
+#cfg(not(platform="windows"))
+async test "socket TLS framed responses survive a close without close_notify" {
+  with_closing_tls_server(
+    b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok",
+    close_notify=false,
+    (url, connections) => {
+      let backend = closing_backend()
+      defer backend.close()
+      for _ in 0..<2 {
+        assert_eq(
+          body(
+            backend.send(
+              @mttp_core.Request::get(url),
+              @mttp_core.SendOptions::default(),
+            ),
+          ),
+          b"ok",
+        )
+      }
+      assert_eq(connections.val, 2)
+    },
+  )
+}
+
+///|
+#cfg(not(platform="windows"))
+async test "socket TLS close-delimited body ends cleanly at close_notify" {
+  with_closing_tls_server(
+    b"HTTP/1.1 200 OK\r\nconnection: close\r\n\r\nall of it",
+    close_notify=true,
+    (url, _) => {
+      let backend = closing_backend()
+      defer backend.close()
+      assert_eq(
+        body(
+          backend.send(
+            @mttp_core.Request::get(url),
+            @mttp_core.SendOptions::default(),
+          ),
+        ),
+        b"all of it",
+      )
+      assert_eq(backend.idle_connections(), 0)
+    },
+  )
+}

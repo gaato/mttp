@@ -102,7 +102,11 @@ fn unclean_conn(
 }
 
 ///|
-test "the toolchain's report of a missing close_notify is recognised" {
+/// The predicate, and a real TLS session whose server drops the connection
+/// without close_notify: its reads raise IncompleteClose, again after the
+/// first.
+#cfg(not(platform="windows"))
+async test "the toolchain's report of a missing close_notify is recognised" {
   assert_true(incomplete_close(@io.UnexpectedEof))
   assert_true(
     incomplete_close(
@@ -115,6 +119,40 @@ test "the toolchain's report of a missing close_notify is recognised" {
       @mttp_core.TransportError(kind=Network, phase=Unknown, detail="reset"),
     ),
   )
+  let cert = "src/conn/testdata/localhost.pem"
+  @async.with_timeout(5000, () => {
+    let listener = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
+    defer listener.close()
+    @async.with_task_group(group => {
+      group.spawn_bg(() => {
+        let (tcp, _) = listener.accept()
+        let server = @testtls.accept(
+          from_tcp(tcp),
+          key_file="src/conn/testdata/localhost.key",
+          cert_file=cert,
+        )
+        server.write(b"bye")
+        server.close()
+      })
+      let tcp = @socket.Tcp::connect(listener.addr)
+      let tls = @tls.Tls::client(
+        tcp,
+        host="localhost",
+        trust=CustomPemFile(cert),
+      )
+      let conn = from_tls(tls, from_tcp(tcp), lower_sends=() => 0L)
+      defer conn.close()
+      assert_eq(conn.read(max_len=16), Some(b"bye"))
+      for _ in 0..<2 {
+        try conn.read(max_len=16) |> ignore catch {
+          @mttp_core.TransportError(kind=IncompleteClose, ..) => ()
+          error => raise error
+        } noraise {
+          _ => fail("a close without close_notify read as EOF")
+        }
+      }
+    })
+  })
 }
 
 ///|

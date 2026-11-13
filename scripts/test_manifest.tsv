@@ -135,8 +135,8 @@ gaato/mttp	gaato/mttp	js	0
 gaato/mttp	gaato/mttp	native	15
 gaato/mttp	gaato/mttp	wasm	15
 gaato/mttp	gaato/mttp/backend	js	17
-gaato/mttp	gaato/mttp/backend	native	21
-gaato/mttp	gaato/mttp/backend	wasm	20
+gaato/mttp	gaato/mttp/backend	native	24
+gaato/mttp	gaato/mttp/backend	wasm	23
 gaato/mttp	gaato/mttp/codings	js	47
 gaato/mttp	gaato/mttp/codings	native	47
 gaato/mttp	gaato/mttp/codings	wasm	47
@@ -147,8 +147,8 @@ gaato/mttp	gaato/mttp/files	native	17
 gaato/mttp	gaato/mttp/files	wasm	17
 gaato/mttp	gaato/mttp/internal/control	native	2
 gaato/mttp	gaato/mttp/internal/control	wasm	2
-gaato/mttp	gaato/mttp/internal/socketconn	native	8
-gaato/mttp	gaato/mttp/internal/socketconn	wasm	8
+gaato/mttp	gaato/mttp/internal/socketconn	native	10
+gaato/mttp	gaato/mttp/internal/socketconn	wasm	10
 gaato/mttp	gaato/mttp/internal/testtls	native	5
 gaato/mttp	gaato/mttp/internal/testtls	wasm	5
 gaato/mttp	gaato/mttp/runtime	js	26

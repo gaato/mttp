@@ -7,6 +7,10 @@ import {
   "moonbitlang/core/async/tls",
 }
 
+import {
+  "gaato/mttp/internal/testtls",
+} for "wbtest"
+
 supported_targets = "native+wasm"
 
 options(

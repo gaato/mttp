@@ -31,10 +31,12 @@ jobs:
       # raises for a peer that closed without close_notify; mttp's code
       # that needs them cannot sit in the tree yet. compat/core_async_next
       # keeps it at the paths it takes in the tree, with `.next` appended:
-      # new files (the impls, and a test of SocketConn over a session that
-      # raises UnexpectedEof) and incomplete_close.mbt, which replaces the
-      # in-tree version that cannot tell. This copies them in on a
-      # toolchain that has the methods.
+      # new files (the impls) and files that replace in-tree versions for
+      # 0.10.20, which cannot tell a close without close_notify
+      # (incomplete_close.mbt, and the tests of it in socketconn and backend,
+      # whose in-tree versions hold as many tests, so the test manifest fits
+      # either toolchain). This copies them in on a toolchain that has the
+      # methods; both changes are in the same nightlies, so one check serves.
       - name: Adopt core/async's newer IO traits if this toolchain has them
         run: |
           traits="${MOON_HOME:-$HOME/.moon}/lib/core/async/io/pkg.generated.mbti"
