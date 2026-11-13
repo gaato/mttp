@@ -1,0 +1,158 @@
+// A test of mttp/src/internal/socketconn/incomplete_close.mbt as
+// compat/core_async_next has it, for MoonBit after 0.10.20: it raises
+// `@io.UnexpectedEof` and implements the IO trait methods 0.10.20 refuses.
+// On a toolchain that has them, .github/workflows/canary.yml copies this
+// file to mttp/src/internal/socketconn/incomplete_close_wbtest.mbt. When
+// moonbit-version moves past 0.10.20, move it there for good and delete
+// compat/.
+
+///|
+/// A TLS session as core/async's client is after its peer closed the
+/// connection beneath without close_notify: every read raises
+/// `@io.UnexpectedEof`.
+priv struct UncleanIo {
+  reader : @io.BinaryReaderController
+  writer : @io.BinaryWriterController
+  mut reads : Int32
+}
+
+///|
+impl @io.BinaryReaderImpl for UncleanIo with fn name(_) {
+  "UncleanIo"
+}
+
+///|
+impl @io.BinaryReaderImpl for UncleanIo with fn get_controller(self) {
+  self.reader
+}
+
+///|
+impl @io.BinaryReaderImpl for UncleanIo with fn raw_read_impl(
+  self,
+  _out,
+  offset~,
+  max_len~,
+) {
+  ignore(offset)
+  ignore(max_len)
+  self.reads += 1
+  raise @io.UnexpectedEof
+}
+
+///|
+impl @io.BinaryWriterImpl for UncleanIo with fn name(_) {
+  "UncleanIo"
+}
+
+///|
+impl @io.BinaryWriterImpl for UncleanIo with fn get_controller(self) {
+  self.writer
+}
+
+///|
+impl @io.BinaryWriterImpl for UncleanIo with fn raw_write_impl(
+  _,
+  _bytes,
+  offset~,
+  len~,
+) {
+  ignore(offset)
+  len
+}
+
+///|
+impl @io.BinaryWriterImpl for UncleanIo with fn flush_partial_data(_) {
+
+}
+
+///|
+impl @io.BinaryReader for UncleanIo
+
+///|
+impl @io.BinaryWriter for UncleanIo
+
+///|
+/// A SocketConn over `io`, as `from_tls` builds one when `tls` is true and
+/// as `from_tcp` does otherwise.
+fn unclean_conn(
+  io : UncleanIo,
+  tls~ : Bool,
+) -> SocketConn[UncleanIo, UncleanIo] {
+  {
+    reader: io,
+    writer: io,
+    close_: () => (),
+    closed: false,
+    eof: false,
+    incomplete: false,
+    pending: b"",
+    cancel_read: None,
+    cancel_write: None,
+    lower_sends: if tls {
+      Some(() => 0L)
+    } else {
+      None
+    },
+    lower_failure: if tls {
+      Some(() => None)
+    } else {
+      None
+    },
+  }
+}
+
+///|
+test "the toolchain's report of a missing close_notify is recognised" {
+  assert_true(incomplete_close(@io.UnexpectedEof))
+  assert_true(
+    incomplete_close(
+      @io.ReaderError::TransportError(@io.UnexpectedEof, context="@tls.Tls"),
+    ),
+  )
+  assert_false(incomplete_close(@io.LengthLimitExceeded))
+  assert_false(
+    incomplete_close(
+      @mttp_core.TransportError(kind=Network, phase=Unknown, detail="reset"),
+    ),
+  )
+}
+
+///|
+/// RFC 9112, section 9.8: a TLS session closed without close_notify is
+/// `IncompleteClose`, and stays so for later reads until close, as
+/// `rt.Conn` asks. TCP has no such signal to miss, so there the same error
+/// is an ordinary failure.
+async test "a TLS session closed without close_notify reads as IncompleteClose" {
+  let io = UncleanIo::{
+    reader: @io.BinaryReaderController(),
+    writer: @io.BinaryWriterController(),
+    reads: 0,
+  }
+  let conn : &@rt.Conn = unclean_conn(io, tls=true)
+  for _ in 0..<2 {
+    try conn.read(max_len=16) catch {
+      @mttp_core.TransportError(kind=IncompleteClose, phase=Unknown, ..) => ()
+      error => raise error
+    } noraise {
+      _ => fail("the read after an unclean close succeeded")
+    }
+  }
+  // The second read did not go back to the session.
+  assert_eq(io.reads, 1)
+  conn.close()
+  assert_eq(conn.read(max_len=16), None)
+  let tcp : &@rt.Conn = unclean_conn(
+    {
+      reader: @io.BinaryReaderController(),
+      writer: @io.BinaryWriterController(),
+      reads: 0,
+    },
+    tls=false,
+  )
+  try tcp.read(max_len=16) catch {
+    @mttp_core.TransportError(kind=Network, phase=Unknown, ..) => ()
+    error => raise error
+  } noraise {
+    _ => fail("the read after an unclean close succeeded")
+  }
+}

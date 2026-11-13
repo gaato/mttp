@@ -7,6 +7,16 @@ never does.
 
 ## [Unreleased]
 
+### Changed
+
+- A TLS connection whose peer closes the connection beneath without
+  close_notify raises `IncompleteClose` (gaato/mttp_core) from its reads, on
+  MoonBit toolchains after 0.10.20, whose core/async reports such a close;
+  it was `Network` there. On 0.10.20, which returns EOF, nothing changes.
+  The HTTP/1.1 client and server treat it as EOF except at the end of a
+  response body delimited by the close, which now fails as truncated
+  (RFC 9112, section 9.8).
+
 ## [0.3.0] - 2026-11-12
 
 ### Changed

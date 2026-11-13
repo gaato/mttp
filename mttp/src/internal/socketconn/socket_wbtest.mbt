@@ -157,6 +157,7 @@ fn wrap(
     close_: () => closes.val += 1,
     closed: false,
     eof: false,
+    incomplete: false,
     pending: b"",
     cancel_read: None,
     cancel_write: None,
@@ -263,6 +264,41 @@ async test "a TLS failure reports the last failure beneath instead of a wrapped 
   let own = @mttp_core.TransportError(kind=Closed, phase=Write, detail="own")
   let conn = wrap(probe(), Ref(0), lower_failure=failed)
   assert_true(conn.cause(own) is @mttp_core.TransportError(kind=Closed, ..))
+}
+
+///|
+/// Over TLS, a read failure that the toolchain does not report as a close
+/// without close_notify keeps its kind. Once a read found such a close
+/// (`incomplete`, which a toolchain after MoonBit 0.10.20 sets; the test
+/// of that is in compat/core_async_next), later reads raise
+/// `IncompleteClose` again without reading beneath, until close.
+async test "an unclean TLS close stays IncompleteClose until close" {
+  let sending : () -> Int64 = () => 0L
+  let failing : &@rt.Conn = wrap(
+    probe(fail_read=true),
+    Ref(0),
+    lower_sends=sending,
+  )
+  try failing.read(max_len=1) catch {
+    @mttp_core.TransportError(kind~, ..) => assert_eq(kind, Network)
+  } noraise {
+    _ => fail("the failing read succeeded")
+  }
+  let io = probe(bytes=b"abc")
+  let conn : &@rt.Conn = {
+    ..wrap(io, Ref(0), lower_sends=sending),
+    incomplete: true,
+  }
+  for _ in 0..<2 {
+    try conn.read(max_len=1) catch {
+      @mttp_core.TransportError(kind~, ..) => assert_eq(kind, IncompleteClose)
+    } noraise {
+      _ => fail("a read after an unclean close succeeded")
+    }
+  }
+  assert_eq(io.limits, [])
+  conn.close()
+  assert_eq(conn.read(max_len=1), None)
 }
 
 ///|

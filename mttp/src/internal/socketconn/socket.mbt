@@ -5,6 +5,9 @@ priv struct SocketConn[R, W] {
   close_ : () -> Unit
   mut closed : Bool
   mut eof : Bool
+  /// Whether a read found the TLS session ended without close_notify;
+  /// every later read raises `IncompleteClose` again, as `rt.Conn` asks.
+  mut incomplete : Bool
   mut pending : Bytes
   mut cancel_read : (() -> Unit)?
   mut cancel_write : (() -> Unit)?
@@ -34,6 +37,9 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
   }
   if !self.pending.is_empty() {
     return Some(self.take_pending(max_len))
+  }
+  if self.incomplete {
+    raise incomplete_close_error()
   }
   let buffer = FixedArray::make(max_len.min(65536), b'\x00')
   // core's handle close can detach an outstanding read without waking it.
@@ -65,13 +71,39 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
       error => raise error
     }
   }) catch {
-    error => raise transport_error(self.cause(error))
+    error => raise self.read_failure(error)
   }
   if self.closed || self.pending.is_empty() {
     None
   } else {
     Some(self.take_pending(max_len))
   }
+}
+
+///|
+/// The failure of a read. A TLS session whose peer closed the connection
+/// beneath without close_notify is `IncompleteClose`, which `rt.Conn`
+/// reserves for that end: the bytes before it may be the whole message
+/// or a truncated one, and only the caller's framing can tell (RFC 9112,
+/// section 9.8). Over TCP the end has no signal of its own to miss.
+fn[R, W] SocketConn::read_failure(
+  self : SocketConn[R, W],
+  error : Error,
+) -> @mttp_core.TransportError {
+  if self.lower_sends is Some(_) && incomplete_close(error) {
+    self.incomplete = true
+    return incomplete_close_error()
+  }
+  transport_error(self.cause(error))
+}
+
+///|
+fn incomplete_close_error() -> @mttp_core.TransportError {
+  @mttp_core.TransportError(
+    kind=IncompleteClose,
+    phase=Unknown,
+    detail="peer closed the TLS connection without close_notify",
+  )
 }
 
 ///|
@@ -233,6 +265,7 @@ pub fn from_tcp(tcp : @socket.Tcp) -> &@rt.Conn {
     close_: () => tcp.close(),
     closed: false,
     eof: false,
+    incomplete: false,
     pending: b"",
     cancel_read: None,
     cancel_write: None,
@@ -265,6 +298,7 @@ pub fn from_tls(
     },
     closed: false,
     eof: false,
+    incomplete: false,
     pending: b"",
     cancel_read: None,
     cancel_write: None,

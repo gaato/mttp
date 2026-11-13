@@ -1,0 +1,18 @@
+// The version of mttp/src/internal/socketconn/incomplete_close.mbt for
+// MoonBit after 0.10.20, whose core/async defines `@io.UnexpectedEof`,
+// which 0.10.20 does not. On a toolchain that has it,
+// .github/workflows/canary.yml copies this file over that one. When
+// moonbit-version moves past 0.10.20, move it there for good and delete
+// compat/.
+
+///|
+/// Whether `error`, raised by a read of a TLS session, says that the peer
+/// closed the connection beneath without close_notify. core/async's TLS
+/// client raises `@io.UnexpectedEof` then (it requires close_notify by
+/// default), and `@io.BinaryReader::read_into` wraps what the session
+/// raises in `@io.ReaderError::TransportError`.
+fn incomplete_close(error : Error) -> Bool {
+  error
+  is (@io.UnexpectedEof
+  | @io.ReaderError::TransportError(@io.UnexpectedEof, ..))
+}
