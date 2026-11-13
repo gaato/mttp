@@ -11,6 +11,7 @@ import {
 import {
   "gaato/mttp_core/sim",
   "gaato/mttp/runtime",
+  "gaato/mttp/internal/testtls",
   "moonbitlang/core/async",
 } for "test"
 

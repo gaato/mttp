@@ -1,0 +1,27 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "moonbitlang/core/async/semaphore",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/async/tls",
+  "gaato/mttp/internal/socketconn",
+  "gaato/mttp_core/sim",
+} for "test"
+
+supported_targets = "native+wasm"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/semaphore",
+    "moonbitlang/core/async/socket",
+    "moonbitlang/core/async/tls",
+  ],
+  "native-stub": [ "testtls.c" ],
+  targets: { "engine.native.mbt": [ "native" ], "engine.wasm.mbt": [ "wasm" ] },
+)

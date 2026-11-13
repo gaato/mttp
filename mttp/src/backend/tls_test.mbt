@@ -1,38 +1,18 @@
 ///|
-#cfg(all(not(target="wasm"), not(platform="windows")))
-#warnings("-alert_internal")
-async fn test_tls(tcp : @socket.Tcp) -> @tls.Tls {
-  @tls.Tls::server(
-    tcp,
-    private_key_file="src/conn/testdata/localhost.key",
-    private_key_type=PEM,
-    certificate_file="src/conn/testdata/localhost.pem",
-    certificate_type=PEM,
+/// A TLS server session over `conn` with the test certificate. No Windows
+/// server exists (internal/testtls/testtls.mbt), so the tests that need
+/// one are not built there.
+#cfg(not(platform="windows"))
+async fn test_tls(conn : &@rt.Conn) -> @testtls.TestTls {
+  @testtls.accept(
+    conn,
+    key_file="src/conn/testdata/localhost.key",
+    cert_file="src/conn/testdata/localhost.pem",
   )
 }
 
 ///|
-#cfg(all(not(target="wasm"), platform="windows"))
-#warnings("-alert_internal")
-async fn test_tls(tcp : @socket.Tcp) -> @tls.Tls {
-  @tls.Tls::server(tcp, pfx_file="src/conn/testdata/localhost.pfx")
-}
-
-///|
-#cfg(target="wasm")
-#warnings("-alert_internal")
-async fn test_tls(tcp : @socket.Tcp) -> @tls.Tls {
-  @tls.Tls::server(
-    tcp,
-    private_key_file="src/conn/testdata/localhost.key",
-    private_key_type=PEM,
-    certificate_file="src/conn/testdata/localhost.pem",
-    certificate_type=PEM,
-    pfx_file="src/conn/testdata/localhost.pfx",
-  )
-}
-
-///|
+#cfg(not(platform="windows"))
 async fn with_tls_server(
   handler : @mttp_core.Handler,
   action : async (String) -> Unit,
@@ -46,9 +26,8 @@ async fn with_tls_server(
           let (tcp, _) = listener.accept()
           group.spawn_bg(allow_failure=true, () => {
             defer tcp.close()
-            let tls = test_tls(tcp)
             @h1server.serve_conn(
-              @socketconn.from_tls(tls, @socketconn.from_tcp(tcp)),
+              test_tls(@socketconn.from_tcp(tcp)),
               handler,
               clock=@runtime.AsyncClock::new(),
               timer=@runtime.ClockTimer::new(),
@@ -65,6 +44,7 @@ async fn with_tls_server(
 }
 
 ///|
+#cfg(not(platform="windows"))
 async test "socket TLS custom roots insecure mode and verification failures use root Trust" {
   with_tls_server(_ => @mttp_core.Response::new(200, body=Bytes(b"secured")), url => {
     for
@@ -130,6 +110,7 @@ async fn pump(from : &@rt.Conn, to : &@rt.Conn) -> Unit {
 }
 
 ///|
+#cfg(not(platform="windows"))
 async test "socket CONNECT tunnels verified TLS through plain and TLS proxies" {
   let origin_auth = Ref(false)
   with_tls_server(
@@ -148,7 +129,7 @@ async test "socket CONNECT tunnels verified TLS through plain and TLS proxies" {
             let (tcp, _) = proxy.accept()
             let outer = @socketconn.from_tcp(tcp)
             let tunnel = if secure {
-              @socketconn.from_tls(test_tls(tcp), outer)
+              (test_tls(outer) : &@rt.Conn)
             } else {
               outer
             }
@@ -420,7 +401,7 @@ async test "socket TLS POST after the server's close_notify uses a new connectio
             // later the server closes it with close_notify, as nginx and
             // Caddy close an idle connection.
             defer tcp.close()
-            let tls = test_tls(tcp)
+            let tls = test_tls(@socketconn.from_tcp(tcp))
             defer tls.close()
             guard tls.read_until(b"\r\n\r\n") is Some(head) else { return }
             let head = @utf8.decode_lossy(head).to_lower()

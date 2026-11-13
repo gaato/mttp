@@ -29,8 +29,8 @@ import {
   "moonbitlang/core/encoding/utf8",
   "gaato/mttp_core/h1server",
   "gaato/mttp/internal/socketconn",
+  "gaato/mttp/internal/testtls",
   "moonbitlang/core/async/socket",
-  "moonbitlang/core/async/tls",
 } for "test"
 
 supported_targets = "native+wasm+js"
@@ -40,7 +40,6 @@ options(
     "moonbitlang/core/async",
     "moonbitlang/core/async/js_async",
     "moonbitlang/core/async/socket",
-    "moonbitlang/core/async/tls",
   ],
   targets: {
     "platform.native.mbt": [ "native", "wasm" ],

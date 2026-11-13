@@ -17,3 +17,10 @@ other projects by hand:
   BSD-3-Clause license (https://go.googlesource.com/net/+/master/LICENSE);
 - curl (tests/unit/unit1614.c), Copyright Daniel Stenberg and contributors,
   curl license (https://curl.se/docs/copyright.html).
+
+The TLS server that mttp's tests use (mttp/src/internal/testtls) adapts code
+from moonbitlang/core (https://github.com/moonbitlang/core): the run-time
+loading of OpenSSL in runtime/openssl.c and the moonrun host calls declared in
+async/tls. Copyright 2026 International Digital Economy Academy, Apache-2.0.
+This product includes software developed at International Digital Economy
+Academy (https://www.idea.edu.cn/).

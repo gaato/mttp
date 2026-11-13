@@ -149,6 +149,8 @@ gaato/mttp	gaato/mttp/internal/control	native	2
 gaato/mttp	gaato/mttp/internal/control	wasm	2
 gaato/mttp	gaato/mttp/internal/socketconn	native	7
 gaato/mttp	gaato/mttp/internal/socketconn	wasm	7
+gaato/mttp	gaato/mttp/internal/testtls	native	5
+gaato/mttp	gaato/mttp/internal/testtls	wasm	5
 gaato/mttp	gaato/mttp/runtime	js	26
 gaato/mttp	gaato/mttp/runtime	native	26
 gaato/mttp	gaato/mttp/runtime	wasm	26

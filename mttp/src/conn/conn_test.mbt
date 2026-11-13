@@ -15,36 +15,15 @@ fn port_of(addr : @socket.Addr) -> Int32 {
 }
 
 ///|
-#cfg(all(not(target="wasm"), not(platform="windows")))
-#warnings("-alert_internal")
-async fn test_tls_server(tcp : @socket.Tcp) -> @tls.Tls {
-  @tls.Tls::server(
-    tcp,
-    private_key_file="src/conn/testdata/localhost.key",
-    private_key_type=PEM,
-    certificate_file="src/conn/testdata/localhost.pem",
-    certificate_type=PEM,
-  )
-}
-
-///|
-#cfg(all(not(target="wasm"), platform="windows"))
-#warnings("-alert_internal")
-async fn test_tls_server(tcp : @socket.Tcp) -> @tls.Tls {
-  @tls.Tls::server(tcp, pfx_file="src/conn/testdata/localhost.pfx")
-}
-
-///|
-#cfg(target="wasm")
-#warnings("-alert_internal")
-async fn test_tls_server(tcp : @socket.Tcp) -> @tls.Tls {
-  @tls.Tls::server(
-    tcp,
-    private_key_file="src/conn/testdata/localhost.key",
-    private_key_type=PEM,
-    certificate_file="src/conn/testdata/localhost.pem",
-    certificate_type=PEM,
-    pfx_file="src/conn/testdata/localhost.pfx",
+/// A TLS server session over `tcp` with the test certificate. No Windows
+/// server exists (internal/testtls/testtls.mbt), so the tests that need
+/// one are not built there.
+#cfg(not(platform="windows"))
+async fn test_tls_server(tcp : @socket.Tcp) -> @testtls.TestTls {
+  @testtls.accept(
+    @socketconn.from_tcp(tcp),
+    key_file="src/conn/testdata/localhost.key",
+    cert_file="src/conn/testdata/localhost.pem",
   )
 }
 
@@ -152,6 +131,7 @@ impl @rt.Conn for Tunnel with fn close(self) {
 }
 
 ///|
+#cfg(not(platform="windows"))
 async test "TLS upgrades arbitrary Conn tunnels with custom and insecure trust and owns success" {
   for
     trust in [
@@ -198,6 +178,7 @@ async test "TLS upgrades arbitrary Conn tunnels with custom and insecure trust a
 }
 
 ///|
+#cfg(not(platform="windows"))
 async test "TLS verification failure leaves tunnel owned by caller" {
   for
     (trust, host) in [

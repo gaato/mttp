@@ -1,0 +1,26 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/internal/testtls"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+}
+
+// Values
+pub async fn accept(&@rt.Conn, key_file~ : String, cert_file~ : String) -> TestTls raise @mttp_core.TransportError
+
+// Errors
+
+// Types and methods
+type TestTls
+pub fn TestTls::close(Self) -> Unit
+pub async fn TestTls::read(Self, max_len? : Int32) -> Bytes? raise @mttp_core.TransportError
+pub async fn TestTls::read_exactly(Self, Int32) -> Bytes raise @mttp_core.TransportError
+pub async fn TestTls::read_until(Self, Bytes) -> Bytes? raise @mttp_core.TransportError
+pub async fn TestTls::shutdown(Self) -> Unit raise @mttp_core.TransportError
+pub async fn TestTls::write(Self, Bytes) -> Unit raise @mttp_core.TransportError
+pub impl @rt.Conn for TestTls
+
+// Type aliases
+
+// Traits
