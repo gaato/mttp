@@ -97,7 +97,15 @@ static_gates() {
   after=$(mbti_snapshot)
   if [ "$before" != "$after" ]; then
     diff <(echo "$before") <(echo "$after") | grep -E '^[<>]' >&2 || true
-    fail "pkg.generated.mbti was stale: 'moon info' changed it; commit the regenerated files"
+    # The committed interfaces are the pinned toolchain's rendering. Another
+    # toolchain (the canary's nightly row) may print the same API otherwise,
+    # as when core renames a type; that is news about the toolchain, not
+    # interfaces someone forgot to regenerate.
+    if moon version --all | grep -qF -- "$(cat moonbit-version)"; then
+      fail "pkg.generated.mbti was stale: 'moon info' changed it; commit the regenerated files"
+    else
+      echo "note: 'moon info' on this toolchain renders the interfaces above differently from moonbit-version's" >&2
+    fi
   fi
   # Generated sources must match their generators byte for byte.
   step script scripts/gen_schema_objects.mbtx -- --check
