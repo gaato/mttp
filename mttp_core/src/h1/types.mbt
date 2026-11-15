@@ -154,7 +154,7 @@ pub extend ParsedRequest with @debug.Debug::{to_repr}
 pub struct ParsedResponse {
   /// The wire version.
   version : Version
-  /// The status code, 100 to 599.
+  /// The wire status code, 100 to 999; 600–999 are server failures.
   status : Int32
   /// The fields in order, names lowercased, duplicates retained.
   headers : @mttp_core.Headers

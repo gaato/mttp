@@ -1,4 +1,29 @@
 ///|
+test "invalid three-digit response statuses reach the caller unchanged" {
+  for status in [600, 799, 999] {
+    let h = Harness::new()
+    ignore(
+      h.scripted([
+        Chunk(
+          @mttp_core.encode_utf8(
+            "HTTP/1.1 \{status} High\r\nContent-Length: 2\r\n\r\nno",
+          ),
+        ),
+      ]),
+    )
+    h.run(() => {
+      let response = h.client.send(
+        @mttp_core.Request::get("http://example.test/"),
+        exchange(),
+      )
+      assert_eq(response.status, status)
+      assert_eq(body_of(response), b"no")
+      h.finish()
+    })
+  }
+}
+
+///|
 test "the client keeps the shared backend contract" {
   let driver = @driver.Driver::new()
   let coordination = @sim.SimCoordination::new(driver)

@@ -219,39 +219,43 @@ test "authentication errors are ordinary declared values before the handler runs
 
 ///|
 test "unknown buffered and stream representations stop at the diagnostic bound" {
-  for streaming in [false, true] {
-    let driver = @driver.Driver::new()
-    let source = @sim.Feed::bytes(driver, [Bytes::make(2 * 1048576, b'x')])
-    let client = @client.Client::new(
-      @client.from_fn((_, _) => {
-        @mttp_core.Response::new(
-          200,
-          body=Stream(@mttp_core.StreamBody::new(source)),
-          headers=@mttp_core.Headers::of([("content-type", "image/unexpected")]),
-        )
-      }),
-      @sim.FakeClock::new(),
-    )
-    let buffered = @endpoint.endpoint.get("/").output(@endpoint.text_out())
-    let streamed = @endpoint.endpoint
-      .get("/")
-      .output(@endpoint.sse_out(@schema.jint))
-    let consumed = Ref(false)
-    let rejected = driver.run(() => {
-      if streaming {
-        streamed.stream_request((), (), _ => consumed.val = true).send(client).body.map(_ => {
-            ()
-          },
-        )
-      } else {
-        buffered.request((), ()).send(client).body.map(_ => ())
+  for status in [200, 503, 600, 999] {
+    for streaming in [false, true] {
+      let driver = @driver.Driver::new()
+      let source = @sim.Feed::bytes(driver, [Bytes::make(2 * 1048576, b'x')])
+      let client = @client.Client::new(
+        @client.from_fn((_, _) => {
+          @mttp_core.Response::new(
+            status,
+            body=Stream(@mttp_core.StreamBody::new(source)),
+            headers=@mttp_core.Headers::of([
+              ("content-type", "image/unexpected"),
+            ]),
+          )
+        }),
+        @sim.FakeClock::new(),
+      )
+      let buffered = @endpoint.endpoint.get("/").output(@endpoint.text_out())
+      let streamed = @endpoint.endpoint
+        .get("/")
+        .output(@endpoint.sse_out(@schema.jint))
+      let consumed = Ref(false)
+      let rejected = driver.run(() => {
+        if streaming {
+          streamed.stream_request((), (), _ => consumed.val = true).send(client).body.map(_ => {
+              ()
+            },
+          )
+        } else {
+          buffered.request((), ()).send(client).body.map(_ => ())
+        }
+      })
+      guard rejected is Err(@client.UnexpectedStatus(head, body~)) else {
+        fail("unknown representation was accepted")
       }
-    })
-    guard rejected is Err(@client.UnexpectedStatus(head, body~)) else {
-      fail("unknown representation was accepted")
+      assert_eq(head.status, status)
+      assert_eq(body.length(), 1048576)
+      assert_eq((source.closes(), source.reads(), consumed.val), (1, 1, false))
     }
-    assert_eq(head.status, 200)
-    assert_eq(body.length(), 1048576)
-    assert_eq((source.closes(), source.reads(), consumed.val), (1, 1, false))
   }
 }

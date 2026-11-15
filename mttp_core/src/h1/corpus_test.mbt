@@ -350,7 +350,7 @@ let refused_responses : Array[(String, @h1.ParseKind, Bytes)] = [
   ("two-digit status", Malformed, b"HTTP/1.1 20 OK\r\n\r\n"),
   ("four-digit status", Malformed, b"HTTP/1.1 2000\r\n\r\n"),
   ("status below 100", Malformed, b"HTTP/1.1 099 Low\r\n\r\n"),
-  ("status above 599", Malformed, b"HTTP/1.1 600 High\r\n\r\n"),
+  ("zero status", Malformed, b"HTTP/1.1 000 Low\r\n\r\n"),
   ("letter in status", Malformed, b"HTTP/1.1 2x0 OK\r\n\r\n"),
   ("no space before the reason", Malformed, b"HTTP/1.1 200OK\r\n\r\n"),
   ("two spaces before the status", Malformed, b"HTTP/1.1  200 OK\r\n\r\n"),
@@ -522,6 +522,22 @@ test "accepted responses read identically at every split" {
   let cases : Array[
     (String, @mttp_core.Method, Bytes, @h1.Framing, Bytes, Bytes),
   ] = [
+    (
+      "status above 599",
+      Get,
+      b"HTTP/1.1 600 High\r\nContent-Length: 2\r\n\r\nnoNEXT",
+      Length(2),
+      b"no",
+      b"NEXT",
+    ),
+    (
+      "highest three-digit status with chunked framing",
+      Get,
+      b"HTTP/1.1 999 High\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nno\r\n0\r\n\r\nNEXT",
+      Chunked,
+      b"no",
+      b"NEXT",
+    ),
     (
       "no reason phrase",
       Get,

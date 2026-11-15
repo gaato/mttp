@@ -109,6 +109,14 @@ Accepted although some parsers refuse them: a status line without a reason
 phrase (`HTTP/1.1 200`), obs-text in field values (kept as Latin-1 code
 points), and an HTTP/1 minor version above 1, read as HTTP/1.1.
 
+Response readers accept three-digit codes 600–999 and preserve their number,
+processing them as server failures under RFC 9110, section 15. Built-in
+buffered/stream readers and undeclared endpoint outputs return failure
+values; retry rules still match the original status explicitly. Two-digit,
+four-digit, nondigit and 000–099 codes remain malformed. Writers still
+refuse statuses outside 100–599, and the server engine replaces handler
+statuses outside 200–599 with 500.
+
 A server skips empty lines (CRLF) before a request line, as RFC 9112
 section 2.2 asks, because some clients send an extra CRLF after a request
 body: `parse_request_head` does, and so does a `HeadDecoder` or `scan_head`

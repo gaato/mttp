@@ -44,6 +44,11 @@ never does.
 
 ### Changed
 
+- HTTP/1 response readers accept three-digit statuses 600–999 as server
+  failures while retaining the wire number in responses and failure values
+  (RFC 9110, section 15). Retry status rules still match that number
+  explicitly. Codes below 100, malformed status lines, and the server's
+  outgoing status range are unchanged.
 - `Headers::validate` now refuses nonempty values with leading/trailing SP
   or HTAB with `Invalid` in phase Pool, before client I/O. HTTP/1 writers
   refuse them too, including replaced framing fields; invalid handler

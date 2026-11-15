@@ -368,10 +368,13 @@ fn validate_target(
 
 ///|
 /// Parses a strict response head: one complete head within `limits`, with
-/// no empty line before it, and a status line of the version, a single space, three digits from 100 to 599
+/// no empty line before it, and a status line of the version, a single space,
+/// three digits from 100 to 999
 /// and an optional reason phrase after another space. A status line without
 /// a reason phrase, with or without the space before it, is accepted
 /// (RFC 9112, section 4). Fields keep their order, duplicates and obs-text.
+/// Invalid HTTP statuses 600–999 retain their wire number; clients process
+/// them as server failures (RFC 9110, section 15). Writers remain stricter.
 ///
 /// ```mbt check
 /// test {
@@ -398,7 +401,7 @@ pub fn parse_response_head(
     guard c is ('0'..<='9') else { raise malformed("invalid status code") }
     status = status * 10 + c.to_int() - '0'.to_int()
   }
-  if status < 100 || status > 599 {
+  if status < 100 {
     raise malformed("status code out of range")
   }
   if !line[12:].iter().all(is_field_char) {

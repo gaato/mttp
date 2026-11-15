@@ -67,6 +67,35 @@ async fn probe(root : String, name : String, expected : String?) -> Unit {
 }
 
 ///|
+/// Exercise the real updater with deliberately nonlexical existing rows:
+/// count changes and discovery must not rearrange a reviewed manifest.
+async fn probe_manifest(
+  root : String,
+  expected : Array[String],
+  locale : String,
+) -> String {
+  let output = @shell.Cmd(
+    "bash",
+    ["scripts/gates.sh", "manifest", "--update"],
+    cwd=root,
+    env={ "LC_ALL": locale },
+  ).output(timeout_ms=300000)
+  let log = output.stdout() + output.stderr()
+  let text = @fs.read_text(root + "/scripts/test_manifest.tsv")
+  let rows = text
+    .split("\n")
+    .filter(line => !line.is_empty() && !line.has_prefix("#"))
+    .map(line => line.to_owned())
+    .to_array()
+  if output.exit_code() != 0 || rows != expected {
+    println(log)
+    println(text)
+    raise SelfTestFailed("manifest update changed row order or counts")
+  }
+  text
+}
+
+///|
 /// Exercise the actual mbti scan so skipping internal adapters cannot also
 /// exempt a public package that exposes an experimental runtime handle.
 async fn probe_interfaces(root : String, name : String, refused : Bool) -> Unit {
@@ -348,6 +377,42 @@ async fn main {
   ) else {
     raise SelfTestFailed("benchmark executable was not built")
   }
+  // Changed counts and removed rows preserve every surviving row's place.
+  @fs.write_text(
+    source,
+    visible + "\n///|\ntest \"added\" { assert_true(true) }\n",
+  )
+  @fs.write_text(
+    root + "/scripts/test_manifest.tsv",
+    manifest + "selftest/removed\tselftest/removed\tnative\t99\n",
+  )
+  let changed = rows.map(row => {
+    if row.has_prefix("selftest/portable\t") {
+      row[:row.length() - 1].to_owned() + "2"
+    } else {
+      row
+    }
+  })
+  ignore(probe_manifest(root, changed, "C"))
+  @fs.mkdir(root + "/portable/src/new", recursive=true)
+  @fs.write_text(root + "/portable/src/new/moon.pkg", "")
+  @fs.write_text(root + "/portable/src/new/new_test.mbt", visible)
+  let expanded = changed.copy()
+  for target in ["js", "native", "wasm", "wasm-gc"] {
+    expanded.push("selftest/portable\tselftest/portable/new\t\{target}\t1")
+  }
+  let first = probe_manifest(root, expanded, "C")
+  let again = probe_manifest(root, expanded, "C.UTF-8")
+  if first != again {
+    raise SelfTestFailed("manifest update is not idempotent across locales")
+  }
+  @fs.remove(root + "/portable/src/new/moon.pkg")
+  @fs.remove(root + "/portable/src/new/new_test.mbt")
+  @fs.write_text(source, visible)
+  ignore(probe_manifest(root, rows, "C"))
+  println(
+    "gate self-test: manifest preserves order, updates counts, adds/removes rows and ignores locale OK",
+  )
   @fs.write_text(
     root + "/benchmark/main.mbt",
     "///|\nfn main { missing_function() }\n",

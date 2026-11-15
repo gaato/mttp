@@ -416,6 +416,8 @@ test "responses the engine cannot write become 500 and are reported" {
     response in [
       @mttp_core.Response::new(100),
       @mttp_core.Response::new(101),
+      @mttp_core.Response::new(600),
+      @mttp_core.Response::new(999),
       @mttp_core.Response::new(
         200,
         headers=@mttp_core.Headers::of([("bad\n", "value")]),

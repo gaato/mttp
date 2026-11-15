@@ -1,4 +1,41 @@
 ///|
+test "invalid three-digit statuses remain bounded failures for buffered and stream readers" {
+  for status in [500, 600, 799, 999] {
+    @driver.run_sync(() => {
+      let client = @client.Client::new(
+        @client.from_fn((_, _) => {
+          @mttp_core.Response::new(status, body=Bytes(b"failed"))
+        }),
+        @sim.FakeClock::new(),
+        retry=@client.RetryPolicy::none(),
+      )
+      let request = @client.get("/")
+      guard request.response(@client.as_bytes()).send(client).body
+        is Err(@client.UnexpectedStatus(head, body~)) else {
+        fail("non-2xx response accepted")
+      }
+      assert_eq((head.status, body), (status, b"failed"))
+      let streamed = request
+        .response(
+          @client.as_stream((_, _) => {
+            fail("failure reached stream consumer")
+            ()
+          }),
+        )
+        .send(client).body
+      guard streamed is Err(@client.UnexpectedStatus(head, body~)) else {
+        fail("non-2xx stream accepted")
+      }
+      assert_eq((head.status, body), (status, b"failed"))
+      assert_true(
+        request.response(@client.ignore_body()).send(client).body
+        is Err(@client.UnexpectedStatus(_, ..)),
+      )
+    })
+  }
+}
+
+///|
 test "fluent request bodies and authorization reach the shared executor" {
   @driver.run_sync(() => {
     let wire = Ref(@mttp_core.Request::get("/unset"))

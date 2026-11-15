@@ -93,7 +93,7 @@ test "writers reject invalid framing fields and request targets" {
       _ => fail("accepted invalid framing")
     }
   }
-  for status in [99, 600, 101, 204] {
+  for status in [99, 600, 999, 101, 204] {
     try
       @h1.write_response_head(
         status,

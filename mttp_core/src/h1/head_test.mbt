@@ -216,11 +216,36 @@ test "strict request heads reject ambiguous syntax and host authorities" {
 }
 
 ///|
+test "received invalid three-digit statuses preserve their number as failures" {
+  for status in 0..<100 {
+    let text = status.to_string()
+    let code = "0".repeat(3 - text.length()) + text
+    try
+      @h1.parse_response_head(
+        @mttp_core.encode_utf8("HTTP/1.1 \{code} Low\r\n\r\n"),
+      )
+    catch {
+      @h1.ParseError(kind=Malformed, ..) => ()
+      _ => fail("wrong status error")
+    } noraise {
+      _ => fail("accepted a status below 100")
+    }
+  }
+  for status in 600..<=999 {
+    let head = @h1.parse_response_head(
+      @mttp_core.encode_utf8("HTTP/1.1 \{status}\r\n\r\n"),
+    )
+    assert_eq(head.status, status)
+    assert_false(@mttp_core.is_success(head.status))
+  }
+}
+
+///|
 test "response start lines and incomplete streams fail deterministically" {
   for
     head in [
       b"HTTP/1.1 20 OK\r\n\r\n", b"HTTP/1.1 2x0 OK\r\n\r\n", b"HTTP/1.1 099 Bad\r\n\r\n",
-      b"HTTP/1.1 600 Bad\r\n\r\n", b"HTTP/1.1 200 x\x00\r\n\r\n", b"HTTP/1.1 200 OK\r\n\r\nextra",
+      b"HTTP/1.1 000 Bad\r\n\r\n", b"HTTP/1.1 200 x\x00\r\n\r\n", b"HTTP/1.1 200 OK\r\n\r\nextra",
     ] {
     try @h1.parse_response_head(head) catch {
       @h1.ParseError(kind=Malformed, ..) => ()

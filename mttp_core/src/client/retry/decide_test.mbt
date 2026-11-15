@@ -46,6 +46,26 @@ impl @mttp_core.BodyStream for Empty with fn close(_) {
 }
 
 ///|
+test "invalid three-digit statuses retry only when explicitly matched" {
+  let request = @mttp_core.Request::get("/")
+  for status in [600, 999] {
+    let outcome = response(status, [])
+    assert_eq(
+      decide_request(rule(), outcome, request, attempt=0, random=0.0),
+      Stop(NotRetryable),
+    )
+    let explicit : @retry.RetryRule = {
+      ..rule(),
+      statuses: [{ statuses: [Code(status)], methods: Idempotent, }],
+    }
+    assert_eq(
+      decide_request(explicit, outcome, request, attempt=0, random=0.0),
+      Wait(100),
+    )
+  }
+}
+
+///|
 test "decide covers every step in order" {
   let r = rule()
   let get = @mttp_core.Request::get("/")

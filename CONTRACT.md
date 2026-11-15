@@ -296,6 +296,15 @@ CL+TE is rejected as smuggling. Only the single transfer coding `chunked` is
 supported. Header values retain Latin-1 octets and duplicate fields in order;
 obs-fold, controls and whitespace before a header colon are refused.
 
+Response readers preserve three-digit statuses 100–999. Invalid HTTP
+statuses 600–999 are treated as server failures (RFC 9110, section 15),
+retaining the original number in response heads and failure values. They
+are non-2xx for buffered and streamed readers and undeclared endpoint
+outputs. Retry status rules still match the original number explicitly;
+matching 500–599 does not include 600–999. Codes below 100, two or four
+digits, and nondigits are refused. Writers still refuse statuses above
+599; the server engine replaces handler statuses outside 200–599 with 500.
+
 `HeadDecoder` scans incrementally in linear time. `scan_head` is the stateless
 alternative for an already available buffer. Head and chunk decoder errors
 are sticky. `consumed` excludes body or pipelined bytes after completion.

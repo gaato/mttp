@@ -21,7 +21,9 @@ import {
 ///       record, or warns that a package uses an experimental package it did
 ///       not list (moon does not turn that warning into an error).
 ///   moon run scripts/runtime_gates.mbtx -- manifest --update
-///       runs every package on every target and rewrites the manifest.
+///       runs every package on every target and rewrites counts in the
+///       existing row order; new rows are appended in byte order, so an
+///       update never rearranges reviewed rows or depends on locale.
 ///   moon run scripts/runtime_gates.mbtx -- manifest --check
 ///       the manifest on its own: well formed, one row per package and
 ///       target, and equal counts across the targets of a four-target module.
@@ -449,8 +451,13 @@ async fn update_manifest() -> Unit {
     println("not rewriting \{manifest_path}: fix the failures first")
     report(failures)
   }
-  let keys = counts.keys().to_array()
-  keys.sort_by(lexical)
+  // Keep the reviewed order even when package discovery or module metadata
+  // changes order. Only new keys need sorting; byte order is locale-free.
+  let previous = manifest()
+  let keys = previous.keys().filter(key => counts.contains(key)).to_array()
+  let added = counts.keys().filter(key => !previous.contains(key)).to_array()
+  added.sort_by(lexical)
+  keys.append(added)
   let lines = [
     "# Tests per package and target, compared by scripts/runtime_gates.mbtx.", "# Regenerate with 'scripts/gates.sh manifest --update' after adding or",
     "# removing tests.", manifest_header,
