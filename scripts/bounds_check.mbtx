@@ -56,6 +56,8 @@ enum Finding {
   Test(file~ : String, name~ : String)
   /// A test name before any file in its cell.
   Orphan(name~ : String)
+  /// A file path not followed by any test name.
+  PathOnly(file~ : String)
   /// A row that names no test, with its raw status cell.
   Empty(status~ : String)
 }
@@ -126,12 +128,25 @@ fn table(
     }
     let before = found.length()
     let mut file = ""
+    let mut file_has_name = false
     for token in tokens(last) {
       match token {
-        File(path) => file = path
+        File(path) => {
+          if file != "" && !file_has_name {
+            found.push((label, PathOnly(file~)))
+          }
+          file = path
+          file_has_name = false
+        }
         Name(name) if file == "" => found.push((label, Orphan(name~)))
-        Name(name) => found.push((label, Test(file~, name~)))
+        Name(name) => {
+          found.push((label, Test(file~, name~)))
+          file_has_name = true
+        }
       }
+    }
+    if file != "" && !file_has_name {
+      found.push((label, PathOnly(file~)))
     }
     if found.length() == before {
       found.push((label, Empty(status=last)))
@@ -267,6 +282,14 @@ async fn check_ledger(
         }
         bad = true
       }
+      PathOnly(file~) => {
+        if verbose {
+          println(
+            "NO TEST     \{label}: \{file} is not followed by a quoted test name",
+          )
+        }
+        bad = true
+      }
       Empty(status~) =>
         if ledger.rows_need_tests {
           if verbose {
@@ -383,6 +406,20 @@ async fn self_test() -> Unit {
   )
   guard !check_all(root, verbose=false) else {
     fail("ledger self-test accepted a path-only security citation")
+  }
+  @fs.write_text(
+    root + "/SECURITY_CLASSES.md",
+    (
+      #|## Security classes
+      #|
+      #|| Class | Defending tests / status |
+      #||---|---|
+      #|| trailing path | `exists_test.mbt`: "exists"; `exists_test.mbt` |
+      #|
+    ),
+  )
+  guard !check_all(root, verbose=false) else {
+    fail("ledger self-test accepted a trailing path-only security citation")
   }
   @fs.write_text(
     root + "/SECURITY_CLASSES.md",
