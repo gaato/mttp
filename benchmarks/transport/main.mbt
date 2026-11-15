@@ -41,14 +41,16 @@ async fn serve_mttp(addr : String) -> Unit {
       }
     },
     addr~,
-    auto_date=false,
+    auto_date=true,
     on_listen=bound => println("READY\tserver\tmttp\t\{bound}"),
   )
 }
 
 ///|
 async fn serve_core(addr : String) -> Unit {
-  let server = @http.Server(@socket.Addr::parse(addr), reuse_addr=true)
+  let server = @http.Server(@socket.Addr::parse(addr), reuse_addr=true, headers={
+    "Date": @mttp_core.format_http_date(@env.now().reinterpret_as_int64()),
+  })
   defer server.close()
   println("READY\tserver\tcore\t\{addr}")
   server.run_forever((request, conn) => {

@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "date": "2026-11-16",
-  "command": "BENCH_ENGINE=docker scripts/gates.sh bench --record",
+  "command": "BENCH_ENGINE=docker MOON_CC=cc scripts/gates.sh bench --record",
   "method": {
     "transport": "HTTP/1.1 loopback with keep-alive",
     "request": "GET /small (15 bytes) or /large (1048576 bytes)",
@@ -18,7 +18,7 @@
     "logical_cores": 12,
     "os": "Linux 7.3.1-1-default x86_64 GNU/Linux"
   },
-  "toolchain": "moon 0.1.20261104 (940aa18 2026-11-04) ~/.moonup/toolchains/0.10.20+65efd5b93/bin/moon\nmoonc v0.10.20+65efd5b93 (2026-11-05) ~/.moonup/toolchains/0.10.20+65efd5b93/bin/moonc\nmoonrun 0.1.20261104 (940aa18 2026-11-04) ~/.moonup/toolchains/0.10.20+65efd5b93/bin/moonrun\n\nFeature flags enabled: rr_moon_mod,rr_moon_pkg",
+  "toolchain": "moon 0.1.20261104 (940aa18 2026-11-04) /var/tmp/mttp-plan/scratch/v13/moon-home/bin/moon\nmoonc v0.10.20+65efd5b93 (2026-11-05) /var/tmp/mttp-plan/scratch/v13/moon-home/bin/moonc\nmoonrun 0.1.20261104 (940aa18 2026-11-04) /var/tmp/mttp-plan/scratch/v13/moon-home/bin/moonrun\n\nFeature flags enabled: rr_moon_mod,rr_moon_pkg",
   "images": {
     "golang": "docker.io/library/golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf",
     "node": "docker.io/library/node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5",
@@ -31,12 +31,12 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 1,
-      "requests_per_second": 10212.364682428886,
-      "p50_ms": 0.09250499999999999,
-      "p99_ms": 0.146035,
-      "requests": 102149,
+      "requests_per_second": 8244.329484520666,
+      "p50_ms": 0.10810900000000001,
+      "p99_ms": 0.16789600000000002,
+      "requests": 82456,
       "baseline": "go",
-      "throughput_ratio": 0.38723936336955644
+      "throughput_ratio": 0.4189600906683816
     },
     {
       "kind": "server",
@@ -44,12 +44,12 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 32,
-      "requests_per_second": 11021.754467885428,
-      "p50_ms": 2.86893,
-      "p99_ms": 3.610001,
-      "requests": 110265,
+      "requests_per_second": 10418.42041869392,
+      "p50_ms": 3.0406679999999997,
+      "p99_ms": 3.902984,
+      "requests": 104230,
       "baseline": "go",
-      "throughput_ratio": 0.07010162950000363
+      "throughput_ratio": 0.07218349413394459
     },
     {
       "kind": "server",
@@ -57,12 +57,12 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 1,
-      "requests_per_second": 1823.419815488777,
-      "p50_ms": 0.51343,
-      "p99_ms": 0.8262999999999999,
-      "requests": 18236,
+      "requests_per_second": 1837.4976752212474,
+      "p50_ms": 0.524053,
+      "p99_ms": 0.683683,
+      "requests": 18378,
       "baseline": "go",
-      "throughput_ratio": 0.32520468850995193
+      "throughput_ratio": 0.36122060580397736
     },
     {
       "kind": "server",
@@ -70,12 +70,12 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 32,
-      "requests_per_second": 1643.7281347457013,
-      "p50_ms": 17.531446,
-      "p99_ms": 43.20507,
-      "requests": 16448,
+      "requests_per_second": 1828.7813357642956,
+      "p50_ms": 17.437958,
+      "p99_ms": 19.814586,
+      "requests": 18304,
       "baseline": "go",
-      "throughput_ratio": 0.31198480426657177
+      "throughput_ratio": 0.3669054394251128
     },
     {
       "kind": "server",
@@ -83,12 +83,12 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 1,
-      "requests_per_second": 23804.906055157637,
-      "p50_ms": 0.037843999999999996,
-      "p99_ms": 0.06783099999999999,
-      "requests": 238101,
+      "requests_per_second": 27716.216332247994,
+      "p50_ms": 0.032230999999999996,
+      "p99_ms": 0.048155,
+      "requests": 277196,
       "baseline": "go",
-      "throughput_ratio": 0.9026505567052376
+      "throughput_ratio": 1.4084818576629499
     },
     {
       "kind": "server",
@@ -96,12 +96,12 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 32,
-      "requests_per_second": 59015.783673421836,
-      "p50_ms": 0.540925,
-      "p99_ms": 0.774656,
-      "requests": 590359,
+      "requests_per_second": 60221.733674823576,
+      "p50_ms": 0.501889,
+      "p99_ms": 0.702715,
+      "requests": 602356,
       "baseline": "go",
-      "throughput_ratio": 0.37535789912404954
+      "throughput_ratio": 0.4172432081597216
     },
     {
       "kind": "server",
@@ -109,12 +109,12 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 1,
-      "requests_per_second": 206.83074531031716,
-      "p50_ms": 4.519251000000001,
-      "p99_ms": 6.395934,
-      "requests": 2069,
+      "requests_per_second": 218.44857045645375,
+      "p50_ms": 4.293074,
+      "p99_ms": 7.905044999999999,
+      "requests": 2185,
       "baseline": "go",
-      "throughput_ratio": 0.036888009843686426
+      "throughput_ratio": 0.04294325158685818
     },
     {
       "kind": "server",
@@ -122,12 +122,12 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 32,
-      "requests_per_second": 143.1095793811911,
-      "p50_ms": 186.15744,
-      "p99_ms": 438.056307,
-      "requests": 1440,
+      "requests_per_second": 181.65651774824042,
+      "p50_ms": 175.495067,
+      "p99_ms": 206.098738,
+      "requests": 1824,
       "baseline": "go",
-      "throughput_ratio": 0.027162651273119294
+      "throughput_ratio": 0.03644545313614481
     },
     {
       "kind": "server",
@@ -135,10 +135,10 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 1,
-      "requests_per_second": 26372.22774453035,
-      "p50_ms": 0.034491,
-      "p99_ms": 0.056396,
-      "requests": 263755,
+      "requests_per_second": 19678.078337648345,
+      "p50_ms": 0.042939,
+      "p99_ms": 0.107625,
+      "requests": 196827,
       "baseline": "go",
       "throughput_ratio": 1
     },
@@ -148,10 +148,10 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 32,
-      "requests_per_second": 157225.36760553985,
-      "p50_ms": 0.106108,
-      "p99_ms": 1.266224,
-      "requests": 1573213,
+      "requests_per_second": 144332.44807131903,
+      "p50_ms": 0.11932899999999999,
+      "p99_ms": 1.332019,
+      "requests": 1444194,
       "baseline": "go",
       "throughput_ratio": 1
     },
@@ -161,10 +161,10 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 1,
-      "requests_per_second": 5606.991165605463,
-      "p50_ms": 0.168814,
-      "p99_ms": 0.31922,
-      "requests": 56079,
+      "requests_per_second": 5086.9126669324,
+      "p50_ms": 0.178132,
+      "p99_ms": 0.39201600000000003,
+      "requests": 50878,
       "baseline": "go",
       "throughput_ratio": 1
     },
@@ -174,10 +174,10 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 32,
-      "requests_per_second": 5268.616010352982,
-      "p50_ms": 5.833194,
-      "p99_ms": 13.734596999999999,
-      "requests": 52705,
+      "requests_per_second": 4984.33966699902,
+      "p50_ms": 6.241569,
+      "p99_ms": 13.436429,
+      "requests": 49883,
       "baseline": "go",
       "throughput_ratio": 1
     },
@@ -187,12 +187,12 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 1,
-      "requests_per_second": 23449.20430578672,
-      "p50_ms": 0.037246,
-      "p99_ms": 0.078311,
-      "requests": 234525,
+      "requests_per_second": 23153.05514460173,
+      "p50_ms": 0.038623,
+      "p99_ms": 0.071338,
+      "requests": 231553,
       "baseline": "go",
-      "throughput_ratio": 0.8891628167684896
+      "throughput_ratio": 1.1765912680764674
     },
     {
       "kind": "server",
@@ -200,12 +200,12 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 32,
-      "requests_per_second": 38771.081397862545,
-      "p50_ms": 0.7735259999999999,
-      "p99_ms": 1.64015,
-      "requests": 387816,
+      "requests_per_second": 31619.119650271845,
+      "p50_ms": 0.863453,
+      "p99_ms": 3.397793,
+      "requests": 316264,
       "baseline": "go",
-      "throughput_ratio": 0.24659558434065598
+      "throughput_ratio": 0.21907145671531797
     },
     {
       "kind": "server",
@@ -213,12 +213,12 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 1,
-      "requests_per_second": 6014.162939995031,
-      "p50_ms": 0.13891399999999998,
-      "p99_ms": 0.655786,
-      "requests": 60152,
+      "requests_per_second": 6629.517524981342,
+      "p50_ms": 0.14046499999999998,
+      "p99_ms": 0.208315,
+      "requests": 66302,
       "baseline": "go",
-      "throughput_ratio": 1.0726185867542026
+      "throughput_ratio": 1.303249723172305
     },
     {
       "kind": "server",
@@ -226,12 +226,12 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 32,
-      "requests_per_second": 7051.883606038875,
-      "p50_ms": 4.33823,
-      "p99_ms": 8.573694999999999,
-      "requests": 70559,
+      "requests_per_second": 6888.768864995247,
+      "p50_ms": 4.537909,
+      "p99_ms": 8.837301,
+      "requests": 68931,
       "baseline": "go",
-      "throughput_ratio": 1.3384698357560545
+      "throughput_ratio": 1.3820825475850544
     },
     {
       "kind": "client",
@@ -239,12 +239,12 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 1,
-      "requests_per_second": 13220.267073191359,
-      "p50_ms": 0.073275,
-      "p99_ms": 0.114453,
-      "requests": 132200,
+      "requests_per_second": 13080.099324919029,
+      "p50_ms": 0.07339799999999999,
+      "p99_ms": 0.120967,
+      "requests": 130795,
       "baseline": "core",
-      "throughput_ratio": 0.5282834564833119
+      "throughput_ratio": 0.511333949669221
     },
     {
       "kind": "client",
@@ -252,10 +252,10 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 1,
-      "requests_per_second": 25024.949978930446,
-      "p50_ms": 0.038447,
-      "p99_ms": 0.06178,
-      "requests": 250246,
+      "requests_per_second": 25580.345942960506,
+      "p50_ms": 0.037611000000000006,
+      "p99_ms": 0.062367000000000006,
+      "requests": 255784,
       "baseline": "core",
       "throughput_ratio": 1
     },
@@ -265,12 +265,12 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 32,
-      "requests_per_second": 18877.09948548997,
-      "p50_ms": 1.642981,
-      "p99_ms": 2.8479140000000003,
-      "requests": 188802,
+      "requests_per_second": 18640.060678964463,
+      "p50_ms": 1.651566,
+      "p99_ms": 2.9723070000000003,
+      "requests": 186419,
       "baseline": "core",
-      "throughput_ratio": 0.33604849322921637
+      "throughput_ratio": 0.31890865664708884
     },
     {
       "kind": "client",
@@ -278,10 +278,10 @@
       "body": "small",
       "body_bytes": 15,
       "concurrency": 32,
-      "requests_per_second": 56173.73642742099,
-      "p50_ms": 0.596889,
-      "p99_ms": 0.775357,
-      "requests": 561728,
+      "requests_per_second": 58449.528698720635,
+      "p50_ms": 0.561491,
+      "p99_ms": 0.7132040000000001,
+      "requests": 584504,
       "baseline": "core",
       "throughput_ratio": 1
     },
@@ -291,12 +291,12 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 1,
-      "requests_per_second": 716.5704030626999,
-      "p50_ms": 1.2693679999999998,
-      "p99_ms": 2.1007110000000004,
-      "requests": 7166,
+      "requests_per_second": 761.9501273163667,
+      "p50_ms": 1.228315,
+      "p99_ms": 1.734041,
+      "requests": 7620,
       "baseline": "core",
-      "throughput_ratio": 0.6297035550523595
+      "throughput_ratio": 0.4599140493893002
     },
     {
       "kind": "client",
@@ -304,10 +304,10 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 1,
-      "requests_per_second": 1137.9487971973058,
-      "p50_ms": 0.6118490000000001,
-      "p99_ms": 2.185657,
-      "requests": 11380,
+      "requests_per_second": 1656.7228775205433,
+      "p50_ms": 0.534597,
+      "p99_ms": 0.8415090000000001,
+      "requests": 16567,
       "baseline": "core",
       "throughput_ratio": 1
     },
@@ -317,12 +317,12 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 32,
-      "requests_per_second": 379.47789976828574,
-      "p50_ms": 91.14041800000001,
-      "p99_ms": 203.581713,
-      "requests": 3819,
+      "requests_per_second": 956.6411060134317,
+      "p50_ms": 32.899908,
+      "p99_ms": 40.380081,
+      "requests": 9577,
       "baseline": "core",
-      "throughput_ratio": 0.9213532035192025
+      "throughput_ratio": 0.7462699865072393
     },
     {
       "kind": "client",
@@ -330,10 +330,10 @@
       "body": "large",
       "body_bytes": 1048576,
       "concurrency": 32,
-      "requests_per_second": 411.8701691369078,
-      "p50_ms": 75.832744,
-      "p99_ms": 139.05456700000002,
-      "requests": 4136,
+      "requests_per_second": 1281.8967978208402,
+      "p50_ms": 24.854731,
+      "p99_ms": 29.439112,
+      "requests": 12835,
       "baseline": "core",
       "throughput_ratio": 1
     }

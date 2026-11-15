@@ -76,6 +76,7 @@ priv struct Options {
 ///|
 priv struct Env {
   engine : String
+  moon_cc : String
   images : Map[String, String]
   root : String
 }
@@ -504,7 +505,12 @@ fn cpu_model(lscpu : String) -> String {
 
 ///|
 fn invocation(env : Env, options : Options) -> String {
-  let command = ["BENCH_ENGINE=\{env.engine}", "scripts/gates.sh", "bench"]
+  let command = [
+    "BENCH_ENGINE=\{env.engine}",
+    "MOON_CC=\{env.moon_cc}",
+    "scripts/gates.sh",
+    "bench",
+  ]
   if options.record {
     command.push("--record")
   }
@@ -591,9 +597,10 @@ fn parse_options(args : Array[String]) -> Options raise RunError {
 ///|
 async fn main_run(options : Options) -> Unit {
   let engine = find_engine()
+  let moon_cc = @env.get_env_var("MOON_CC").unwrap_or("cc")
   let images = read_images()
   let root = @fs.realpath(".")
-  let env = { engine, images, root, }
+  let env = { engine, moon_cc, images, root, }
   port_free(server_addr)
   make_dir(work)
   ignore(
