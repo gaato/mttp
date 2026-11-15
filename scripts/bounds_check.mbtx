@@ -56,8 +56,8 @@ enum Finding {
   Test(file~ : String, name~ : String)
   /// A test name before any file in its cell.
   Orphan(name~ : String)
-  /// A row that names no test.
-  Empty
+  /// A row that names no test, with its raw status cell.
+  Empty(status~ : String)
 }
 
 ///|
@@ -134,7 +134,7 @@ fn table(
       }
     }
     if found.length() == before {
-      found.push((label, Empty))
+      found.push((label, Empty(status=last)))
     }
   }
   (header, found)
@@ -177,6 +177,20 @@ fn tokens(cell : String) -> Array[Token] {
     continue i + 1
   }
   out
+}
+
+///|
+/// Whether a security row without test citations explicitly records why.
+fn permitted_security_status(status : String) -> Bool {
+  let status = status.trim(chars=" \t").to_lower()
+  status == "gap" ||
+  status.has_prefix("gap ") ||
+  status == "not applicable" ||
+  status.has_prefix("not applicable ") ||
+  status == "not-applicable" ||
+  status.has_prefix("not-applicable ") ||
+  status == "n/a" ||
+  status.has_prefix("n/a ")
 }
 
 ///|
@@ -253,10 +267,17 @@ async fn check_ledger(
         }
         bad = true
       }
-      Empty =>
+      Empty(status~) =>
         if ledger.rows_need_tests {
           if verbose {
             println("NO TESTS    \{label}: the row names no test")
+          }
+          bad = true
+        } else if !permitted_security_status(status) {
+          if verbose {
+            println(
+              "NO STATUS   \{label}: the row names neither a test nor a gap/not-applicable explanation",
+            )
           }
           bad = true
         }
@@ -342,6 +363,34 @@ async fn self_test() -> Unit {
       #|
       #|| Class | Defending tests / status |
       #||---|---|
+      #|| blank | |
+      #|
+    ),
+  )
+  guard !check_all(root, verbose=false) else {
+    fail("ledger self-test accepted a blank security status")
+  }
+  @fs.write_text(
+    root + "/SECURITY_CLASSES.md",
+    (
+      #|## Security classes
+      #|
+      #|| Class | Defending tests / status |
+      #||---|---|
+      #|| path only | `exists_test.mbt` |
+      #|
+    ),
+  )
+  guard !check_all(root, verbose=false) else {
+    fail("ledger self-test accepted a path-only security citation")
+  }
+  @fs.write_text(
+    root + "/SECURITY_CLASSES.md",
+    (
+      #|## Security classes
+      #|
+      #|| Class | Defending tests / status |
+      #||---|---|
       #|| planned | gap - later stage |
       #|
     ),
@@ -361,7 +410,7 @@ async fn self_test() -> Unit {
     fail("ledger self-test accepted a resource bound without a test")
   }
   println(
-    "ledger check self-tests: valid citations, security gaps and missing tests OK",
+    "ledger check self-tests: valid citations, explicit security gaps and malformed rows OK",
   )
 }
 
