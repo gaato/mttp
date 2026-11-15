@@ -20,11 +20,18 @@ struct Site {
   rule : String
   old : String
   new : String
+  equivalent : String?
 }
 
 ///|
 suberror MutationError {
   MutationError(String)
+}
+
+///|
+enum TestRun {
+  Completed(@shell.Output)
+  TimedOut
 }
 
 ///|
@@ -34,8 +41,9 @@ fn site(
   rule : String,
   old : String,
   new_ : String,
+  equivalent? : String,
 ) -> Site {
-  { id, path, rule, old, new: new_, }
+  { id, path, rule, old, new: new_, equivalent, }
 }
 
 ///|
@@ -83,8 +91,12 @@ let sites : Array[Site] = [
     "H12", "mttp_core/src/h1/head.mbt", "> -> >=", "if hosts.length() > 1 ||", "if hosts.length() >= 1 ||",
   ),
   site(
-    "H13", "mttp_core/src/h1/head.mbt", "boundary -1", "target.iter().any(c => c <= ' ' || c >= '\\u{7f}' || c == '#')",
+    "H13",
+    "mttp_core/src/h1/head.mbt",
+    "boundary -1",
+    "target.iter().any(c => c <= ' ' || c >= '\\u{7f}' || c == '#')",
     "target.iter().any(c => c < ' ' || c >= '\\u{7f}' || c == '#')",
+    equivalent="the request-line three-part check removes SP from target",
   ),
   site(
     "H14", "mttp_core/src/h1/head.mbt", "== -> !=", "if meth == Connect {", "if meth != Connect {",
@@ -270,7 +282,10 @@ async fn main {
   let args = @env.args()[1:].to_owned()
   if args is ["--list"] {
     for site in sites {
-      println("\{site.id}\t\{site.rule}\t\{site.path}")
+      let classification = site.equivalent
+        .map(reason => "equivalent: " + reason)
+        .unwrap_or("")
+      println("\{site.id}\t\{site.rule}\t\{site.path}\t\{classification}")
     }
     return
   }
@@ -293,6 +308,7 @@ async fn main {
   println("BASELINE\tPASS")
   let mut killed = 0
   let mut survived = 0
+  let mut equivalent = 0
   let mut timeout = 0
   for site in sites {
     if !selected(site, args) {
@@ -307,21 +323,43 @@ async fn main {
       )
     }
     @fs.write_text(path, original.replace(old=site.old, new=site.new))
-    let result = run_tests(moon, source)
+    let run = Completed(run_tests(moon, source)) catch {
+      @async.TimeoutError => TimedOut
+      error => raise error
+    }
     @fs.write_text(path, original)
-    let log = result.stdout() + result.stderr()
-    if result.exit_code() == 0 {
-      survived += 1
-      println("SURVIVED\t\{site.id}\t\{site.rule}\t\{site.path}")
-    } else if result.exit_code() == 124 || log.to_lower().contains("timed out") {
-      timeout += 1
-      println("TIMEOUT\t\{site.id}\t\{site.rule}\t\{site.path}")
-    } else {
-      killed += 1
-      println("KILLED\t\{site.id}\t\{site.rule}\t\{site.path}")
+    match run {
+      TimedOut => {
+        timeout += 1
+        println("TIMEOUT\t\{site.id}\t\{site.rule}\t\{site.path}")
+      }
+      Completed(result) => {
+        let log = result.stdout() + result.stderr()
+        if result.exit_code() == 0 {
+          match site.equivalent {
+            Some(reason) => {
+              equivalent += 1
+              println(
+                "EQUIVALENT\t\{site.id}\t\{site.rule}\t\{site.path}\t\{reason}",
+              )
+            }
+            None => {
+              survived += 1
+              println("SURVIVED\t\{site.id}\t\{site.rule}\t\{site.path}")
+            }
+          }
+        } else if result.exit_code() == 124 ||
+          log.to_lower().contains("timed out") {
+          timeout += 1
+          println("TIMEOUT\t\{site.id}\t\{site.rule}\t\{site.path}")
+        } else {
+          killed += 1
+          println("KILLED\t\{site.id}\t\{site.rule}\t\{site.path}")
+        }
+      }
     }
   }
   println(
-    "SUMMARY\tsites=\{killed + survived + timeout}\tkilled=\{killed}\tsurvived=\{survived}\ttimeout=\{timeout}",
+    "SUMMARY\tsites=\{killed + survived + equivalent + timeout}\tkilled=\{killed}\tsurvived=\{survived}\tequivalent=\{equivalent}\ttimeout=\{timeout}",
   )
 }
