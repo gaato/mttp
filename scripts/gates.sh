@@ -32,6 +32,11 @@
 #                                           network). Not part of full: CI
 #                                           runs it daily (canary.yml).
 #                                           interop/README.md says more
+#   scripts/gates.sh bench [--record]       the pinned loopback transport
+#                                           comparison. It prints TSV rows;
+#                                           --record writes today's JSON in
+#                                           benchmarks/results. CI instead
+#                                           passes --output and --summary.
 #   scripts/gates.sh sanitize               Linux native tests of mttp_core
 #                                           and mttp under ASan, using a
 #                                           disposable source/toolchain copy.
@@ -101,6 +106,7 @@ static_gates() {
   for file in scripts/*.mbtx interop/*.mbtx; do
     [ "$file" = scripts/docs_audit.mbtx ] || step moon fmt --check "$file"
   done
+  step moon fmt --check benchmarks/run.mbtx
   local before after
   before=$(mbti_snapshot)
   step moon info
@@ -201,6 +207,10 @@ case "$mode" in
   interop)
     # Extra arguments select runs by prefix, as interop/run.mbtx documents.
     step script interop/run.mbtx -- "$@"
+    finish
+    ;;
+  bench)
+    step script benchmarks/run.mbtx -- "$@"
     finish
     ;;
   sanitize)

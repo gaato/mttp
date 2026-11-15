@@ -99,3 +99,36 @@ jobs:
         env:
           INTEROP_ENGINE: docker
         run: scripts/gates.sh interop
+
+  # Performance numbers are observations, not pass/fail thresholds: shared
+  # runners are noisy. The benchmark itself fails only on a crashed program,
+  # a non-200 response, or a body mismatch, then records ratios on one runner.
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned moon from the gate image
+        run: |
+          image="ghcr.io/gaato/moonbit:$(tr + - < moonbit-version)"
+          id=$(docker create "$image")
+          docker cp "$id:/opt/moon" "$RUNNER_TEMP/moon"
+          docker rm "$id"
+          echo "MOON_HOME=$RUNNER_TEMP/moon" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/moon/bin" >> "$GITHUB_PATH"
+      - name: Update registry index
+        run: moon update
+      - name: Run the transport benchmark
+        env:
+          BENCH_ENGINE: docker
+          MOON_CC: cc
+        run: scripts/gates.sh bench --output "$RUNNER_TEMP/transport-benchmark.json" --summary "$GITHUB_STEP_SUMMARY"
+      - name: Upload the daily result
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: transport-benchmark-${{ github.run_id }}
+          path: ${{ runner.temp }}/transport-benchmark.json
+          if-no-files-found: error
+          retention-days: 30

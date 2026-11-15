@@ -1,21 +1,6 @@
-# Loopback transport benchmark
+# Transport benchmark executable
 
-From the workspace root:
-
-```sh
-MOON_CC=cc moon run benchmarks/transport --target native --release
-```
-
-Measures microseconds per request over one reused TCP connection using
-`gaato/mttp/backend` and `gaato/mttp_core/h1server`. Each sample warms up
-with 32 requests, measures 500 GETs returning `pong`, and checks the response
-and connection reuse. The output is the median of three samples for each
-server write size (65536 bytes and one byte), matching the old workload.
-An explicit default client configuration disables environment proxies, so
-the measurement stays on loopback even on a host configured with a proxy.
-TCP can coalesce writes, so write sizes do not imply packet or read sizes.
-
-The server now uses the HTTP/1 engine instead of a handwritten response.
-Absolute timings therefore include both engines and are not directly
-comparable with the old raw-socket server. Gates build this native-only,
-unpublished executable without running it; timings depend on the host.
+`scripts/gates.sh bench` builds and drives this native-only executable; see
+[`../README.md`](../README.md) for the method, results, images and recording
+rules. Its `server`, `client` and `check` modes are implementation details of
+that runner, rather than separate benchmark methods.

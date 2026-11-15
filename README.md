@@ -247,6 +247,10 @@ nightly toolchains:
   Apache httpd, and the server under curl, Go, Python httpx, Node, Bun and
   Deno and behind the three servers as reverse proxies, daily in CI
   (`scripts/gates.sh interop`).
+- The [transport benchmarks](benchmarks/README.md) compare mttp with
+  core/async/http, Go and Node on pinned loopback workloads; CI records the
+  daily table as an artifact without treating performance as a pass/fail
+  threshold (`scripts/gates.sh bench`).
 
 ## Status
 

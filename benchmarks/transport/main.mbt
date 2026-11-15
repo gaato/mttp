@@ -1,138 +1,239 @@
 ///|
-// This workload owns one accepted socket. Splitting server writes preserves
-// the old benchmark's two chunk sizes without exposing a runtime handle in
-// a library API. TCP may coalesce writes; these are not packet sizes.
-priv struct LoopbackConn {
-  tcp : @socket.Tcp
-  chunk_bytes : Int32
-  mut closed : Bool
-  mut eof : Bool
+let small_body : Bytes = b"mttp benchmark\n"
+
+///|
+let large_body : Bytes = Bytes::from_array(Array::make(1024 * 1024, b'x'))
+
+///|
+fn body_named(name : String) -> Bytes {
+  match name {
+    "small" => small_body
+    "large" => large_body
+    _ => abort("unknown body: \{name}")
+  }
 }
 
 ///|
-impl @rt.Conn for LoopbackConn with fn read(self, max_len~) {
-  if max_len <= 0 {
-    raise @mttp_core.TransportError(
-      kind=Invalid,
-      phase=Body,
-      detail="max_len must be positive",
-    )
-  }
-  if self.closed || self.eof {
-    return None
-  }
-  let buffer = FixedArray::make(max_len.min(65536), b'\x00')
-  let n = self.tcp.read_into(buffer) catch {
-    error =>
-      raise @mttp_core.TransportError(
-        kind=Network,
-        phase=Body,
-        detail=(error : Error).to_string(),
-      )
-  }
-  self.eof = n == 0
-  if self.eof {
-    None
+fn body_for_path(path : String) -> Bytes? {
+  if path.has_suffix("/small") {
+    Some(small_body)
+  } else if path.has_suffix("/large") {
+    Some(large_body)
   } else {
-    Some(Bytes::from_array(buffer[:n]))
+    None
   }
 }
 
 ///|
-impl @rt.Conn for LoopbackConn with fn write(self, bytes) {
-  if self.closed {
-    raise @mttp_core.TransportError(
-      kind=Closed,
-      phase=Body,
-      detail="connection closed",
-    )
-  }
-  for offset = 0; offset < bytes.length(); {
-    let end = offset + (bytes.length() - offset).min(self.chunk_bytes)
-    self.tcp.write(bytes[offset:end]) catch {
-      error =>
-        raise @mttp_core.TransportError(
-          kind=Network,
-          phase=Body,
-          detail=(error : Error).to_string(),
-        )
-    }
-    continue end
-  }
-}
-
-///|
-impl @rt.Conn for LoopbackConn with fn close(self) {
-  if !self.closed {
-    self.closed = true
-    self.tcp.close()
-  }
-}
-
-///|
-async fn sample(chunk_bytes : Int32) -> Double {
-  let listener = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
-  defer listener.close()
-  let result = Ref(0.0)
-  @async.with_task_group(group => {
-    let served = Ref(0)
-    let remote = group.spawn(() => {
-      let (tcp, _) = listener.accept()
-      @h1server.serve_conn(
-        LoopbackConn::{ tcp, chunk_bytes, closed: false, eof: false, },
-        _ => {
-          served.val += 1
-          @mttp_core.Response::new(200, body=Bytes(b"pong"))
-        },
-        clock=@runtime.AsyncClock::new(),
-        timer=@runtime.ClockTimer::new(),
-        coordination=@runtime.RuntimeCoordination::new(),
-        scheme="http",
-        on_error=error => abort("\{Repr(error)}"),
-      )
-    })
-    let backend = @backend.AsyncBackend::new(
-      config=@h1client.ClientConfig::default(),
-    )
-    defer backend.close()
-    let request = @mttp_core.Request::get("http://\{listener.addr}/")
-    let exchange : async () -> Unit = () => {
-      let response = backend.send(request, @mttp_core.SendOptions::default())
-      defer response.close()
-      assert_eq(response.status, 200)
-      let bytes = match response.body {
-        Empty => b""
-        Bytes(bytes) => bytes
-        Stream(cell) => @mttp_core.read_bounded(cell.take(), 10)
-        @mttp_core.Body::.. => abort("unsupported body kind")
+async fn serve_mttp(addr : String) -> Unit {
+  @server.serve(
+    request => {
+      match body_for_path(request.url) {
+        Some(body) =>
+          @mttp_core.Response::new(
+            200,
+            headers=@mttp_core.Headers::of([
+              ("content-type", "application/octet-stream"),
+            ]),
+            body=Bytes(body),
+          )
+        None => @mttp_core.Response::new(404, body=Bytes(b"not found\n"))
       }
-      assert_eq(bytes, b"pong")
+    },
+    addr~,
+    auto_date=false,
+    on_listen=bound => println("READY\tserver\tmttp\t\{bound}"),
+  )
+}
+
+///|
+async fn serve_core(addr : String) -> Unit {
+  let server = @http.Server(@socket.Addr::parse(addr), reuse_addr=true)
+  defer server.close()
+  println("READY\tserver\tcore\t\{addr}")
+  server.run_forever((request, conn) => {
+    match body_for_path(request.path) {
+      Some(body) => {
+        conn.send_response(200, "OK", extra_headers={
+          "Content-Length": body.length().to_string(),
+          "Content-Type": "application/octet-stream",
+        })
+        conn.write(body)
+        conn.end_response()
+      }
+      None => {
+        let body = b"not found\n"
+        conn.send_response(404, "Not Found", extra_headers={
+          "Content-Length": body.length().to_string(),
+          "Content-Type": "application/octet-stream",
+        })
+        conn.write(body)
+        conn.end_response()
+      }
     }
-    for _ in 0..<32 {
-      exchange()
-    }
-    let start = @bench.monotonic_clock_start()
-    for _ in 0..<500 {
-      exchange()
-    }
-    let us = @bench.monotonic_clock_end(start) / 500.0
-    assert_eq(backend.idle_connections(), 1)
-    backend.close()
-    remote.wait()
-    assert_eq(served.val, 532)
-    result.val = us
   })
-  result.val
+}
+
+///|
+async fn read_mttp(response : @mttp_core.Response) -> Bytes {
+  defer response.close()
+  guard response.status == 200 else {
+    fail("unexpected mttp response status: \{response.status}")
+  }
+  match response.body {
+    Empty => b""
+    Bytes(bytes) => bytes
+    Stream(cell) => @mttp_core.read_bounded(cell.take(), 1024 * 1024 + 1)
+    @mttp_core.Body::.. => fail("unsupported response body")
+  }
+}
+
+///|
+async fn check_body(url : String, expected : Bytes) -> Unit {
+  let backend = @backend.AsyncBackend::new(
+    config=@h1client.ClientConfig::default(),
+  )
+  defer backend.close()
+  let actual = read_mttp(
+    backend.send(
+      @mttp_core.Request::get(url),
+      @mttp_core.SendOptions::default(),
+    ),
+  )
+  if actual != expected {
+    fail(
+      "wrong body from \{url}: got \{actual.length()} bytes, expected \{expected.length()}",
+    )
+  }
+  println("CHECK\tok\t\{url}\tbytes=\{actual.length()}")
+}
+
+///|
+async fn mttp_worker(
+  url : String,
+  expected : Bytes,
+  running : Ref[Bool],
+  latencies_us : Array[Double],
+) -> Unit {
+  let backend = @backend.AsyncBackend::new(
+    config=@h1client.ClientConfig::default(),
+  )
+  defer backend.close()
+  let request = @mttp_core.Request::get(url)
+  while running.val {
+    let started = @bench.monotonic_clock_start()
+    let actual = read_mttp(
+      backend.send(request, @mttp_core.SendOptions::default()),
+    )
+    let latency = @bench.monotonic_clock_end(started)
+    if actual != expected {
+      fail(
+        "wrong body from \{url}: got \{actual.length()} bytes, expected \{expected.length()}",
+      )
+    }
+    latencies_us.push(latency)
+  }
+}
+
+///|
+async fn core_worker(
+  base : String,
+  path : String,
+  expected : Bytes,
+  running : Ref[Bool],
+  latencies_us : Array[Double],
+) -> Unit {
+  let conn = @http.ClientConnection(base)
+  defer conn.close()
+  while running.val {
+    let started = @bench.monotonic_clock_start()
+    conn.request(@http.Get, path)
+    let response = conn.end_request()
+    let actual = conn.read_all()
+    let latency = @bench.monotonic_clock_end(started)
+    if response.code != 200 {
+      fail("unexpected core/async/http response status: \{response.code}")
+    }
+    if actual != expected {
+      fail(
+        "wrong body from \{base}\{path}: got \{actual.length()} bytes, expected \{expected.length()}",
+      )
+    }
+    latencies_us.push(latency)
+  }
+}
+
+///|
+fn percentile(sorted : Array[Double], percent : Int32) -> Double {
+  guard !sorted.is_empty() else { abort("no completed requests") }
+  sorted[(sorted.length() - 1) * percent / 100]
+}
+
+///|
+async fn run_client(
+  implementation : String,
+  base : String,
+  body_name : String,
+  concurrency : Int32,
+  duration_ms : Int32,
+) -> Unit {
+  let expected = body_named(body_name)
+  let path = "/\{body_name}"
+  let running = Ref(true)
+  let latencies_us : Array[Double] = []
+  let started = @bench.monotonic_clock_start()
+  @async.with_task_group(group => {
+    group.spawn_bg(() => {
+      @async.sleep(duration_ms)
+      running.val = false
+    })
+    for _ in 0..<concurrency {
+      match implementation {
+        "mttp" =>
+          group.spawn_bg(() => {
+            mttp_worker("\{base}\{path}", expected, running, latencies_us)
+          })
+        "core" =>
+          group.spawn_bg(() => {
+            core_worker(base, path, expected, running, latencies_us)
+          })
+        _ => abort("unknown client implementation: \{implementation}")
+      }
+    }
+  })
+  let elapsed_us = @bench.monotonic_clock_end(started)
+  latencies_us.sort()
+  let requests_per_second = latencies_us.length().to_double() /
+    (elapsed_us / 1_000_000.0)
+  println(
+    "CLIENT_RESULT\t\{implementation}\t\{body_name}\t\{concurrency}\t\{requests_per_second}\t\{percentile(latencies_us, 50) / 1000.0}\t\{percentile(latencies_us, 99) / 1000.0}\t\{latencies_us.length()}",
+  )
+}
+
+///|
+fn usage() -> Unit {
+  println(
+    "usage: transport build | server <mttp|core> <address> | check <url> <small|large> | client <mttp|core> <base-url> <small|large> <concurrency> <duration-ms>",
+  )
+  @env.exit(2)
 }
 
 ///|
 async fn main {
-  for chunk_bytes in [65536, 1] {
-    let samples = []
-    for _ in 0..<3 {
-      samples.push(sample(chunk_bytes))
-    }
-    samples.sort()
-    println("loopback chunk=\{chunk_bytes} median_us_per_request=\{samples[1]}")
+  let args = @env.args()
+  match args {
+    [_, "build"] => ()
+    [_, "server", "mttp", addr] => serve_mttp(addr)
+    [_, "server", "core", addr] => serve_core(addr)
+    [_, "check", url, body_name] => check_body(url, body_named(body_name))
+    [_, "client", implementation, base, body_name, concurrency, duration_ms] =>
+      run_client(
+        implementation,
+        base,
+        body_name,
+        @string.parse_int(concurrency),
+        @string.parse_int(duration_ms),
+      )
+    _ => usage()
   }
 }

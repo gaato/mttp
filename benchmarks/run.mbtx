@@ -1,0 +1,659 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/process",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+  "moonbitlang/core/string",
+}
+----
+
+///|
+/// Runs the transport comparison from the repository root.
+///
+///   moon run benchmarks/run.mbtx [-- --record]
+///   moon run benchmarks/run.mbtx [-- --output PATH] [--summary PATH]
+///
+/// With no output flag it only prints machine-readable `BENCH_RESULT` rows
+/// and Markdown tables. `--record` is the only mode that writes a dated file
+/// below benchmarks/results; CI uses `--output` for its uploaded artifact.
+
+///|
+suberror RunError {
+  RunError(String)
+}
+
+///|
+let work : String = "_build/benchmarks"
+
+///|
+let native_binary : String = "_build/native/release/build/gaato/mttp-transport-bench/mttp-transport-bench.exe"
+
+///|
+let server_addr : String = "127.0.0.1:39151"
+
+///|
+let base_url : String = "http://127.0.0.1:39151"
+
+///|
+let duration_seconds : Int32 = 10
+
+///|
+let duration_ms : Int32 = duration_seconds * 1000
+
+///|
+let concurrencies : Array[Int32] = [1, 32]
+
+///|
+let bodies : Array[(String, Int32)] = [("small", 15), ("large", 1024 * 1024)]
+
+///|
+#derive(ToJson)
+priv struct BenchResult {
+  kind : String
+  implementation : String
+  body : String
+  body_bytes : Int32
+  concurrency : Int32
+  requests_per_second : Double
+  p50_ms : Double
+  p99_ms : Double
+  requests : Double
+  baseline : String
+  mut throughput_ratio : Double
+}
+
+///|
+priv struct Options {
+  record : Bool
+  output : String?
+  summary : String?
+}
+
+///|
+priv struct Env {
+  engine : String
+  images : Map[String, String]
+  root : String
+}
+
+///|
+async fn capture(
+  program : String,
+  args : Array[String],
+  timeout_ms~ : Int32 = 600000,
+) -> (Int32, String, String) {
+  let out = @shell.Cmd(program, args).output(timeout_ms~)
+  (out.exit_code(), out.stdout(), out.stderr())
+}
+
+///|
+async fn must(
+  program : String,
+  args : Array[String],
+  timeout_ms~ : Int32 = 600000,
+) -> String {
+  println("+ \{program} \{args.join(" ")}")
+  let (status, out, err) = capture(program, args, timeout_ms~)
+  if status != 0 {
+    raise RunError("\{program} exited with status \{status}:\n\{out}\{err}")
+  }
+  out
+}
+
+///|
+async fn find_engine() -> String {
+  if @env.get_env_var("BENCH_ENGINE") is Some(engine) && engine != "" {
+    return engine
+  }
+  for engine in ["podman", "docker"] {
+    let status = @shell.Cmd(
+      engine,
+      ["--version"],
+      stdout=Discard,
+      stderr=Discard,
+    ).status() catch {
+      _ => -1
+    }
+    if status == 0 {
+      return engine
+    }
+  }
+  raise RunError("neither podman nor docker is on PATH (or set BENCH_ENGINE)")
+}
+
+///|
+async fn read_images() -> Map[String, String] {
+  let images : Map[String, String] = Map([])
+  for raw in @fs.read_text("benchmarks/images.tsv").split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line.has_prefix("name\t") {
+      continue
+    }
+    guard line.split("\t").map(s => s.to_owned()).to_array() is [name, image] else {
+      raise RunError("benchmarks/images.tsv: malformed row: \{line}")
+    }
+    guard image.contains("@sha256:") else {
+      raise RunError("benchmarks/images.tsv: \{name} is not pinned by digest")
+    }
+    images[name] = image
+  }
+  for name in ["golang", "node", "oha"] {
+    if !images.contains(name) {
+      raise RunError("benchmarks/images.tsv: missing \{name}")
+    }
+  }
+  images
+}
+
+///|
+fn Env::image(self : Env, name : String) -> String {
+  self.images[name]
+}
+
+///|
+fn Env::mount(self : Env, path : String, at : String) -> Array[String] {
+  ["-v", "\{self.root}/\{path}:\{at}:ro,z"]
+}
+
+///|
+async fn wait_port(addr : String, what : String) -> Unit {
+  let parsed = @socket.Addr::parse(addr)
+  for _ in 0..<150 {
+    let up = try {
+      @socket.Tcp::connect(parsed).close()
+      true
+    } catch {
+      _ => false
+    }
+    if up {
+      return
+    }
+    @async.sleep(200)
+  }
+  raise RunError("\{what} does not accept connections on \{addr}")
+}
+
+///|
+async fn port_free(addr : String) -> Unit {
+  let taken = try {
+    @socket.Tcp::connect(@socket.Addr::parse(addr)).close()
+    true
+  } catch {
+    _ => false
+  }
+  if taken {
+    raise RunError("\{addr} is in use; the benchmark needs it")
+  }
+}
+
+///|
+async fn make_dir(path : String) -> Unit {
+  if !(@fs.exists(path) && @fs.kind(path) is Directory) {
+    @fs.mkdir(path, recursive=true)
+  }
+}
+
+///|
+fn json_field(value : Json, name : String) -> Json raise RunError {
+  guard value is Object(fields) && fields.get(name) is Some(field) else {
+    raise RunError("oha JSON has no object field \{name}")
+  }
+  field
+}
+
+///|
+fn json_number(value : Json, name : String) -> Double raise RunError {
+  match json_field(value, name) {
+    Number(number, ..) => number
+    _ => raise RunError("oha JSON field \{name} is not a number")
+  }
+}
+
+///|
+async fn check_server(body : String) -> Unit {
+  ignore(must(native_binary, ["check", "\{base_url}/\{body}", body]))
+}
+
+///|
+async fn run_oha(
+  env : Env,
+  implementation : String,
+  body : String,
+  body_bytes : Int32,
+  concurrency : Int32,
+) -> BenchResult {
+  let output = must(
+    env.engine,
+    [
+      "run",
+      "--rm",
+      "--network",
+      "host",
+      env.image("oha"),
+      "-z",
+      "\{duration_seconds}s",
+      "-c",
+      concurrency.to_string(),
+      "--http-version",
+      "1.1",
+      "--no-tui",
+      "--output-format",
+      "json",
+      "--wait-ongoing-requests-after-deadline",
+      "\{base_url}/\{body}",
+    ],
+    timeout_ms=(duration_seconds + 30) * 1000,
+  )
+  let document = @json.parse(output)
+  let summary = json_field(document, "summary")
+  let percentiles = json_field(document, "latencyPercentiles")
+  guard json_field(document, "statusCodeDistribution") is Object(statuses) &&
+    statuses.length() == 1 &&
+    statuses.contains("200") else {
+    raise RunError("oha observed a non-200 response from \{implementation}")
+  }
+  guard json_field(document, "errorDistribution") is Object(errors) &&
+    errors.is_empty() else {
+    raise RunError("oha observed request errors from \{implementation}")
+  }
+  {
+    kind: "server",
+    implementation,
+    body,
+    body_bytes,
+    concurrency,
+    requests_per_second: json_number(summary, "requestsPerSec"),
+    p50_ms: json_number(percentiles, "p50") * 1000.0,
+    p99_ms: json_number(percentiles, "p99") * 1000.0,
+    requests: json_number(json_field(document, "statusCodeDistribution"), "200"),
+    baseline: "go",
+    throughput_ratio: 0.0,
+  }
+}
+
+///|
+async fn run_server_cases(
+  env : Env,
+  implementation : String,
+  results : Array[BenchResult],
+) -> Unit {
+  for _, (body, body_bytes) in bodies {
+    check_server(body)
+    for concurrency in concurrencies {
+      results.push(run_oha(env, implementation, body, body_bytes, concurrency))
+    }
+  }
+}
+
+///|
+async fn run_moon_server(
+  env : Env,
+  implementation : String,
+  results : Array[BenchResult],
+) -> Unit {
+  let log = "\{work}/\{implementation}.log"
+  @async.with_task_group(group => {
+    let process = @process.spawn(
+      group,
+      native_binary,
+      ["server", implementation, server_addr],
+      stdout=ToFile(log),
+      stderr=ToFile(log),
+    )
+    defer process.cancel()
+    wait_port(server_addr, implementation)
+    run_server_cases(env, implementation, results)
+  })
+}
+
+///|
+async fn remove_container(env : Env, name : String) -> Unit {
+  ignore(capture(env.engine, ["rm", "-f", name]))
+}
+
+///|
+async fn start_container_server(env : Env, implementation : String) -> String {
+  let name = "mttp-benchmark-\{implementation}"
+  remove_container(env, name)
+  let args = match implementation {
+    "go" =>
+      [
+        "run",
+        "-d",
+        "--rm",
+        "--name",
+        name,
+        "--network",
+        "host",
+        ..env.mount("benchmarks/servers/go", "/src"),
+        "-w",
+        "/src",
+        env.image("golang"),
+        "go",
+        "run",
+        ".",
+        server_addr,
+      ]
+    "node" =>
+      [
+        "run",
+        "-d",
+        "--rm",
+        "--name",
+        name,
+        "--network",
+        "host",
+        ..env.mount("benchmarks/servers/node", "/src"),
+        env.image("node"),
+        "node",
+        "/src/server.mjs",
+        "39151",
+      ]
+    _ => raise RunError("unknown container server: \{implementation}")
+  }
+  ignore(must(env.engine, args))
+  wait_port(server_addr, implementation) catch {
+    error => {
+      let (_, out, err) = capture(env.engine, ["logs", name])
+      raise RunError("\{error}\n\{out}\{err}")
+    }
+  }
+  name
+}
+
+///|
+async fn with_container_server(
+  env : Env,
+  implementation : String,
+  action : async () -> Unit,
+) -> Unit {
+  let name = start_container_server(env, implementation)
+  defer @async.protect_from_cancel(() => remove_container(env, name))
+  action()
+}
+
+///|
+async fn run_client_case(
+  implementation : String,
+  body : String,
+  body_bytes : Int32,
+  concurrency : Int32,
+) -> BenchResult {
+  let output = must(
+    native_binary,
+    [
+      "client",
+      implementation,
+      base_url,
+      body,
+      concurrency.to_string(),
+      duration_ms.to_string(),
+    ],
+    timeout_ms=(duration_seconds + 30) * 1000,
+  )
+  let line = output
+    .split("\n")
+    .find_first(line => line.has_prefix("CLIENT_RESULT\t"))
+  guard line is Some(line) &&
+    line.split("\t").map(part => part.to_owned()).to_array()
+    is [
+      _,
+      actual_implementation,
+      actual_body,
+      actual_concurrency,
+      rps,
+      p50,
+      p99,
+      requests,
+    ] else {
+    raise RunError("client benchmark printed no parseable result: \{output}")
+  }
+  guard actual_implementation == implementation &&
+    actual_body == body &&
+    @string.parse_int(actual_concurrency) == concurrency else {
+    raise RunError("client benchmark result did not describe its invocation")
+  }
+  {
+    kind: "client",
+    implementation,
+    body,
+    body_bytes,
+    concurrency,
+    requests_per_second: @string.parse_double(rps),
+    p50_ms: @string.parse_double(p50),
+    p99_ms: @string.parse_double(p99),
+    requests: @string.parse_double(requests),
+    baseline: "core",
+    throughput_ratio: 0.0,
+  }
+}
+
+///|
+async fn run_client_cases(results : Array[BenchResult]) -> Unit {
+  for _, (body, body_bytes) in bodies {
+    for concurrency in concurrencies {
+      for implementation in ["mttp", "core"] {
+        results.push(
+          run_client_case(implementation, body, body_bytes, concurrency),
+        )
+      }
+    }
+  }
+}
+
+///|
+fn baseline_rps(results : Array[BenchResult], result : BenchResult) -> Double {
+  let implementation = if result.kind == "server" { "go" } else { "core" }
+  results
+  .iter()
+  .find_first(candidate => {
+    candidate.kind == result.kind &&
+    candidate.implementation == implementation &&
+    candidate.body == result.body &&
+    candidate.concurrency == result.concurrency
+  })
+  .unwrap().requests_per_second
+}
+
+///|
+fn set_ratios(results : Array[BenchResult]) -> Unit {
+  for result in results {
+    result.throughput_ratio = result.requests_per_second /
+      baseline_rps(results, result)
+  }
+}
+
+///|
+fn rounded(value : Double, digits : Int32) -> String {
+  let scale = if digits == 1 { 10.0 } else { 100.0 }
+  ((value * scale).round() / scale).to_string()
+}
+
+///|
+fn markdown_table(results : Array[BenchResult], kind : String) -> String {
+  let out = StringBuilder()
+  out.write_string(
+    "| kind | implementation | body | bytes | concurrency | req/s | p50 ms | p99 ms | throughput ratio |\n",
+  )
+  out.write_string("|---|---|---:|---:|---:|---:|---:|---:|---:|\n")
+  for result in results {
+    if result.kind != kind {
+      continue
+    }
+    out.write_string(
+      "| \{result.kind} | \{result.implementation} | \{result.body} | \{result.body_bytes} | \{result.concurrency} | \{rounded(result.requests_per_second, 1)} | \{rounded(result.p50_ms, 2)} | \{rounded(result.p99_ms, 2)} | \{rounded(result.throughput_ratio, 2)}x \{result.baseline} |\n",
+    )
+  }
+  out.to_string()
+}
+
+///|
+fn cpu_model(lscpu : String) -> String {
+  for line in lscpu.split("\n") {
+    if line.has_prefix("Model name:") {
+      return line["Model name:".length():].trim().to_owned()
+    }
+  }
+  "unknown"
+}
+
+///|
+async fn metadata(
+  env : Env,
+  date : String,
+  results : Array[BenchResult],
+) -> Json {
+  let lscpu = must("lscpu", [])
+  let cores = must("nproc", []).trim().to_owned()
+  let os = must("uname", ["-srmo"]).trim().to_owned()
+  let toolchain = must("moon", ["version", "--all"]).trim().to_owned()
+  let image_json : Map[String, Json] = Map([])
+  for name, image in env.images {
+    image_json[name] = Json::string(image)
+  }
+  let document : Json = {
+    "schema": 1,
+    "date": date,
+    "command": "BENCH_ENGINE=\{env.engine} scripts/gates.sh bench --record",
+    "method": {
+      "transport": "HTTP/1.1 loopback with keep-alive",
+      "request": "GET /small (15 bytes) or /large (1048576 bytes)",
+      "duration_seconds": duration_seconds,
+      "concurrencies": concurrencies,
+      "server_load_generator": "oha",
+      "client_server": "Go net/http",
+    },
+    "machine": {
+      "cpu_model": cpu_model(lscpu),
+      "logical_cores": @string.parse_int(cores),
+      "os": os,
+    },
+    "toolchain": toolchain,
+    "images": Json::object(image_json),
+    "results": results,
+  }
+  document
+}
+
+///|
+fn parse_options(args : Array[String]) -> Options raise RunError {
+  let mut record = false
+  let mut output : String? = None
+  let mut summary : String? = None
+  let mut i = 1
+  while i < args.length() {
+    match args[i] {
+      "--" => i += 1
+      "--record" => {
+        record = true
+        i += 1
+      }
+      "--output" if i + 1 < args.length() => {
+        output = Some(args[i + 1])
+        i += 2
+      }
+      "--summary" if i + 1 < args.length() => {
+        summary = Some(args[i + 1])
+        i += 2
+      }
+      flag => raise RunError("unknown or incomplete option: \{flag}")
+    }
+  }
+  if record && output is Some(_) {
+    raise RunError("--record and --output are mutually exclusive")
+  }
+  { record, output, summary, }
+}
+
+///|
+async fn main_run(options : Options) -> Unit {
+  let engine = find_engine()
+  let images = read_images()
+  let root = @fs.realpath(".")
+  let env = { engine, images, root, }
+  port_free(server_addr)
+  make_dir(work)
+  ignore(
+    must("moon", [
+      "run", "benchmarks/transport", "--target", "native", "--release", "--", "build",
+    ]),
+  )
+  for name, image in images {
+    let (present, _, _) = capture(engine, ["image", "inspect", image])
+    if present != 0 {
+      println("+ \{engine} pull \{name}")
+      ignore(must(engine, ["pull", "--quiet", image]))
+    }
+  }
+  let results : Array[BenchResult] = []
+  for implementation in ["mttp", "core"] {
+    port_free(server_addr)
+    run_moon_server(env, implementation, results)
+  }
+  for implementation in ["go", "node"] {
+    port_free(server_addr)
+    with_container_server(env, implementation, () => {
+      run_server_cases(env, implementation, results)
+    })
+  }
+  port_free(server_addr)
+  with_container_server(env, "go", () => {
+    for _, (body, _) in bodies {
+      check_server(body)
+    }
+    run_client_cases(results)
+  })
+  set_ratios(results)
+  println(
+    "BENCH_RESULT\tkind\timplementation\tbody\tbody_bytes\tconcurrency\trequests_per_second\tp50_ms\tp99_ms\trequests\tbaseline\tthroughput_ratio",
+  )
+  for result in results {
+    println(
+      "BENCH_RESULT\t\{result.kind}\t\{result.implementation}\t\{result.body}\t\{result.body_bytes}\t\{result.concurrency}\t\{result.requests_per_second}\t\{result.p50_ms}\t\{result.p99_ms}\t\{result.requests}\t\{result.baseline}\t\{result.throughput_ratio}",
+    )
+  }
+  let server_table = markdown_table(results, "server")
+  let client_table = markdown_table(results, "client")
+  println("\n## Server\n\n\{server_table}\n## Client\n\n\{client_table}")
+  let date = must("date", ["+%F"]).trim().to_owned()
+  let document = metadata(env, date, results)
+  let output = if options.record {
+    make_dir("benchmarks/results")
+    Some("benchmarks/results/\{date}.json")
+  } else {
+    options.output
+  }
+  if output is Some(path) {
+    @fs.write_text(path, document.stringify(indent=2) + "\n")
+    println("BENCH_OUTPUT\t\{path}")
+  }
+  if options.summary is Some(path) {
+    @fs.write_text(
+      path,
+      "## Transport benchmark (\{date})\n\n10 s per row, HTTP/1.1 loopback, keep-alive. Ratios use Go for servers and core/async/http for clients.\n\n### Server\n\n\{server_table}\n### Client\n\n\{client_table}\n",
+      append=true,
+    )
+  }
+}
+
+///|
+async fn main {
+  let status = try {
+    main_run(parse_options(@env.args()))
+    0
+  } catch {
+    RunError(message) => {
+      println("benchmark: \{message}")
+      2
+    }
+    error => {
+      println("benchmark: \{error}")
+      2
+    }
+  }
+  @env.exit(status)
+}

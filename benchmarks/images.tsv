@@ -1,0 +1,8 @@
+# Third-party benchmark programs, pinned by the digest of the multi-platform
+# image so a daily result changes only when this file changes. Tags document
+# the version; update a digest with:
+#   skopeo inspect --raw docker://<image>:<tag> | sha256sum
+name	image
+golang	docker.io/library/golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf
+node	docker.io/library/node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
+oha	ghcr.io/hatoo/oha:1.15@sha256:57c2247792c1466c88ecc83ddb9253aa0b58dcb852b1d7f2026a0acf7744c965
