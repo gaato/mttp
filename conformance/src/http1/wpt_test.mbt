@@ -8,7 +8,7 @@ test "web-platform-tests responses read as fetch expects, at every split" {
   inspect(
     "\{cases} cases, \{differences} differences",
     content=(
-      #|133 cases, 32 differences
+      #|134 cases, 31 differences
     ),
   )
   debug_inspect(

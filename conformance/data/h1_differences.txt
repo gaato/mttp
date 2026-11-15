@@ -138,10 +138,9 @@ diff wpt status-code "0 OK" => refused Malformed
 diff wpt status-code "1 OK" => refused Malformed
 diff wpt status-code "99 NOT OK" => refused Malformed
 
-reason A status code outside 100 to 599 is invalid (RFC 9110 section 15); mttp refuses it, where fetch reads it and RFC 9110 has a client treat it as a 5xx (a SHOULD). The h1 corpus refuses it on purpose (status below 100, status above 599).
+reason A status code below 100 is invalid (RFC 9110 section 15); mttp refuses 077 and 099, where fetch reads them (CONTRACT.md "HTTP/1 codec": 000–099 are refused).
 diff wpt status-code "077 77" => refused Malformed
 diff wpt status-code "099 HELLO" => refused Malformed
-diff wpt status-code "999 DOES IT MATTER" => refused Malformed
 
 reason A Content-Length list or a repeated Content-Length is refused, even with equal values, which fetch combines (CONTRACT.md "HTTP/1 codec": duplicate Content-Length is rejected, even identical duplicates; RFC 9110 section 8.6 allows rejecting them).
 diff wpt content-length 2 => refused Malformed

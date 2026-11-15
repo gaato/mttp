@@ -538,6 +538,14 @@ let wpt_cases : String =
   #|expect response 200 1.1
   #|expect header header-parsing: is sad
   #|expect incomplete
+  #|case wpt status-code "999 DOES IT MATTER"
+  #|name HTTP/1.1 999 DOES IT MATTER
+  #|side response
+  #|wire HTTP/1.1 999 DOES IT MATTER\r\nheader-parsing: is sad\r\n\r\n
+  #|note CRLF line ends and the empty line added
+  #|expect response 999 1.1
+  #|expect header header-parsing: is sad
+  #|expect incomplete
   #|case wpt status-code "1000 BOO"
   #|name HTTP/1.1 1000 BOO
   #|side response
@@ -866,7 +874,7 @@ let wpt_differences : String =
   #|side response
   #|wire HTTP/1.1 077 77\r\nheader-parsing: is sad\r\n\r\n
   #|note CRLF line ends and the empty line added
-  #|reason A status code outside 100 to 599 is invalid (RFC 9110 section 15); mttp refuses it, where fetch reads it and RFC 9110 has a client treat it as a 5xx (a SHOULD). The h1 corpus refuses it on purpose (status below 100, status above 599).
+  #|reason A status code below 100 is invalid (RFC 9110 section 15); mttp refuses 077 and 099, where fetch reads them (CONTRACT.md "HTTP/1 codec": 000–099 are refused).
   #|expect refused Malformed
   #|upstream response 77 1.1
   #|upstream header header-parsing: is sad
@@ -876,19 +884,9 @@ let wpt_differences : String =
   #|side response
   #|wire HTTP/1.1 099 HELLO\r\nheader-parsing: is sad\r\n\r\n
   #|note CRLF line ends and the empty line added
-  #|reason A status code outside 100 to 599 is invalid (RFC 9110 section 15); mttp refuses it, where fetch reads it and RFC 9110 has a client treat it as a 5xx (a SHOULD). The h1 corpus refuses it on purpose (status below 100, status above 599).
+  #|reason A status code below 100 is invalid (RFC 9110 section 15); mttp refuses 077 and 099, where fetch reads them (CONTRACT.md "HTTP/1 codec": 000–099 are refused).
   #|expect refused Malformed
   #|upstream response 99 1.1
-  #|upstream header header-parsing: is sad
-  #|upstream incomplete
-  #|case wpt status-code "999 DOES IT MATTER"
-  #|name HTTP/1.1 999 DOES IT MATTER
-  #|side response
-  #|wire HTTP/1.1 999 DOES IT MATTER\r\nheader-parsing: is sad\r\n\r\n
-  #|note CRLF line ends and the empty line added
-  #|reason A status code outside 100 to 599 is invalid (RFC 9110 section 15); mttp refuses it, where fetch reads it and RFC 9110 has a client treat it as a 5xx (a SHOULD). The h1 corpus refuses it on purpose (status below 100, status above 599).
-  #|expect refused Malformed
-  #|upstream response 999 1.1
   #|upstream header header-parsing: is sad
   #|upstream incomplete
   #|case wpt content-length 2

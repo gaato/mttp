@@ -71,7 +71,7 @@ That file also lists, with reasons citing RFC 9110/9112, CONTRACT.md and the
 codec's README, every case where mttp's documented strictness reads the input
 otherwise: llhttp's lenient modes, an empty line before a status line, a
 target with a fragment, a repeated or invalid Content-Length that fetch
-tolerates, and so on (57 llhttp and 32 WPT cases). Those cases run too, and
+tolerates, and so on (57 llhttp and 31 WPT cases). Those cases run too, and
 fail if mttp starts reading them as the source does. Cases about llhttp's own
 callbacks (pause, skip-body, `llhttp_finish`), RTSP, ICE and the HTTP/2
 preface are skipped and counted, as are two WPT responses that wptserve
