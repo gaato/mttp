@@ -1,0 +1,500 @@
+----
+import {
+  "gaato/mttp_core/apispec",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+----
+
+// Reads provider-written OpenAPI JSON documents, round-trips each through
+// gaato/mttp_core/apispec, and reports every structural difference. Documents
+// are untrusted data: this script only reads and parses them.
+//
+// Usage: moon run scripts/apispec_corpus.mbtx -- DIRECTORY
+
+///|
+enum DifferenceKind {
+  Lost
+  Added
+  Changed
+}
+
+///|
+struct Difference {
+  kind : DifferenceKind
+  path : String
+  before : Json?
+  after : Json?
+}
+
+///|
+struct Counts {
+  mut lost : Int32
+  mut added : Int32
+  mut changed : Int32
+}
+
+///|
+struct Summary {
+  mut documents : Int32
+  mut decoded : Int32
+  mut failed : Int32
+  mut operations : Int32
+  mut schemas : Int32
+  mut bytes : Int32
+}
+
+///|
+fn Summary::new() -> Summary {
+  { documents: 0, decoded: 0, failed: 0, operations: 0, schemas: 0, bytes: 0, }
+}
+
+///|
+struct OpenApi30Counts {
+  mut documents : Int32
+  mut nullable : Int32
+  mut nullable_documents : Int32
+  mut exclusive_minimum_bool : Int32
+  mut exclusive_minimum_documents : Int32
+  mut exclusive_maximum_bool : Int32
+  mut exclusive_maximum_documents : Int32
+  mut example : Int32
+  mut example_documents : Int32
+  mut examples : Int32
+  mut examples_documents : Int32
+}
+
+///|
+fn OpenApi30Counts::new() -> OpenApi30Counts {
+  {
+    documents: 0,
+    nullable: 0,
+    nullable_documents: 0,
+    exclusive_minimum_bool: 0,
+    exclusive_minimum_documents: 0,
+    exclusive_maximum_bool: 0,
+    exclusive_maximum_documents: 0,
+    example: 0,
+    example_documents: 0,
+    examples: 0,
+    examples_documents: 0,
+  }
+}
+
+///|
+fn OpenApi30Counts::add(
+  self : OpenApi30Counts,
+  other : OpenApi30Counts,
+) -> Unit {
+  self.documents += 1
+  self.nullable += other.nullable
+  if other.nullable > 0 {
+    self.nullable_documents += 1
+  }
+  self.exclusive_minimum_bool += other.exclusive_minimum_bool
+  if other.exclusive_minimum_bool > 0 {
+    self.exclusive_minimum_documents += 1
+  }
+  self.exclusive_maximum_bool += other.exclusive_maximum_bool
+  if other.exclusive_maximum_bool > 0 {
+    self.exclusive_maximum_documents += 1
+  }
+  self.example += other.example
+  if other.example > 0 {
+    self.example_documents += 1
+  }
+  self.examples += other.examples
+  if other.examples > 0 {
+    self.examples_documents += 1
+  }
+}
+
+///|
+fn count_openapi_30(value : Json, counts : OpenApi30Counts) -> Unit {
+  match value {
+    Object(fields) =>
+      for key, child in fields {
+        match (key, child) {
+          ("nullable", True | False) => counts.nullable += 1
+          ("exclusiveMinimum", True | False) =>
+            counts.exclusive_minimum_bool += 1
+          ("exclusiveMaximum", True | False) =>
+            counts.exclusive_maximum_bool += 1
+          ("example", _) => counts.example += 1
+          ("examples", _) => counts.examples += 1
+          _ => ()
+        }
+        count_openapi_30(child, counts)
+      }
+    Array(values) =>
+      for child in values {
+        count_openapi_30(child, counts)
+      }
+    _ => ()
+  }
+}
+
+///|
+fn Counts::new() -> Counts {
+  { lost: 0, added: 0, changed: 0, }
+}
+
+///|
+fn Counts::total(self : Counts) -> Int32 {
+  self.lost + self.added + self.changed
+}
+
+///|
+fn Counts::add(self : Counts, other : Counts) -> Unit {
+  self.lost += other.lost
+  self.added += other.added
+  self.changed += other.changed
+}
+
+///|
+fn kind_name(kind : DifferenceKind) -> String {
+  match kind {
+    Lost => "lost"
+    Added => "added"
+    Changed => "changed"
+  }
+}
+
+///|
+fn pointer_key(key : String) -> String {
+  key.replace_all(old="~", new="~0").replace_all(old="/", new="~1")
+}
+
+///|
+fn child_key(path : String, key : String) -> String {
+  path + "/" + pointer_key(key)
+}
+
+///|
+fn child_index(path : String, index : Int32) -> String {
+  path + "/" + index.to_string()
+}
+
+///|
+fn display_path(path : String) -> String {
+  if path.is_empty() {
+    "/"
+  } else {
+    path
+  }
+}
+
+///|
+fn number_equal(
+  left : Double,
+  left_repr : String?,
+  right : Double,
+  right_repr : String?,
+) -> Bool {
+  let left_text = match left_repr {
+    Some(text) => text
+    None => Json::number(left).stringify()
+  }
+  let right_text = match right_repr {
+    Some(text) => text
+    None => Json::number(right).stringify()
+  }
+  left_text == right_text
+}
+
+///|
+fn different(
+  kind : DifferenceKind,
+  path : String,
+  before? : Json,
+  after? : Json,
+) -> Difference {
+  { kind, path: display_path(path), before, after, }
+}
+
+///|
+fn compare_json(
+  before : Json,
+  after : Json,
+  path : String,
+  out : Array[Difference],
+) -> Unit {
+  match (before, after) {
+    (Object(left), Object(right)) => {
+      for key, value in left {
+        match right.get(key) {
+          Some(other) => compare_json(value, other, child_key(path, key), out)
+          None => out.push(different(Lost, child_key(path, key), before=value))
+        }
+      }
+      for key, value in right {
+        if !left.contains(key) {
+          out.push(different(Added, child_key(path, key), after=value))
+        }
+      }
+    }
+    (Array(left), Array(right)) => {
+      let shared = left.length().min(right.length())
+      for i in 0..<shared {
+        compare_json(left[i], right[i], child_index(path, i), out)
+      }
+      for i in shared..<left.length() {
+        out.push(different(Lost, child_index(path, i), before=left[i]))
+      }
+      for i in shared..<right.length() {
+        out.push(different(Added, child_index(path, i), after=right[i]))
+      }
+    }
+    (Number(a, repr=ar), Number(b, repr=br)) =>
+      if !number_equal(a, ar, b, br) {
+        out.push(different(Changed, path, before~, after~))
+      }
+    _ =>
+      if before != after {
+        out.push(different(Changed, path, before~, after~))
+      }
+  }
+}
+
+///|
+fn count_differences(differences : Array[Difference]) -> Counts {
+  let counts = Counts::new()
+  for difference in differences {
+    match difference.kind {
+      Lost => counts.lost += 1
+      Added => counts.added += 1
+      Changed => counts.changed += 1
+    }
+  }
+  counts
+}
+
+///|
+fn short_json(value : Json?) -> String {
+  match value {
+    None => "-"
+    Some(value) => {
+      let text = value.stringify()
+      if text.length() <= 160 {
+        text
+      } else {
+        text[0:157].to_owned() + "..."
+      }
+    }
+  }
+}
+
+///|
+fn print_differences(differences : Array[Difference]) -> Unit {
+  for difference in differences {
+    println(
+      "  \{kind_name(difference.kind)}\t\{difference.path}\tbefore=\{short_json(difference.before)}\tafter=\{short_json(difference.after)}",
+    )
+  }
+}
+
+///|
+fn object_member(object : Json, name : String) -> Json? {
+  match object {
+    Object(fields) => fields.get(name)
+    _ => None
+  }
+}
+
+///|
+fn string_member(object : Json, name : String) -> String {
+  match object_member(object, name) {
+    Some(String(value)) => value
+    _ => "?"
+  }
+}
+
+///|
+fn object_length(value : Json?) -> Int32 {
+  match value {
+    Some(Object(fields)) => fields.length()
+    _ => 0
+  }
+}
+
+///|
+fn operations_in_path_item(value : Json) -> Int32 {
+  match value {
+    Object(fields) => {
+      let mut count = 0
+      for
+        verb in [
+          "get", "put", "post", "delete", "options", "head", "patch", "trace", "query",
+        ] {
+        if fields.contains(verb) {
+          count += 1
+        }
+      }
+      count + object_length(fields.get("additionalOperations"))
+    }
+    _ => 0
+  }
+}
+
+///|
+fn operations_in(value : Json?) -> Int32 {
+  match value {
+    Some(Object(items)) => {
+      let mut count = 0
+      for _, item in items {
+        count += operations_in_path_item(item)
+      }
+      count
+    }
+    _ => 0
+  }
+}
+
+///|
+fn operation_count(document : Json) -> Int32 {
+  operations_in(object_member(document, "paths")) +
+  operations_in(object_member(document, "webhooks"))
+}
+
+///|
+fn schema_count(document : Json) -> Int32 {
+  match object_member(document, "components") {
+    Some(components) => object_length(object_member(components, "schemas"))
+    None => 0
+  }
+}
+
+///|
+fn lexical(a : String, b : String) -> Int32 {
+  for i in 0..<a.length().min(b.length()) {
+    if a[i] != b[i] {
+      return a[i].to_int() - b[i].to_int()
+    }
+  }
+  a.length() - b.length()
+}
+
+///|
+async fn json_files(root : String) -> Array[String] {
+  let found = []
+  @fs.walk(
+    root,
+    (dir, entries) => {
+      for entry in entries {
+        if entry.has_suffix(".json") {
+          found.push(dir + "/" + entry)
+        }
+      }
+    },
+    max_concurrency=1,
+  )
+  found.sort_by(lexical)
+  found
+}
+
+///|
+fn base_name(path : String) -> String {
+  path.split("/").last().unwrap_or(path[:]).to_owned()
+}
+
+///|
+async fn inspect_file(
+  path : String,
+  overall : Counts,
+  summary : Summary,
+  openapi_30_overall : OpenApi30Counts,
+) -> Bool {
+  let text = @fs.read_text(path)
+  let size = @utf8.encode(text).length()
+  let name = base_name(path)
+  summary.documents += 1
+  summary.bytes += size
+  let document = @json.parse(
+    text,
+    reject_duplicate_keys=true,
+    preserve_number_repr=true,
+  ) catch {
+    error => {
+      println("\{name}\t?\t0\t0\t\{size}\tparse-error\t0/0/0")
+      println("  parse error: \{error}")
+      summary.failed += 1
+      return false
+    }
+  }
+  let version = string_member(document, "openapi")
+  let openapi_30_counts = if version.has_prefix("3.0.") {
+    let counts = OpenApi30Counts::new()
+    count_openapi_30(document, counts)
+    openapi_30_overall.add(counts)
+    Some(counts)
+  } else {
+    None
+  }
+  let operations = operation_count(document)
+  let schemas = schema_count(document)
+  summary.operations += operations
+  summary.schemas += schemas
+  let encoded = try {
+    let spec : @apispec.OpenApi = @json.from_json(document)
+    Json(spec)
+  } catch {
+    @json.JsonDecodeError((json_path, reason)) => {
+      println(
+        "\{name}\t\{version}\t\{operations}\t\{schemas}\t\{size}\tdecode-error\t0/0/0",
+      )
+      println("  decode error at \{json_path}: \{reason}")
+      summary.failed += 1
+      return false
+    }
+  }
+  let differences = []
+  compare_json(document, encoded, "", differences)
+  let counts = count_differences(differences)
+  summary.decoded += 1
+  overall.add(counts)
+  println(
+    "\{name}\t\{version}\t\{operations}\t\{schemas}\t\{size}\tok\t\{counts.lost}/\{counts.added}/\{counts.changed}",
+  )
+  if openapi_30_counts is Some(legacy) {
+    println(
+      "  3.0 constructs\tnullable=\{legacy.nullable}\texclusiveMinimum(bool)=\{legacy.exclusive_minimum_bool}\texclusiveMaximum(bool)=\{legacy.exclusive_maximum_bool}\texample=\{legacy.example}\texamples=\{legacy.examples}",
+    )
+  }
+  print_differences(differences)
+  counts.total() == 0
+}
+
+///|
+async fn main {
+  guard @env.args() is [_, root] else {
+    eprintln("usage: moon run scripts/apispec_corpus.mbtx -- DIRECTORY")
+    @env.exit(2)
+  }
+  let files = json_files(root)
+  if files.is_empty() {
+    eprintln("no JSON documents below: " + root)
+    @env.exit(2)
+  }
+  println("document\tversion\tops\tschemas\tbytes\tdecode\tlost/added/changed")
+  let overall = Counts::new()
+  let summary = Summary::new()
+  let openapi_30_overall = OpenApi30Counts::new()
+  let mut clean = true
+  for path in files {
+    if !inspect_file(path, overall, summary, openapi_30_overall) {
+      clean = false
+    }
+  }
+  println(
+    "overall (\{summary.documents} documents)\t-\t\{summary.operations}\t\{summary.schemas}\t\{summary.bytes}\t\{summary.decoded} ok, \{summary.failed} failed\t\{overall.lost}/\{overall.added}/\{overall.changed}",
+  )
+  println(
+    "3.0 overall (\{openapi_30_overall.documents} documents)\tnullable=\{openapi_30_overall.nullable} in \{openapi_30_overall.nullable_documents}\texclusiveMinimum(bool)=\{openapi_30_overall.exclusive_minimum_bool} in \{openapi_30_overall.exclusive_minimum_documents}\texclusiveMaximum(bool)=\{openapi_30_overall.exclusive_maximum_bool} in \{openapi_30_overall.exclusive_maximum_documents}\texample=\{openapi_30_overall.example} in \{openapi_30_overall.example_documents}\texamples=\{openapi_30_overall.examples} in \{openapi_30_overall.examples_documents}",
+  )
+  if !clean {
+    @env.exit(1)
+  }
+}

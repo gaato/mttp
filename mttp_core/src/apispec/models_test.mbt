@@ -243,7 +243,9 @@ test "extensions follow the fixed fields and cannot replace them" {
   })
   assert_eq(
     decoded,
-    @apispec.PathItem::new(summary="s", extensions={ "x-b": true }),
+    @apispec.PathItem::new(summary="s", unmodeled={ "parameters": [] }, extensions={
+      "x-b": true,
+    }),
   )
 }
 
@@ -614,4 +616,42 @@ test "OpenAPI 3.2 fields are typed and round-trip" {
   assert_eq(search.operations["trace"].responses, {})
   assert_eq(search.unmodeled, {})
   assert_eq(spec.to_json(), doc)
+}
+
+///|
+test "Reference Objects and explicit defaults survive a document round trip" {
+  let doc : Json = {
+    "openapi": "3.1.0",
+    "info": { "title": "T", "version": "1" },
+    "paths": {
+      "/items": {
+        "parameters": [{ "$ref": "#/components/parameters/limit" }],
+        "get": {
+          "parameters": [],
+          "responses": { "204": { "description": "done", "headers": {} } },
+        },
+      },
+    },
+    "components": {
+      "parameters": {
+        "limit": { "name": "limit", "in": "query", "required": false },
+        "other": { "$ref": "#/components/parameters/limit" },
+      },
+      "requestBodies": { "body": { "$ref": "#/components/requestBodies/real" } },
+      "securitySchemes": {
+        "auth": { "$ref": "#/components/securitySchemes/real" },
+      },
+    },
+  }
+  assert_eq(round_trip(doc), doc)
+  let spec : @apispec.OpenApi = @json.from_json(doc)
+  assert_eq(spec.paths["/items"].parameters[0].unmodeled, {
+    "$ref": "#/components/parameters/limit",
+  })
+  assert_eq(spec.components.request_bodies["body"].unmodeled, {
+    "$ref": "#/components/requestBodies/real",
+  })
+  assert_eq(spec.components.security_schemes["auth"].unmodeled, {
+    "$ref": "#/components/securitySchemes/real",
+  })
 }

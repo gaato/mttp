@@ -29,6 +29,9 @@ let output : String = "mttp_core/src/apispec/models.mbt"
 enum Kind {
   /// A positional constructor argument; always encoded; decoding requires it.
   Required
+  /// A required field on the concrete object that is absent when the whole
+  /// value is a Reference Object. The public constructor still requires it.
+  ReferenceRequired(String)
   /// A labelled argument with a default; decoding substitutes the default.
   /// `omit` leaves the field out of the JSON while it equals the default.
   Default(String, omit~ : Bool)
@@ -53,6 +56,21 @@ fn required(name : String, type_ : String, wire? : String) -> Field {
 }
 
 ///|
+fn reference_required(
+  name : String,
+  type_ : String,
+  reference_default : String,
+  wire? : String,
+) -> Field {
+  {
+    name,
+    wire: wire.unwrap_or(name),
+    type_,
+    kind: ReferenceRequired(reference_default),
+  }
+}
+
+///|
 fn default(
   name : String,
   type_ : String,
@@ -66,6 +84,17 @@ fn default(
 ///|
 fn optional(name : String, type_ : String, wire? : String) -> Field {
   { name, wire: wire.unwrap_or(name), type_, kind: Optional, }
+}
+
+///|
+/// A default value as JSON without leaving empty collection element types
+/// unresolved in generated code.
+fn default_json(value : String) -> String {
+  match value {
+    "[]" => "Json::array([])"
+    "{}" => "Json::empty_object()"
+    _ => "Json(\{value})"
+  }
 }
 
 ///|
@@ -165,8 +194,8 @@ fn records() -> Array[(String, Array[Field])] {
     (
       "Parameter",
       [
-        required("name", "String"),
-        required("in_", "String", wire="in"),
+        reference_required("name", "String", "\"\""),
+        reference_required("in_", "String", "\"\"", wire="in"),
         default("required", "Bool", "false"),
         default("deprecated", "Bool", "false"),
         optional("allow_empty_value", "Bool", wire="allowEmptyValue"),
@@ -214,7 +243,7 @@ fn records() -> Array[(String, Array[Field])] {
     (
       "RequestBody",
       [
-        required("content", "Map[String, MediaTypeObject]"),
+        reference_required("content", "Map[String, MediaTypeObject]", "{}"),
         default("required", "Bool", "false"),
         optional("description", "String"),
       ],
@@ -240,7 +269,7 @@ fn records() -> Array[(String, Array[Field])] {
     (
       "SecurityScheme",
       [
-        required("type_", "String", wire="type"),
+        reference_required("type_", "String", "\"\"", wire="type"),
         optional("scheme", "String"),
         optional("name", "String"),
         optional("in_", "String", wire="in"),
@@ -384,7 +413,7 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
   )
   for field in fields {
     let param = match field.kind {
-      Required => "\{field.name} : \{field.type_}"
+      Required | ReferenceRequired(_) => "\{field.name} : \{field.type_}"
       Default(value, ..) => "\{field.name}~ : \{field.type_} = \{value}"
       Optional => "\{field.name}? : \{field.type_}"
     }
@@ -419,11 +448,27 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
     match field.kind {
       Required | Default(_, omit=false) =>
         out.write_string("  obj[\{wire}] = Json(self.\{field.name})\n")
+      ReferenceRequired(_) =>
+        out.write_string(
+          (
+            $|  if !self.unmodeled.contains("$ref") {
+            $|    obj[\{wire}] = Json(self.\{field.name})
+            $|  }
+            $|
+          ),
+        )
       Default(value, omit=true) => {
         let changed = match value {
-          "[]" | "{}" => "!self.\{field.name}.is_empty()"
-          "false" => "self.\{field.name}"
-          _ => "self.\{field.name} != \{value}"
+          "[]" | "{}" =>
+            "!self.\{field.name}.is_empty() || self.unmodeled.contains(\{wire})"
+          "false" => "self.\{field.name} || self.unmodeled.contains(\{wire})"
+          _ =>
+            "self.\{field.name} != \{value} || self.unmodeled.contains(\{wire})"
+        }
+        let changed = if changed.length() + 7 <= width + 2 {
+          changed
+        } else {
+          changed.replace_all(old=" || ", new=" ||\n    ")
         }
         out.write_string(
           (
@@ -456,6 +501,19 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
       $|/// Decodes \{name}, keeping unmodeled members and extensions.
       $|pub impl @json.FromJson for \{name} with fn from_json(value, path) {
       $|  let obj = expect_object(value, path)
+      $|  let unmodeled = unmodeled_fields(obj, is_\{snake(name)}_field)
+      $|
+    ),
+  )
+  for field in fields {
+    if field.kind is Default(value, omit=true) {
+      out.write_string(
+        "  remember_default(obj, unmodeled, \{Json(field.wire).stringify()}, \{default_json(value)})\n",
+      )
+    }
+  }
+  out.write_string(
+    (
       $|  {
       $|
     ),
@@ -464,6 +522,8 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
     let wire = Json(field.wire).stringify()
     let call = match field.kind {
       Required => "field(obj, \{wire}, path)"
+      ReferenceRequired(default) =>
+        "reference_field(obj, \{wire}, path, default=\{default})"
       Default(value, ..) => "field(obj, \{wire}, path, default=\{value})"
       Optional => "optional_field(obj, \{wire}, path)"
     }
@@ -471,7 +531,7 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
   }
   out.write_string(
     (
-      $|    unmodeled: unmodeled_fields(obj, is_\{snake(name)}_field),
+      $|    unmodeled,
       $|    extensions: extension_fields(obj),
       $|  }
       $|}

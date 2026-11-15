@@ -38,6 +38,10 @@
 #                                           Daily in canary, outside full
 #   scripts/gates.sh mutate [SITE]...       the hand-run HTTP/1 mutation
 #                                           sample; not part of full or CI
+#   scripts/gates.sh apispec-corpus DIR     round-trip external OpenAPI JSON
+#                                           documents through apispec. Manual
+#                                           only: the documents are not ours
+#                                           to redistribute and are not in CI
 #   scripts/gates.sh full                   quick on all four targets, static,
 #                                           the self-test of this script, the
 #                                           resolver gate and workerd
@@ -206,6 +210,12 @@ case "$mode" in
     ;;
   mutate)
     step script scripts/mutate.mbtx -- "$@"
+    finish
+    ;;
+  apispec-corpus)
+    [ $# = 1 ] || usage
+    step script scripts/resolver_gate.mbtx -- --run-with-local-module \
+      mttp_core scripts/apispec_corpus.mbtx "$1"
     finish
     ;;
   manifest)

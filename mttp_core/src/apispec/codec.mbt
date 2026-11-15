@@ -32,6 +32,25 @@ fn[T : @json.FromJson] field(
 }
 
 ///|
+/// Decodes a concrete object's required field, or supplies `default` when the
+/// value is a Reference Object. `$ref` itself is validated and kept in the
+/// unmodeled bag.
+fn[T : @json.FromJson] reference_field(
+  obj : Map[String, Json],
+  name : String,
+  path : @json.JsonPath,
+  default~ : T,
+) -> T raise @json.JsonDecodeError {
+  match obj.get(name) {
+    Some(value) => @json.from_json(value, path=path.add_key(name))
+    None => {
+      let _ : String = field(obj, "$ref", path)
+      default
+    }
+  }
+}
+
+///|
 /// The `x-*` members of `values`: what decoding keeps as extensions.
 fn extension_fields(values : Map[String, Json]) -> Map[String, Json] {
   let out : Map[String, Json] = Map([])
@@ -68,6 +87,21 @@ fn unmodeled_fields(
     }
   }
   out
+}
+
+///|
+/// Remembers that a typed default was explicit in decoded JSON. Constructors
+/// still omit defaults, while a provider document can be written back without
+/// losing an explicit `false`, empty array or empty object.
+fn remember_default(
+  obj : Map[String, Json],
+  unmodeled : Map[String, Json],
+  name : String,
+  default : Json,
+) -> Unit {
+  if obj.get(name) is Some(value) && value == default {
+    unmodeled[name] = value
+  }
 }
 
 ///|
@@ -166,10 +200,10 @@ pub impl ToJson for PathItem with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if !self.servers.is_empty() {
+  if !self.servers.is_empty() || self.unmodeled.contains("servers") {
     obj["servers"] = Json(self.servers)
   }
-  if !self.parameters.is_empty() {
+  if !self.parameters.is_empty() || self.unmodeled.contains("parameters") {
     obj["parameters"] = Json(self.parameters)
   }
   for key, value in self.operations {
@@ -177,7 +211,8 @@ pub impl ToJson for PathItem with fn to_json(self) {
       obj[key] = Json(value)
     }
   }
-  if !self.additional_operations.is_empty() {
+  if !self.additional_operations.is_empty() ||
+    self.unmodeled.contains("additionalOperations") {
     obj["additionalOperations"] = Json(self.additional_operations)
   }
   add_unmodeled(obj, self.unmodeled, is_path_item_field)
@@ -190,6 +225,10 @@ pub impl ToJson for PathItem with fn to_json(self) {
 /// extensions apart from them.
 pub impl @json.FromJson for PathItem with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_path_item_field)
+  remember_default(obj, unmodeled, "servers", Json::array([]))
+  remember_default(obj, unmodeled, "parameters", Json::array([]))
+  remember_default(obj, unmodeled, "additionalOperations", Json::empty_object())
   let operations : Map[String, Operation] = Map([])
   for key, value in obj {
     if is_method(key) {
@@ -208,7 +247,7 @@ pub impl @json.FromJson for PathItem with fn from_json(value, path) {
       path,
       default=Map([]),
     ),
-    unmodeled: unmodeled_fields(obj, is_path_item_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }

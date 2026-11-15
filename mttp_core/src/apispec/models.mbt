@@ -84,19 +84,20 @@ pub impl ToJson for OpenApi with fn to_json(self) {
   if self.json_schema_dialect is Some(value) {
     obj["jsonSchemaDialect"] = Json(value)
   }
-  if !self.servers.is_empty() {
+  if !self.servers.is_empty() || self.unmodeled.contains("servers") {
     obj["servers"] = Json(self.servers)
   }
-  if !self.webhooks.is_empty() {
+  if !self.webhooks.is_empty() || self.unmodeled.contains("webhooks") {
     obj["webhooks"] = Json(self.webhooks)
   }
-  if self.components != Components::new() {
+  if self.components != Components::new() ||
+    self.unmodeled.contains("components") {
     obj["components"] = Json(self.components)
   }
   if self.security is Some(value) {
     obj["security"] = Json(value)
   }
-  if !self.tags.is_empty() {
+  if !self.tags.is_empty() || self.unmodeled.contains("tags") {
     obj["tags"] = Json(self.tags)
   }
   if self.external_docs is Some(value) {
@@ -114,6 +115,11 @@ pub impl ToJson for OpenApi with fn to_json(self) {
 /// Decodes OpenApi, keeping unmodeled members and extensions.
 pub impl @json.FromJson for OpenApi with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_open_api_field)
+  remember_default(obj, unmodeled, "servers", Json::array([]))
+  remember_default(obj, unmodeled, "webhooks", Json::empty_object())
+  remember_default(obj, unmodeled, "components", Json(Components::new()))
+  remember_default(obj, unmodeled, "tags", Json::array([]))
   {
     info: field(obj, "info", path),
     paths: field(obj, "paths", path, default={}),
@@ -126,7 +132,7 @@ pub impl @json.FromJson for OpenApi with fn from_json(value, path) {
     tags: field(obj, "tags", path, default=[]),
     external_docs: optional_field(obj, "externalDocs", path),
     self_: optional_field(obj, "$self", path),
-    unmodeled: unmodeled_fields(obj, is_open_api_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -235,6 +241,7 @@ pub impl ToJson for Info with fn to_json(self) {
 /// Decodes Info, keeping unmodeled members and extensions.
 pub impl @json.FromJson for Info with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_info_field)
   {
     title: field(obj, "title", path),
     version: field(obj, "version", path),
@@ -243,7 +250,7 @@ pub impl @json.FromJson for Info with fn from_json(value, path) {
     terms_of_service: optional_field(obj, "termsOfService", path),
     contact: optional_field(obj, "contact", path),
     license: optional_field(obj, "license", path),
-    unmodeled: unmodeled_fields(obj, is_info_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -328,11 +335,12 @@ pub impl ToJson for Contact with fn to_json(self) {
 /// Decodes Contact, keeping unmodeled members and extensions.
 pub impl @json.FromJson for Contact with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_contact_field)
   {
     name: optional_field(obj, "name", path),
     url: optional_field(obj, "url", path),
     email: optional_field(obj, "email", path),
-    unmodeled: unmodeled_fields(obj, is_contact_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -415,11 +423,12 @@ pub impl ToJson for License with fn to_json(self) {
 /// Decodes License, keeping unmodeled members and extensions.
 pub impl @json.FromJson for License with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_license_field)
   {
     name: field(obj, "name", path),
     identifier: optional_field(obj, "identifier", path),
     url: optional_field(obj, "url", path),
-    unmodeled: unmodeled_fields(obj, is_license_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -494,7 +503,7 @@ pub impl ToJson for Server with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if !self.variables.is_empty() {
+  if !self.variables.is_empty() || self.unmodeled.contains("variables") {
     obj["variables"] = Json(self.variables)
   }
   if self.name is Some(value) {
@@ -509,12 +518,14 @@ pub impl ToJson for Server with fn to_json(self) {
 /// Decodes Server, keeping unmodeled members and extensions.
 pub impl @json.FromJson for Server with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_server_field)
+  remember_default(obj, unmodeled, "variables", Json::empty_object())
   {
     url: field(obj, "url", path),
     description: optional_field(obj, "description", path),
     variables: field(obj, "variables", path, default={}),
     name: optional_field(obj, "name", path),
-    unmodeled: unmodeled_fields(obj, is_server_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -582,7 +593,7 @@ pub fn ServerVariable::new(
 pub impl ToJson for ServerVariable with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
   obj["default"] = Json(self.default_)
-  if !self.enum_.is_empty() {
+  if !self.enum_.is_empty() || self.unmodeled.contains("enum") {
     obj["enum"] = Json(self.enum_)
   }
   if self.description is Some(value) {
@@ -597,11 +608,13 @@ pub impl ToJson for ServerVariable with fn to_json(self) {
 /// Decodes ServerVariable, keeping unmodeled members and extensions.
 pub impl @json.FromJson for ServerVariable with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_server_variable_field)
+  remember_default(obj, unmodeled, "enum", Json::array([]))
   {
     default_: field(obj, "default", path),
     enum_: field(obj, "enum", path, default=[]),
     description: optional_field(obj, "description", path),
-    unmodeled: unmodeled_fields(obj, is_server_variable_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -677,10 +690,11 @@ pub impl ToJson for ExternalDocs with fn to_json(self) {
 /// Decodes ExternalDocs, keeping unmodeled members and extensions.
 pub impl @json.FromJson for ExternalDocs with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_external_docs_field)
   {
     url: field(obj, "url", path),
     description: optional_field(obj, "description", path),
-    unmodeled: unmodeled_fields(obj, is_external_docs_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -784,6 +798,7 @@ pub impl ToJson for Tag with fn to_json(self) {
 /// Decodes Tag, keeping unmodeled members and extensions.
 pub impl @json.FromJson for Tag with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_tag_field)
   {
     name: field(obj, "name", path),
     description: optional_field(obj, "description", path),
@@ -791,7 +806,7 @@ pub impl @json.FromJson for Tag with fn from_json(value, path) {
     summary: optional_field(obj, "summary", path),
     parent: optional_field(obj, "parent", path),
     kind: optional_field(obj, "kind", path),
-    unmodeled: unmodeled_fields(obj, is_tag_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -890,12 +905,16 @@ pub fn Parameter::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for Parameter with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  obj["name"] = Json(self.name)
-  obj["in"] = Json(self.in_)
-  if self.required {
+  if !self.unmodeled.contains("$ref") {
+    obj["name"] = Json(self.name)
+  }
+  if !self.unmodeled.contains("$ref") {
+    obj["in"] = Json(self.in_)
+  }
+  if self.required || self.unmodeled.contains("required") {
     obj["required"] = Json(self.required)
   }
-  if self.deprecated {
+  if self.deprecated || self.unmodeled.contains("deprecated") {
     obj["deprecated"] = Json(self.deprecated)
   }
   if self.allow_empty_value is Some(value) {
@@ -928,9 +947,12 @@ pub impl ToJson for Parameter with fn to_json(self) {
 /// Decodes Parameter, keeping unmodeled members and extensions.
 pub impl @json.FromJson for Parameter with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_parameter_field)
+  remember_default(obj, unmodeled, "required", Json(false))
+  remember_default(obj, unmodeled, "deprecated", Json(false))
   {
-    name: field(obj, "name", path),
-    in_: field(obj, "in", path),
+    name: reference_field(obj, "name", path, default=""),
+    in_: reference_field(obj, "in", path, default=""),
     required: field(obj, "required", path, default=false),
     deprecated: field(obj, "deprecated", path, default=false),
     allow_empty_value: optional_field(obj, "allowEmptyValue", path),
@@ -940,7 +962,7 @@ pub impl @json.FromJson for Parameter with fn from_json(value, path) {
     explode: optional_field(obj, "explode", path),
     allow_reserved: optional_field(obj, "allowReserved", path),
     content: optional_field(obj, "content", path),
-    unmodeled: unmodeled_fields(obj, is_parameter_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -1023,10 +1045,10 @@ pub fn HeaderObject::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for HeaderObject with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  if self.required {
+  if self.required || self.unmodeled.contains("required") {
     obj["required"] = Json(self.required)
   }
-  if self.deprecated {
+  if self.deprecated || self.unmodeled.contains("deprecated") {
     obj["deprecated"] = Json(self.deprecated)
   }
   if self.schema is Some(value) {
@@ -1053,6 +1075,9 @@ pub impl ToJson for HeaderObject with fn to_json(self) {
 /// Decodes HeaderObject, keeping unmodeled members and extensions.
 pub impl @json.FromJson for HeaderObject with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_header_object_field)
+  remember_default(obj, unmodeled, "required", Json(false))
+  remember_default(obj, unmodeled, "deprecated", Json(false))
   {
     required: field(obj, "required", path, default=false),
     deprecated: field(obj, "deprecated", path, default=false),
@@ -1061,7 +1086,7 @@ pub impl @json.FromJson for HeaderObject with fn from_json(value, path) {
     style: optional_field(obj, "style", path),
     explode: optional_field(obj, "explode", path),
     content: optional_field(obj, "content", path),
-    unmodeled: unmodeled_fields(obj, is_header_object_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -1139,10 +1164,11 @@ pub impl ToJson for MediaTypeObject with fn to_json(self) {
 /// Decodes MediaTypeObject, keeping unmodeled members and extensions.
 pub impl @json.FromJson for MediaTypeObject with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_media_type_object_field)
   {
     schema: optional_field(obj, "schema", path),
     item_schema: optional_field(obj, "itemSchema", path),
-    unmodeled: unmodeled_fields(obj, is_media_type_object_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -1216,10 +1242,10 @@ pub impl ToJson for ResponseObject with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if !self.headers.is_empty() {
+  if !self.headers.is_empty() || self.unmodeled.contains("headers") {
     obj["headers"] = Json(self.headers)
   }
-  if !self.content.is_empty() {
+  if !self.content.is_empty() || self.unmodeled.contains("content") {
     obj["content"] = Json(self.content)
   }
   if self.summary is Some(value) {
@@ -1234,12 +1260,15 @@ pub impl ToJson for ResponseObject with fn to_json(self) {
 /// Decodes ResponseObject, keeping unmodeled members and extensions.
 pub impl @json.FromJson for ResponseObject with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_response_object_field)
+  remember_default(obj, unmodeled, "headers", Json::empty_object())
+  remember_default(obj, unmodeled, "content", Json::empty_object())
   {
     description: optional_field(obj, "description", path),
     headers: field(obj, "headers", path, default={}),
     content: field(obj, "content", path, default={}),
     summary: optional_field(obj, "summary", path),
-    unmodeled: unmodeled_fields(obj, is_response_object_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -1306,8 +1335,10 @@ pub fn RequestBody::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for RequestBody with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  obj["content"] = Json(self.content)
-  if self.required {
+  if !self.unmodeled.contains("$ref") {
+    obj["content"] = Json(self.content)
+  }
+  if self.required || self.unmodeled.contains("required") {
     obj["required"] = Json(self.required)
   }
   if self.description is Some(value) {
@@ -1322,11 +1353,13 @@ pub impl ToJson for RequestBody with fn to_json(self) {
 /// Decodes RequestBody, keeping unmodeled members and extensions.
 pub impl @json.FromJson for RequestBody with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_request_body_field)
+  remember_default(obj, unmodeled, "required", Json(false))
   {
-    content: field(obj, "content", path),
+    content: reference_field(obj, "content", path, default={}),
     required: field(obj, "required", path, default=false),
     description: optional_field(obj, "description", path),
-    unmodeled: unmodeled_fields(obj, is_request_body_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -1425,7 +1458,7 @@ pub fn Operation::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for Operation with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  if !self.responses.is_empty() {
+  if !self.responses.is_empty() || self.unmodeled.contains("responses") {
     obj["responses"] = Json(self.responses)
   }
   if self.operation_id is Some(value) {
@@ -1437,13 +1470,13 @@ pub impl ToJson for Operation with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if !self.tags.is_empty() {
+  if !self.tags.is_empty() || self.unmodeled.contains("tags") {
     obj["tags"] = Json(self.tags)
   }
-  if self.deprecated {
+  if self.deprecated || self.unmodeled.contains("deprecated") {
     obj["deprecated"] = Json(self.deprecated)
   }
-  if !self.parameters.is_empty() {
+  if !self.parameters.is_empty() || self.unmodeled.contains("parameters") {
     obj["parameters"] = Json(self.parameters)
   }
   if self.request_body is Some(value) {
@@ -1452,7 +1485,7 @@ pub impl ToJson for Operation with fn to_json(self) {
   if self.security is Some(value) {
     obj["security"] = Json(value)
   }
-  if !self.servers.is_empty() {
+  if !self.servers.is_empty() || self.unmodeled.contains("servers") {
     obj["servers"] = Json(self.servers)
   }
   if self.external_docs is Some(value) {
@@ -1467,6 +1500,12 @@ pub impl ToJson for Operation with fn to_json(self) {
 /// Decodes Operation, keeping unmodeled members and extensions.
 pub impl @json.FromJson for Operation with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_operation_field)
+  remember_default(obj, unmodeled, "responses", Json::empty_object())
+  remember_default(obj, unmodeled, "tags", Json::array([]))
+  remember_default(obj, unmodeled, "deprecated", Json(false))
+  remember_default(obj, unmodeled, "parameters", Json::array([]))
+  remember_default(obj, unmodeled, "servers", Json::array([]))
   {
     responses: field(obj, "responses", path, default={}),
     operation_id: optional_field(obj, "operationId", path),
@@ -1479,7 +1518,7 @@ pub impl @json.FromJson for Operation with fn from_json(value, path) {
     security: optional_field(obj, "security", path),
     servers: field(obj, "servers", path, default=[]),
     external_docs: optional_field(obj, "externalDocs", path),
-    unmodeled: unmodeled_fields(obj, is_operation_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -1570,7 +1609,9 @@ pub fn SecurityScheme::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for SecurityScheme with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  obj["type"] = Json(self.type_)
+  if !self.unmodeled.contains("$ref") {
+    obj["type"] = Json(self.type_)
+  }
   if self.scheme is Some(value) {
     obj["scheme"] = Json(value)
   }
@@ -1589,7 +1630,7 @@ pub impl ToJson for SecurityScheme with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if self.deprecated {
+  if self.deprecated || self.unmodeled.contains("deprecated") {
     obj["deprecated"] = Json(self.deprecated)
   }
   if self.oauth2_metadata_url is Some(value) {
@@ -1604,8 +1645,10 @@ pub impl ToJson for SecurityScheme with fn to_json(self) {
 /// Decodes SecurityScheme, keeping unmodeled members and extensions.
 pub impl @json.FromJson for SecurityScheme with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_security_scheme_field)
+  remember_default(obj, unmodeled, "deprecated", Json(false))
   {
-    type_: field(obj, "type", path),
+    type_: reference_field(obj, "type", path, default=""),
     scheme: optional_field(obj, "scheme", path),
     name: optional_field(obj, "name", path),
     in_: optional_field(obj, "in", path),
@@ -1614,7 +1657,7 @@ pub impl @json.FromJson for SecurityScheme with fn from_json(value, path) {
     description: optional_field(obj, "description", path),
     deprecated: field(obj, "deprecated", path, default=false),
     oauth2_metadata_url: optional_field(obj, "oauth2MetadataUrl", path),
-    unmodeled: unmodeled_fields(obj, is_security_scheme_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }
@@ -1701,28 +1744,29 @@ pub fn Components::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for Components with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  if !self.schemas.is_empty() {
+  if !self.schemas.is_empty() || self.unmodeled.contains("schemas") {
     obj["schemas"] = Json(self.schemas)
   }
-  if !self.responses.is_empty() {
+  if !self.responses.is_empty() || self.unmodeled.contains("responses") {
     obj["responses"] = Json(self.responses)
   }
-  if !self.parameters.is_empty() {
+  if !self.parameters.is_empty() || self.unmodeled.contains("parameters") {
     obj["parameters"] = Json(self.parameters)
   }
-  if !self.request_bodies.is_empty() {
+  if !self.request_bodies.is_empty() || self.unmodeled.contains("requestBodies") {
     obj["requestBodies"] = Json(self.request_bodies)
   }
-  if !self.headers.is_empty() {
+  if !self.headers.is_empty() || self.unmodeled.contains("headers") {
     obj["headers"] = Json(self.headers)
   }
-  if !self.security_schemes.is_empty() {
+  if !self.security_schemes.is_empty() ||
+    self.unmodeled.contains("securitySchemes") {
     obj["securitySchemes"] = Json(self.security_schemes)
   }
-  if !self.path_items.is_empty() {
+  if !self.path_items.is_empty() || self.unmodeled.contains("pathItems") {
     obj["pathItems"] = Json(self.path_items)
   }
-  if !self.media_types.is_empty() {
+  if !self.media_types.is_empty() || self.unmodeled.contains("mediaTypes") {
     obj["mediaTypes"] = Json(self.media_types)
   }
   add_unmodeled(obj, self.unmodeled, is_components_field)
@@ -1734,6 +1778,15 @@ pub impl ToJson for Components with fn to_json(self) {
 /// Decodes Components, keeping unmodeled members and extensions.
 pub impl @json.FromJson for Components with fn from_json(value, path) {
   let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_components_field)
+  remember_default(obj, unmodeled, "schemas", Json::empty_object())
+  remember_default(obj, unmodeled, "responses", Json::empty_object())
+  remember_default(obj, unmodeled, "parameters", Json::empty_object())
+  remember_default(obj, unmodeled, "requestBodies", Json::empty_object())
+  remember_default(obj, unmodeled, "headers", Json::empty_object())
+  remember_default(obj, unmodeled, "securitySchemes", Json::empty_object())
+  remember_default(obj, unmodeled, "pathItems", Json::empty_object())
+  remember_default(obj, unmodeled, "mediaTypes", Json::empty_object())
   {
     schemas: field(obj, "schemas", path, default={}),
     responses: field(obj, "responses", path, default={}),
@@ -1743,7 +1796,7 @@ pub impl @json.FromJson for Components with fn from_json(value, path) {
     security_schemes: field(obj, "securitySchemes", path, default={}),
     path_items: field(obj, "pathItems", path, default={}),
     media_types: field(obj, "mediaTypes", path, default={}),
-    unmodeled: unmodeled_fields(obj, is_components_field),
+    unmodeled,
     extensions: extension_fields(obj),
   }
 }

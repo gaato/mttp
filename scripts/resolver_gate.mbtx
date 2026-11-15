@@ -496,9 +496,69 @@ async fn check() -> Unit {
 }
 
 ///|
+/// Runs a standalone script against one module packaged from this checkout.
+/// Standalone `.mbtx` dependency resolution deliberately ignores the
+/// surrounding workspace, so without this isolation it would test the
+/// published module with the same version instead of the working tree.
+async fn run_with_local_module(
+  module_dir : String,
+  script_path : String,
+  arguments : ArrayView[String],
+) -> Unit {
+  let root = @fs.realpath(".")
+  let home = @env.get_env_var("MOON_HOME").unwrap_or(
+    @env.get_env_var("HOME").unwrap() + "/.moon",
+  )
+  let scratch_base = @env.get_env_var("MTTP_RESOLVER_TMPDIR").unwrap_or(
+    "/var/tmp",
+  )
+  make_dir(scratch_base)
+  let scratch = run(
+      "mktemp",
+      ["-d", scratch_base + "/mttp-local-module.XXXXXXXX"],
+      cwd=root,
+    )
+    .trim()
+    .to_owned()
+  println("local module scratch: " + scratch)
+  let isolated = scratch + "/moon"
+  @fs.mkdir(isolated)
+  run(
+    "cp",
+    ["-a", "--reflink=auto", home + "/registry", isolated + "/registry"],
+    cwd=root,
+  )
+  |> ignore
+  @fs.symlink(target=home + "/lib", isolated + "/lib")
+  let candidate = module_at(root + "/" + module_dir, all_targets)
+  stage(candidate, isolated + "/registry")
+  let command = ["run", script_path, "--"]
+  for argument in arguments {
+    command.push(argument)
+  }
+  let result = @shell.Cmd("moon", command, cwd=root, env={
+    "MOON_HOME": isolated,
+  }).output(timeout_ms=600000)
+  if !result.stdout().is_empty() {
+    println(result.stdout())
+  }
+  if !result.stderr().is_empty() {
+    eprintln(result.stderr())
+  }
+  let exit_code = result.exit_code()
+  @fs.rmdir(scratch, recursive=true)
+  if exit_code != 0 {
+    raise GateError("local script failed: " + script_path)
+  }
+}
+
+///|
 async fn main {
   let task : async () -> Unit = () => {
-    if @env.args()[1:] is ["--self-test"] {
+    if @env.args()[1:]
+      is ["--run-with-local-module", module_dir, script_path, .. arguments] {
+      run_with_local_module(module_dir, script_path, arguments)
+    } else if @env.args()[1:] is ["--self-test"] {
       let root = @fs.tmpdir(prefix="mttp-resolver-selftest-")
       @fs.mkdir(root + "/index/user/probe", recursive=true)
       let candidate : Module = {

@@ -76,6 +76,10 @@ never does.
 
 - OpenAPI framework Problem responses now give their `errors` array an
   unconstrained item schema, producing valid JSON Schema for external tooling.
+- `apispec` now decodes OpenAPI Reference Objects wherever its typed
+  parameters, request bodies and security schemes allow them, and preserves
+  provider-written empty defaults when writing a decoded document back.
+
 - Driver shutdown starts a fresh unwind round after budget exhaustion,
   even when protected cleanup keeps a timer armed. It no longer retries
   the exhausted counters indefinitely; the cleanup and unwind budgets apply.

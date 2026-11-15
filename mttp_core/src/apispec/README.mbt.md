@@ -24,12 +24,12 @@ test "document metadata JSON" {
 }
 ```
 
-Encoding leaves out an optional field that is absent and a field at its empty
-default (`false`, `[]`, `{}`), and decoding restores the default, so a
-document decodes to the value that encoded it. `security` is optional rather
-than defaulted, on the document and on each operation: the document's list
-applies to every operation without its own, and an operation's empty list
-removes it.
+Encoding a value built with a constructor leaves out an optional field that is
+absent and a field at its empty default (`false`, `[]`, `{}`). Decoding restores
+the default and remembers when the provider wrote it explicitly, so encoding a
+decoded document does not erase that member. `security` is optional rather than
+defaulted, on the document and on each operation: the document's list applies
+to every operation without its own, and an operation's empty list removes it.
 
 The records type the OpenAPI 3.1 fixed fields except these, which they keep
 verbatim in `unmodeled` instead, so decoding and encoding a document loses
@@ -39,7 +39,8 @@ nothing:
 - `links` (responses, components) and `callbacks` (operations, components);
 - `components.examples`;
 - OAuth `flows` of a security scheme;
-- a path item's `$ref`.
+- Reference Objects in path items, parameters, request bodies and security
+  schemes.
 
 An unmodeled member never replaces a typed field or an extension when
 encoding.
