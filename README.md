@@ -229,6 +229,9 @@ nightly toolchains:
 - [RESOURCE_BOUNDS.md](RESOURCE_BOUNDS.md) lists every structure that grows
   with input from the network or with the number of requests, with its bound
   and the test that drives it past that bound.
+- [SECURITY_CLASSES.md](SECURITY_CLASSES.md) maps HTTP vulnerability classes
+  to the exact regression tests that defend mttp, or to the planned stage that
+  must close the remaining feature gap.
 - [CONTRACT.md](CONTRACT.md) states what a backend, a runtime adapter or a
   test double must guarantee; the same contract checks run against the
   in-memory doubles and against `gaato/mttp`'s adapters.

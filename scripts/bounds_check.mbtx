@@ -6,30 +6,33 @@ import {
 }
 ----
 
-// Checks the "Enforced limits" table of RESOURCE_BOUNDS.md against the tests.
+// Checks the test citations in the repository's resource and security ledgers.
 //
-// Every row's last cell ("Tests") names the tests that check its bound, as a
+// Every resource-bound row's last cell ("Tests") names the tests that check
+// its bound, as a
 // backticked file path followed by the quoted names of that file's tests:
 //
 //   `mttp_core/src/sse/parser_test.mbt`: "first test", "second test"; `mttp_core/src/h1/head_wbtest.mbt`: "third"
 //
-// File paths are relative to the directory that holds the ledger: the
-// repository root, whose RESOURCE_BOUNDS.md covers every module.
+// SECURITY_CLASSES.md uses the same citation syntax in its last column. A
+// security row may instead say "gap" or explain why the class does not apply;
+// every test it does cite must exist. File paths are relative to the directory
+// that holds the ledgers: the repository root.
 //
-// The check fails when a row names no test, a name comes before any file, a
-// file does not exist, or a file declares no `test "<name>" {` or
+// The check fails when a resource-bound row names no test, a name comes before
+// any file, a file does not exist, or a file declares no `test "<name>" {` or
 // `async test "<name>" {` line with that exact name. It does not judge whether
 // a test really drives the bound; that is the reviewer's job (see the ledger's
 // header).
 //
 // Usage, from the repository root:
-//   moon run scripts/bounds_check.mbtx [-- DIR]   (checks DIR/RESOURCE_BOUNDS.md; DIR defaults to .)
+//   moon run scripts/bounds_check.mbtx [--self-test | DIR]
 //
 // A table with a header and no rows passes: rows arrive with the code that
 // enforces them.
 //
-// Exit status: 0 = every row names tests that exist, 1 = a row does not,
-// 2 = the table is missing or has no Tests column.
+// Exit status: 0 = every required citation exists, 1 = a ledger/table/citation
+// is invalid, 2 = usage is invalid.
 
 ///|
 /// Prints `message` on stderr and exits with `code`.
@@ -58,9 +61,40 @@ enum Finding {
 }
 
 ///|
-/// The rows of the "Enforced limits" table: its header's last cell, and each
+/// One ledger table checked by this script.
+priv struct Ledger {
+  file : String
+  section : String
+  column : String
+  rows_need_tests : Bool
+  noun : String
+}
+
+///|
+let ledgers : Array[Ledger] = [
+  {
+    file: "RESOURCE_BOUNDS.md",
+    section: "Enforced limits",
+    column: "Tests",
+    rows_need_tests: true,
+    noun: "enforced limits",
+  },
+  {
+    file: "SECURITY_CLASSES.md",
+    section: "Security classes",
+    column: "Defending tests / status",
+    rows_need_tests: false,
+    noun: "security classes",
+  },
+]
+
+///|
+/// The rows of one named table: its header's last cell, and each
 /// row's label (the first cell up to " (") with what it names.
-fn table(text : String) -> (String?, Array[(String, Finding)]) {
+fn table(
+  text : String,
+  section : String,
+) -> (String?, Array[(String, Finding)]) {
   let found = []
   let mut header = None
   let mut in_table = false
@@ -68,7 +102,7 @@ fn table(text : String) -> (String?, Array[(String, Finding)]) {
   for raw in text.split("\n") {
     let line = raw.to_owned()
     if line.has_prefix("## ") {
-      in_table = line == "## Enforced limits"
+      in_table = line == "## " + section
       seen_header = false
       continue
     }
@@ -146,24 +180,26 @@ fn tokens(cell : String) -> Array[Token] {
 }
 
 ///|
-async fn main {
-  let dir = match @env.args() {
-    [_] => "."
-    [_, dir] => dir
-    _ => die(2, "usage: moon run scripts/bounds_check.mbtx [-- DIR]")
+async fn check_ledger(
+  module_root : String,
+  ledger : Ledger,
+  verbose~ : Bool,
+) -> Bool {
+  let path = "\{module_root}/\{ledger.file}"
+  if !is_file(path) {
+    if verbose {
+      println("NO LEDGER   \{path}")
+    }
+    return false
   }
-  let cwd = @env.current_dir().unwrap_or(".")
-  let module_root = "\{cwd}/\{dir.trim_end(chars="/")}"
-  let ledger = "\{module_root}/RESOURCE_BOUNDS.md"
-  guard is_file(ledger) else {
-    die(2, "bounds_check.mbtx: no ledger at \{ledger}")
-  }
-  let (header, found) = table(@fs.read_text(ledger))
-  guard header is Some("Tests") else {
-    die(
-      2,
-      "bounds_check.mbtx: no \"Enforced limits\" table whose last column is Tests in \{ledger}",
-    )
+  let (header, found) = table(@fs.read_text(path), ledger.section)
+  if header != Some(ledger.column) {
+    if verbose {
+      println(
+        "NO TABLE    \{ledger.file}: expected ## \{ledger.section} with last column \{ledger.column}",
+      )
+    }
+    return false
   }
   // The rows that name a test, in order, with the tests found.
   let rows : Map[String, Int32] = Map([])
@@ -173,23 +209,28 @@ async fn main {
   let declared : Map[String, Array[String]?] = Map([])
   for item in found {
     let (label, finding) = item
+    if !rows.contains(label) {
+      rows[label] = 0
+    }
     match finding {
       Test(file~, name~) => {
-        if !rows.contains(label) {
-          rows[label] = 0
-        }
-        let path = "\{module_root}/\{file}"
-        if !declared.contains(path) {
-          declared[path] = if is_file(path) {
+        let test_path = "\{module_root}/\{file}"
+        if !declared.contains(test_path) {
+          declared[test_path] = if is_file(test_path) {
             Some(
-              @fs.read_text(path).split("\n").map(l => l.to_owned()).to_array(),
+              @fs.read_text(test_path)
+              .split("\n")
+              .map(line => line.to_owned())
+              .to_array(),
             )
           } else {
             None
           }
         }
-        guard declared[path] is Some(lines) else {
-          println("NO FILE     \{label}: \{file}")
+        guard declared[test_path] is Some(lines) else {
+          if verbose {
+            println("NO FILE     \{label}: \{file}")
+          }
           bad = true
           continue
         }
@@ -198,32 +239,147 @@ async fn main {
           rows[label] = rows[label] + 1
           tests += 1
         } else {
-          println("NO TEST     \{label}: \{file} has no test \"\{name}\"")
+          if verbose {
+            println("NO TEST     \{label}: \{file} has no test \"\{name}\"")
+          }
           bad = true
         }
       }
       Orphan(name~) => {
-        println(
-          "NO FILE     \{label}: \"\{name}\" follows no backticked file path",
-        )
+        if verbose {
+          println(
+            "NO FILE     \{label}: \"\{name}\" follows no backticked file path",
+          )
+        }
         bad = true
       }
-      Empty => {
-        println("NO TESTS    \{label}: the row names no test")
-        bad = true
-      }
+      Empty =>
+        if ledger.rows_need_tests {
+          if verbose {
+            println("NO TESTS    \{label}: the row names no test")
+          }
+          bad = true
+        }
     }
   }
-  for label, count in rows {
-    println(
-      "\{label.pad_end(56, ' ')} \{count.to_string().pad_start(2, ' ')} tests",
-    )
+  if verbose {
+    for label, count in rows {
+      println(
+        "\{label.pad_end(56, ' ')} \{count.to_string().pad_start(2, ' ')} tests",
+      )
+    }
+    if bad {
+      println("\{ledger.file} check: FAIL")
+    } else {
+      println(
+        "\{ledger.file} check: OK - \{rows.length()} \{ledger.noun} name \{tests} tests that exist",
+      )
+    }
   }
-  if bad {
-    println("bounds check: FAIL")
-    @env.exit(1)
+  !bad
+}
+
+///|
+async fn check_all(module_root : String, verbose~ : Bool) -> Bool {
+  let mut good = true
+  for ledger in ledgers {
+    if !check_ledger(module_root, ledger, verbose~) {
+      good = false
+    }
+  }
+  good
+}
+
+///|
+async fn self_test() -> Unit {
+  let root = @fs.tmpdir(prefix="mttp-ledger-check-")
+  defer @fs.rmdir(root, recursive=true)
+  @fs.write_text(root + "/exists_test.mbt", "test \"exists\" {\n}\n")
+  @fs.write_text(
+    root + "/RESOURCE_BOUNDS.md",
+    (
+      #|## Enforced limits
+      #|
+      #|| Structure | Tests |
+      #||---|---|
+      #|| bytes | `exists_test.mbt`: "exists" |
+      #|
+    ),
+  )
+  @fs.write_text(
+    root + "/SECURITY_CLASSES.md",
+    (
+      #|## Security classes
+      #|
+      #|| Class | Defending tests / status |
+      #||---|---|
+      #|| covered | `exists_test.mbt`: "exists" |
+      #|| planned | gap - later stage |
+      #|
+    ),
+  )
+  guard check_all(root, verbose=false) else {
+    fail("ledger self-test rejected valid citations and a security gap")
+  }
+  @fs.write_text(
+    root + "/SECURITY_CLASSES.md",
+    (
+      #|## Security classes
+      #|
+      #|| Class | Defending tests / status |
+      #||---|---|
+      #|| missing | `exists_test.mbt`: "absent" |
+      #|
+    ),
+  )
+  guard !check_all(root, verbose=false) else {
+    fail("ledger self-test accepted a missing security test")
+  }
+  @fs.write_text(
+    root + "/SECURITY_CLASSES.md",
+    (
+      #|## Security classes
+      #|
+      #|| Class | Defending tests / status |
+      #||---|---|
+      #|| planned | gap - later stage |
+      #|
+    ),
+  )
+  @fs.write_text(
+    root + "/RESOURCE_BOUNDS.md",
+    (
+      #|## Enforced limits
+      #|
+      #|| Structure | Tests |
+      #||---|---|
+      #|| bytes | gap |
+      #|
+    ),
+  )
+  guard !check_all(root, verbose=false) else {
+    fail("ledger self-test accepted a resource bound without a test")
   }
   println(
-    "bounds check: OK - \{rows.length()} enforced limits name \{tests} tests that exist",
+    "ledger check self-tests: valid citations, security gaps and missing tests OK",
   )
+}
+
+///|
+async fn main {
+  let args = @env.args()
+  let (dir, self_testing) = match args {
+    [_] => (".", false)
+    [_, "--self-test"] => (".", true)
+    [_, dir] => (dir, false)
+    _ => die(2, "usage: moon run scripts/bounds_check.mbtx [--self-test | DIR]")
+  }
+  let cwd = @env.current_dir().unwrap_or(".")
+  let module_root = "\{cwd}/\{dir.trim_end(chars="/")}"
+  if !check_all(module_root, verbose=true) {
+    @env.exit(1)
+  }
+  if self_testing {
+    self_test()
+  }
 }

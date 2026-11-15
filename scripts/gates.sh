@@ -125,7 +125,7 @@ static_gates() {
   step script scripts/readme_check.mbtx -- --self-test
   step script scripts/architecture_gate.mbtx --self-test
   step script scripts/test_layout.mbtx --self-test
-  step script scripts/bounds_check.mbtx
+  step script scripts/bounds_check.mbtx --self-test
   step script scripts/runtime_gates.mbtx -- interfaces
   step script scripts/runtime_gates.mbtx -- manifest --check
   step script scripts/coverage_report.mbtx
