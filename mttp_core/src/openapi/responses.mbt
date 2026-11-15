@@ -5,7 +5,7 @@ let problem_schema : Json = {
     "type": { "type": "string" },
     "title": { "type": "string" },
     "status": { "type": "integer" },
-    "errors": { "type": "array" },
+    "errors": { "type": "array", "items": {} },
   },
 }
 

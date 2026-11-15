@@ -70,6 +70,8 @@ never does.
 
 ### Fixed
 
+- OpenAPI framework Problem responses now give their `errors` array an
+  unconstrained item schema, producing valid JSON Schema for external tooling.
 - Driver shutdown starts a fresh unwind round after budget exhaustion,
   even when protected cleanup keeps a timer armed. It no longer retries
   the exhausted counters indefinitely; the cleanup and unwind budgets apply.

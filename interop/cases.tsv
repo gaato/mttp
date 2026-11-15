@@ -136,3 +136,8 @@ server	expect-early-answer	raw/*	pass
 # Only directly: through a proxy its verdicts would be the proxy's.
 server	h11p-*	http11probe/direct	pass
 server	h11p-cook-parsed-*	http11probe/direct	n/a	the /cookie tests check a framework's Cookie parser; mttp's server has none (cookies are the client's jar only), so an endpoint for them would test the interop server's own parsing
+
+# Schemathesis 4 drives the dedicated endpoint/OpenAPI server directly. Its
+# JSON adapter emits st-run plus one stable case per finding class/operation.
+server	st-*	schemathesis/direct	pass
+server	st-jsonschemaerror-get-events	schemathesis/direct	known	Schemathesis 4.33.4 parses each OpenAPI 3.1 text/event-stream event, then applies the media schema for the raw stream (type string) to the parsed event object; it only understands event itemSchema in OpenAPI 3.2 and ignores 3.1's registered x-oai-itemSchema extension

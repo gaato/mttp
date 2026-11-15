@@ -13,7 +13,8 @@ import {
 /// The interoperability suite: gaato/mttp's client against nginx,
 /// Caddy and Apache httpd, and its server against curl, Go, Python httpx,
 /// Node, Bun, Deno and raw-socket probes, directly and behind the three
-/// servers as reverse proxies, and against Http11Probe directly.
+/// servers as reverse proxies, against Http11Probe directly, and the typed
+/// endpoint/OpenAPI server against Schemathesis directly.
 /// interop/README.md says what is tested.
 ///
 ///   moon run interop/run.mbtx [-- <prefix>...]
@@ -26,7 +27,7 @@ import {
 /// It needs podman or docker (INTEROP_ENGINE chooses; podman first),
 /// openssl, a C compiler for moon's native target, and the ports 39000,
 /// 39010, 39011, 39020, 39021, 39030 and 39031 free on 127.0.0.1 and
-/// 127.0.0.2. Every third-party program runs from the image
+/// 127.0.0.2, plus 39040 on 127.0.0.1. Every third-party program runs from the image
 /// interop/images.tsv pins, on the host's network; nothing is installed on
 /// the host. Work files go to _build/interop.
 
@@ -52,6 +53,12 @@ let native_client : String = "_build/native/debug/build/\{interop_module}/mttp_c
 
 ///|
 let native_server : String = "_build/native/debug/build/\{interop_module}/mttp_server/mttp_server.exe"
+
+///|
+let openapi_server_addr : String = "127.0.0.1:39040"
+
+///|
+let openapi_server : String = "_build/native/debug/build/\{interop_module}/openapi_server/openapi_server.exe"
 
 ///|
 let js_client_dir : String = "_build/js/debug/build/\{interop_module}/mttp_client"
@@ -98,7 +105,7 @@ let schemes : Array[String] = ["http", "https"]
 
 ///|
 let clients : Array[String] = [
-  "curl", "go", "httpx", "node", "bun", "deno", "raw", "http11probe",
+  "curl", "go", "httpx", "node", "bun", "deno", "raw", "http11probe", "schemathesis",
 ]
 
 ///|
@@ -113,6 +120,9 @@ let http11probe_commit : String = "d50d818a0e008e9feb3bb9860ad5d9cc40342bc3"
 
 ///|
 let http11probe_work : String = "\{work}/http11probe"
+
+///|
+let schemathesis_work : String = "\{work}/schemathesis"
 
 ///|
 let targets : Array[String] = ["direct", "nginx", "caddy", "apache"]
@@ -744,6 +754,67 @@ async fn run_http11probe(env : Env) -> Unit {
   )
 }
 
+///|
+/// Runs Schemathesis's stateless phases against the document served by the
+/// dedicated endpoint server. A nonzero status is expected when it finds a
+/// conformance issue; the JSON report, not that status, decides CASE lines.
+async fn run_schemathesis(env : Env) -> Unit {
+  make_dir(schemathesis_work)
+  let report = "\{schemathesis_work}/report.json"
+  if @fs.exists(report) {
+    @fs.remove(report)
+  }
+  println("+ schemathesis http://\{openapi_server_addr}/openapi.json")
+  let checks = [
+    "not_a_server_error", "status_code_conformance", "content_type_conformance",
+    "response_headers_conformance", "response_schema_conformance", "negative_data_rejection",
+    "positive_data_acceptance",
+  ].join(",")
+  let (status, stdout, stderr) = capture(
+    env.engine,
+    env.run_args(
+      "schemathesis",
+      [..env.user, ..env.mount(schemathesis_work, "/work", writable=true)],
+      [
+        "run",
+        "http://\{openapi_server_addr}/openapi.json",
+        "--checks",
+        checks,
+        "--phases",
+        "examples,coverage,fuzzing",
+        "--mode",
+        "all",
+        "--max-examples",
+        "20",
+        "--seed",
+        "20261116",
+        "--workers",
+        "1",
+        "--generation-database",
+        "none",
+        "--generation-with-security-parameters",
+        "true",
+        "--continue-on-failure",
+        "--report",
+        "json",
+        "--report-json-path",
+        "/work/report.json",
+        "--no-color",
+        "--output-sanitize",
+        "false",
+        "--output-truncate",
+        "false",
+      ],
+    ),
+  ) catch {
+    error => (-1, "", "\{error}")
+  }
+  @fs.write_text(
+    "\{schemathesis_work}/console.log",
+    "exit status \{status}\n\{stdout}\{stderr}",
+  )
+}
+
 // The runs.
 
 ///|
@@ -875,6 +946,18 @@ fn server_command(
           ["-I", "/src/adapter.py", "/in/report.json", "/in/console.log", ids],
         ),
       )
+    "schemathesis" =>
+      (
+        "moon",
+        [
+          "run",
+          "interop/clients/schemathesis/adapter.mbtx",
+          "--",
+          "\{schemathesis_work}/report.json",
+          "\{schemathesis_work}/console.log",
+          ids,
+        ],
+      )
     runtime => {
       let script = match runtime {
         "deno" => ["run", "-A", "/src/client.mjs"]
@@ -937,13 +1020,14 @@ async fn main_run(filters : Array[String]) -> Int32 {
   println("interop: \{engine}, images pinned in interop/images.tsv")
   for
     addr in [
-      server_addr, "127.0.0.1:39010", "127.0.0.1:39020", "127.0.0.1:39030",
+      server_addr, "127.0.0.1:39010", "127.0.0.1:39020", "127.0.0.1:39030", openapi_server_addr,
     ] {
     port_free(addr)
   }
   ignore(
     must("moon", [
       "build", "--target", "native", "interop/mttp_client", "interop/mttp_server",
+      "interop/openapi_server",
     ]),
   )
   ignore(must("moon", ["build", "--target", "js", "interop/mttp_client"]))
@@ -969,6 +1053,15 @@ async fn main_run(filters : Array[String]) -> Int32 {
     )
     defer server.cancel()
     wait_port(server_addr, "the mttp interop server")
+    let api = @process.spawn(
+      group,
+      openapi_server,
+      [openapi_server_addr],
+      stdout=ToFile("\{work}/openapi_server.log"),
+      stderr=ToFile("\{work}/openapi_server.log"),
+    )
+    defer api.cancel()
+    wait_port(openapi_server_addr, "the mttp endpoint/OpenAPI interop server")
     // Cleanup first, so that a start failing partway removes what started.
     defer @async.protect_from_cancel(() => stop_servers(env))
     start_servers(env)
@@ -1002,6 +1095,9 @@ async fn main_run(filters : Array[String]) -> Int32 {
         }
         if client == "http11probe" {
           run_http11probe(env)
+        }
+        if client == "schemathesis" {
+          run_schemathesis(env)
         }
         run_one(
           tally,

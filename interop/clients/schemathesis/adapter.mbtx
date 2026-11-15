@@ -1,0 +1,141 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+----
+
+///|
+fn one_line(value : Json) -> String {
+  value.stringify().split("\n").map(part => part.trim().to_owned()).join(" ")
+}
+
+///|
+fn slug(value : String) -> String {
+  let out = StringBuilder()
+  let mut separator = false
+  let mut wrote = false
+  for char in value.to_lower() {
+    if char is ('a'..<='z' | '0'..<='9') {
+      if separator && wrote {
+        out.write_char('-')
+      }
+      out.write_char(char)
+      separator = false
+      wrote = true
+    } else {
+      separator = true
+    }
+  }
+  out.to_string()
+}
+
+///|
+fn wanted(case : String, requested : Array[String]) -> Bool {
+  requested.any(id => {
+    if id.has_suffix("*") {
+      case.has_prefix(id[:id.length() - 1])
+    } else {
+      case == id
+    }
+  })
+}
+
+///|
+fn emit(
+  requested : Array[String],
+  case : String,
+  ok : Bool,
+  detail : String,
+) -> Unit {
+  if wanted(case, requested) {
+    println("CASE \{case} \{if ok { "ok" } else { "fail" }} \{detail}")
+  }
+}
+
+///|
+async fn main {
+  guard @env.args() is [_, report_path, console_path, cases] else {
+    println("usage: adapter.mbtx <report.json> <console log> <case,case,...>")
+    @env.exit(2)
+  }
+  let requested = cases
+    .split(",")
+    .filter(id => !id.is_empty())
+    .map(id => id.to_owned())
+    .to_array()
+  let report = try @json.parse(@fs.read_text(report_path)) catch {
+    error => {
+      let console = try @fs.read_text(console_path) catch {
+        _ => "no console log"
+      } noraise {
+        text => {
+          let lines = text.split("\n").map(line => line.to_owned()).to_array()
+          lines[(lines.length() - 5).max(0):].to_owned().join(" | ")
+        }
+      }
+      println("no Schemathesis report: \{error}; \{console}")
+      @env.exit(1)
+    }
+  } noraise {
+    report => report
+  }
+  guard report
+    is {
+      "complete": complete,
+      "operations": {
+        "selected": Number(selected, ..),
+        "tested": Number(tested, ..),
+        ..
+      },
+      "failures": Array(failures),
+      "errors": Array(errors),
+      ..
+    } else {
+    println("invalid Schemathesis report: \{one_line(report)}")
+    @env.exit(1)
+  }
+  let complete = complete is True
+  let run_ok = complete &&
+    selected > 0 &&
+    tested == selected &&
+    errors.is_empty()
+  emit(
+    requested,
+    "st-run",
+    run_ok,
+    "complete=\{complete} operations=\{tested.to_int()}/\{selected.to_int()} errors=\{errors.length()}",
+  )
+  for index, error in errors {
+    emit(
+      requested,
+      "st-error-\{index}",
+      false,
+      "Schemathesis error: \{one_line(error)}",
+    )
+  }
+  for failure in failures {
+    guard failure
+      is { "type": String(kind), "operations": Array(operations), .. } else {
+      emit(
+        requested,
+        "st-invalid-failure",
+        false,
+        "malformed finding: \{one_line(failure)}",
+      )
+      continue
+    }
+    let detail = one_line(failure)
+    let mut emitted = false
+    for operation in operations {
+      guard operation is String(operation) else { continue }
+      emitted = true
+      emit(requested, "st-\{slug(kind)}-\{slug(operation)}", false, detail)
+    }
+    if !emitted {
+      emit(requested, "st-\{slug(kind)}", false, detail)
+    }
+  }
+}

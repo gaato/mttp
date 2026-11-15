@@ -47,6 +47,23 @@ test "OpenAPI merges declared and framework responses with typed headers and AND
 }
 
 ///|
+test "framework Problem errors is a valid unconstrained array schema" {
+  let spec = @openapi.to_openapi(
+    [@endpoint.endpoint.get("/").doc()],
+    @apispec.Info::new("Test", "1"),
+  )
+  assert_eq(spec.components.schemas["Problem"], {
+    "type": "object",
+    "properties": {
+      "type": { "type": "string" },
+      "title": { "type": "string" },
+      "status": { "type": "integer" },
+      "errors": { "type": "array", "items": {} },
+    },
+  })
+}
+
+///|
 test "OpenAPI omits null optionals and retains flattened extensions" {
   let info = @apispec.Info::new("Test", "1", extensions={
     "x-team": "test",

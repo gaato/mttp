@@ -39,6 +39,16 @@ third-party implementations instead:
   [adapter.py](clients/http11probe/adapter.py) reads its report. The
   build is kept in `_build/interop/http11probe`, so later runs with the same
   pin need no network for it.
+- **The typed endpoint layer** served by
+  [openapi_server](openapi_server/main.mbt), with its own OpenAPI 3.1 document,
+  driven directly by Schemathesis 4.33.4. Its four operations cover
+  path/query/header/cookie inputs, a validated JSON body, 200/201/404/409 and
+  framework problem responses, a required bearer scheme, a required response
+  header and a finite SSE stream. Schemathesis runs the examples, coverage and
+  fuzzing phases (not the stateful phase) with the seven stateless conformance
+  checks, seed 20261116, one worker and at most 20 fuzz examples per operation.
+  [adapter.mbtx](clients/schemathesis/adapter.mbtx) turns its JSON report into
+  `st-*` cases.
 
 [cases.tsv](cases.tsv) lists every case, where it runs and what it expects;
 a case ending in `*` names every case starting with what precedes it, which
@@ -61,7 +71,8 @@ or `moon run interop/run.mbtx`, with an optional prefix to run part of it,
 such as `moon run interop/run.mbtx -- client/native/apache` or `-- server/raw`.
 It needs podman or docker (podman is preferred; `INTEROP_ENGINE` chooses),
 openssl, a C compiler for moon's native target, and ports 39000, 39010,
-39011, 39020, 39021, 39030 and 39031 free on 127.0.0.1 and 127.0.0.2. A run
+39011, 39020, 39021, 39030 and 39031 free on 127.0.0.1 and 127.0.0.2, plus
+39040 on 127.0.0.1. A run
 takes a few minutes once the images are pulled, about one of them
 Http11Probe's (`-- server/http11probe`). CI runs it daily, in the
 `interop` job of [canary.yml](../.github/workflows/canary.yml), not on pull
