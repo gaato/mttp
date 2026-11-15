@@ -22,20 +22,19 @@
 /// test {
 ///   let scenario = (schedule : @driver.Schedule) => {
 ///     let d = @driver.Driver::new(schedule~)
+///     let coordination = @sim.SimCoordination::new(d)
+///     let (a_peer, a) = @sim.pair(coordination)
+///     let (b_peer, b) = @sim.pair(coordination)
 ///     let seen = []
 ///     d.run(() => {
-///       // Two timers due at 10, armed at 0 and at 5: either may fire first.
-///       let a = d.spawn(() => {
-///         d.sleep(10)
-///         seen.push("a")
-///       })
-///       let b = d.spawn(() => {
-///         d.sleep(5)
-///         d.sleep(5)
-///         seen.push("b")
-///       })
-///       ignore(a.wait())
-///       ignore(b.wait())
+///       let a_reader = d.spawn(() => seen.push(a.read(max_len=8)))
+///       let b_reader = d.spawn(() => seen.push(b.read(max_len=8)))
+///       d.pause()
+///       // Either reader may see its peer's bytes first.
+///       a_peer.write(b"a")
+///       b_peer.write(b"b")
+///       ignore(a_reader.wait())
+///       ignore(b_reader.wait())
 ///     })
 ///     // Order-independent: holds under every schedule.
 ///     assert_eq(seen.length(), 2)

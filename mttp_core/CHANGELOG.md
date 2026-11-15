@@ -18,10 +18,12 @@ never does.
   `run_sync(f, schedule~)` take a `Schedule` (`seeded(seed)`,
   `replay(choices)`, `choices()`), under which a task woken by an I/O event
   (`io_event`, which `SimConn` now uses for what it delivers) may be
-  overtaken by tasks that became ready later, and timers due at one instant
-  but armed at different instants may fire in either order. Both orderings
-  occur on core/async; everything else stays FIFO, and without a schedule
-  the order is FIFO exactly as before (CONTRACT.md, Driver rule 9).
+  overtaken by tasks that became ready later at the same virtual instant.
+  Any time advance, including manual control, ends that delay. Timers
+  always fire in (deadline, arming) order, including equal deadlines armed
+  at different instants, as on core/async; everything else stays FIFO, and
+  without a schedule the order is FIFO exactly as before (CONTRACT.md,
+  Driver rule 9).
 - `sim.explore`: runs a scenario in FIFO order and under 32 seeds, and on a
   failure shrinks the seed's choices with delta debugging and prints the
   `Schedule::replay([..])` call that reproduces it. The `h1server` and

@@ -45,9 +45,10 @@ header pairs).
 FIFO order shows one interleaving. `explore(scenario)` runs a scenario in FIFO
 order and then under 32 seeded `@driver.Schedule`s, each taking orderings a
 real runtime can also produce: bytes and EOF a `SimConn` delivers may reach
-their reader after tasks that became ready later, and timers due at one
-instant but armed at different instants may fire in either order (CONTRACT.md,
-Driver rule 9). The scenario builds its Driver with the schedule it is given:
+their reader after tasks that became ready later at the same virtual instant.
+Any time advance ends that delay, and timers always fire in (deadline, arming)
+order (CONTRACT.md, Driver rule 9). The scenario builds its Driver with the
+schedule it is given:
 
 ```mbt nocheck
 ///|

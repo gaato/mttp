@@ -240,12 +240,12 @@ all four targets. Its cancellation semantics match core/async's:
    where core/async could also order things differently: a task woken inside
    `io_event` (the sim connections deliver bytes and EOF that way) may be
    overtaken by tasks that became ready after it, never across a time
-   advance; and timers due at one instant but armed at different instants
-   may fire in either order. Spawn, pause, signal, gate and join wakes,
-   cancellation, timers with different deadlines and timers armed at one
-   instant keep their FIFO order, as core/async's run queue and timer set
-   keep it. Code under test that is correct on the runtime is correct under
-   every schedule.
+   advance, including a manual advance while tasks are ready. Timers always
+   fire in (deadline, arming) order, including equal deadlines armed at
+   different instants. Spawn, pause, signal, gate and join wakes and
+   cancellation keep their FIFO order, as core/async's run queue and timer
+   set keep it. Code under test that is correct on the runtime is correct
+   under every schedule.
 
 ## Client attempts (gaato/mttp_core/client)
 

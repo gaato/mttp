@@ -106,7 +106,7 @@ pub struct Task {
   /// Whether one of those waiters resumed and saw the failure.
   priv mut failure_observed : Bool
   /// Whether the task is in the ready queue because of an I/O event, so a
-  /// schedule may let later tasks overtake it (S1 in schedule.mbt).
+  /// schedule may let later tasks overtake it until time advances.
   priv mut io_ready : Bool
 }
 
@@ -132,8 +132,6 @@ pub struct Waker {
 pub struct TimerHandle {
   priv at : Int64
   priv seq : Int32
-  /// The virtual time it was armed at (S2 in schedule.mbt).
-  priv armed_at : Int64
   priv action : () -> Unit
   priv mut cancelled : Bool
 }
@@ -151,8 +149,8 @@ priv struct TimerHeap {
 
 ///|
 /// A deterministic scheduler with virtual time. Tasks run one at a time, in
-/// the order they became ready (or as a `Schedule` reorders I/O events and
-/// same-deadline timers); time moves only when the driver advances it.
+/// the order they became ready (or as a `Schedule` reorders I/O events);
+/// time moves only when the driver advances it.
 pub struct Driver {
   priv ready : Fifo[Task]
   priv schedule : Schedule?
@@ -316,9 +314,9 @@ fn TimerHeap::clear(self : TimerHeap) -> Unit {
 /// Without `schedule`, ready tasks run strictly in FIFO order and due timers
 /// fire in (deadline, arming) order. With one, the driver lets it choose
 /// wherever a real runtime could order things differently: a task woken by
-/// an `io_event` may be overtaken by tasks that became ready after it, and
-/// timers due at one instant but armed at different instants may fire in
-/// either order. `@sim.explore` runs a test under many seeds.
+/// an `io_event` may be overtaken by tasks that became ready after it,
+/// until virtual time advances. Timers always fire in (deadline, arming)
+/// order. `@sim.explore` runs a test under many seeds.
 pub fn Driver::new(
   auto_advance~ : Bool = true,
   max_steps~ : Int32 = 100_000_000,
@@ -424,6 +422,7 @@ pub fn Driver::current_task(self : Driver) -> Task raise DriverError {
 /// become due fire on the next step.
 pub fn Driver::advance(self : Driver, ms : Int32) -> Unit {
   if ms > 0 {
+    self.end_io_delays()
     self.now += ms.to_int64()
   }
 }
@@ -544,13 +543,7 @@ pub fn Driver::add_timer(
   action : () -> Unit,
 ) -> TimerHandle {
   self.next_seq += 1
-  let h : TimerHandle = {
-    at,
-    seq: self.next_seq,
-    armed_at: self.now,
-    action,
-    cancelled: false,
-  }
+  let h : TimerHandle = { at, seq: self.next_seq, action, cancelled: false, }
   self.timers.push(h)
   h
 }
@@ -593,7 +586,6 @@ fn Driver::fire_due(self : Driver) -> Unit raise DriverError {
     self.timers.remove_top()
     due.push(t)
   }
-  let due = self.firing_order(due)
   for i, t in due {
     // A callback earlier in this step may have cancelled it.
     if t.cancelled {
@@ -623,6 +615,7 @@ pub fn Driver::advance_to_next_timer(self : Driver) -> Bool {
   match self.timers.peek() {
     Some(t) => {
       if t.at > self.now {
+        self.end_io_delays()
         self.now = t.at
       }
       true

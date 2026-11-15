@@ -10,28 +10,21 @@
 //     task keeps its FIFO place. On core/async the poller reports readiness
 //     between scheduling rounds, at a moment set by the transport and the
 //     peer, so delivering the event later is a real outcome. The delay
-//     never crosses a time advance: the driver moves time only when no
-//     task is ready.
-// S2. Timers due at the same instant but armed at different instants may
-//     fire in either order; among timers armed at one instant, arming order
-//     stands. A real timer is armed at real time, which runs behind virtual
-//     time by however long the arming task waited and computed; that lag
-//     differs from one causal chain to another, so equal virtual deadlines
-//     reached through different chains do not have a fixed real order.
-//     Timers armed at one instant are armed in step order, which real time
-//     preserves.
+//     never crosses a time advance: auto-advance waits until no task is
+//     ready, and manual advances clear the pending I/O-delay marks.
 //
 // Everything the program orders itself keeps core/async's FIFO order: spawn,
-// pause, signal, gate and join wakes, cancellation, timers with different
-// deadlines, and the order of timer firings relative to ready tasks. Exploring
-// those would report failures no runtime can produce.
+// pause, signal, gate and join wakes, cancellation, and the order of timer
+// firings relative to ready tasks. Timers always fire in (deadline, arming)
+// order: a timer armed later for the same deadline cannot precede one armed
+// earlier. Exploring those would report failures no runtime can produce.
 
 ///|
 /// Which of the orderings a real runtime allows a Driver takes: FIFO (no
 /// schedule), pseudo-random from a seed, or a recorded list of choices.
 ///
-/// A choice is an index among the candidates at one decision point (S1 and
-/// S2 in this file's notes); 0 is the FIFO candidate, an index past the last
+/// A choice is an index among the candidates at one decision point (S1 in
+/// this file's notes); 0 is the FIFO candidate, an index past the last
 /// candidate takes the last one, and a replay that runs out of choices
 /// continues in FIFO order. `choices` returns the indices taken, so a failing
 /// seed's schedule can be replayed and shrunk. A Schedule is stateful: give
@@ -141,9 +134,10 @@ let io_depth : Ref[Int32] = { val: 0, }
 
 ///|
 /// Runs `f` as the arrival of an I/O event: the tasks it wakes may, under a
-/// seeded or replayed `Schedule`, run after tasks that become ready later,
-/// as data or EOF from a peer may reach its reader at any time after it was
-/// sent. Without a schedule it is `f()`. The sim doubles of connections wrap
+/// seeded or replayed `Schedule`, run after tasks that become ready later
+/// at the same virtual instant, as data or EOF from a peer may reach its
+/// reader at any time after it was sent. Without a schedule it is `f()`.
+/// The sim doubles of connections wrap
 /// what they deliver to the other end in it; use it in a double of anything
 /// whose completion the transport or the peer times.
 pub fn io_event(f : () -> Unit) -> Unit {
@@ -176,39 +170,11 @@ fn Driver::next_ready(self : Driver) -> Task? {
 }
 
 ///|
-/// The order in which a step fires the timers `due` (in deadline and arming
-/// order): that order, or under a schedule any interleaving that keeps the
-/// deadlines in order and, among timers of one deadline armed at the same
-/// instant, the arming order (S2).
-fn Driver::firing_order(
-  self : Driver,
-  due : Array[TimerHandle],
-) -> Array[TimerHandle] {
-  guard self.schedule is Some(schedule) else { return due }
-  let order = []
-  let mut start = 0
-  while start < due.length() {
-    let mut end = start + 1
-    while end < due.length() && due[end].at == due[start].at {
-      end += 1
-    }
-    let group = due[start:end].to_owned()
-    while !group.is_empty() {
-      // The first remaining timer of each arming instant, in arming order.
-      let heads : Array[Int32] = []
-      for i, t in group {
-        if !heads.iter().any(h => group[h].armed_at == t.armed_at) {
-          heads.push(i)
-        }
-      }
-      let pick = if heads.length() >= 2 {
-        heads[schedule.choose(heads.length())]
-      } else {
-        0
-      }
-      order.push(group.remove(pick))
-    }
-    start = end
+/// Ends pending I/O delays before time moves: a wake at the new instant
+/// cannot overtake an event already delivered at the old one, even when
+/// manual time control advances with ready tasks still queued.
+fn Driver::end_io_delays(self : Driver) -> Unit {
+  for i in 0..<self.ready.length() {
+    self.ready.get(i).io_ready = false
   }
-  order
 }

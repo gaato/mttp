@@ -34,11 +34,11 @@ way on wasm-gc, wasm, js and native without an async runtime.
   orderings a real runtime can produce: `Schedule::seeded(seed)` picks them
   pseudo-randomly, `Schedule::replay(choices)` replays a recorded list, and
   `Schedule::choices` returns the one taken. A task woken inside `io_event`
-  (an I/O event) may be overtaken by tasks that became ready after it, and
-  timers due at one instant but armed at different instants may fire in
-  either order; everything else stays FIFO, as on core/async. Without a
-  schedule the order is FIFO exactly. `@sim.explore` runs a test under many
-  seeds and shrinks a failure.
+  (an I/O event) may be overtaken by tasks that became ready after it at the
+  same virtual instant; any time advance ends that delay. Timers always
+  fire in (deadline, arming) order; everything else stays FIFO, as on
+  core/async. Without a schedule the order is FIFO exactly.
+  `@sim.explore` runs a test under many seeds and shrinks a failure.
 
 ## Errors
 

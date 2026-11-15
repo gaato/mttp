@@ -30,10 +30,10 @@ gaato/mttp_core	gaato/mttp_core/cookie	js	38
 gaato/mttp_core	gaato/mttp_core/cookie	native	38
 gaato/mttp_core	gaato/mttp_core/cookie	wasm	38
 gaato/mttp_core	gaato/mttp_core/cookie	wasm-gc	38
-gaato/mttp_core	gaato/mttp_core/driver	js	66
-gaato/mttp_core	gaato/mttp_core/driver	native	66
-gaato/mttp_core	gaato/mttp_core/driver	wasm	66
-gaato/mttp_core	gaato/mttp_core/driver	wasm-gc	66
+gaato/mttp_core	gaato/mttp_core/driver	js	68
+gaato/mttp_core	gaato/mttp_core/driver	native	68
+gaato/mttp_core	gaato/mttp_core/driver	wasm	68
+gaato/mttp_core	gaato/mttp_core/driver	wasm-gc	68
 gaato/mttp_core	gaato/mttp_core/endpoint	js	103
 gaato/mttp_core	gaato/mttp_core/endpoint	native	103
 gaato/mttp_core	gaato/mttp_core/endpoint	wasm	103

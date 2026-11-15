@@ -136,14 +136,74 @@ fn same_deadline(schedule : @driver.Schedule) -> String raise {
 }
 
 ///|
-test "timers due together but armed at different instants fire in either order" {
+test "timers keep deadline and arming order under every schedule" {
   assert_eq(same_deadline(@driver.Schedule::replay([])), "<abcd")
-  let seen : Map[String, Unit] = Map([])
+  assert_eq(same_deadline(@driver.Schedule::replay([1])), "<abcd")
   for seed in 0..<64 {
-    seen[same_deadline(@driver.Schedule::seeded(seed))] = ()
+    let schedule = @driver.Schedule::seeded(seed)
+    // a was armed before b and c, even though they share its deadline;
+    // d is due later. None of these timers is a decision point.
+    assert_eq(same_deadline(schedule), "<abcd")
+    assert_eq(schedule.choices(), [])
   }
-  let orders = seen.keys().collect()
-  orders.sort()
-  // b and c were armed at one instant and keep their order; d is due later.
-  assert_eq(orders, ["<abcd", "<bacd", "<bcad"])
+}
+
+///|
+/// Wakes x through I/O at time 0 and y after manual time control.
+fn io_then_advance(
+  schedule : @driver.Schedule,
+  advance : (@driver.Driver) -> Unit raise,
+) -> String raise {
+  let d = @driver.Driver::new(schedule~)
+  let log = []
+  d.run(() => {
+    let (x, wake_x) = parked_logger(d, log, "x")
+    let (y, wake_y) = parked_logger(d, log, "y")
+    d.pause()
+    assert_eq(d.now(), 0L)
+    @driver.io_event(wake_x)
+    advance(d)
+    wake_y()
+    ignore(x.wait())
+    ignore(y.wait())
+  })
+  log.join("")
+}
+
+///|
+test "manual time advances end I/O overtaking under every schedule" {
+  let advances : Array[(@driver.Driver) -> Unit raise] = [
+    d => d.advance(1),
+    d => {
+      ignore(d.add_timer(1L, () => ()))
+      assert_true(d.advance_to_next_timer())
+    },
+  ]
+  for advance in advances {
+    let schedules = [
+      @driver.Schedule::replay([1]),
+      @driver.Schedule::replay([]),
+      ..Array::makei(64, seed => @driver.Schedule::seeded(seed)),
+    ]
+    for schedule in schedules {
+      assert_eq(io_then_advance(schedule, advance), "xy")
+      assert_eq(schedule.choices(), [])
+    }
+  }
+}
+
+///|
+test "manual time control without a time advance preserves I/O choices" {
+  let controls : Array[(@driver.Driver) -> Unit raise] = [
+    d => d.advance(0),
+    d => d.advance(-1),
+    d => assert_false(d.advance_to_next_timer()),
+    d => {
+      ignore(d.add_timer(0L, () => ()))
+      assert_true(d.advance_to_next_timer())
+    },
+  ]
+  for control in controls {
+    assert_eq(io_then_advance(@driver.Schedule::replay([1]), control), "yx")
+  }
 }
