@@ -111,3 +111,19 @@ server	te-tab	raw/*	pass
 server	te-tab	raw/nginx	known	nginx skips only spaces, not tabs, before a field value (src/http/ngx_http_parse.c, sw_space_before_value), so "Transfer-Encoding:<TAB>chunked" is an unknown coding to it and it answers 501; RFC 9110 section 5.6.3 allows the tab. A refusal, so nothing ambiguous reaches the server
 server	te-capitals	raw/*	pass
 server	chunk-extension	raw/*	pass
+# Expectations a front end may read differently, and line ends without CR
+# inside a chunk extension and a trailer section: refused directly.
+server	expect-obfuscated	raw/*	pass
+server	expect-folded	raw/*	pass
+server	expect-twice	raw/*	pass
+server	chunk-ext-bare-lf	raw/*	pass
+server	trailer-bare-lf	raw/*	pass
+server	trailer-bare-lf	raw/caddy	known	Caddy (Go net/http) reads the trailer section with net/textproto, whose lines end at a bare LF as well as at CRLF (bufio.Reader.ReadLine; src/net/http/transfer.go, readTrailer), as RFC 9112 section 2.2 allows a recipient, so to it the message ends there and the bytes after it are the next request on the same client connection. Each request reaches the mttp server well framed; the server refuses the same bytes sent directly
+server	cl-leading-zeros	raw/*	pass
+# Bodies the server answers without reading, each holding a request (0.CL,
+# CL.0 and early answers): skipped or closed, never read as a request.
+server	get-cl-unread	raw/*	pass
+server	head-cl-unread	raw/*	pass
+server	options-cl-unread	raw/*	pass
+server	unrouted-cl-unread	raw/*	pass
+server	expect-early-answer	raw/*	pass

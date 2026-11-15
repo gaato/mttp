@@ -11,7 +11,9 @@ Directly, every ambiguous shape must be refused as the mttp documentation
 says (CONTRACT.md, "HTTP/1 codec"; mttp_core/src/h1server/README.mbt.md, "Strict
 framing"): 400, or 501 for a transfer coding other than chunked, with exactly
 one response and the connection closed, so that no byte after the head is
-read as another request.
+read as another request. Shapes the server answers without reading the
+body (ANSWERED) must get exactly that answer, with the body skipped or the
+connection closed, never read as a request.
 
 Through a proxy, the proxy may refuse a shape, or forward it in a form of its
 own choosing. Each probe hides a request for `smuggled` where one reading of
@@ -90,11 +92,61 @@ PROBES = {
     "host-twice": (lambda p: head(f"GET {p}/echo HTTP/1.1", f"Host: {HOST}", "Host: other.test"), 400, False),
     "host-missing": (lambda p: head(f"GET {p}/echo HTTP/1.1"), 400, False),
     "nul-in-field": (lambda p: head(f"GET {p}/echo HTTP/1.1", f"Host: {HOST}", "X-Probe: a\x00b"), 400, False),
+    # Expectations a front end and the server may read differently, each
+    # with a request for `smuggled` as its body (PortSwigger, "HTTP/1.1 must
+    # die", 2025): an expectation other than exactly 100-continue is
+    # refused with 417, one folded over two lines with 400.
+    "expect-obfuscated": (lambda p: expecting(["Expect: y 100-continue"], p), 417, False),
+    "expect-folded": (lambda p: expecting(["Expect:", " 100-continue"], p), 400, False),
+    "expect-twice": (lambda p: expecting(["Expect: 100-continue", "Expect: 100-continue"], p), 417, False),
+    # Line ends without CR inside a chunk extension and a trailer section
+    # ("funky chunks", 2025).
+    "chunk-ext-bare-lf": (lambda p: chunked(p, "Transfer-Encoding: chunked", b"5;a\nb\r\nhello\r\n0\r\n\r\n" + smuggled(p)), 400, False),
+    "trailer-bare-lf": (lambda p: chunked(p, "Transfer-Encoding: chunked", b"5\r\nhello\r\n0\r\nX-Trailer: y\n\r\n" + smuggled(p)), 400, False),
     # Valid shapes, which every party must accept.
     "te-tab": (lambda p: chunked(p, "Transfer-Encoding:\tchunked", HELLO), 200, True),
     "te-capitals": (lambda p: chunked(p, "Transfer-Encoding: Chunked", HELLO), 200, True),
     "chunk-extension": (lambda p: chunked(p, "Transfer-Encoding: chunked", b"5;name=value\r\nhello\r\n0\r\n\r\n"), 200, True),
+    # Content-Length is 1*DIGIT (RFC 9110, section 8.6): leading zeros are
+    # the same length.
+    "cl-leading-zeros": (lambda p: head(f"POST {p}/echo HTTP/1.1", f"Host: {HOST}", "Content-Length: 005") + b"hello", 200, True),
 }
+
+
+def unread(method, path, prefix, fields=()):
+    """A request with a Content-Length body that holds a request for
+    `smuggled`, to a handler that answers without reading the body."""
+    body = smuggled(prefix)
+    return head(
+        f"{method} {prefix}{path} HTTP/1.1", f"Host: {HOST}", f"Content-Length: {len(body)}", *fields
+    ) + body
+
+
+# Shapes the server answers without reading the body, whose body is a
+# request for `smuggled`: a server that ignores the Content-Length of a GET
+# or HEAD, or answers early and reads what follows as the next request,
+# serves it (0.CL and CL.0, PortSwigger, "HTTP/1.1 must die", 2025). The
+# body must be skipped or the connection closed, and only the request
+# itself may reach the server. id: (request builder, status the server
+# answers directly).
+ANSWERED = {
+    "get-cl-unread": (lambda p: unread("GET", "/status/200", p), 200),
+    "head-cl-unread": (lambda p: unread("HEAD", "/status/200", p), 200),
+    "options-cl-unread": (lambda p: unread("OPTIONS", "/status/200", p), 200),
+    "unrouted-cl-unread": (lambda p: unread("POST", "/nowhere", p), 404),
+    # The client sends the body without waiting for 100 Continue, as RFC
+    # 9110, section 10.1.1 allows, and the handler answers without reading.
+    "expect-early-answer": (lambda p: unread("POST", "/status/200", p, ["Expect: 100-continue"]), 200),
+}
+
+
+def expecting(fields, prefix):
+    """A POST with the expectation `fields` and a Content-Length body that
+    is a request for `smuggled`, sent without waiting."""
+    body = smuggled(prefix)
+    return head(
+        f"POST {prefix}/echo HTTP/1.1", f"Host: {HOST}", f"Content-Length: {len(body)}", *fields
+    ) + body
 
 STATUS = re.compile(rb"HTTP/1\.[01] (\d{3})")
 
@@ -192,8 +244,20 @@ def probe_direct(target, case):
     return f"{status} and closed"
 
 
+def probe_answered(target, server, case):
+    build, status = ANSWERED[case]
+    server_log(server, reset=True)
+    data, _ = exchange(target, build(""))
+    statuses = [int(s) for s in STATUS.findall(data)]
+    log = server_log(server)
+    want(statuses == [status], f"statuses {statuses}, expected [{status}]")
+    want(not any("smuggled" in line for line in log), f"the body was read as a request: {log}")
+    want(len(log) == 1, f"{len(log)} requests reached the handler: {log}")
+    return f"{status}, body not read as a request"
+
+
 def probe_proxy(target, prefix, server, case):
-    build, _, valid = PROBES[case]
+    build, valid = (PROBES[case][0], PROBES[case][2]) if case in PROBES else (ANSWERED[case][0], False)
     server_log(server, reset=True)
     data, _ = exchange(target, build(prefix))
     statuses = [int(s) for s in STATUS.findall(data)]
@@ -204,11 +268,17 @@ def probe_proxy(target, prefix, server, case):
     want(len(reached) <= 1, f"{len(reached)} requests reached the server: {log}")
     # A proxy that streams the body and meets a bad chunk can only abort the
     # upstream request: a truncated body, which the server refuses. A head
-    # the server refuses means the proxy forwarded an ambiguous one.
+    # the server refuses means the proxy forwarded an ambiguous one, except
+    # an expectation the server does not support: a proxy may forward one
+    # (RFC 9110, section 10.1.1), and the server answers 417 and closes
+    # before reading the body, so its framing is never in question.
     aborted = [e for e in errors if "ended the request body early" in e]
-    want(len(aborted) == len(errors), f"the proxy forwarded what the server refused: {errors}")
+    expectations = [e for e in errors if "unsupported expectation" in e]
+    want(len(aborted) + len(expectations) == len(errors), f"the proxy forwarded what the server refused: {errors}")
     if aborted:
         return f"aborted by the proxy mid-body, answered {statuses}"
+    if expectations:
+        return f"forwarded, the expectation refused by the server, answered {statuses}"
     if valid:
         want(statuses == [200], f"a valid request got {statuses}")
         want(len(reached) == 1, "it did not reach the server")
@@ -276,6 +346,8 @@ def main():
                 detail = http10_keepalive(target, prefix)
             elif case in PROBES:
                 detail = probe_proxy(target, prefix, server, case) if prefix else probe_direct(target, case)
+            elif case in ANSWERED:
+                detail = probe_proxy(target, prefix, server, case) if prefix else probe_answered(target, server, case)
             else:
                 raise Failed("unknown case")
             print(f"CASE {case} ok {detail}", flush=True)

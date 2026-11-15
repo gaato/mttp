@@ -24,7 +24,9 @@ third-party implementations instead:
   204, concurrent requests, HTTP/1.0, pipelining, and request smuggling
   shapes from raw sockets ([probes.py](clients/python/probes.py)): sent
   directly they must be refused as [CONTRACT.md](../CONTRACT.md) says, and
-  through a proxy, whatever reaches the server must be unambiguous.
+  through a proxy, whatever reaches the server must be unambiguous. Among
+  them are bodies the server answers without reading (the 0.CL and CL.0
+  shapes and early answers), which must never be read as a request.
 
 [cases.tsv](cases.tsv) lists every case, where it runs and what it expects;
 the server configurations are in [servers](servers). Every third-party
