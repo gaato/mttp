@@ -56,6 +56,7 @@ test "server accepts case insensitive Upgrade and Connection list forms" {
 test "server refusal paths map to 400 403 and 426" {
   let base = valid_request()
   let cases : Array[(@mttp_core.Request, Int32)] = [
+    (base.attribute(@mttp_core.protocol, "http/1.0"), 400),
     ({ ..base, meth: Post, }, 400),
     ({ ..base, headers: base.headers.remove("host"), }, 400),
     ({ ..base, headers: base.headers.add("host", "other.test"), }, 400),
@@ -181,6 +182,42 @@ test "Origin policy covers scheme host default ports allow lists and absence" {
 }
 
 ///|
+test "Origin requires a serialized origin or null" {
+  let base = valid_request()
+  for
+    origin in [
+      "http://user@example.com", "http://example.com/", "http://example.com?q", "http://example.com#f",
+      "http:example.com", "1http://example.com", "ht^tp://example.com", "http://example.com:bad",
+    ] {
+    let request = { ..base, headers: base.headers.set("origin", origin), }
+    assert_eq(refusal(request, origins=Any).0, 403)
+  }
+  let null_origin = { ..base, headers: base.headers.set("origin", "null"), }
+  assert_eq(refusal(null_origin, origins=Any).0, 0)
+  assert_eq(refusal(null_origin, origins=Allow(["null"])).0, 0)
+  assert_eq(refusal(null_origin, origins=Allow(["http://example.com"])).0, 403)
+  assert_eq(refusal(base, origins=Allow(["null"])).0, 403)
+  assert_eq(refusal(null_origin).0, 403)
+}
+
+///|
+test "repeated extension fields enforce the cumulative 16 KiB bound" {
+  let base = valid_request()
+  let first = repeated("a", 8191)
+  let exact = repeated("b", 8191)
+  let headers = base.headers
+    .remove("sec-websocket-extensions")
+    .add("sec-websocket-extensions", first)
+    .add("sec-websocket-extensions", exact)
+  assert_eq(refusal({ ..base, headers, }).0, 0)
+  let too_large = headers
+    .remove("sec-websocket-extensions")
+    .add("sec-websocket-extensions", first)
+    .add("sec-websocket-extensions", exact + "b")
+  assert_eq(refusal({ ..base, headers: too_large, }).0, 400)
+}
+
+///|
 fn response_with(
   headers : @mttp_core.Headers,
   status~ : Int32 = 101,
@@ -245,6 +282,13 @@ test "client validates 101 tokens accept subprotocol and extension subset" {
 test "client response validation covers every handshake field refusal" {
   let base = valid_response()
   let cases : Array[(@mttp_core.Response, Int32)] = [
+    (
+      {
+        ..base,
+        attributes: base.attributes.put(@mttp_core.protocol, "http/1.0"),
+      },
+      101,
+    ),
     (response_with(base.headers, status=200), 200),
     ({ ..base, headers: base.headers.remove("upgrade"), }, 101),
     ({ ..base, headers: base.headers.set("upgrade", "h2c"), }, 101),

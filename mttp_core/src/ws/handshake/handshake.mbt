@@ -79,6 +79,15 @@ fn parse_offered_extensions(
   if values.is_empty() {
     return []
   }
+  let mut length = 0
+  for i, value in values {
+    let separator = if i == 0 { 0 } else { 2 }
+    if separator > max_extension_header_bytes - length ||
+      value.length() > max_extension_header_bytes - length - separator {
+      raise handshake(400, "extension header exceeds 16384 bytes")
+    }
+    length += separator + value.length()
+  }
   parse_extensions(values.join(", "))
 }
 
@@ -220,6 +229,9 @@ pub fn check_server_response(
   if response.status != 101 {
     raise handshake(response.status, "server did not switch protocols")
   }
+  if response.attributes.get(@mttp_core.protocol) == Some("http/1.0") {
+    raise handshake(101, "WebSocket handshake response is not HTTP/1.1")
+  }
   if !contains_token(response.headers, "upgrade", "websocket") {
     raise handshake(101, "Upgrade does not contain websocket")
   }
@@ -270,6 +282,61 @@ fn request_origin(request : @mttp_core.Request) -> @mttp_core.Url raise Refusal 
 }
 
 ///|
+priv enum SerializedOrigin {
+  NullOrigin
+  TupleOrigin(@mttp_core.Url)
+}
+
+///|
+fn origin_scheme_char(c : Char) -> Bool {
+  c is ('a'..<='z' | 'A'..<='Z' | '0'..<='9') || "+-.".contains_char(c)
+}
+
+///|
+fn parse_serialized_origin(value : String) -> SerializedOrigin? {
+  if value == "null" {
+    return Some(NullOrigin)
+  }
+  guard value.split_once("://") is Some((scheme_view, authority_view)) else {
+    return None
+  }
+  let scheme = scheme_view.to_owned()
+  let authority = authority_view.to_owned()
+  let scheme_chars = scheme.to_array()
+  guard scheme_chars.get(0) is Some('a'..<='z' | 'A'..<='Z') else {
+    return None
+  }
+  for i in 1..<scheme_chars.length() {
+    if !origin_scheme_char(scheme_chars[i]) {
+      return None
+    }
+  }
+  guard !authority.is_empty() &&
+    !authority.contains("/") &&
+    !authority.contains("?") &&
+    !authority.contains("#") &&
+    !authority.contains("@") &&
+    !authority.has_prefix(":") else {
+    return None
+  }
+  let parsed = try @mttp_core.Url::parse(value) catch {
+    _ => return None
+  } noraise {
+    url => url
+  }
+  Some(TupleOrigin(parsed))
+}
+
+///|
+fn serialized_origins_match(a : SerializedOrigin, b : SerializedOrigin) -> Bool {
+  match (a, b) {
+    (NullOrigin, NullOrigin) => true
+    (TupleOrigin(left), TupleOrigin(right)) => left.same_origin(right)
+    _ => false
+  }
+}
+
+///|
 fn check_origin(
   request : @mttp_core.Request,
   policy : OriginPolicy,
@@ -281,17 +348,20 @@ fn check_origin(
   if fields.length() != 1 {
     raise refuse(400, "multiple Origin fields")
   }
-  let origin = @mttp_core.Url::parse(fields[0]) catch {
-    _ => raise refuse(403, "invalid Origin")
+  guard parse_serialized_origin(fields[0]) is Some(origin) else {
+    raise refuse(403, "invalid Origin")
   }
   let allowed = match policy {
-    SameOrigin => origin.same_origin(request_origin(request))
+    SameOrigin =>
+      match origin {
+        TupleOrigin(url) => url.same_origin(request_origin(request))
+        NullOrigin => false
+      }
     Allow(origins) =>
       origins.any(candidate => {
-        try @mttp_core.Url::parse(candidate) catch {
-          _ => false
-        } noraise {
-          parsed => origin.same_origin(parsed)
+        match parse_serialized_origin(candidate) {
+          Some(parsed) => serialized_origins_match(origin, parsed)
+          None => false
         }
       })
     Any => true
@@ -345,6 +415,9 @@ pub fn check_client_request(
 ) -> Offer raise Refusal {
   request.validate() catch {
     _ => raise refuse(400, "invalid HTTP handshake request")
+  }
+  if request.attributes.get(@mttp_core.protocol) == Some("http/1.0") {
+    raise refuse(400, "WebSocket handshake request is not HTTP/1.1")
   }
   if request.meth != Get {
     raise refuse(400, "WebSocket handshake method is not GET")

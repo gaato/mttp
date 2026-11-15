@@ -48,7 +48,8 @@ test "extension malformed corpus is refused" {
   for
     value in [
       "", " ", ",x", "x,", "x,,y", ";a", "x;", "x; =v", "x;a=", "x;a=\"unterminated",
-      "x;a=\"trailing\\", "x;a=\"escaped\\\r\"", "x;a=\"bad\rvalue\"", "x a", "x;a=v junk",
+      "x;a=\"trailing\\", "x;a=\"escaped\\\r\"", "x;a=\"escaped\\\u0000\"", "x;a=\"escaped\\\u001f\"",
+      "x;a=\"escaped\\\u007f\"", "x;a=\"bad\rvalue\"", "x a", "x;a=v junk",
     ] {
     assert_true(
       ws_error_detail(() => ignore(@handshake.parse_extensions(value))) !=
@@ -141,5 +142,32 @@ test "extension header bounds admit exact values and refuse bound plus one" {
     ws_error_detail(() => {
       ignore(@handshake.parse_extensions(exact_params + ";a"))
     }).contains("32 parameters"),
+  )
+}
+
+///|
+test "extension quoted escapes admit HTAB SP VCHAR and obs-text" {
+  let parsed = @handshake.parse_extensions("x; a=\"\\\t\\ \\!\\\u0080\"")
+  assert_eq(parsed[0].params[0].value, Some("\t !\u0080"))
+}
+
+///|
+test "extension printer enforces the projected quoted length" {
+  let exact_value = repeated(" ", 16375) + "\\"
+  let exact = @handshake.print_extensions([
+    { name: "x", params: [{ name: "a", value: Some(exact_value), }], },
+  ])
+  assert_eq(exact.length(), 16384)
+  assert_true(
+    ws_error_detail(() => {
+      ignore(
+        @handshake.print_extensions([
+          {
+            name: "x",
+            params: [{ name: "a", value: Some(" " + exact_value), }],
+          },
+        ]),
+      )
+    }).contains("16384"),
   )
 }

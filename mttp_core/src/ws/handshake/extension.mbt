@@ -57,7 +57,8 @@ fn Scanner::quoted(self : Scanner) -> String raise @ws.WsError {
       guard self.chars.get(self.at) is Some(escaped) else {
         raise handshake(400, "unterminated quoted extension value")
       }
-      if escaped == '\r' || escaped == '\n' || escaped.to_int() > 255 {
+      let n = escaped.to_int()
+      if escaped != '\t' && (n < 0x20 || n == 0x7f || n > 0xff) {
         raise handshake(400, "invalid quoted extension escape")
       }
       self.at += 1
@@ -137,19 +138,45 @@ pub fn parse_extensions(value : String) -> Array[Extension] raise @ws.WsError {
 }
 
 ///|
-fn write_quoted(out : StringBuilder, value : String) -> Unit raise @ws.WsError {
-  out.write_char('"')
+fn write_bounded(
+  out : StringBuilder,
+  value : String,
+  length : Ref[Int32],
+) -> Unit raise @ws.WsError {
+  if value.length() > max_extension_header_bytes - length.val {
+    raise handshake(400, "extension header exceeds 16384 bytes")
+  }
+  out.write_string(value)
+  length.val += value.length()
+}
+
+///|
+fn write_bounded_char(
+  out : StringBuilder,
+  value : Char,
+  length : Ref[Int32],
+) -> Unit raise @ws.WsError {
+  write_bounded(out, value.to_string(), length)
+}
+
+///|
+fn write_quoted(
+  out : StringBuilder,
+  value : String,
+  length : Ref[Int32],
+) -> Unit raise @ws.WsError {
+  write_bounded_char(out, '"', length)
   for c in value {
     let n = c.to_int()
     if c != '\t' && (n < 0x20 || n == 0x7f || n > 0xff) {
       raise handshake(400, "invalid extension parameter value")
     }
     if c == '"' || c == '\\' {
-      out.write_char('\\')
+      write_bounded_char(out, '\\', length)
     }
-    out.write_char(c)
+    write_bounded_char(out, c, length)
   }
-  out.write_char('"')
+  write_bounded_char(out, '"', length)
 }
 
 ///|
@@ -164,6 +191,7 @@ pub fn print_extensions(
     raise handshake(400, "extension header exceeds 32 elements")
   }
   let out = StringBuilder()
+  let length = Ref(0)
   for i, extension in extensions {
     if extension.name.is_empty() || !extension.name.iter().all(token_char) {
       raise handshake(400, "invalid extension name")
@@ -172,26 +200,23 @@ pub fn print_extensions(
       raise handshake(400, "extension exceeds 32 parameters")
     }
     if i > 0 {
-      out.write_string(", ")
+      write_bounded(out, ", ", length)
     }
-    out.write_string(extension.name)
+    write_bounded(out, extension.name, length)
     for param in extension.params {
       if param.name.is_empty() || !param.name.iter().all(token_char) {
         raise handshake(400, "invalid extension parameter name")
       }
-      out.write_string("; ")
-      out.write_string(param.name)
+      write_bounded(out, "; ", length)
+      write_bounded(out, param.name, length)
       if param.value is Some(value) {
-        out.write_char('=')
+        write_bounded_char(out, '=', length)
         if !value.is_empty() && value.iter().all(token_char) {
-          out.write_string(value)
+          write_bounded(out, value, length)
         } else {
-          write_quoted(out, value)
+          write_quoted(out, value, length)
         }
       }
-    }
-    if out.to_string().length() > max_extension_header_bytes {
-      raise handshake(400, "extension header exceeds 16384 bytes")
     }
   }
   out.to_string()
