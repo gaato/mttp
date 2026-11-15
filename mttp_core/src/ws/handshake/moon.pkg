@@ -1,0 +1,9 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/internal/sha1",
+  "gaato/mttp_core/ws",
+  "moonbitlang/core/encoding/base64",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/string",
+}

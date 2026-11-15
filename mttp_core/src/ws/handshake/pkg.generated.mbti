@@ -1,0 +1,86 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/ws/handshake"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/ws",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn accept_value(String) -> String
+
+pub fn check_client_request(@mttp_core.Request, origins? : OriginPolicy, subprotocols? : Array[String], extensions? : Array[String]) -> Offer raise Refusal
+
+pub fn check_server_response(@mttp_core.Response, key~ : String, offered_subprotocols~ : Array[String], offered_extensions~ : Array[String]) -> Accepted raise @ws.WsError
+
+pub fn client_request(String, key~ : String, subprotocols? : Array[String], extensions? : Array[String], origin? : String, headers? : @mttp_core.Headers) -> @mttp_core.Request raise @ws.WsError
+
+pub fn new_key((Int32) -> Bytes?) -> String raise @ws.WsError
+
+pub fn parse_extensions(String) -> Array[Extension] raise @ws.WsError
+
+pub fn print_extensions(ArrayView[Extension]) -> String raise @ws.WsError
+
+// Errors
+#derive(@debug.Debug)
+pub(all) suberror Refusal {
+  Refusal(status~ : Int32, headers~ : @mttp_core.Headers, detail~ : String)
+}
+pub fn Refusal::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct Accepted {
+  subprotocol : String?
+  extensions : Array[Extension]
+}
+pub fn Accepted::equal(Self, Self) -> Bool
+pub fn Accepted::not_equal(Self, Self) -> Bool
+pub fn Accepted::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Extension {
+  name : String
+  params : Array[ExtensionParam]
+}
+pub fn Extension::equal(Self, Self) -> Bool
+pub fn Extension::not_equal(Self, Self) -> Bool
+pub fn Extension::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct ExtensionParam {
+  name : String
+  value : String?
+}
+pub fn ExtensionParam::equal(Self, Self) -> Bool
+pub fn ExtensionParam::not_equal(Self, Self) -> Bool
+pub fn ExtensionParam::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Offer {
+  key : String
+  subprotocols : Array[String]
+  extensions : Array[Extension]
+  supported_subprotocols : Array[String]
+  supported_extensions : Array[Extension]
+}
+pub fn Offer::accept(Self, subprotocol? : String, extensions? : Array[Extension]) -> @mttp_core.Response raise @ws.WsError
+pub fn Offer::equal(Self, Self) -> Bool
+pub fn Offer::not_equal(Self, Self) -> Bool
+pub fn Offer::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum OriginPolicy {
+  SameOrigin
+  Allow(Array[String])
+  Any
+}
+pub fn OriginPolicy::equal(Self, Self) -> Bool
+pub fn OriginPolicy::not_equal(Self, Self) -> Bool
+pub fn OriginPolicy::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

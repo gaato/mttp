@@ -9,6 +9,10 @@ never does.
 
 ### Added
 
+- Sans-I/O `ws/handshake`: injected 16-byte client keys, RFC accept values,
+  client request and server response validation, 400/403/426 server refusals,
+  same-origin policy, bounded generic extension syntax, and value-only 101
+  responses ready for the later HTTP engine hand-over.
 - `ws`: message-level `Session`, strict Close payloads, per-message extensions
   and a portable `session_over_conn` over rt ports. It bounds frames, wire and
   decoded messages, empty frames and waits, masks client frames with injected

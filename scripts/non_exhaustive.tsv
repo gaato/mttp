@@ -39,3 +39,4 @@ gaato/mttp_core/endpoint	FailureStage
 gaato/mttp_core/ws/frame	FrameErrorKind
 gaato/mttp_core/ws	CloseCode
 gaato/mttp_core/ws	WsErrorKind
+gaato/mttp_core/ws/handshake	OriginPolicy
