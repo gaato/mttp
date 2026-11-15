@@ -337,8 +337,11 @@ async fn main {
         println("TIMEOUT\t\{site.id}\t\{site.rule}\t\{site.path}")
       }
       Completed(result) => {
+        let exit_code = result.exit_code()
         let log = result.stdout() + result.stderr()
-        if result.exit_code() == 0 {
+        // Shells expose timeout's forced SIGKILL as 137; @shell normalizes the
+        // same signal exit to -9.
+        if exit_code == 0 {
           match site.equivalent {
             Some(reason) => {
               equivalent += 1
@@ -351,7 +354,9 @@ async fn main {
               println("SURVIVED\t\{site.id}\t\{site.rule}\t\{site.path}")
             }
           }
-        } else if result.exit_code() == 124 ||
+        } else if exit_code == 124 ||
+          exit_code == 137 ||
+          exit_code == -9 ||
           log.to_lower().contains("timed out") {
           timeout += 1
           println("TIMEOUT\t\{site.id}\t\{site.rule}\t\{site.path}")
