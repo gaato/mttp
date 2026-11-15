@@ -1,187 +1,201 @@
 ///|
 test "a head that is not complete within header_timeout_ms is answered with 408" {
-  for (complete_at, status) in [(99, "200"), (100, "408")] {
-    let h = Harness::new()
-    h.run(() => {
-      let (client, task) = h.serve(reply("ok"), limits={
-        ..@h1server.ServerLimits::default(),
-        header_timeout_ms: 100,
+  @sim.explore(schedule => {
+    for (complete_at, status) in [(99, "200"), (100, "408")] {
+      let h = Harness::new(schedule~)
+      h.run(() => {
+        let (client, task) = h.serve(reply("ok"), limits={
+          ..@h1server.ServerLimits::default(),
+          header_timeout_ms: 100,
+        })
+        client.send("GET / HTTP/1.1\r\nHost:")
+        h.driver.sleep(complete_at)
+        client.send(" example.test\r\nConnection: close\r\n\r\n") catch {
+          _ => ()
+        }
+        let out = client.rest()
+        assert_true(out.has_prefix("HTTP/1.1 \{status} "), msg=out)
+        ignore(task.wait())
+        client.conn.close()
       })
-      client.send("GET / HTTP/1.1\r\nHost:")
-      h.driver.sleep(complete_at)
-      client.send(" example.test\r\nConnection: close\r\n\r\n") catch {
-        _ => ()
+      if status == "408" {
+        assert_eq(h.errors.map(kind_phase), [(Timeout(ms=100), Head)])
       }
-      let out = client.rest()
-      assert_true(out.has_prefix("HTTP/1.1 \{status} "), msg=out)
-      ignore(task.wait())
-      client.conn.close()
-    })
-    if status == "408" {
-      assert_eq(h.errors.map(kind_phase), [(Timeout(ms=100), Head)])
     }
-  }
+  })
 }
 
 ///|
 test "an idle connection closes silently after header_timeout_ms" {
-  let h = Harness::new()
-  h.run(() => {
-    let (client, task) = h.serve(reply("ok"), limits={
-      ..@h1server.ServerLimits::default(),
-      header_timeout_ms: 50,
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    h.run(() => {
+      let (client, task) = h.serve(reply("ok"), limits={
+        ..@h1server.ServerLimits::default(),
+        header_timeout_ms: 50,
+      })
+      client.send(get("/"))
+      assert_eq(client.expect().status, 200)
+      let started = h.driver.now()
+      assert_eq(client.rest(), "")
+      assert_eq(h.driver.now() - started, 50L)
+      ignore(task.wait())
+      client.conn.close()
     })
-    client.send(get("/"))
-    assert_eq(client.expect().status, 200)
-    let started = h.driver.now()
-    assert_eq(client.rest(), "")
-    assert_eq(h.driver.now() - started, 50L)
-    ignore(task.wait())
-    client.conn.close()
+    assert_eq(h.errors.length(), 0)
   })
-  assert_eq(h.errors.length(), 0)
 }
 
 ///|
 test "the body deadline covers the whole body and trickling does not renew it" {
-  let h = Harness::new()
-  let sent = Ref(0)
-  h.run(() => {
-    let (client, task) = h.serve(echo(), limits={
-      ..@h1server.ServerLimits::default(),
-      body_timeout_ms: 160,
-    })
-    client.send(
-      "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 10\r\n\r\n",
-    )
-    let producer = h.driver.spawn(() => {
-      for _ in 0..<10 {
-        h.driver.sleep(40)
-        client.conn.write(b"x") catch {
-          _ => return
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let sent = Ref(0)
+    h.run(() => {
+      let (client, task) = h.serve(echo(), limits={
+        ..@h1server.ServerLimits::default(),
+        body_timeout_ms: 160,
+      })
+      client.send(
+        "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 10\r\n\r\n",
+      )
+      let producer = h.driver.spawn(() => {
+        for _ in 0..<10 {
+          h.driver.sleep(40)
+          client.conn.write(b"x") catch {
+            _ => return
+          }
+          sent.val += 1
         }
-        sent.val += 1
-      }
+      })
+      let reply = client.expect()
+      assert_eq(reply.status, 408)
+      assert_eq(reply.headers.get("connection"), Some("close"))
+      producer.cancel()
+      ignore(producer.wait() catch { _ => false })
+      ignore(task.wait())
+      client.conn.close()
     })
-    let reply = client.expect()
-    assert_eq(reply.status, 408)
-    assert_eq(reply.headers.get("connection"), Some("close"))
-    producer.cancel()
-    ignore(producer.wait() catch { _ => false })
-    ignore(task.wait())
-    client.conn.close()
+    assert_true(sent.val < 10)
+    assert_eq(h.errors.map(kind_phase), [(Timeout(ms=160), Body)])
   })
-  assert_true(sent.val < 10)
-  assert_eq(h.errors.map(kind_phase), [(Timeout(ms=160), Body)])
 }
 
 ///|
 test "a handler past handler_timeout_ms is cancelled and answered with 504" {
-  let h = Harness::new()
-  let cleaned = Ref(false)
-  h.run(() => {
-    let (client, task) = h.serve(
-      _ => {
-        defer {
-          cleaned.val = true
-        }
-        h.driver.sleep(10000)
-        @mttp_core.Response::new(200)
-      },
-      limits={
-        ..@h1server.ServerLimits::default(),
-        handler_timeout_ms: Some(5),
-      },
-    )
-    client.send(get("/"))
-    let out = client.rest()
-    assert_true(out.has_prefix("HTTP/1.1 504 "))
-    assert_eq(h.driver.now(), 5L)
-    ignore(task.wait())
-    client.conn.close()
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let cleaned = Ref(false)
+    h.run(() => {
+      let (client, task) = h.serve(
+        _ => {
+          defer {
+            cleaned.val = true
+          }
+          h.driver.sleep(10000)
+          @mttp_core.Response::new(200)
+        },
+        limits={
+          ..@h1server.ServerLimits::default(),
+          handler_timeout_ms: Some(5),
+        },
+      )
+      client.send(get("/"))
+      let out = client.rest()
+      assert_true(out.has_prefix("HTTP/1.1 504 "))
+      assert_eq(h.driver.now(), 5L)
+      ignore(task.wait())
+      client.conn.close()
+    })
+    assert_true(cleaned.val)
+    assert_eq(h.errors.map(kind_phase), [(Timeout(ms=5), Unknown)])
   })
-  assert_true(cleaned.val)
-  assert_eq(h.errors.map(kind_phase), [(Timeout(ms=5), Unknown)])
 }
 
 ///|
 test "a handler that finishes within its budget keeps its response" {
-  let h = Harness::new()
-  h.run(() => {
-    let (client, task) = h.serve(
-      _ => {
-        h.driver.sleep(4)
-        @mttp_core.Response::new(204)
-      },
-      limits={
-        ..@h1server.ServerLimits::default(),
-        handler_timeout_ms: Some(5),
-      },
-    )
-    client.send(get("/", fields="Connection: close\r\n"))
-    assert_eq(client.expect().status, 204)
-    ignore(task.wait())
-    client.conn.close()
-    assert_eq(h.driver.now(), 4L)
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    h.run(() => {
+      let (client, task) = h.serve(
+        _ => {
+          h.driver.sleep(4)
+          @mttp_core.Response::new(204)
+        },
+        limits={
+          ..@h1server.ServerLimits::default(),
+          handler_timeout_ms: Some(5),
+        },
+      )
+      client.send(get("/", fields="Connection: close\r\n"))
+      assert_eq(client.expect().status, 204)
+      ignore(task.wait())
+      client.conn.close()
+      assert_eq(h.driver.now(), 4L)
+    })
+    assert_eq(h.errors.length(), 0)
   })
-  assert_eq(h.errors.length(), 0)
 }
 
 ///|
 test "consumer pauses count against an unfinished body but not a completed EOF" {
-  for complete in [false, true] {
-    let h = Harness::new()
-    let seen = []
-    let pieces : Array[Bytes?] = []
-    let out = h.exchange(
-      @mttp_core.encode_utf8(post("/", if complete { "x" } else { "xy" })),
-      request => {
-        guard request.body is Stream(stream) else {
-          return @mttp_core.Response::new(500)
-        }
-        let reader = stream.take() catch {
-          _ => return @mttp_core.Response::new(500)
-        }
-        pieces.push(reader.read_some() catch { _ => None })
-        h.driver.sleep(10)
-        let next = reader.read_some() catch {
-          error => {
-            seen.push(kind_phase(error))
-            None
+  @sim.explore(schedule => {
+    for complete in [false, true] {
+      let h = Harness::new(schedule~)
+      let seen = []
+      let pieces : Array[Bytes?] = []
+      let out = h.exchange(
+        @mttp_core.encode_utf8(post("/", if complete { "x" } else { "xy" })),
+        request => {
+          guard request.body is Stream(stream) else {
+            return @mttp_core.Response::new(500)
           }
-        }
-        pieces.push(next)
-        @mttp_core.Response::new(204)
-      },
-      limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 5, },
-      chunk_bytes=1,
-    )
-    assert_true(
-      out.has_prefix(if complete { "HTTP/1.1 204 " } else { "HTTP/1.1 408 " }),
-    )
-    assert_eq(seen, if complete { [] } else { [(Timeout(ms=5), Body)] })
-    assert_eq(pieces, [Some(b"x"), None])
-  }
+          let reader = stream.take() catch {
+            _ => return @mttp_core.Response::new(500)
+          }
+          pieces.push(reader.read_some() catch { _ => None })
+          h.driver.sleep(10)
+          let next = reader.read_some() catch {
+            error => {
+              seen.push(kind_phase(error))
+              None
+            }
+          }
+          pieces.push(next)
+          @mttp_core.Response::new(204)
+        },
+        limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 5, },
+        chunk_bytes=1,
+      )
+      assert_true(
+        out.has_prefix(if complete { "HTTP/1.1 204 " } else { "HTTP/1.1 408 " }),
+      )
+      assert_eq(seen, if complete { [] } else { [(Timeout(ms=5), Body)] })
+      assert_eq(pieces, [Some(b"x"), None])
+    }
+  })
 }
 
 ///|
 test "an unread body drain has a deadline and reports its failure" {
-  let h = Harness::new()
-  h.run(() => {
-    let (client, task) = h.serve(reply("accepted"), limits={
-      ..@h1server.ServerLimits::default(),
-      body_timeout_ms: 12,
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    h.run(() => {
+      let (client, task) = h.serve(reply("accepted"), limits={
+        ..@h1server.ServerLimits::default(),
+        body_timeout_ms: 12,
+      })
+      client.send(
+        "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 1\r\n\r\n",
+      )
+      assert_eq(client.expect().text(), "accepted")
+      assert_eq(client.rest(), "")
+      ignore(task.wait())
+      assert_eq(h.driver.now(), 12L)
+      client.conn.close()
     })
-    client.send(
-      "POST / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 1\r\n\r\n",
-    )
-    assert_eq(client.expect().text(), "accepted")
-    assert_eq(client.rest(), "")
-    ignore(task.wait())
-    assert_eq(h.driver.now(), 12L)
-    client.conn.close()
+    assert_eq(h.errors.map(kind_phase), [(Timeout(ms=12), Body)])
   })
-  assert_eq(h.errors.map(kind_phase), [(Timeout(ms=12), Body)])
 }
 
 ///|
@@ -213,19 +227,63 @@ test "a peer that stops reading is cut off by the write deadline" {
 
 ///|
 test "an independent first response producer timeout is 500 with an unread request body" {
-  for sent_body in ["", "abc"] {
-    let h = Harness::new()
+  @sim.explore(schedule => {
+    for sent_body in ["", "abc"] {
+      let h = Harness::new(schedule~)
+      let closes = Ref(0)
+      h.run(() => {
+        let (client, task) = h.serve(
+          _ => {
+            @mttp_core.Response::new(
+              200,
+              body=Stream(
+                @mttp_core.StreamBody::new(Stall::{
+                  driver: h.driver,
+                  closes,
+                  step: 1,
+                  closed: false,
+                }),
+              ),
+            )
+          },
+          limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 30, },
+        )
+        client.send(
+          "POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\n" + sent_body,
+        )
+        let out = client.rest()
+        assert_true(out.has_prefix("HTTP/1.1 500 "), msg=out)
+        ignore(task.wait())
+        assert_eq(h.driver.now(), 30L)
+        client.conn.close()
+      })
+      assert_eq(closes.val, 1)
+      assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
+    }
+  })
+}
+
+///|
+test "a response timeout after a successful partial input pull is a producer failure" {
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
     let closes = Ref(0)
     h.run(() => {
       let (client, task) = h.serve(
-        _ => {
+        request => {
+          guard request.body is Stream(stream) else {
+            return @mttp_core.Response::new(500)
+          }
+          let reader = stream.take() catch {
+            _ => return @mttp_core.Response::new(500)
+          }
           @mttp_core.Response::new(
             200,
             body=Stream(
-              @mttp_core.StreamBody::new(Stall::{
+              @mttp_core.StreamBody::new(InputThenStall::{
                 driver: h.driver,
+                reader,
                 closes,
-                step: 1,
                 closed: false,
               }),
             ),
@@ -233,55 +291,15 @@ test "an independent first response producer timeout is 500 with an unread reque
         },
         limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 30, },
       )
-      client.send(
-        "POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\n" + sent_body,
-      )
-      let out = client.rest()
-      assert_true(out.has_prefix("HTTP/1.1 500 "), msg=out)
+      client.send("POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 2\r\n\r\na")
+      assert_eq(client.expect().status, 500)
+      assert_eq(client.rest(), "")
       ignore(task.wait())
-      assert_eq(h.driver.now(), 30L)
       client.conn.close()
     })
     assert_eq(closes.val, 1)
     assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
-  }
-}
-
-///|
-test "a response timeout after a successful partial input pull is a producer failure" {
-  let h = Harness::new()
-  let closes = Ref(0)
-  h.run(() => {
-    let (client, task) = h.serve(
-      request => {
-        guard request.body is Stream(stream) else {
-          return @mttp_core.Response::new(500)
-        }
-        let reader = stream.take() catch {
-          _ => return @mttp_core.Response::new(500)
-        }
-        @mttp_core.Response::new(
-          200,
-          body=Stream(
-            @mttp_core.StreamBody::new(InputThenStall::{
-              driver: h.driver,
-              reader,
-              closes,
-              closed: false,
-            }),
-          ),
-        )
-      },
-      limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 30, },
-    )
-    client.send("POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 2\r\n\r\na")
-    assert_eq(client.expect().status, 500)
-    assert_eq(client.rest(), "")
-    ignore(task.wait())
-    client.conn.close()
   })
-  assert_eq(closes.val, 1)
-  assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
 }
 
 ///|
@@ -310,35 +328,37 @@ impl @mttp_core.BodyStream for InputThenStall with fn close(self) {
 
 ///|
 test "a response producer that stalls is cut off after body_timeout_ms" {
-  let h = Harness::new()
-  let closes = Ref(0)
-  h.run(() => {
-    let (client, task) = h.serve(
-      _ => {
-        @mttp_core.Response::new(
-          200,
-          body=Stream(
-            @mttp_core.StreamBody::new(Stall::{
-              driver: h.driver,
-              closes,
-              step: 0,
-              closed: false,
-            }),
-          ),
-        )
-      },
-      limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 30, },
-    )
-    client.send(get("/"))
-    let out = client.rest()
-    // The first piece arrived; the stalled second one ends the connection.
-    assert_true(out.has_prefix("HTTP/1.1 200 "))
-    assert_true(out.has_suffix("5\r\nfirst\r\n"))
-    ignore(task.wait())
-    client.conn.close()
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let closes = Ref(0)
+    h.run(() => {
+      let (client, task) = h.serve(
+        _ => {
+          @mttp_core.Response::new(
+            200,
+            body=Stream(
+              @mttp_core.StreamBody::new(Stall::{
+                driver: h.driver,
+                closes,
+                step: 0,
+                closed: false,
+              }),
+            ),
+          )
+        },
+        limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 30, },
+      )
+      client.send(get("/"))
+      let out = client.rest()
+      // The first piece arrived; the stalled second one ends the connection.
+      assert_true(out.has_prefix("HTTP/1.1 200 "))
+      assert_true(out.has_suffix("5\r\nfirst\r\n"))
+      ignore(task.wait())
+      client.conn.close()
+    })
+    assert_eq(closes.val, 1)
+    assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
   })
-  assert_eq(closes.val, 1)
-  assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
 }
 
 ///|
@@ -429,19 +449,23 @@ fn Harness::quiet_reply(self : Harness, marked~ : Bool) -> String raise {
 
 ///|
 test "a close_on_shutdown stream may stay silent longer than body_timeout_ms" {
-  let h = Harness::new()
-  let out = h.quiet_reply(marked=true)
-  // An event stream waits for its next event; shutdown, not the body
-  // deadline, ends it.
-  assert_true(out.has_prefix("HTTP/1.1 200 "))
-  assert_true(out.has_suffix("5\r\nfirst\r\n6\r\nsecond\r\n0\r\n\r\n"))
-  assert_eq(h.errors.length(), 0)
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let out = h.quiet_reply(marked=true)
+    // An event stream waits for its next event; shutdown, not the body
+    // deadline, ends it.
+    assert_true(out.has_prefix("HTTP/1.1 200 "))
+    assert_true(out.has_suffix("5\r\nfirst\r\n6\r\nsecond\r\n0\r\n\r\n"))
+    assert_eq(h.errors.length(), 0)
+  })
 }
 
 ///|
 test "an unmarked stream silent longer than body_timeout_ms is cut off" {
-  let h = Harness::new()
-  let out = h.quiet_reply(marked=false)
-  assert_true(out.has_suffix("5\r\nfirst\r\n"))
-  assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let out = h.quiet_reply(marked=false)
+    assert_true(out.has_suffix("5\r\nfirst\r\n"))
+    assert_eq(h.errors.map(kind_phase), [(Timeout(ms=30), Body)])
+  })
 }

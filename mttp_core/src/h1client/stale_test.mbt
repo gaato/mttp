@@ -375,50 +375,52 @@ fn Harness::refusing(self : Harness, open_writes~ : Int32) -> RefusingConn {
 /// write refused with nothing sent goes out on another connection, whatever
 /// the method and however the request is written.
 test "a reused connection that refuses the first write sends on another" {
-  let rows : Array[(String, Bytes, Bool)] = [
-    ("one write", b"x", false),
-    ("concurrent upload", Bytes::make(70000, b'x'), false),
-    ("Expect: 100-continue", b"x", true),
-  ]
-  for row in rows {
-    let (label, payload, expect) = row
-    let h = Harness::new()
-    let refusing = h.refusing(open_writes=0)
-    let fresh = h.peer()
-    h.run(() => {
-      let server = h.driver.spawn(() => {
-        let seen = fresh.serve(ok("new"))
-        assert_eq(seen.length(), 1, msg=label)
-        assert_eq(seen[0].body, payload, msg=label)
+  @sim.explore(schedule => {
+    let rows : Array[(String, Bytes, Bool)] = [
+      ("one write", b"x", false),
+      ("concurrent upload", Bytes::make(70000, b'x'), false),
+      ("Expect: 100-continue", b"x", true),
+    ]
+    for row in rows {
+      let (label, payload, expect) = row
+      let h = Harness::new(schedule~)
+      let refusing = h.refusing(open_writes=0)
+      let fresh = h.peer()
+      h.run(() => {
+        let server = h.driver.spawn(() => {
+          let seen = fresh.serve(ok("new"))
+          assert_eq(seen.length(), 1, msg=label)
+          assert_eq(seen[0].body, payload, msg=label)
+        })
+        assert_eq(
+          fetch(h.client, @mttp_core.Request::get("http://example.test/")),
+          "old",
+        )
+        // Reused at once, so no check runs: the refusal is the only sign.
+        let post = @mttp_core.Request::post("http://example.test/").body_bytes(
+          payload,
+        )
+        let post = if expect {
+          post.header("expect", "100-continue")
+        } else {
+          post
+        }
+        let response = h.client.send(post, exchange())
+        // Not a resend: nothing went out on the refused connection.
+        assert_eq(
+          response.attributes.get(@h1client.stale_resend),
+          None,
+          msg=label,
+        )
+        assert_eq(body_of(response), b"new", msg=label)
+        assert_eq(refusing.writes.length(), 1, msg=label)
+        assert_eq(refusing.inner.closes(), 1, msg=label)
+        h.finish()
+        ignore(server.wait())
       })
-      assert_eq(
-        fetch(h.client, @mttp_core.Request::get("http://example.test/")),
-        "old",
-      )
-      // Reused at once, so no check runs: the refusal is the only sign.
-      let post = @mttp_core.Request::post("http://example.test/").body_bytes(
-        payload,
-      )
-      let post = if expect {
-        post.header("expect", "100-continue")
-      } else {
-        post
-      }
-      let response = h.client.send(post, exchange())
-      // Not a resend: nothing went out on the refused connection.
-      assert_eq(
-        response.attributes.get(@h1client.stale_resend),
-        None,
-        msg=label,
-      )
-      assert_eq(body_of(response), b"new", msg=label)
-      assert_eq(refusing.writes.length(), 1, msg=label)
-      assert_eq(refusing.inner.closes(), 1, msg=label)
-      h.finish()
-      ignore(server.wait())
-    })
-    assert_eq(h.dialer.dialed.length(), 2, msg=label)
-  }
+      assert_eq(h.dialer.dialed.length(), 2, msg=label)
+    }
+  })
 }
 
 ///|

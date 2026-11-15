@@ -6,75 +6,80 @@ fn serving(h : Harness, peer : Peer, body : String) -> @driver.Task {
 
 ///|
 test "parked connections are reused per origin and User-Agent" {
-  let h = Harness::new()
-  let first = h.peer()
-  let second = h.peer()
-  let third = h.peer()
-  let fourth = h.peer()
-  h.run(() => {
-    let servers = [
-      serving(h, first, "1"),
-      serving(h, second, "2"),
-      serving(h, third, "3"),
-      serving(h, fourth, "4"),
-    ]
-    let get = (url : String, agent : String?) => {
-      match agent {
-        Some(agent) => @mttp_core.Request::get(url).header("user-agent", agent)
-        None => @mttp_core.Request::get(url)
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let first = h.peer()
+    let second = h.peer()
+    let third = h.peer()
+    let fourth = h.peer()
+    h.run(() => {
+      let servers = [
+        serving(h, first, "1"),
+        serving(h, second, "2"),
+        serving(h, third, "3"),
+        serving(h, fourth, "4"),
+      ]
+      let get = (url : String, agent : String?) => {
+        match agent {
+          Some(agent) =>
+            @mttp_core.Request::get(url).header("user-agent", agent)
+          None => @mttp_core.Request::get(url)
+        }
       }
-    }
-    let answers = []
-    for
-      request in [
-        get("http://a.test/", Some("x")),
-        get("http://a.test/", Some("y")),
-        get("http://a.test/other", Some("x")),
-        get("http://a.test:80/", Some("y")),
-        get("https://a.test/", Some("x")),
-        get("http://a.test/", None),
-      ] {
-      answers.push(fetch(h.client, request))
-    }
-    // No User-Agent matches only a connection used without one.
-    assert_eq(answers, ["1", "2", "1", "2", "3", "4"])
-    assert_eq(h.client.idle_connections(), 4)
-    h.finish()
-    for server in servers {
-      ignore(server.wait())
-    }
+      let answers = []
+      for
+        request in [
+          get("http://a.test/", Some("x")),
+          get("http://a.test/", Some("y")),
+          get("http://a.test/other", Some("x")),
+          get("http://a.test:80/", Some("y")),
+          get("https://a.test/", Some("x")),
+          get("http://a.test/", None),
+        ] {
+        answers.push(fetch(h.client, request))
+      }
+      // No User-Agent matches only a connection used without one.
+      assert_eq(answers, ["1", "2", "1", "2", "3", "4"])
+      assert_eq(h.client.idle_connections(), 4)
+      h.finish()
+      for server in servers {
+        ignore(server.wait())
+      }
+    })
+    assert_eq(h.dialer.dialed, [
+      ("a.test", 80),
+      ("a.test", 80),
+      ("a.test", 443),
+      ("a.test", 80),
+    ])
   })
-  assert_eq(h.dialer.dialed, [
-    ("a.test", 80),
-    ("a.test", 80),
-    ("a.test", 443),
-    ("a.test", 80),
-  ])
 }
 
 ///|
 test "an idle connection expires after idle_max_ms" {
-  let h = Harness::new(config={
-    ..@h1client.ClientConfig::default(),
-    idle_max_ms: 100,
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~, config={
+      ..@h1client.ClientConfig::default(),
+      idle_max_ms: 100,
+    })
+    let first = h.peer()
+    let second = h.peer()
+    h.run(() => {
+      let servers = [serving(h, first, "1"), serving(h, second, "2")]
+      let request = @mttp_core.Request::get("http://example.test/")
+      assert_eq(fetch(h.client, request), "1")
+      h.driver.sleep(99)
+      assert_eq(fetch(h.client, request), "1")
+      h.driver.sleep(100)
+      assert_eq(fetch(h.client, request), "2")
+      assert_eq(h.client.idle_connections(), 1)
+      h.finish()
+      for server in servers {
+        ignore(server.wait())
+      }
+    })
+    assert_eq(h.dialer.dialed.length(), 2)
   })
-  let first = h.peer()
-  let second = h.peer()
-  h.run(() => {
-    let servers = [serving(h, first, "1"), serving(h, second, "2")]
-    let request = @mttp_core.Request::get("http://example.test/")
-    assert_eq(fetch(h.client, request), "1")
-    h.driver.sleep(99)
-    assert_eq(fetch(h.client, request), "1")
-    h.driver.sleep(100)
-    assert_eq(fetch(h.client, request), "2")
-    assert_eq(h.client.idle_connections(), 1)
-    h.finish()
-    for server in servers {
-      ignore(server.wait())
-    }
-  })
-  assert_eq(h.dialer.dialed.length(), 2)
 }
 
 ///|

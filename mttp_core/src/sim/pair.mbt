@@ -22,7 +22,9 @@ fn Pipe::new(coordination : &@rt.Coordination) -> Pipe {
 
 ///|
 /// One end of an in-memory full-duplex connection made by `pair`. Writes
-/// never block; reads are fragmented to at most `chunk_bytes`.
+/// never block; reads are fragmented to at most `chunk_bytes`. What one end
+/// writes or ends reaches the other as an `@driver.io_event`, so a seeded
+/// schedule may deliver it late.
 pub struct SimConn {
   priv input : Pipe
   priv output : Pipe
@@ -83,7 +85,8 @@ pub fn pair(
 /// reacts to a half-closed stream.
 pub fn SimConn::shutdown_write(self : SimConn) -> Unit {
   self.output.ended = true
-  self.output.changed.notify()
+  // The peer learns of the EOF whenever the transport delivers it.
+  @driver.io_event(() => self.output.changed.notify())
 }
 
 ///|
@@ -139,7 +142,8 @@ pub impl @rt.Conn for SimConn with fn write(self, bytes) {
   }
   if !bytes.is_empty() {
     self.output.queue.push(bytes)
-    self.output.changed.notify()
+    // Under a seeded schedule the bytes may reach the reader late.
+    @driver.io_event(() => self.output.changed.notify())
   }
 }
 

@@ -63,8 +63,9 @@ priv struct Harness {
 ///|
 fn Harness::new(
   config~ : @h1client.ClientConfig = @h1client.ClientConfig::default(),
+  schedule? : @driver.Schedule,
 ) -> Harness {
-  let driver = @driver.Driver::new()
+  let driver = @driver.Driver::new(schedule?)
   let coordination : &@rt.Coordination = @sim.SimCoordination::new(driver)
   let clock : &@rt.Clock = @sim.SimClock::new(driver)
   let timer : &@rt.Timer = @sim.SimTimer::new(driver)

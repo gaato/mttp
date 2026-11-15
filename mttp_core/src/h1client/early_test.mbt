@@ -58,43 +58,45 @@ test "an early final response stops a large in-memory upload" {
 
 ///|
 test "informational heads neither end an upload nor start the head limit" {
-  let h = Harness::new(config={
-    ..@h1client.ClientConfig::default(),
-    read_timeout_ms: Some(20),
-  })
-  let peer = h.peer()
-  h.run(() => {
-    let feed = @sim.Feed::new(h.driver, [Chunk(b"x"), Wait(50), Chunk(b"y")])
-    let server = h.driver.spawn(() => {
-      let decoder = @h1.HeadDecoder::new()
-      for ;; {
-        let result = decoder.feed(peer.conn.read(max_len=65536).unwrap())
-        if result.head is Some(_) {
-          break
-        }
-      }
-      peer.respond(
-        b"HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 103 Early Hints\r\nlink: </a>\r\n\r\n",
-      )
-      // Wait for the rest of the body before the final answer.
-      let rest = Buffer()
-      while !rest.to_bytes().has_suffix(b"0\r\n\r\n") {
-        rest.write_bytes(peer.conn.read(max_len=65536).unwrap())
-      }
-      peer.respond(b"HTTP/1.1 204 No Content\r\n\r\n")
-      ignore(peer.request())
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~, config={
+      ..@h1client.ClientConfig::default(),
+      read_timeout_ms: Some(20),
     })
-    let response = h.client.send(
-      @mttp_core.Request::post("http://example.test/").body_stream(feed),
-      exchange(),
-    )
-    assert_eq(response.status, 204)
-    assert_eq(h.driver.now(), 50L)
-    assert_eq(feed.closes(), 1)
-    // The upload finished before the final head: reusable.
-    assert_eq(h.client.idle_connections(), 1)
-    h.finish()
-    ignore(server.wait())
+    let peer = h.peer()
+    h.run(() => {
+      let feed = @sim.Feed::new(h.driver, [Chunk(b"x"), Wait(50), Chunk(b"y")])
+      let server = h.driver.spawn(() => {
+        let decoder = @h1.HeadDecoder::new()
+        for ;; {
+          let result = decoder.feed(peer.conn.read(max_len=65536).unwrap())
+          if result.head is Some(_) {
+            break
+          }
+        }
+        peer.respond(
+          b"HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 103 Early Hints\r\nlink: </a>\r\n\r\n",
+        )
+        // Wait for the rest of the body before the final answer.
+        let rest = Buffer()
+        while !rest.to_bytes().has_suffix(b"0\r\n\r\n") {
+          rest.write_bytes(peer.conn.read(max_len=65536).unwrap())
+        }
+        peer.respond(b"HTTP/1.1 204 No Content\r\n\r\n")
+        ignore(peer.request())
+      })
+      let response = h.client.send(
+        @mttp_core.Request::post("http://example.test/").body_stream(feed),
+        exchange(),
+      )
+      assert_eq(response.status, 204)
+      assert_eq(h.driver.now(), 50L)
+      assert_eq(feed.closes(), 1)
+      // The upload finished before the final head: reusable.
+      assert_eq(h.client.idle_connections(), 1)
+      h.finish()
+      ignore(server.wait())
+    })
   })
 }
 

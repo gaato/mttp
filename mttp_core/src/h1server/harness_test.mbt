@@ -16,8 +16,11 @@ priv struct Harness {
 }
 
 ///|
-fn Harness::new(start_ms~ : Int64 = 0L) -> Harness {
-  let driver = @driver.Driver::new(start_ms~)
+fn Harness::new(
+  start_ms~ : Int64 = 0L,
+  schedule? : @driver.Schedule,
+) -> Harness {
+  let driver = @driver.Driver::new(start_ms~, schedule?)
   {
     driver,
     coordination: @sim.SimCoordination::new(driver),

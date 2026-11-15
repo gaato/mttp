@@ -338,7 +338,7 @@ pub fn default_random() -> Double
 
 `rt` imports the root for `TransportError`; the root does not import `rt`, so `Backend` (in the root) names no port. Their rules (sticky EOF, idempotent close, TLS ownership transfer, supervision outcomes, cancellation) are in CONTRACT.md. The traits are new traits with the old names; they are not re-exports of gaato/mttp_core 0.5's clock traits (G-02).
 
-`sim` holds the doubles: `FakeClock::new(start_unix_ms~ : Int64 = 0L)` (a sequential accumulator), `SimClock`/`SimTimer`/`SimGate` sharing a Driver's time, `pair(coordination, chunk_bytes?)` for two SimConn ends with configurable fragmentation and separate write-half shutdown, `ScriptedConn` (read steps: chunk, EOF, failure, wait), `ScriptedDialer`, `SimCoordination::new(driver)`, `Feed` (a scripted BodyStream), quickcheck generators, `check_splits`, and the contract checkers `check_conn` (new name of `check_conn_pair_contract`), `check_coordination_contract`, `check_body_stream_contract` and `check_backend_contract`. The checkers live here, in gaato/mttp_core, because gaato/mttp runs them against its own adapters and a module cannot import the module that depends on it. `sim` imports `driver`, so it lists `driver` in `allow-experimental-packages` like any other importer, and its Driver-taking constructors (`SimCoordination::new`, `Feed::new`, SimClock) change only when `driver` does.
+`sim` holds the doubles: `FakeClock::new(start_unix_ms~ : Int64 = 0L)` (a sequential accumulator), `SimClock`/`SimTimer`/`SimGate` sharing a Driver's time, `pair(coordination, chunk_bytes?)` for two SimConn ends with configurable fragmentation and separate write-half shutdown, `ScriptedConn` (read steps: chunk, EOF, failure, wait), `ScriptedDialer`, `SimCoordination::new(driver)`, `Feed` (a scripted BodyStream), quickcheck generators, `check_splits`, `explore` (seeded schedules, §4.10), and the contract checkers `check_conn` (new name of `check_conn_pair_contract`), `check_coordination_contract`, `check_body_stream_contract` and `check_backend_contract`. The checkers live here, in gaato/mttp_core, because gaato/mttp runs them against its own adapters and a module cannot import the module that depends on it. `sim` imports `driver`, so it lists `driver` in `allow-experimental-packages` like any other importer, and its Driver-taking constructors (`SimCoordination::new`, `Feed::new`, SimClock) change only when `driver` does.
 
 `gaato/mttp_core/jsonkit`: `Presence[T]` (Absent/Null/Value), `ObjBuilder`, `field`, `opt_field`, `presence_field`, `expect_object`, `open_int`, `open_string`. The alias `@json` would collide with core's, hence the name.
 
@@ -989,8 +989,10 @@ Projection rules (verified in `wf3/rev` unless marked):
 
 ```moonbit
 // gaato/mttp_core/driver — experimental; the only package with %async intrinsics (one file: intrinsics.mbt)
-pub fn[X] run_sync(f : async () -> X) -> X raise          // drives f to completion on virtual time; refuses, never hangs
-pub fn Driver::new(auto_advance? : Bool, max_steps? : Int, start_ms? : Int64) -> Driver
+pub fn[X] run_sync(f : async () -> X, schedule? : Schedule) -> X raise  // drives f to completion on virtual time; refuses, never hangs
+pub fn Driver::new(auto_advance? : Bool, max_steps? : Int, start_ms? : Int64, schedule? : Schedule) -> Driver
+pub fn Schedule::seeded(seed : Int) -> Schedule; Schedule::replay(choices : Array[Int]) -> Schedule; Schedule::choices(Self) -> Array[Int]
+pub fn io_event(f : () -> Unit) -> Unit                    // wakes inside f are I/O events a schedule may deliver late
 pub fn[X] Driver::run(self : Driver, f : async () -> X) -> X raise
 pub fn Driver::spawn(self : Driver, f : async () -> Unit, label? : String, allow_failure? : Bool) -> Task
 // step, advance, advance_to_next_timer, add_timer, park, park_check_cancel, pause, sleep, cancel_and_join, live_tasks, pending_timers
@@ -1014,6 +1016,7 @@ pub fn verify(docs : Array[@endpoint.EndpointDoc]) -> Array[@endpoint.Definition
 - **One file of intrinsics.** `%async` appears only in `gaato/mttp_core/src/driver/intrinsics.mbt`, in a package that sets `-unused_async`. A canary diffs it against core's `async_primitive.mbt` on each toolchain (§5.6).
 - **No `async test` in portable modules.** gaato/mttp_core tests async code with plain `test` blocks through `run_sync`, so wasm-gc runs them too (F16). Production packages never import `driver`, `sim` or `testing` (gate).
 - `when_endpoint` encodes through a one-endpoint Router, so declared errors are classified as in `serve`.
+- **Seeded schedules.** A `Schedule` lets a Driver take the orderings core/async can also produce and FIFO cannot show: a task woken by an I/O event (`io_event`, which `SimConn` uses for the bytes and EOF it delivers) may be overtaken by tasks that became ready after it, and timers due at one instant but armed at different instants may fire in either order. Everything the program orders itself (spawn, pause, signals, gates, joins, cancellation, timers armed at one instant, different deadlines) stays FIFO, because core/async's run queue and sorted timer set fix it; a reordering there would report failures no runtime produces (CONTRACT.md, Driver rule 9). `@sim.explore(scenario, seeds?, max_runs?)` runs a scenario in FIFO order and under seeds 0 to 31, replays a failing seed to confirm it is deterministic, shrinks its choice list with ddmin and prints the `Schedule::replay([..])` call that pins it as a regression test. It lives in `sim` rather than `testing` because `sim` already holds the Driver-taking doubles and the property checkers, and `testing` stays free of the driver so SDK tests that only stub a Backend do not compile it. The engine suites (`h1server`, `h1client`) run their tests that meet a decision point under it; tests over stub backends, ScriptedConn or the rate limiter meet none, since nothing there is an I/O event or a same-deadline timer from different instants.
 
 ### 4.11 gaato/mttp
 

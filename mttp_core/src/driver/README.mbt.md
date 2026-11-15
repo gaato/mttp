@@ -30,6 +30,15 @@ way on wasm-gc, wasm, js and native without an async runtime.
   cancels the tasks still alive and lets them unwind.
 - `run_sync(f)` is `run` with auto-advance off: it refuses to wait, raising
   `Suspended` when every task is parked.
+- `Driver::new(schedule~)` (and `run_sync(f, schedule~)`) explores other
+  orderings a real runtime can produce: `Schedule::seeded(seed)` picks them
+  pseudo-randomly, `Schedule::replay(choices)` replays a recorded list, and
+  `Schedule::choices` returns the one taken. A task woken inside `io_event`
+  (an I/O event) may be overtaken by tasks that became ready after it, and
+  timers due at one instant but armed at different instants may fire in
+  either order; everything else stays FIFO, as on core/async. Without a
+  schedule the order is FIFO exactly. `@sim.explore` runs a test under many
+  seeds and shrinks a failure.
 
 ## Errors
 

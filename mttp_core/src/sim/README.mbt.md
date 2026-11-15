@@ -40,6 +40,42 @@ however its input is split. The generators (`gen_chunks`, `gen_text`,
 quickcheck seed; the sized ones clamp the requested size (128 text pieces, 32
 header pairs).
 
+## Schedule exploration
+
+FIFO order shows one interleaving. `explore(scenario)` runs a scenario in FIFO
+order and then under 32 seeded `@driver.Schedule`s, each taking orderings a
+real runtime can also produce: bytes and EOF a `SimConn` delivers may reach
+their reader after tasks that became ready later, and timers due at one
+instant but armed at different instants may fire in either order (CONTRACT.md,
+Driver rule 9). The scenario builds its Driver with the schedule it is given:
+
+```mbt nocheck
+///|
+test "a stopping server keeps its streamed response" {
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~) // calls @driver.Driver::new(schedule~)
+    h.run(() => ...)
+  })
+}
+```
+
+A failing seed is replayed to make sure it is deterministic, and its choices
+are shrunk with delta debugging. The failure names the seed and ends with the
+call that replays the shrunk choices, to paste as a regression test:
+
+```text
+seed 3 of 32 fails:
+...
+its choices: [0, 1, 1, 0, 2]
+ddmin shrank them to [0, 1] in 9 runs, which fail with:
+...
+replay: scenario(@driver.Schedule::replay([0, 1]))
+```
+
+A scenario that meets no decision point in FIFO order runs once. A double
+whose completion the transport or the peer times wraps the wakes it makes in
+`@driver.io_event`, as `SimConn` does.
+
 ## Example
 
 ```mbt check

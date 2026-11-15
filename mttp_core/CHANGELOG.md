@@ -14,6 +14,19 @@ never does.
   injected clock and caches IMF-fixdate per connection and second. A handler's
   Date is kept; `auto_date=false` disables insertion. Interim 100 Continue
   is unchanged.
+- Seeded schedules for the driver: `Driver::new(schedule~)` and
+  `run_sync(f, schedule~)` take a `Schedule` (`seeded(seed)`,
+  `replay(choices)`, `choices()`), under which a task woken by an I/O event
+  (`io_event`, which `SimConn` now uses for what it delivers) may be
+  overtaken by tasks that became ready later, and timers due at one instant
+  but armed at different instants may fire in either order. Both orderings
+  occur on core/async; everything else stays FIFO, and without a schedule
+  the order is FIFO exactly as before (CONTRACT.md, Driver rule 9).
+- `sim.explore`: runs a scenario in FIFO order and under 32 seeds, and on a
+  failure shrinks the seed's choices with delta debugging and prints the
+  `Schedule::replay([..])` call that reproduces it. The `h1server` and
+  `h1client` suites run their tests that meet a decision point under it.
+
 - `Kind::Refused`: the peer said it did not process the request, as an
   HTTP/2 stream reset with REFUSED_STREAM or above a GOAWAY's last stream
   identifier, or HTTP/3's H3_REQUEST_REJECTED. `is_unsent` counts it, so

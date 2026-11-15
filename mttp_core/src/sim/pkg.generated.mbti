@@ -24,6 +24,8 @@ pub fn[T : Eq + @debug.Debug] check_splits(Bytes, (Array[Bytes]) -> T raise) -> 
 
 pub fn each_split(Bytes, (Bytes, Bytes) -> Unit raise?) -> Unit raise?
 
+pub fn explore((@driver.Schedule) -> Unit raise, seeds? : Int32, max_runs? : Int32) -> Unit raise
+
 pub fn gen_chunks(Bytes) -> @quickcheck.Generator[Array[Bytes]]
 
 pub fn gen_headers() -> @quickcheck.Generator[@mttp_core.Headers]

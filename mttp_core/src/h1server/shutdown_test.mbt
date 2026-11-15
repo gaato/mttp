@@ -67,59 +67,63 @@ fn Harness::serve_stopping(
 
 ///|
 test "a close_on_shutdown stream is cut and ended with its last chunk when the server stops" {
-  let h = Harness::new()
-  let stopping = Ref(false)
-  let live = Live::new(h)
-  h.run(() => {
-    let (client, task) = h.serve_stopping(
-      _ => cut_at_shutdown(Stream(@mttp_core.StreamBody::new(live))),
-      stopping,
-    )
-    client.send(get("/") + get("/never"))
-    h.driver.sleep(10)
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let stopping = Ref(false)
+    let live = Live::new(h)
+    h.run(() => {
+      let (client, task) = h.serve_stopping(
+        _ => cut_at_shutdown(Stream(@mttp_core.StreamBody::new(live))),
+        stopping,
+      )
+      client.send(get("/") + get("/never"))
+      h.driver.sleep(10)
+      assert_eq(live.pulls, 2)
+      stopping.val = true
+      let reply = client.expect()
+      // The pull waiting for an event is cancelled within one poll.
+      assert_true(h.driver.now() <= 260L)
+      assert_eq(reply.status, 200)
+      assert_eq(reply.headers.get("transfer-encoding"), Some("chunked"))
+      assert_eq(reply.headers.get("connection"), None)
+      assert_eq(reply.text(), "first")
+      assert_eq(client.rest(), "")
+      ignore(task.wait())
+      client.conn.close()
+    })
     assert_eq(live.pulls, 2)
-    stopping.val = true
-    let reply = client.expect()
-    // The pull waiting for an event is cancelled within one poll.
-    assert_true(h.driver.now() <= 260L)
-    assert_eq(reply.status, 200)
-    assert_eq(reply.headers.get("transfer-encoding"), Some("chunked"))
-    assert_eq(reply.headers.get("connection"), None)
-    assert_eq(reply.text(), "first")
-    assert_eq(client.rest(), "")
-    ignore(task.wait())
-    client.conn.close()
+    assert_eq(live.closes, 1)
+    assert_eq(h.errors.length(), 0)
   })
-  assert_eq(live.pulls, 2)
-  assert_eq(live.closes, 1)
-  assert_eq(h.errors.length(), 0)
 }
 
 ///|
 test "a close_on_shutdown stream is not pulled once the server is stopping" {
-  let h = Harness::new()
-  let stopping = Ref(false)
-  let live = Live::new(h)
-  h.run(() => {
-    let (client, task) = h.serve_stopping(
-      _ => {
-        stopping.val = true
-        cut_at_shutdown(Stream(@mttp_core.StreamBody::new(live)))
-      },
-      stopping,
-    )
-    client.send(get("/"))
-    let reply = client.expect()
-    assert_eq(reply.status, 200)
-    assert_eq(reply.headers.get("connection"), Some("close"))
-    assert_eq(reply.text(), "")
-    assert_eq(client.rest(), "")
-    ignore(task.wait())
-    client.conn.close()
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let stopping = Ref(false)
+    let live = Live::new(h)
+    h.run(() => {
+      let (client, task) = h.serve_stopping(
+        _ => {
+          stopping.val = true
+          cut_at_shutdown(Stream(@mttp_core.StreamBody::new(live)))
+        },
+        stopping,
+      )
+      client.send(get("/"))
+      let reply = client.expect()
+      assert_eq(reply.status, 200)
+      assert_eq(reply.headers.get("connection"), Some("close"))
+      assert_eq(reply.text(), "")
+      assert_eq(client.rest(), "")
+      ignore(task.wait())
+      client.conn.close()
+    })
+    assert_eq(live.pulls, 0)
+    assert_eq(live.closes, 1)
+    assert_eq(h.errors.length(), 0)
   })
-  assert_eq(live.pulls, 0)
-  assert_eq(live.closes, 1)
-  assert_eq(h.errors.length(), 0)
 }
 
 ///|
@@ -151,48 +155,52 @@ test "a close_on_shutdown stream with a length is cut by closing the connection"
 
 ///|
 test "a close_on_shutdown stream that fails is answered as any failing stream" {
-  let h = Harness::new()
-  let pieces = Pieces::new(
-    [],
-    failure=@mttp_core.TransportError(kind=Network, phase=Body, detail="gone"),
-  )
-  let out = h.exchange(get("/") |> @mttp_core.encode_utf8, _ => {
-    cut_at_shutdown(Stream(@mttp_core.StreamBody::new(pieces)))
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let pieces = Pieces::new(
+      [],
+      failure=@mttp_core.TransportError(kind=Network, phase=Body, detail="gone"),
+    )
+    let out = h.exchange(get("/") |> @mttp_core.encode_utf8, _ => {
+      cut_at_shutdown(Stream(@mttp_core.StreamBody::new(pieces)))
+    })
+    assert_true(out.has_prefix("HTTP/1.1 500 "))
+    assert_eq(h.errors.map(kind_phase), [(Network, Body)])
+    assert_eq(pieces.closes, 1)
   })
-  assert_true(out.has_prefix("HTTP/1.1 500 "))
-  assert_eq(h.errors.map(kind_phase), [(Network, Body)])
-  assert_eq(pieces.closes, 1)
 }
 
 ///|
 test "a stream without close_on_shutdown is still written to its end when the server stops" {
-  let h = Harness::new()
-  let stopping = Ref(false)
-  let live = Live::new(h)
-  h.run(() => {
-    let (client, task) = h.serve_stopping(
-      _ => {
-        @mttp_core.Response::new(
-          200,
-          body=Stream(@mttp_core.StreamBody::new(live)),
-        )
-      },
-      stopping,
-    )
-    client.send(get("/") + get("/never"))
-    h.driver.sleep(10)
-    stopping.val = true
-    h.driver.sleep(1000)
-    assert_eq(live.pulls, 2)
-    assert_eq(live.closes, 0)
-    live.release.notify()
-    let reply = client.expect()
-    assert_eq(reply.text(), "firstlast")
-    assert_eq(client.rest(), "")
-    ignore(task.wait())
-    client.conn.close()
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let stopping = Ref(false)
+    let live = Live::new(h)
+    h.run(() => {
+      let (client, task) = h.serve_stopping(
+        _ => {
+          @mttp_core.Response::new(
+            200,
+            body=Stream(@mttp_core.StreamBody::new(live)),
+          )
+        },
+        stopping,
+      )
+      client.send(get("/") + get("/never"))
+      h.driver.sleep(10)
+      stopping.val = true
+      h.driver.sleep(1000)
+      assert_eq(live.pulls, 2)
+      assert_eq(live.closes, 0)
+      live.release.notify()
+      let reply = client.expect()
+      assert_eq(reply.text(), "firstlast")
+      assert_eq(client.rest(), "")
+      ignore(task.wait())
+      client.conn.close()
+    })
+    assert_eq(live.pulls, 3)
+    assert_eq(live.closes, 1)
+    assert_eq(h.errors.length(), 0)
   })
-  assert_eq(live.pulls, 3)
-  assert_eq(live.closes, 1)
-  assert_eq(h.errors.length(), 0)
 }

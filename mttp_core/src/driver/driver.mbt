@@ -105,6 +105,9 @@ pub struct Task {
   priv mut failure_waiters : Int32
   /// Whether one of those waiters resumed and saw the failure.
   priv mut failure_observed : Bool
+  /// Whether the task is in the ready queue because of an I/O event, so a
+  /// schedule may let later tasks overtake it (S1 in schedule.mbt).
+  priv mut io_ready : Bool
 }
 
 ///|
@@ -129,6 +132,8 @@ pub struct Waker {
 pub struct TimerHandle {
   priv at : Int64
   priv seq : Int32
+  /// The virtual time it was armed at (S2 in schedule.mbt).
+  priv armed_at : Int64
   priv action : () -> Unit
   priv mut cancelled : Bool
 }
@@ -146,9 +151,11 @@ priv struct TimerHeap {
 
 ///|
 /// A deterministic scheduler with virtual time. Tasks run one at a time, in
-/// the order they became ready; time moves only when the driver advances it.
+/// the order they became ready (or as a `Schedule` reorders I/O events and
+/// same-deadline timers); time moves only when the driver advances it.
 pub struct Driver {
   priv ready : Fifo[Task]
+  priv schedule : Schedule?
   priv timers : TimerHeap
   priv live : Map[Int32, Task]
   priv mut now : Int64
@@ -185,6 +192,18 @@ fn[T] Fifo::push(self : Fifo[T], x : T) -> Unit {
 ///|
 fn[T] Fifo::length(self : Fifo[T]) -> Int32 {
   self.items.length() - self.head
+}
+
+///|
+/// The item `i` places behind the oldest one.
+fn[T] Fifo::get(self : Fifo[T], i : Int32) -> T {
+  self.items[self.head + i]
+}
+
+///|
+/// Takes out the item `i` places behind the oldest one (`i` at least 1).
+fn[T] Fifo::remove_at(self : Fifo[T], i : Int32) -> T {
+  self.items.remove(self.head + i)
 }
 
 ///|
@@ -293,13 +312,22 @@ fn TimerHeap::clear(self : TimerHeap) -> Unit {
 /// fresh budget per round, at least twice the number of live tasks, so an
 /// exhausted execution budget does not prevent cancellation delivery.
 /// A value below 1 makes the first task step raise.
+///
+/// Without `schedule`, ready tasks run strictly in FIFO order and due timers
+/// fire in (deadline, arming) order. With one, the driver lets it choose
+/// wherever a real runtime could order things differently: a task woken by
+/// an `io_event` may be overtaken by tasks that became ready after it, and
+/// timers due at one instant but armed at different instants may fire in
+/// either order. `@sim.explore` runs a test under many seeds.
 pub fn Driver::new(
   auto_advance~ : Bool = true,
   max_steps~ : Int32 = 100_000_000,
   start_ms~ : Int64 = 0L,
+  schedule? : Schedule,
 ) -> Driver {
   {
     ready: Fifo::new(),
+    schedule,
     timers: { data: [], },
     live: {},
     now: start_ms,
@@ -426,6 +454,7 @@ pub fn Driver::spawn(
     allow_failure,
     failure_waiters: 0,
     failure_observed: false,
+    io_ready: false,
   }
   task.cont = Some(_ => self.start(task, f))
   self.live.set(task.id, task)
@@ -515,7 +544,13 @@ pub fn Driver::add_timer(
   action : () -> Unit,
 ) -> TimerHandle {
   self.next_seq += 1
-  let h : TimerHandle = { at, seq: self.next_seq, action, cancelled: false, }
+  let h : TimerHandle = {
+    at,
+    seq: self.next_seq,
+    armed_at: self.now,
+    action,
+    cancelled: false,
+  }
   self.timers.push(h)
   h
 }
@@ -558,6 +593,7 @@ fn Driver::fire_due(self : Driver) -> Unit raise DriverError {
     self.timers.remove_top()
     due.push(t)
   }
+  let due = self.firing_order(due)
   for i, t in due {
     // A callback earlier in this step may have cancelled it.
     if t.cancelled {
@@ -615,9 +651,10 @@ pub fn Driver::step(self : Driver) -> Bool raise DriverError {
     self.in_step = false
   }
   self.fire_due()
-  guard self.ready.pop() is Some(task) else { return false }
+  guard self.next_ready() is Some(task) else { return false }
   guard task.cont is Some(k) else { return true }
   task.cont = None
+  task.io_ready = false
   task.state = Running
   let saved_current = self.current
   let saved_active = active.val
@@ -875,6 +912,7 @@ pub fn Waker::wake(self : Waker) -> Unit {
   let t = self.task
   if t.gen == self.gen && t.state is Parked && t.cont is Some(_) {
     t.state = Ready
+    t.io_ready = io_depth.val > 0
     t.driver.ready.push(t)
   }
 }
@@ -902,7 +940,12 @@ pub fn Task::cancel(self : Task) -> Unit {
         self.driver.ready.push(self)
       }
     }
-    Ready | Running => self.cancel_requested = true
+    Ready | Running => {
+      self.cancel_requested = true
+      // A real runtime delivers the cancellation now, however late the I/O
+      // event that woke the task is: later tasks may no longer overtake it.
+      self.io_ready = false
+    }
   }
 }
 
@@ -1094,9 +1137,9 @@ pub fn spawn(
 }
 
 ///|
-/// `Driver::new(auto_advance=false).run(f)`: runs `f` and the tasks it
-/// spawns to completion with time frozen. It refuses to wait rather than
-/// hang: when every task is parked, it raises `Suspended`.
-pub fn[X] run_sync(f : async () -> X) -> X raise {
-  Driver::new(auto_advance=false).run(f)
+/// `Driver::new(auto_advance=false, schedule?).run(f)`: runs `f` and the
+/// tasks it spawns to completion with time frozen. It refuses to wait rather
+/// than hang: when every task is parked, it raises `Suspended`.
+pub fn[X] run_sync(f : async () -> X, schedule? : Schedule) -> X raise {
+  Driver::new(auto_advance=false, schedule?).run(f)
 }

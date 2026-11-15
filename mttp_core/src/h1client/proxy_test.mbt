@@ -228,44 +228,47 @@ test "a CONNECT the caller sends keeps its authority through a forward proxy" {
 
 ///|
 test "NO_PROXY routes direct and proxied requests on distinct reusable connections" {
-  let h = Harness::new(
-    config=proxied({
-      ..@h1client.ProxyConfig::fixed("http://proxy.test:3128"),
-      no_proxy: "local.test",
-    }),
-  )
-  let proxy = h.peer()
-  let direct = h.peer()
-  h.run(() => {
-    let servers = [
-      h.driver.spawn(() => {
-        let seen = proxy.serve(ok("via proxy"))
-        assert_eq(seen.length(), 2)
-        assert_eq(seen[0].head.target, "http://remote.test/")
+  @sim.explore(schedule => {
+    let h = Harness::new(
+      schedule~,
+      config=proxied({
+        ..@h1client.ProxyConfig::fixed("http://proxy.test:3128"),
+        no_proxy: "local.test",
       }),
-      h.driver.spawn(() => {
-        let seen = direct.serve(ok("direct"))
-        assert_eq(seen.length(), 2)
-        assert_eq(seen[0].head.target, "/")
-      }),
-    ]
-    for _ in 0..<2 {
-      assert_eq(
-        fetch(h.client, @mttp_core.Request::get("http://remote.test/")),
-        "via proxy",
-      )
-      assert_eq(
-        fetch(h.client, @mttp_core.Request::get("http://local.test/")),
-        "direct",
-      )
-    }
-    assert_eq(h.client.idle_connections(), 2)
-    h.finish()
-    for server in servers {
-      ignore(server.wait())
-    }
+    )
+    let proxy = h.peer()
+    let direct = h.peer()
+    h.run(() => {
+      let servers = [
+        h.driver.spawn(() => {
+          let seen = proxy.serve(ok("via proxy"))
+          assert_eq(seen.length(), 2)
+          assert_eq(seen[0].head.target, "http://remote.test/")
+        }),
+        h.driver.spawn(() => {
+          let seen = direct.serve(ok("direct"))
+          assert_eq(seen.length(), 2)
+          assert_eq(seen[0].head.target, "/")
+        }),
+      ]
+      for _ in 0..<2 {
+        assert_eq(
+          fetch(h.client, @mttp_core.Request::get("http://remote.test/")),
+          "via proxy",
+        )
+        assert_eq(
+          fetch(h.client, @mttp_core.Request::get("http://local.test/")),
+          "direct",
+        )
+      }
+      assert_eq(h.client.idle_connections(), 2)
+      h.finish()
+      for server in servers {
+        ignore(server.wait())
+      }
+    })
+    assert_eq(h.dialer.dialed, [("proxy.test", 3128), ("local.test", 80)])
   })
-  assert_eq(h.dialer.dialed, [("proxy.test", 3128), ("local.test", 80)])
 }
 
 ///|

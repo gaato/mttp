@@ -165,39 +165,41 @@ test "an early final response ends the upload and the connection is not reused" 
 
 ///|
 test "upload producer errors keep their kind and release the connection" {
-  let h = Harness::new()
-  let peer = h.peer()
-  h.run(() => {
-    let feed = @sim.Feed::new(h.driver, [
-      Chunk(b"x"),
-      Fail(
-        @mttp_core.TransportError(
-          kind=Unreplayable,
-          phase=Write,
-          detail="producer refused",
-        ),
-      ),
-    ])
-    let server = h.driver.spawn(() => {
-      while peer.conn.read(max_len=65536) is Some(_) {
-
-      }
-    })
-    assert_eq(
-      failing(() => {
-        ignore(
-          fetch(
-            h.client,
-            @mttp_core.Request::post("http://example.test/").body_stream(feed),
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let peer = h.peer()
+    h.run(() => {
+      let feed = @sim.Feed::new(h.driver, [
+        Chunk(b"x"),
+        Fail(
+          @mttp_core.TransportError(
+            kind=Unreplayable,
+            phase=Write,
+            detail="producer refused",
           ),
-        )
-      }),
-      (Unreplayable, Write),
-    )
-    assert_eq(feed.closes(), 1)
-    assert_eq(h.client.idle_connections(), 0)
-    h.finish()
-    ignore(server.wait())
+        ),
+      ])
+      let server = h.driver.spawn(() => {
+        while peer.conn.read(max_len=65536) is Some(_) {
+
+        }
+      })
+      assert_eq(
+        failing(() => {
+          ignore(
+            fetch(
+              h.client,
+              @mttp_core.Request::post("http://example.test/").body_stream(feed),
+            ),
+          )
+        }),
+        (Unreplayable, Write),
+      )
+      assert_eq(feed.closes(), 1)
+      assert_eq(h.client.idle_connections(), 0)
+      h.finish()
+      ignore(server.wait())
+    })
   })
 }
 
