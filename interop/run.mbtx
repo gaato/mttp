@@ -660,7 +660,9 @@ async fn prepare_clients(env : Env, filters : Array[String]) -> Unit {
       ],
     ),
   )
-  if selected(filters, "server/http11probe") {
+  // The same run keys the run loop selects with, so that a filter naming
+  // one run (`server/http11probe/direct`) builds what that run needs.
+  if targets.any(target => selected(filters, "server/http11probe/\{target}")) {
     build_http11probe(env)
   }
 }
