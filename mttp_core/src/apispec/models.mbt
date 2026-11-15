@@ -84,20 +84,23 @@ pub impl ToJson for OpenApi with fn to_json(self) {
   if self.json_schema_dialect is Some(value) {
     obj["jsonSchemaDialect"] = Json(value)
   }
-  if !self.servers.is_empty() || self.unmodeled.contains("servers") {
+  if !self.servers.is_empty() ||
+    remembered_default(self.unmodeled, "servers", Json::array([])) {
     obj["servers"] = Json(self.servers)
   }
-  if !self.webhooks.is_empty() || self.unmodeled.contains("webhooks") {
+  if !self.webhooks.is_empty() ||
+    remembered_default(self.unmodeled, "webhooks", Json::empty_object()) {
     obj["webhooks"] = Json(self.webhooks)
   }
   if self.components != Components::new() ||
-    self.unmodeled.contains("components") {
+    remembered_default(self.unmodeled, "components", Json(Components::new())) {
     obj["components"] = Json(self.components)
   }
   if self.security is Some(value) {
     obj["security"] = Json(value)
   }
-  if !self.tags.is_empty() || self.unmodeled.contains("tags") {
+  if !self.tags.is_empty() ||
+    remembered_default(self.unmodeled, "tags", Json::array([])) {
     obj["tags"] = Json(self.tags)
   }
   if self.external_docs is Some(value) {
@@ -503,7 +506,8 @@ pub impl ToJson for Server with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if !self.variables.is_empty() || self.unmodeled.contains("variables") {
+  if !self.variables.is_empty() ||
+    remembered_default(self.unmodeled, "variables", Json::empty_object()) {
     obj["variables"] = Json(self.variables)
   }
   if self.name is Some(value) {
@@ -593,7 +597,8 @@ pub fn ServerVariable::new(
 pub impl ToJson for ServerVariable with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
   obj["default"] = Json(self.default_)
-  if !self.enum_.is_empty() || self.unmodeled.contains("enum") {
+  if !self.enum_.is_empty() ||
+    remembered_default(self.unmodeled, "enum", Json::array([])) {
     obj["enum"] = Json(self.enum_)
   }
   if self.description is Some(value) {
@@ -911,10 +916,12 @@ pub impl ToJson for Parameter with fn to_json(self) {
   if !self.unmodeled.contains("$ref") {
     obj["in"] = Json(self.in_)
   }
-  if self.required || self.unmodeled.contains("required") {
+  if self.required ||
+    remembered_default(self.unmodeled, "required", Json(false)) {
     obj["required"] = Json(self.required)
   }
-  if self.deprecated || self.unmodeled.contains("deprecated") {
+  if self.deprecated ||
+    remembered_default(self.unmodeled, "deprecated", Json(false)) {
     obj["deprecated"] = Json(self.deprecated)
   }
   if self.allow_empty_value is Some(value) {
@@ -1045,10 +1052,12 @@ pub fn HeaderObject::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for HeaderObject with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  if self.required || self.unmodeled.contains("required") {
+  if self.required ||
+    remembered_default(self.unmodeled, "required", Json(false)) {
     obj["required"] = Json(self.required)
   }
-  if self.deprecated || self.unmodeled.contains("deprecated") {
+  if self.deprecated ||
+    remembered_default(self.unmodeled, "deprecated", Json(false)) {
     obj["deprecated"] = Json(self.deprecated)
   }
   if self.schema is Some(value) {
@@ -1242,10 +1251,12 @@ pub impl ToJson for ResponseObject with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if !self.headers.is_empty() || self.unmodeled.contains("headers") {
+  if !self.headers.is_empty() ||
+    remembered_default(self.unmodeled, "headers", Json::empty_object()) {
     obj["headers"] = Json(self.headers)
   }
-  if !self.content.is_empty() || self.unmodeled.contains("content") {
+  if !self.content.is_empty() ||
+    remembered_default(self.unmodeled, "content", Json::empty_object()) {
     obj["content"] = Json(self.content)
   }
   if self.summary is Some(value) {
@@ -1338,7 +1349,8 @@ pub impl ToJson for RequestBody with fn to_json(self) {
   if !self.unmodeled.contains("$ref") {
     obj["content"] = Json(self.content)
   }
-  if self.required || self.unmodeled.contains("required") {
+  if self.required ||
+    remembered_default(self.unmodeled, "required", Json(false)) {
     obj["required"] = Json(self.required)
   }
   if self.description is Some(value) {
@@ -1458,7 +1470,8 @@ pub fn Operation::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for Operation with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  if !self.responses.is_empty() || self.unmodeled.contains("responses") {
+  if !self.responses.is_empty() ||
+    remembered_default(self.unmodeled, "responses", Json::empty_object()) {
     obj["responses"] = Json(self.responses)
   }
   if self.operation_id is Some(value) {
@@ -1470,13 +1483,16 @@ pub impl ToJson for Operation with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if !self.tags.is_empty() || self.unmodeled.contains("tags") {
+  if !self.tags.is_empty() ||
+    remembered_default(self.unmodeled, "tags", Json::array([])) {
     obj["tags"] = Json(self.tags)
   }
-  if self.deprecated || self.unmodeled.contains("deprecated") {
+  if self.deprecated ||
+    remembered_default(self.unmodeled, "deprecated", Json(false)) {
     obj["deprecated"] = Json(self.deprecated)
   }
-  if !self.parameters.is_empty() || self.unmodeled.contains("parameters") {
+  if !self.parameters.is_empty() ||
+    remembered_default(self.unmodeled, "parameters", Json::array([])) {
     obj["parameters"] = Json(self.parameters)
   }
   if self.request_body is Some(value) {
@@ -1485,7 +1501,8 @@ pub impl ToJson for Operation with fn to_json(self) {
   if self.security is Some(value) {
     obj["security"] = Json(value)
   }
-  if !self.servers.is_empty() || self.unmodeled.contains("servers") {
+  if !self.servers.is_empty() ||
+    remembered_default(self.unmodeled, "servers", Json::array([])) {
     obj["servers"] = Json(self.servers)
   }
   if self.external_docs is Some(value) {
@@ -1630,7 +1647,8 @@ pub impl ToJson for SecurityScheme with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if self.deprecated || self.unmodeled.contains("deprecated") {
+  if self.deprecated ||
+    remembered_default(self.unmodeled, "deprecated", Json(false)) {
     obj["deprecated"] = Json(self.deprecated)
   }
   if self.oauth2_metadata_url is Some(value) {
@@ -1744,29 +1762,36 @@ pub fn Components::new(
 /// empty default, then its unmodeled members and its extensions.
 pub impl ToJson for Components with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
-  if !self.schemas.is_empty() || self.unmodeled.contains("schemas") {
+  if !self.schemas.is_empty() ||
+    remembered_default(self.unmodeled, "schemas", Json::empty_object()) {
     obj["schemas"] = Json(self.schemas)
   }
-  if !self.responses.is_empty() || self.unmodeled.contains("responses") {
+  if !self.responses.is_empty() ||
+    remembered_default(self.unmodeled, "responses", Json::empty_object()) {
     obj["responses"] = Json(self.responses)
   }
-  if !self.parameters.is_empty() || self.unmodeled.contains("parameters") {
+  if !self.parameters.is_empty() ||
+    remembered_default(self.unmodeled, "parameters", Json::empty_object()) {
     obj["parameters"] = Json(self.parameters)
   }
-  if !self.request_bodies.is_empty() || self.unmodeled.contains("requestBodies") {
+  if !self.request_bodies.is_empty() ||
+    remembered_default(self.unmodeled, "requestBodies", Json::empty_object()) {
     obj["requestBodies"] = Json(self.request_bodies)
   }
-  if !self.headers.is_empty() || self.unmodeled.contains("headers") {
+  if !self.headers.is_empty() ||
+    remembered_default(self.unmodeled, "headers", Json::empty_object()) {
     obj["headers"] = Json(self.headers)
   }
   if !self.security_schemes.is_empty() ||
-    self.unmodeled.contains("securitySchemes") {
+    remembered_default(self.unmodeled, "securitySchemes", Json::empty_object()) {
     obj["securitySchemes"] = Json(self.security_schemes)
   }
-  if !self.path_items.is_empty() || self.unmodeled.contains("pathItems") {
+  if !self.path_items.is_empty() ||
+    remembered_default(self.unmodeled, "pathItems", Json::empty_object()) {
     obj["pathItems"] = Json(self.path_items)
   }
-  if !self.media_types.is_empty() || self.unmodeled.contains("mediaTypes") {
+  if !self.media_types.is_empty() ||
+    remembered_default(self.unmodeled, "mediaTypes", Json::empty_object()) {
     obj["mediaTypes"] = Json(self.media_types)
   }
   add_unmodeled(obj, self.unmodeled, is_components_field)

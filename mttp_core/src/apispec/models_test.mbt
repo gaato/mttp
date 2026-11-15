@@ -655,3 +655,27 @@ test "Reference Objects and explicit defaults survive a document round trip" {
     "$ref": "#/components/securitySchemes/real",
   })
 }
+
+///|
+test "constructor unmodeled keys cannot mark typed defaults explicit" {
+  let spec = @apispec.OpenApi::new(@apispec.Info::new("T", "1"), unmodeled={
+    "servers": "ignored",
+  })
+  assert_eq(Json(spec), {
+    "info": { "title": "T", "version": "1" },
+    "paths": {},
+    "openapi": "3.1.0",
+  })
+  let explicit : Json = {
+    "info": { "title": "T", "version": "1" },
+    "paths": {},
+    "openapi": "3.1.0",
+    "servers": [
+      {
+        "url": "https://{port}.example.test",
+        "variables": { "port": { "default": "443", "enum": [] } },
+      },
+    ],
+  }
+  assert_eq(round_trip(explicit), explicit)
+}

@@ -105,6 +105,18 @@ fn remember_default(
 }
 
 ///|
+/// Whether decoding left the exact JSON value that marks an explicit typed
+/// default. Merely using a known key in a constructor's public `unmodeled`
+/// bag must not affect the corresponding typed field.
+fn remembered_default(
+  unmodeled : Map[String, Json],
+  name : String,
+  default : Json,
+) -> Bool {
+  unmodeled.get(name) is Some(value) && value == default
+}
+
+///|
 /// Adds the unmodeled members to an encoded object, after its fixed fields.
 /// A key that names a `known` field or an extension is dropped, so an
 /// unmodeled member cannot replace either.
@@ -200,10 +212,12 @@ pub impl ToJson for PathItem with fn to_json(self) {
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
-  if !self.servers.is_empty() || self.unmodeled.contains("servers") {
+  if !self.servers.is_empty() ||
+    remembered_default(self.unmodeled, "servers", Json::array([])) {
     obj["servers"] = Json(self.servers)
   }
-  if !self.parameters.is_empty() || self.unmodeled.contains("parameters") {
+  if !self.parameters.is_empty() ||
+    remembered_default(self.unmodeled, "parameters", Json::array([])) {
     obj["parameters"] = Json(self.parameters)
   }
   for key, value in self.operations {
@@ -212,7 +226,11 @@ pub impl ToJson for PathItem with fn to_json(self) {
     }
   }
   if !self.additional_operations.is_empty() ||
-    self.unmodeled.contains("additionalOperations") {
+    remembered_default(
+      self.unmodeled,
+      "additionalOperations",
+      Json::empty_object(),
+    ) {
     obj["additionalOperations"] = Json(self.additional_operations)
   }
   add_unmodeled(obj, self.unmodeled, is_path_item_field)

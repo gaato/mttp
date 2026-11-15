@@ -458,12 +458,11 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
           ),
         )
       Default(value, omit=true) => {
+        let remembered = "remembered_default(self.unmodeled, \{wire}, \{default_json(value)})"
         let changed = match value {
-          "[]" | "{}" =>
-            "!self.\{field.name}.is_empty() || self.unmodeled.contains(\{wire})"
-          "false" => "self.\{field.name} || self.unmodeled.contains(\{wire})"
-          _ =>
-            "self.\{field.name} != \{value} || self.unmodeled.contains(\{wire})"
+          "[]" | "{}" => "!self.\{field.name}.is_empty() || \{remembered}"
+          "false" => "self.\{field.name} || \{remembered}"
+          _ => "self.\{field.name} != \{value} || \{remembered}"
         }
         let changed = if changed.length() + 7 <= width + 2 {
           changed

@@ -6,10 +6,10 @@ gaato/mttp_core	gaato/mttp_core	js	81
 gaato/mttp_core	gaato/mttp_core	native	81
 gaato/mttp_core	gaato/mttp_core	wasm	81
 gaato/mttp_core	gaato/mttp_core	wasm-gc	81
-gaato/mttp_core	gaato/mttp_core/apispec	js	13
-gaato/mttp_core	gaato/mttp_core/apispec	native	13
-gaato/mttp_core	gaato/mttp_core/apispec	wasm	13
-gaato/mttp_core	gaato/mttp_core/apispec	wasm-gc	13
+gaato/mttp_core	gaato/mttp_core/apispec	js	14
+gaato/mttp_core	gaato/mttp_core/apispec	native	14
+gaato/mttp_core	gaato/mttp_core/apispec	wasm	14
+gaato/mttp_core	gaato/mttp_core/apispec	wasm-gc	14
 gaato/mttp_core	gaato/mttp_core/client	js	114
 gaato/mttp_core	gaato/mttp_core/client	native	114
 gaato/mttp_core	gaato/mttp_core/client	wasm	114
