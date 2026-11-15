@@ -565,9 +565,9 @@ pub fn TimerHandle::cancel(self : TimerHandle) -> Unit {
 //     a timer armed during the step, by a callback or a task, fires on a
 //     later step whatever its deadline. No timer can keep `step` from
 //     resuming a ready task, or hide an older due one.
-// B3. Unwinding does not advance time, and each round starts with no armed
-//     timer, so a timer armed while unwinding cannot carry into the next
-//     round.
+// B3. Ordinary unwinding clears timers without advancing time. Protected
+//     cleanup retains its wakeups between rounds, but advances time only
+//     after an idle step: budget exhaustion must end the current round.
 // B4. The ready queue holds a task at most once: only a parked task is
 //     pushed, and pushing makes it ready.
 // B5. `step` saves and restores `current` and `active` around each task it
@@ -712,7 +712,9 @@ fn Driver::shutdown(self : Driver) -> (Int32, DriverError?) {
     }
     while true {
       let progressed = self.step() catch {
-        DriverError(kind=NoQuiescence(_), ..) => false
+        // Exhaustion ends this round. Only an idle step may advance time;
+        // retrying an exhausted budget can never fire an already-due timer.
+        DriverError(kind=NoQuiescence(_), ..) => break
         e => {
           if first_error is None {
             first_error = Some(e)

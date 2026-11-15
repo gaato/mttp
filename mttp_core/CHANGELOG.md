@@ -68,6 +68,12 @@ never does.
   close). `rt.Conn` reads may raise it; like EOF it is permanent
   (CONTRACT.md, Connections and coordination).
 
+### Fixed
+
+- Driver shutdown starts a fresh unwind round after budget exhaustion,
+  even when protected cleanup keeps a timer armed. It no longer retries
+  the exhausted counters indefinitely; the cleanup and unwind budgets apply.
+
 ### Deprecated
 
 - `Response::closes_connection`: the Connection header exists only in
