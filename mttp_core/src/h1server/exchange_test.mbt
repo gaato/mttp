@@ -1,4 +1,138 @@
 ///|
+test "Date uses the virtual second including before the epoch" {
+  for start_ms in [-1L, 784111777000L] {
+    let h = Harness::new(start_ms~)
+    h.run(() => {
+      let (client, task) = h.serve(reply("ok"))
+      let dates = []
+      for delay in [0, 0, 1, 999, 1] {
+        h.clock.sleep(delay)
+        client.send(get("/"))
+        let reply = client.expect()
+        let expected = @mttp_core.format_http_date(h.clock.now_unix_ms())
+        assert_eq(reply.headers.get_all("date"), [expected])
+        assert_eq(expected.length(), 29)
+        assert_true(
+          @mttp_core.parse_http_date(
+            expected,
+            now_unix_ms=h.clock.now_unix_ms(),
+          )
+          is Some(_),
+        )
+        dates.push(expected)
+      }
+      assert_eq(dates[0], dates[1])
+      assert_true(dates[0] != dates[4])
+      client.conn.close()
+      ignore(task.wait())
+    })
+    assert_eq(h.errors.length(), 0)
+  }
+}
+
+///|
+test "Date preserves a handler field and auto_date can be disabled" {
+  for auto_date in [true, false] {
+    let h = Harness::new()
+    h.run(() => {
+      let own = "Sun, 06 Nov 1994 08:49:37 GMT"
+      let (client, task) = h.serve(
+        request => {
+          @mttp_core.Response::new(
+            200,
+            headers=if request.url.has_suffix("/own") {
+              @mttp_core.Headers::of([("DaTe", own)])
+            } else {
+              @mttp_core.Headers::empty()
+            },
+          )
+        },
+        auto_date~,
+      )
+      client.send(get("/own"))
+      assert_eq(client.expect().headers.get_all("date"), [own])
+      client.send(get("/auto"))
+      assert_eq(
+        client.expect().headers.get_all("date"),
+        if auto_date {
+          ["Thu, 01 Jan 1970 00:00:00 GMT"]
+        } else {
+          []
+        },
+      )
+      // Refusals use the same switch as handler responses.
+      client.send("GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\n\r\n")
+      let refused = client.expect()
+      assert_eq(refused.status, 400)
+      assert_eq(refused.headers.contains("date"), auto_date)
+      ignore(task.wait())
+      client.conn.close()
+    })
+  }
+}
+
+///|
+test "HEAD 204 304 and handler 5xx carry Date without changing framing" {
+  for
+    (meth, status) in [
+      (@mttp_core.Method::Head, 200),
+      (Get, 204),
+      (Get, 304),
+      (Get, 503),
+    ] {
+    let h = Harness::new()
+    h.run(() => {
+      let (client, task) = h.serve(_ => @mttp_core.Response::new(status))
+      client.send("\{meth} / HTTP/1.1\r\nHost: h\r\nConnection: close\r\n\r\n")
+      let reply = client.expect(meth~)
+      assert_eq(reply.status, status)
+      assert_eq(reply.headers.get_all("date"), ["Thu, 01 Jan 1970 00:00:00 GMT"])
+      assert_eq(reply.body, b"")
+      if meth == Head || status == 204 || status == 304 {
+        assert_eq(reply.headers.get("content-length"), None)
+        assert_eq(reply.headers.get("transfer-encoding"), None)
+      }
+      assert_eq(client.rest(), "")
+      ignore(task.wait())
+      client.conn.close()
+    })
+  }
+  // HEAD does not take the body stream: the wire writer must still refuse
+  // an invalid declared length before committing a head.
+  let h = Harness::new()
+  let out = h.exchange(b"HEAD / HTTP/1.1\r\nHost: h\r\n\r\n", _ => {
+    @mttp_core.Response::new(
+      200,
+      body=Stream(@mttp_core.StreamBody::new(Pieces::new([]), length=-1L)),
+    )
+  })
+  assert_true(out.has_prefix("HTTP/1.1 500 Internal Server Error\r\n"))
+  assert_true(out.contains("\r\ndate: Thu, 01 Jan 1970 00:00:00 GMT\r\n"))
+  assert_eq(h.errors.length(), 1)
+  assert_eq(kind_phase(h.errors[0]), (Invalid, Head))
+}
+
+///|
+test "handler header edge whitespace becomes a dated 500 before any response bytes" {
+  for value in [" a", "a ", "\ta", "a\t", " "] {
+    for name in ["x", "connection", "content-length", "date"] {
+      let h = Harness::new()
+      let out = h.exchange(@mttp_core.encode_utf8(get("/")), _ => {
+        @mttp_core.Response::new(
+          200,
+          headers=@mttp_core.Headers::of([(name, value)]),
+        )
+      })
+      assert_eq(
+        out, "HTTP/1.1 500 Internal Server Error\r\nconnection: close\r\ndate: Thu, 01 Jan 1970 00:00:00 GMT\r\ncontent-length: 0\r\n\r\n",
+      )
+      assert_eq(h.errors.length(), 1)
+      assert_eq(kind_phase(h.errors[0]), (Invalid, Head))
+    }
+  }
+}
+
+///|
 test "keep-alive serves several requests on one connection with absolute URLs" {
   let h = Harness::new()
   let seen = []

@@ -8,7 +8,7 @@ import {
 }
 
 // Values
-pub async fn serve_conn(&@rt.Conn, async (@mttp_core.Request) -> @mttp_core.Response noraise, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, scheme~ : String, limits? : ServerLimits, peer? : String, authority? : String, on_error? : (@mttp_core.TransportError) -> Unit, stopping? : () -> Bool, background? : (async () -> Unit) -> Unit) -> Unit raise ServerConfigError
+pub async fn serve_conn(&@rt.Conn, async (@mttp_core.Request) -> @mttp_core.Response noraise, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, scheme~ : String, limits? : ServerLimits, auto_date? : Bool, peer? : String, authority? : String, on_error? : (@mttp_core.TransportError) -> Unit, stopping? : () -> Bool, background? : (async () -> Unit) -> Unit) -> Unit raise ServerConfigError
 
 // Errors
 #derive(@debug.Debug)

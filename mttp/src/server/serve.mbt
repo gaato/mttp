@@ -19,10 +19,13 @@ pub extend ListenError with @debug.Debug::{to_repr}
 /// background jobs finish for `limits.drain_ms`, then cancels and joins them.
 /// The listener sets `SO_REUSEADDR`, so a restart can bind the port while the
 /// previous process's connections are in TIME-WAIT.
+/// `auto_date` adds Date to responses without one; set it to false when an
+/// upstream server owns that field. It is passed to `h1server.serve_conn`.
 pub async fn serve(
   handler : @mttp_core.Handler,
   addr~ : String,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
+  auto_date~ : Bool = true,
   on_listen~ : (String) -> Unit = _ => (),
   on_error~ : (@mttp_core.TransportError) -> Unit = _ => (),
 ) -> Unit raise ListenError {
@@ -44,7 +47,7 @@ pub async fn serve(
     error => raise Bind(detail="could not bind \{addr}: \{error}")
   }
   defer listener.close()
-  run_listener(listener, handler, on_listen, limits, on_error)
+  run_listener(listener, handler, on_listen, limits, on_error, auto_date)
 }
 
 ///|
@@ -54,6 +57,7 @@ async fn run_listener(
   on_listen : (String) -> Unit,
   limits : @h1server.ServerLimits,
   on_error : (@mttp_core.TransportError) -> Unit,
+  auto_date : Bool,
 ) -> Unit raise ListenError {
   let state = ServerState::new()
   let clock = @runtime.AsyncClock::new()
@@ -150,6 +154,7 @@ async fn run_listener(
                   coordination~,
                   scheme="http",
                   limits~,
+                  auto_date~,
                   peer=peer.to_string(),
                   authority=listener.addr.to_string(),
                   on_error=error => {

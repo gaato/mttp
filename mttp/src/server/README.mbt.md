@@ -10,6 +10,11 @@ work that outlives the response as `@mttp.background`. TLS termination
 belongs to the deployment; use `codings.compress(handler)` when response
 compression is wanted.
 
+Responses without a handler-supplied Date get an IMF-fixdate from the
+engine's clock, cached per connection and second, including error and
+HEAD/204/304 responses. Pass `auto_date=false` to `serve` to disable this
+automatic field (an explicit Date is kept). Interim 100 Continue is unchanged.
+
 ```mbt check
 ///|
 async test "listener errors are distinct from connection errors" {

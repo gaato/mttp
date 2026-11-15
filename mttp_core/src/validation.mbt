@@ -2,6 +2,8 @@
 /// Checks header names and values before serialization. Empty names and
 /// non-token name characters are refused; values cannot contain controls
 /// other than horizontal tab, or characters outside the HTTP byte range.
+/// Nonempty values cannot start or end with SP or HTAB: a recipient would
+/// strip them, changing the caller's value.
 pub fn Headers::validate(self : Headers) -> Unit raise TransportError {
   for (name, value) in self.iter() {
     if name.is_empty() || !name.iter().all(is_token) {
@@ -9,6 +11,14 @@ pub fn Headers::validate(self : Headers) -> Unit raise TransportError {
         kind=Invalid,
         phase=Pool,
         detail="invalid header name",
+      )
+    }
+    if !value.is_empty() &&
+      (value[0] is (' ' | '\t') || value[value.length() - 1] is (' ' | '\t')) {
+      raise TransportError(
+        kind=Invalid,
+        phase=Pool,
+        detail="header value starts or ends with whitespace",
       )
     }
     for c in value {

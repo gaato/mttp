@@ -9,6 +9,10 @@ never does.
 
 ### Added
 
+- `server.serve(auto_date~ : Bool = true)` passes through the HTTP/1
+  engine's automatic Date setting. Final responses without a handler's
+  Date now carry it, including errors and HEAD/204/304; `auto_date=false`
+  disables insertion. JS fetch hosts are unchanged.
 - The root re-exports gaato/mttp_core's `abandon_request_body` and
   `protocol` attribute keys. Responses of the HTTP/1.1 backend carry
   `protocol` (`http/1.1` or `http/1.0`), and so do requests that

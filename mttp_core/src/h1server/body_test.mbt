@@ -27,7 +27,9 @@ test "100 Continue is sent only when the handler reads the body" {
     client.send(
       "POST / HTTP/1.1\r\nHost: example.test\r\nAuthorization: yes\r\nContent-Length: 3\r\nExpect: 100-Continue\r\n\r\n",
     )
-    assert_eq(client.expect().status, 100)
+    let interim = client.expect()
+    assert_eq(interim.status, 100)
+    assert_eq(interim.headers.get("date"), None)
     client.send("abc")
     let reply = client.expect()
     assert_eq(reply.status, 200)

@@ -71,6 +71,7 @@ async test "a real accept failure raises ListenError Accept" {
         _ => listener.close(),
         @h1server.ServerLimits::default(),
         _ => (),
+        true,
       )
     catch {
       Accept(detail~) => {

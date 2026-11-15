@@ -11,11 +11,8 @@ fn wire_fields(
 ) -> @mttp_core.Headers raise ParseError {
   // Fields replaced below are validated too: a framing override must not
   // hide a malformed value the caller supplied.
-  for (name, value) in headers.iter() {
-    if !token(name) ||
-      !value.iter().all(c => is_field_char(c) && c.to_int() <= 0xff) {
-      raise malformed("invalid outgoing field \{name}")
-    }
+  headers.validate() catch {
+    @mttp_core.TransportError(detail~, ..) => raise malformed(detail)
   }
   let headers = headers.remove("content-length").remove("transfer-encoding")
   match framing {

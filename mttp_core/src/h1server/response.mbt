@@ -34,6 +34,9 @@ async fn Session::write_response(
   if status < 200 || status > 599 {
     raise invalid_response("the handler returned status \{status}")
   }
+  response.headers.validate() catch {
+    @mttp_core.TransportError(detail~, ..) => raise invalid_response(detail)
+  }
   let bodiless = meth == Head || status == 204 || status == 304
   let framing : @h1.Framing = match response.body {
     _ if status == 204 => NoBody
@@ -80,6 +83,11 @@ async fn Session::write_response(
   // The status line names HTTP/1.1, the version this server implements,
   // also to an HTTP/1.0 client (RFC 9110, section 6.2); the framing above
   // already keeps to what that client reads.
+  let headers = if self.auto_date && !headers.contains("date") {
+    headers.add("date", self.date())
+  } else {
+    headers
+  }
   let head = @h1.write_response_head(status, headers, framing, Http11, meth~) catch {
     @h1.ParseError(detail~, ..) => raise invalid_response(detail)
   }

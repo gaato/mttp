@@ -94,7 +94,9 @@ test "serve a request" {
 - **Failures.** Before a response head is written, a body failure replaces
   the handler's response with its own status, even when the handler caught
   it. An invalid response or a producer failure before the head becomes
-  500; failures after the head close the connection. Failures reach `on_error` as an
+  500; failures after the head close the connection. Nonempty header values
+  starting or ending with SP/HTAB are invalid: trim the value before setting
+  it. Empty values and interior SP/HTAB are valid. Failures reach `on_error` as an
   `@mttp_core.TransportError`. `@mttp_core.Handler` is `noraise`; applications handle
   their own exceptions before returning a response.
 - **Peers.** `100 Continue` is sent when the handler first reads the body. A
@@ -108,8 +110,13 @@ test "serve a request" {
   closed only its sending half. HTTP/1.0 keeps a connection
   only when it asks for `keep-alive` and the response has a length; it is
   never sent a chunked body.
-- **Raw bytes.** The engine adds the framing fields and `Connection` and
-  nothing else; content codings are a handler wrapper's job.
+- **Response fields.** The engine adds framing fields, `Connection` and
+  `Date` (IMF-fixdate) from the injected clock, cached per connection and
+  second. Every final response, including 5xx and HEAD/204/304, gets Date
+  unless the handler already supplied it. `serve_conn(auto_date=false)`
+  disables automatic Date; an explicit field is kept. The engine never
+  adds Date to interim `100 Continue`; other 1xx handler responses remain
+  unsupported. Content codings are a handler wrapper's job.
 - **Listener boundary.** The caller accepts connections and owns the
   background scheduler. `max_connections` (256) and shutdown `drain_ms`
   (10 seconds) are validated settings for that adapter, which enforces them

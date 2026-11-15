@@ -25,6 +25,9 @@
 /// 504; a response the engine cannot write (a status outside 200 to 599,
 /// an invalid field, a stream that fails at its first read) becomes 500.
 /// Each of these is reported to `on_error` as a `TransportError`.
+/// With `auto_date` (the default), every final response, including an error,
+/// gets an IMF-fixdate from `clock` unless it already has a Date field.
+/// Formatting is cached per connection and second. `100 Continue` is unchanged.
 ///
 /// `100 Continue` is sent when the handler first reads the body, never
 /// before, so a handler that refuses the request does not invite the body.
@@ -87,6 +90,7 @@ pub async fn serve_conn(
   coordination~ : &@rt.Coordination,
   scheme~ : String,
   limits~ : ServerLimits = ServerLimits::default(),
+  auto_date~ : Bool = true,
   peer? : String,
   authority~ : String = "localhost",
   on_error~ : (@mttp_core.TransportError) -> Unit = _ => (),
@@ -109,6 +113,8 @@ pub async fn serve_conn(
   let session = Session::{
     wire,
     clock,
+    auto_date,
+    date_cache: None,
     coordination,
     handler,
     limits,

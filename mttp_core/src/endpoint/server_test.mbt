@@ -32,7 +32,9 @@ test "security runs before input rejection and malformed credentials are refused
     assert_eq(ep.dispatch(request, Map([]), ctx).status, 400)
     assert_eq(authenticated.val, 1)
     assert_eq(stages, [@endpoint.Head])
-    for value in ["Bearer ", "Bearer a b", "Basic abc"] {
+    // The wire parser removes edge OWS; test missing credentials in that
+    // received form so the failure reaches security rather than head checks.
+    for value in ["Bearer", "Bearer a b", "Basic abc"] {
       let request = @mttp_core.Request::post("/items").header(
         "authorization", value,
       )

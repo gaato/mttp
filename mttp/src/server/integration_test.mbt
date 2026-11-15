@@ -5,13 +5,14 @@ async fn with_server(
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
   on_error~ : (@mttp_core.TransportError) -> Unit = _ => (),
   addr~ : String = "127.0.0.1:0",
+  auto_date~ : Bool = true,
 ) -> Unit {
   @async.with_timeout(5000, () => {
     @async.with_task_group(group => {
       let ready : Ref[String?] = Ref(None)
       let wake = @cond_var.Cond()
       group.spawn_bg(no_wait=true, () => {
-        @server.serve(handler, addr~, limits~, on_error~, on_listen=address => {
+        @server.serve(handler, addr~, limits~, on_error~, auto_date~, on_listen=address => {
           ready.val = Some(address)
           wake.signal()
         })
@@ -23,6 +24,31 @@ async fn with_server(
       group.return_immediately()
     })
   })
+}
+
+///|
+async test "serve passes through automatic Date and its off switch" {
+  for auto_date in [true, false] {
+    with_server(
+      _ => @mttp_core.Response::new(204),
+      address => {
+        let out = raw(
+          address, b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        )
+        let head = @h1.parse_response_head(@mttp_core.encode_utf8(out))
+        assert_eq(head.status, 204)
+        assert_eq(head.headers.contains("date"), auto_date)
+        if head.headers.get("date") is Some(date) {
+          assert_eq(head.headers.get_all("date"), [date])
+          assert_eq(date.length(), 29)
+          assert_true(
+            @mttp_core.parse_http_date(date, now_unix_ms=0L) is Some(_),
+          )
+        }
+      },
+      auto_date~,
+    )
+  }
 }
 
 ///|

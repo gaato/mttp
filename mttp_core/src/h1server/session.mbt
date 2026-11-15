@@ -7,6 +7,8 @@
 priv struct Session {
   wire : Wire
   clock : &@rt.Clock
+  auto_date : Bool
+  mut date_cache : (Int64, String)?
   coordination : &@rt.Coordination
   handler : @mttp_core.Handler
   limits : ServerLimits
@@ -320,10 +322,25 @@ async fn Session::read_peer(
 /// Answers with a bare `status` and `Connection: close`, ignoring failures:
 /// the connection closes next either way.
 async fn Session::reject(self : Session, status : Int32) -> Unit noraise {
-  let head = "HTTP/1.1 \{status} \{@mttp_core.reason_phrase(status)}\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"
+  let date = if self.auto_date { "date: \{self.date()}\r\n" } else { "" }
+  let head = "HTTP/1.1 \{status} \{@mttp_core.reason_phrase(status)}\r\nconnection: close\r\n\{date}content-length: 0\r\n\r\n"
   self.wire.write(@mttp_core.encode_utf8(head), self.limits.body_timeout_ms) catch {
     _ => ()
   }
+}
+
+///|
+/// Cache by the clock's second, including backward jumps. Floor negative
+/// times like format_http_date, without overflowing at Int64's minimum.
+fn Session::date(self : Session) -> String {
+  let now = self.clock.now_unix_ms()
+  let second = if now < 0L { (now + 1L) / 1000L - 1L } else { now / 1000L }
+  if self.date_cache is Some((cached, text)) && cached == second {
+    return text
+  }
+  let text = @mttp_core.format_http_date(now)
+  self.date_cache = Some((second, text))
+  text
 }
 
 ///|

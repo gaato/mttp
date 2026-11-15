@@ -16,8 +16,8 @@ priv struct Harness {
 }
 
 ///|
-fn Harness::new() -> Harness {
-  let driver = @driver.Driver::new()
+fn Harness::new(start_ms~ : Int64 = 0L) -> Harness {
+  let driver = @driver.Driver::new(start_ms~)
   {
     driver,
     coordination: @sim.SimCoordination::new(driver),
@@ -59,6 +59,7 @@ fn Harness::serve_on(
   peer? : String,
   background? : (async () -> Unit) -> Unit,
   stopping~ : () -> Bool = () => false,
+  auto_date~ : Bool = true,
 ) -> @driver.Task {
   self.driver.spawn(() => {
     @h1server.serve_conn(
@@ -72,6 +73,7 @@ fn Harness::serve_on(
       peer?,
       background?,
       stopping~,
+      auto_date~,
       on_error=error => self.errors.push(error),
     )
   })
@@ -88,6 +90,7 @@ fn Harness::serve(
   scheme~ : String = "http",
   peer? : String,
   background? : (async () -> Unit) -> Unit,
+  auto_date~ : Bool = true,
 ) -> (Client, @driver.Task) {
   let (client, server) = @sim.pair(self.coordination, chunk_bytes~)
   self.closes.push(() => server.closes())
@@ -98,6 +101,7 @@ fn Harness::serve(
     scheme~,
     peer?,
     background?,
+    auto_date~,
   )
   ({ conn: client, pending: b"", }, task)
 }

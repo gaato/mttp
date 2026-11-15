@@ -115,6 +115,9 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
 1. **Validation first.** An invalid URL, header, method or body framing is
    refused before any I/O with `TransportError(kind=Invalid, phase=Pool, ..)`,
    which is unsent.
+   Header values may be empty and contain interior SP/HTAB, but must not
+   start or end with SP/HTAB: recipients strip edge whitespace, changing
+   the caller's value. Trim it before setting the field.
 2. **Phases are honest.** Every failure carries the phase in which it
    happened. A failure reported in Pool or Dial means no request byte reached
    the peer; `is_unsent` relies on this. A peer that says it did not process
@@ -303,7 +306,17 @@ size lines and trailer storage have independent byte and count limits.
 
 Wire writers reject invalid fields and framing instead of emitting unsafe
 bytes, so they raise `ParseError`. They replace CL/TE using the supplied
-framing. A successful CONNECT's `NoBody` describes the HTTP message only; the
+framing. Every supplied field is checked before replacement, including
+the prohibition on leading/trailing SP or HTAB in a nonempty value.
+A successful CONNECT's `NoBody` describes the HTTP message only; the
 engine must hand off the remaining tunnel bytes. Both engines (`h1client`,
 `h1server`) decide framing with the same `request_framing` and
 `response_framing`.
+
+The HTTP/1 server engine adds framing, Connection and, by default, Date to
+every final response, including errors and HEAD/204/304. A handler's Date
+is preserved. `serve_conn(auto_date=false)` disables the automatic field;
+`mttp/server.serve` passes the same option through. Date is IMF-fixdate from
+the injected Clock, cached per connection and second. The interim
+100 Continue carries no automatic Date. An invalid handler header value
+becomes 500 before its response is written and is reported to `on_error`.

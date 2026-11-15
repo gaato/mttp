@@ -9,6 +9,11 @@ never does.
 
 ### Added
 
+- `h1server.serve_conn(auto_date~ : Bool = true)` sends Date on every final
+  response without one, including errors and HEAD/204/304. It uses the
+  injected clock and caches IMF-fixdate per connection and second. A handler's
+  Date is kept; `auto_date=false` disables insertion. Interim 100 Continue
+  is unchanged.
 - `Kind::Refused`: the peer said it did not process the request, as an
   HTTP/2 stream reset with REFUSED_STREAM or above a GOAWAY's last stream
   identifier, or HTTP/3's H3_REQUEST_REJECTED. `is_unsent` counts it, so
@@ -39,6 +44,11 @@ never does.
 
 ### Changed
 
+- `Headers::validate` now refuses nonempty values with leading/trailing SP
+  or HTAB with `Invalid` in phase Pool, before client I/O. HTTP/1 writers
+  refuse them too, including replaced framing fields; invalid handler
+  response values become 500. Trim the value before setting it. Empty values
+  and interior SP/HTAB stay valid.
 - The Router's and the endpoint layer's 413 answers no longer carry
   `Connection: close`; they set `abandon_request_body`, which `h1server`
   turns into the same header and close.

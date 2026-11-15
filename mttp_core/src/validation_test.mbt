@@ -45,6 +45,21 @@ test "headers validate empty names tokens and control values" {
 }
 
 ///|
+test "header values refuse edge whitespace and preserve interior whitespace" {
+  for value in [" a", "a ", "\ta", "a\t", " "] {
+    try @mttp_core.Headers::of([("x", value)]).validate() catch {
+      @mttp_core.TransportError(kind=Invalid, phase=Pool, ..) => ()
+      _ => fail("wrong validation error")
+    } noraise {
+      _ => fail("accepted edge whitespace")
+    }
+  }
+  for value in ["", "a b", "a\tb"] {
+    @mttp_core.Headers::of([("x", value)]).validate()
+  }
+}
+
+///|
 test "headers are immutable and set keeps the first position" {
   let original = @mttp_core.Headers::of([("x", "1"), ("y", "2"), ("X", "3")])
   let changed = original.set("X", "4").add("z", "5").remove("y")

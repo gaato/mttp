@@ -54,7 +54,8 @@ test "send a request and read the response" {
 
 ## What it guarantees
 
-- **Validation first.** An invalid URL, method, header or framing, and
+- **Validation first.** An invalid URL, method, header or framing (including
+  values with leading/trailing SP or HTAB; trim before setting), and
   `SendOptions` that `validate` refuses, fail with `Invalid` (or
   `Timeout(ms)` for a nonpositive deadline) in phase Pool before any dial.
 - **Raw bytes.** The engine adds a `Host` field and the framing fields and

@@ -243,7 +243,7 @@ test "body mappings report decode failures and optional body encoding is reversi
 test "forwarded addresses are opt in and metadata inputs encode through the client" {
   let request = @mttp_core.Request::post("/")
     .attribute(@mttp_core.remote_addr, "peer")
-    .header("x-forwarded-for", " client, proxy")
+    .header("x-forwarded-for", "client , proxy")
   @driver.run_sync(() => {
     assert_eq(decoded(@endpoint.client_ip(), request), Some("peer"))
     assert_eq(

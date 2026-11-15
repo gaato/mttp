@@ -339,6 +339,29 @@ test "raw content codings pass through untouched" {
 }
 
 ///|
+test "edge whitespace refuses a request before dialing or writing" {
+  for value in [" a", "a ", "\ta", "a\t", " "] {
+    let h = Harness::new()
+    let conn = h.scripted([Chunk(ok("unused"))])
+    h.run(() => {
+      assert_eq(
+        failing(() => {
+          ignore(
+            fetch(
+              h.client,
+              @mttp_core.Request::get("http://example.test/").header("x", value),
+            ),
+          )
+        }),
+        (Invalid, Pool),
+      )
+    })
+    assert_eq(h.dialer.dialed, [])
+    assert_eq(conn.written(), [])
+  }
+}
+
+///|
 test "invalid requests and settings are refused before any dial" {
   let urls = [
     "/relative", "ftp://example.test/", "http://user:pass@example.test/", "http:///nohost",

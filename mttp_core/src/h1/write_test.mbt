@@ -55,6 +55,34 @@ test "wire writers retain duplicate fields and replace framing consistently" {
 }
 
 ///|
+test "both head writers reject edge whitespace including replaced fields" {
+  for value in [" a", "a ", "\ta", "a\t", " "] {
+    for name in ["x", "content-length", "transfer-encoding"] {
+      let fields = @mttp_core.Headers::of([("host", "h"), (name, value)])
+      try @h1.write_request_head(Get, "/", fields, NoBody, Http11) catch {
+        @h1.ParseError(kind=Malformed, ..) => ()
+        _ => fail("wrong request error")
+      } noraise {
+        _ => fail("accepted request whitespace")
+      }
+      try @h1.write_response_head(200, fields, NoBody, Http11) catch {
+        @h1.ParseError(kind=Malformed, ..) => ()
+        _ => fail("wrong response error")
+      } noraise {
+        _ => fail("accepted response whitespace")
+      }
+    }
+  }
+  for value in ["", "a b", "a\tb"] {
+    let fields = @mttp_core.Headers::of([("host", "h"), ("x", value)])
+    let request = @h1.write_request_head(Get, "/", fields, NoBody, Http11)
+    let response = @h1.write_response_head(200, fields, NoBody, Http11)
+    assert_eq(@h1.parse_request_head(request).headers.get("x"), Some(value))
+    assert_eq(@h1.parse_response_head(response).headers.get("x"), Some(value))
+  }
+}
+
+///|
 test "writers reject invalid framing fields and request targets" {
   for framing in [@h1.Framing::Length(-1), Chunked] {
     try

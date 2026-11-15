@@ -71,7 +71,10 @@ while a response that never has a body (to HEAD or a successful CONNECT, a
 1xx, 204 or 304) and a request whose method expects no content get no
 framing field. `write_response_head` takes the request method for this, as
 `response_framing` does. `encode_chunk` frames one chunk; an empty one ends
-the body.
+the body. Writers refuse nonempty field values with leading or trailing
+SP/HTAB, including fields replaced by framing; trim values before setting
+them. Empty values and interior SP/HTAB are preserved. The chunk writer
+emits only an empty trailer section, so it takes no trailer fields.
 
 ```mbt check
 ///|
