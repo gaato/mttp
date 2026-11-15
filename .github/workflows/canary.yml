@@ -50,6 +50,28 @@ jobs:
       - name: Validate all targets and ledgers
         run: scripts/gates.sh full
 
+  # Keep sanitizer overhead out of push CI and use the pinned compiler so
+  # findings in our C can be separated from toolchain-canary regressions.
+  sanitize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned moon from the gate image
+        run: |
+          image="ghcr.io/gaato/moonbit:$(tr + - < moonbit-version)"
+          id=$(docker create "$image")
+          docker cp "$id:/opt/moon" "$RUNNER_TEMP/moon"
+          docker rm "$id"
+          echo "MOON_HOME=$RUNNER_TEMP/moon" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/moon/bin" >> "$GITHUB_PATH"
+      - name: Run native tests with sanitizers
+        env:
+          MOON_CC: cc
+        run: scripts/gates.sh sanitize
+
   # The interoperability suite (interop/README.md). It runs on the runner
   # itself, not in the gate image: the third-party programs run in
   # containers of their own, and the runner's docker starts them. moon comes

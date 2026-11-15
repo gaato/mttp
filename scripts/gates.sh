@@ -32,6 +32,10 @@
 #                                           network). Not part of full: CI
 #                                           runs it daily (canary.yml).
 #                                           interop/README.md says more
+#   scripts/gates.sh sanitize               Linux native tests of mttp_core
+#                                           and mttp under ASan, using a
+#                                           disposable source/toolchain copy.
+#                                           Daily in canary, outside full
 #   scripts/gates.sh full                   quick on all four targets, static,
 #                                           the self-test of this script, the
 #                                           resolver gate and workerd
@@ -191,6 +195,11 @@ case "$mode" in
   interop)
     # Extra arguments select runs by prefix, as interop/run.mbtx documents.
     step script interop/run.mbtx -- "$@"
+    finish
+    ;;
+  sanitize)
+    [ $# = 0 ] || usage
+    step script scripts/sanitize.mbtx
     finish
     ;;
   manifest)

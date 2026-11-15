@@ -238,6 +238,8 @@ nightly toolchains:
   through the wrangler version its lockfile pins.
 - The code and outputs in this README are those of the examples;
   [scripts/readme_check.mbtx](scripts/readme_check.mbtx) compares them.
+- Daily, the native tests of `gaato/mttp_core` and `gaato/mttp`, with the
+  C they link, run under AddressSanitizer (`scripts/gates.sh sanitize`).
 - The [interop suite](interop) runs the client against nginx, Caddy and
   Apache httpd, and the server under curl, Go, Python httpx, Node, Bun and
   Deno and behind the three servers as reverse proxies, daily in CI

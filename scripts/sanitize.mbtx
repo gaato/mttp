@@ -1,0 +1,240 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/env",
+}
+----
+
+// Linux only: ASan needs the system allocator instead of mimalloc. Copy
+// both sources and the toolchain before changing anything, so interruption
+// cannot leave a developer's toolchain or moon.pkg files instrumented.
+// cc-flags instruments generated C; stub-cc-flags instruments testtls.c and
+// dependency stubs. Setting these also disables bundled tcc. Moon 0.10.20
+// does not forward package flags when compiling lib/runtime/*.c: a temporary
+// exec-only compiler launcher applies the same flags to those objects too.
+
+///|
+suberror SanitizeError {
+  SanitizeError(String)
+}
+
+///|
+// UBSan was tried with address,undefined on 0.10.20. The compiler lowers
+// Bytes::unsafe_read_uint32_le to an unaligned const uint32_t load:
+// gaato/deflate@0.1.2 internal/lz77/matchfinder.mbt:36 -> longest_match ->
+// Deflater.parse_lazy -> backend's gzip test. UBSan alignment stops there;
+// leave UBSan out until that generated-C intrinsic is alignment-safe.
+let flags : String = "-g -fsanitize=address -fno-omit-frame-pointer"
+
+///|
+fn native_package(text : String) -> Bool {
+  for raw in text.split("\n") {
+    let line = raw.trim()
+    if line.has_prefix("supported_targets") {
+      return line
+        .split("\"")
+        .nth(1)
+        .map(s => s.contains("native"))
+        .unwrap_or(false)
+    }
+  }
+  true
+}
+
+///|
+async fn command(program : String, args : Array[String]) -> String {
+  let result = @shell.Cmd(program, args).output(timeout_ms=600000)
+  result.check()
+  result.stdout().trim().to_owned()
+}
+
+///|
+/// Append to existing native flags (notably dependency include paths).
+/// Refuse an unfamiliar config rather than silently leave C uninstrumented.
+fn instrument(text : String) -> String raise SanitizeError {
+  let native = "\"native\": {"
+  let mut out = text
+  if !out.contains(native) {
+    if out.contains("link:") {
+      raise SanitizeError("unrecognized native link configuration")
+    }
+    let block = "  link: { \"native\": { \"cc-flags\": \"\{flags}\", \"stub-cc-flags\": \"\{flags}\" } },\n"
+    if out.contains("options(") {
+      return out.replace(old="options(", new="options(\n" + block)
+    }
+    return out + "\noptions(\n" + block + ")\n"
+  }
+  for key in ["cc-flags", "stub-cc-flags"] {
+    let marker = "\"\{key}\": \""
+    if out.contains(marker) {
+      out = out.replace(old=marker, new=marker + flags + " ")
+    } else {
+      out = out.replace(old=native, new=native + "\n\"\{key}\": \"\{flags}\",")
+    }
+  }
+  out
+}
+
+///|
+async fn instrument_tree(root : String) -> Unit {
+  @fs.walk(
+    root,
+    (dir, entries) => {
+      if entries.contains("moon.pkg") {
+        let path = dir + "/moon.pkg"
+        let text = @fs.read_text(path)
+        @fs.write_text(
+          path,
+          instrument(text) catch {
+            SanitizeError(message) => raise SanitizeError("\{path}: \{message}")
+          },
+        )
+      }
+    },
+    exclude=path => path.has_suffix("/_build") || path.has_suffix("/target"),
+    max_concurrency=1,
+  )
+}
+
+///|
+async fn sanitize(root : String) -> Unit {
+  // Resolve PATH, not ~/.moon: canary installs the pinned image elsewhere.
+  let binary = @fs.realpath(command("which", ["moon"]))
+  let toolchain = binary[:binary.length() - "/bin/moon".length()].to_owned()
+  let home = root + "/moon"
+  let source = root + "/source"
+  @fs.mkdir(source)
+  // Dereference symlinks; hard links would let writes escape the copy.
+  ignore(command("cp", ["-aL", "--reflink=auto", toolchain, home]))
+  ignore(
+    command("tar", [
+      "--exclude=_build",
+      "--exclude=target",
+      "--exclude=.mooncakes",
+      "-cf",
+      root + "/source.tar",
+      "mttp_core",
+      "mttp",
+    ]),
+  )
+  ignore(command("tar", ["-xf", root + "/source.tar", "-C", source]))
+  @fs.write_text(source + "/moon.work", "members = [\"mttp_core\", \"mttp\"]\n")
+  // ASan's slow allocation unwinder can consume the smoke test's entire
+  // 200ms budget before its fast local request completes on a busy host.
+  // In the disposable copy only, allow 1s: the slow handler still sleeps
+  // 2s, so both the successful request and deadline assertion are exercised.
+  let entry = source + "/mttp/src/entry_test.mbt"
+  let entry_text = @fs.read_text(entry)
+  guard entry_text.contains("total_ms=200,") else {
+    raise SanitizeError("review the sanitizer smoke-test deadline adjustment")
+  }
+  @fs.write_text(
+    entry,
+    entry_text.replace(old="total_ms=200,", new="total_ms=1000,"),
+  )
+  println(
+    "sanitize: copied entry smoke deadline 200ms -> 1000ms (slow handler: 2000ms)",
+  )
+  let vars = {
+    "MOON_HOME": home,
+    "PATH": home + "/bin:" + @env.get_env_var("PATH").unwrap_or("/usr/bin:/bin"),
+    "MOON_CC": @env.get_env_var("MOON_CC").unwrap_or("cc"),
+    // moon otherwise looks beside the temporary compiler for `ar`.
+    "MOON_AR": @env.get_env_var("MOON_AR").unwrap_or(command("which", ["ar"])),
+    "XDG_CONFIG_HOME": root + "/config",
+    // LSan also counts MoonBit closure cycles retained by the portable
+    // Driver (e.g. driver.mbt:339 via body_test.mbt:74). This gate checks C
+    // memory accesses; leak checking needs a separate cycle-aware audit.
+    // Five allocation frames retain the C allocation site without the
+    // slow unwinder's default 30-frame cost overwhelming short I/O timers.
+    "ASAN_OPTIONS": "detect_leaks=0:fast_unwind_on_malloc=0:malloc_context_size=5",
+    "LSAN_OPTIONS": "",
+  }
+  let compiler = vars["MOON_CC"]
+  let launcher = root + "/cc"
+  @fs.write_text(
+    launcher,
+    "#!/bin/sh\nexec '" +
+    compiler.replace_all(old="'", new="'\"'\"'") +
+    "' " +
+    flags +
+    " \"$@\"\n",
+  )
+  @fs.chmod(launcher, 0o755)
+  vars["MOON_CC"] = launcher
+  @fs.mkdir(root + "/config")
+  let moon = home + "/bin/moon"
+  // Resolve dependencies before testing; the compiler launcher also
+  // instruments any dependency stubs, without editing their configuration.
+  @shell.Cmd(moon, ["update"], cwd=source, env=vars).run(timeout_ms=600000)
+  @shell.Cmd(moon, ["check", "--target", "native"], cwd=source, env=vars).run(
+    timeout_ms=600000,
+  )
+  instrument_tree(source + "/mttp_core/src")
+  instrument_tree(source + "/mttp/src")
+  @fs.write_text(root + "/empty.c", "")
+  ignore(
+    command(compiler, [
+      "-c",
+      root + "/empty.c",
+      "-o",
+      home + "/lib/libmoonbitrun.o",
+    ]),
+  )
+  println("sanitize: \{flags}; ASAN_OPTIONS=\{vars["ASAN_OPTIONS"]}")
+  // Each package has its own run so a native abort cannot hide later ones.
+  let packages : Array[String] = []
+  for module_dir in ["mttp_core", "mttp"] {
+    @fs.walk(
+      source + "/" + module_dir + "/src",
+      (dir, files) => {
+        if files.contains("moon.pkg") &&
+          native_package(@fs.read_text(dir + "/moon.pkg")) {
+          packages.push(dir)
+        }
+      },
+      max_concurrency=1,
+    )
+  }
+  packages.sort()
+  let failures = []
+  for pkg in packages {
+    let relative = pkg[source.length() + 1:].to_owned()
+    println("+ sanitize \{relative}")
+    let result = @shell.Cmd(
+      moon,
+      [
+        "test", "--deny-warn", "--no-parallelize", "--target", "native", relative,
+      ],
+      cwd=source,
+      env=vars,
+    ).output(timeout_ms=600000)
+    let log = result.stdout() + result.stderr()
+    println(log)
+    if result.exit_code() != 0 || !log.contains("Total tests: ") {
+      failures.push(relative)
+    }
+  }
+  if !failures.is_empty() {
+    let message = "sanitize: failed packages: " + failures.join(", ")
+    println(message)
+    raise SanitizeError(message)
+  }
+  println("sanitize: OK (\{packages.length()} packages)")
+}
+
+///|
+async fn main {
+  if command("uname", ["-s"]) != "Linux" {
+    println(
+      "sanitize: skipped; this gate uses Linux ASan and the system allocator",
+    )
+    return
+  }
+  let root = @fs.tmpdir(prefix="mttp-sanitize-")
+  println("sanitize: disposable copy at " + root)
+  defer @fs.rmdir(root, recursive=true)
+  sanitize(root)
+}
