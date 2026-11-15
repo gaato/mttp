@@ -16,6 +16,11 @@ never does.
   The HTTP/1.1 client and server treat it as EOF except at the end of a
   response body delimited by the close, which now fails as truncated
   (RFC 9112, section 9.8).
+- mttp requires gaato/zstd 0.4.1, gaato/brotli 0.4.3, gaato/deflate 0.1.2
+  and gaato/codec_bytes 0.1.2. Decompressing zstd response bodies is 2.6 to
+  3.1 times as fast, Brotli 1.5 times on native and 1.6 times on JS, and
+  gzip and deflate on JS 1.2 times. The output and the errors are
+  unchanged.
 
 ## [0.3.0] - 2026-11-12
 
