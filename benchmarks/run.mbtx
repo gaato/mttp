@@ -76,7 +76,7 @@ priv struct Options {
 ///|
 priv struct Env {
   engine : String
-  moon_cc : String
+  moon_cc : String?
   images : Map[String, String]
   root : String
 }
@@ -505,12 +505,14 @@ fn cpu_model(lscpu : String) -> String {
 
 ///|
 fn invocation(env : Env, options : Options) -> String {
-  let command = [
-    "BENCH_ENGINE=\{env.engine}",
-    "MOON_CC=\{env.moon_cc}",
-    "scripts/gates.sh",
-    "bench",
-  ]
+  // An unset MOON_CC is not the same build as MOON_CC=cc: the toolchain
+  // uses its prebuilt runtime only without an override, so replaying the
+  // command must keep it unset.
+  let command = match env.moon_cc {
+    Some(cc) => ["BENCH_ENGINE=\{env.engine}", "MOON_CC=\{cc}"]
+    None => ["env", "-u", "MOON_CC", "BENCH_ENGINE=\{env.engine}"]
+  }
+  command.push_iter(["scripts/gates.sh", "bench"].iter())
   if options.record {
     command.push("--record")
   }
@@ -597,7 +599,7 @@ fn parse_options(args : Array[String]) -> Options raise RunError {
 ///|
 async fn main_run(options : Options) -> Unit {
   let engine = find_engine()
-  let moon_cc = @env.get_env_var("MOON_CC").unwrap_or("cc")
+  let moon_cc = @env.get_env_var("MOON_CC")
   let images = read_images()
   let root = @fs.realpath(".")
   let env = { engine, moon_cc, images, root, }
