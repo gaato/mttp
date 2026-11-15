@@ -1,0 +1,108 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/ws/frame"
+
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/queue",
+}
+
+// Values
+pub fn apply_mask(BytesView, Bytes, offset? : Int32) -> Bytes raise FrameError
+
+pub fn encode_head(FrameHead, mask? : Bytes) -> Bytes raise FrameError
+
+// Errors
+#derive(@debug.Debug)
+pub(all) suberror FrameError {
+  FrameError(kind~ : FrameErrorKind, detail~ : String)
+}
+pub fn FrameError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) enum Event {
+  Head(FrameHead)
+  Payload(Bytes)
+  End
+}
+pub fn Event::equal(Self, Self) -> Bool
+pub fn Event::not_equal(Self, Self) -> Bool
+pub fn Event::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum FrameErrorKind {
+  Protocol
+  TooLarge(limit~ : Int32)
+}
+pub fn FrameErrorKind::close_code(Self) -> Int32
+pub fn FrameErrorKind::equal(Self, Self) -> Bool
+pub fn FrameErrorKind::not_equal(Self, Self) -> Bool
+pub fn FrameErrorKind::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct FrameHead {
+  fin : Bool
+  rsv1 : Bool
+  opcode : Opcode
+  masked : Bool
+  length : Int64
+}
+pub fn FrameHead::equal(Self, Self) -> Bool
+pub fn FrameHead::new(fin~ : Bool, rsv1? : Bool, opcode~ : Opcode, masked~ : Bool, length~ : Int64) -> Self
+pub fn FrameHead::not_equal(Self, Self) -> Bool
+pub fn FrameHead::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum Opcode {
+  Continuation
+  Text
+  Binary
+  Close
+  Ping
+  Pong
+}
+pub fn Opcode::equal(Self, Self) -> Bool
+pub fn Opcode::not_equal(Self, Self) -> Bool
+pub fn Opcode::to_repr(Self) -> @debug.Repr
+
+pub struct Parser {
+  role : Role
+  max_frame_bytes : Int32
+  allow_rsv1 : Bool
+  mut input : @queue.Queue[BytesView]
+  mut current : BytesView
+  header : FixedArray[Byte]
+  mut have : Int32
+  mut remaining : Int32
+  mut mask : Bytes?
+  mut offset : Int32
+  mut stage : Int32
+  mut failure : FrameError?
+}
+pub fn Parser::feed(Self, BytesView) -> Unit
+pub fn Parser::new(role~ : Role, max_frame_bytes~ : Int32, allow_rsv1~ : Bool) -> Self
+pub fn Parser::next(Self) -> Event? raise FrameError
+
+#derive(Eq, @debug.Debug)
+pub(all) enum Role {
+  Client
+  Server
+}
+pub fn Role::equal(Self, Self) -> Bool
+pub fn Role::not_equal(Self, Self) -> Bool
+pub fn Role::to_repr(Self) -> @debug.Repr
+
+pub struct Utf8Validator {
+  mut remaining : Int32
+  mut low : Int32
+  mut high : Int32
+  mut valid : Bool
+}
+pub fn Utf8Validator::finish(Self) -> Bool
+pub fn Utf8Validator::new() -> Self
+pub fn Utf8Validator::push(Self, BytesView) -> Bool
+
+// Type aliases
+
+// Traits

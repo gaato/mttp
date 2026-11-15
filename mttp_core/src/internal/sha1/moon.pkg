@@ -1,0 +1,1 @@
+// SHA-1 needs only the prelude; no crypto or runtime dependency.

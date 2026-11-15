@@ -28,6 +28,10 @@ never does.
   failure shrinks the seed's choices with delta debugging and prints the
   `Schedule::replay([..])` call that reproduces it. The `h1server` and
   `h1client` suites run their tests that meet a decision point under it.
+- Sans-I/O `ws/frame`: incremental role-aware RFC 6455 frame parsing,
+  bounded declared payloads, sticky close-code-mapped errors, frame-head
+  encoding, piecewise masking and strict incremental UTF-8 validation.
+  Internal incremental SHA-1 supports Sec-WebSocket-Accept only, not security.
 
 - `Kind::Refused`: the peer said it did not process the request, as an
   HTTP/2 stream reset with REFUSED_STREAM or above a GOAWAY's last stream

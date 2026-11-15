@@ -1,0 +1,22 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/internal/sha1"
+
+// Values
+pub fn digest(BytesView) -> Bytes
+
+// Errors
+
+// Types and methods
+pub struct Sha1 {
+  words : FixedArray[UInt32]
+  block : FixedArray[Byte]
+  mut used : Int32
+  mut length : UInt64
+}
+pub fn Sha1::finish(Self) -> Bytes
+pub fn Sha1::new() -> Self
+pub fn Sha1::update(Self, BytesView) -> Unit
+
+// Type aliases
+
+// Traits

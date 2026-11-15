@@ -1,0 +1,10 @@
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/queue",
+}
+
+import {
+  "gaato/mttp_core/sim",
+  "moonbitlang/core/quickcheck" @qc,
+  "moonbitlang/core/encoding/utf8",
+} for "test"
