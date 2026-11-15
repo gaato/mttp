@@ -2,3 +2,7 @@ import {
   "gaato/mttp_core",
   "moonbitlang/core/debug",
 }
+
+import {
+  "moonbitlang/core/quickcheck" @qc,
+} for "test"
