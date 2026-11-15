@@ -356,6 +356,7 @@ async fn start_container_server(env : Env, implementation : String) -> String {
     _ => raise RunError("unknown container server: \{implementation}")
   }
   ignore(must(env.engine, args))
+  errdefer @async.protect_from_cancel(() => remove_container(env, name))
   wait_port(server_addr, implementation) catch {
     error => {
       let (_, out, err) = capture(env.engine, ["logs", name])
@@ -502,8 +503,26 @@ fn cpu_model(lscpu : String) -> String {
 }
 
 ///|
+fn invocation(env : Env, options : Options) -> String {
+  let command = ["BENCH_ENGINE=\{env.engine}", "scripts/gates.sh", "bench"]
+  if options.record {
+    command.push("--record")
+  }
+  if options.output is Some(path) {
+    command.push("--output")
+    command.push(path)
+  }
+  if options.summary is Some(path) {
+    command.push("--summary")
+    command.push(path)
+  }
+  command.join(" ")
+}
+
+///|
 async fn metadata(
   env : Env,
+  options : Options,
   date : String,
   results : Array[BenchResult],
 ) -> Json {
@@ -518,7 +537,7 @@ async fn metadata(
   let document : Json = {
     "schema": 1,
     "date": date,
-    "command": "BENCH_ENGINE=\{env.engine} scripts/gates.sh bench --record",
+    "command": invocation(env, options),
     "method": {
       "transport": "HTTP/1.1 loopback with keep-alive",
       "request": "GET /small (15 bytes) or /large (1048576 bytes)",
@@ -620,7 +639,7 @@ async fn main_run(options : Options) -> Unit {
   let client_table = markdown_table(results, "client")
   println("\n## Server\n\n\{server_table}\n## Client\n\n\{client_table}")
   let date = must("date", ["+%F"]).trim().to_owned()
-  let document = metadata(env, date, results)
+  let document = metadata(env, options, date, results)
   let output = if options.record {
     make_dir("benchmarks/results")
     Some("benchmarks/results/\{date}.json")
