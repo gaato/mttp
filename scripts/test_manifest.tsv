@@ -180,3 +180,7 @@ gaato/mttp_core	gaato/mttp_core/ws	native	47
 gaato/mttp_core	gaato/mttp_core/ws	wasm	47
 gaato/mttp_core	gaato/mttp_core/ws	wasm-gc	47
 gaato/mttp-interop	gaato/mttp-interop/openapi_server	native	0
+gaato/mttp_core	gaato/mttp_core/ws/handshake	js	19
+gaato/mttp_core	gaato/mttp_core/ws/handshake	native	19
+gaato/mttp_core	gaato/mttp_core/ws/handshake	wasm	19
+gaato/mttp_core	gaato/mttp_core/ws/handshake	wasm-gc	19
