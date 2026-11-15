@@ -1,0 +1,6 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1",
+  "gaato/mttp-conformance/harness",
+  "moonbitlang/core/string",
+} for "test"

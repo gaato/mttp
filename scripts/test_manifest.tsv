@@ -110,6 +110,10 @@ gaato/mttp-conformance	gaato/mttp-conformance/harness	js	0
 gaato/mttp-conformance	gaato/mttp-conformance/harness	native	0
 gaato/mttp-conformance	gaato/mttp-conformance/harness	wasm	0
 gaato/mttp-conformance	gaato/mttp-conformance/harness	wasm-gc	0
+gaato/mttp-conformance	gaato/mttp-conformance/http1	js	2
+gaato/mttp-conformance	gaato/mttp-conformance/http1	native	2
+gaato/mttp-conformance	gaato/mttp-conformance/http1	wasm	2
+gaato/mttp-conformance	gaato/mttp-conformance/http1	wasm-gc	2
 gaato/mttp-conformance	gaato/mttp-conformance/sse	js	6
 gaato/mttp-conformance	gaato/mttp-conformance/sse	native	6
 gaato/mttp-conformance	gaato/mttp-conformance/sse	wasm	6

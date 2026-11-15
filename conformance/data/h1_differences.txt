@@ -1,0 +1,168 @@
+# Where mttp's codec reads an imported HTTP/1 case otherwise than its source
+# expects. scripts/gen_vectors.mbtx moves each `diff` case into the table of
+# documented differences, with the reason above it and the source's own
+# expectation kept beside mttp's; `kind` names mttp's ParseKind where both
+# refuse but the default mapping of the source's error names another.
+#
+# `reason <text>` applies to the entries after it. An entry is
+# `diff <case id> => <reading>` or `kind <case id> => refused <Kind>`, the
+# reading's lines joined by " ; " (see "the outcome model" in the
+# generator). Every entry must match a case, and every diff must differ.
+
+# --- llhttp: lenient modes, which mttp does not have
+
+reason llhttp's lenient mode accepts obs-fold; mttp refuses it (CONTRACT.md "HTTP/1 codec": obs-fold is refused; RFC 9112 section 5.2 allows that).
+diff llhttp request/sample.md:333 => refused Malformed
+diff llhttp request/sample.md:571 => refused Malformed
+diff llhttp request/connection.md:481 => refused Malformed
+diff llhttp request/connection.md:576 => refused Malformed
+diff llhttp request/invalid.md:686 => refused Malformed
+diff llhttp response/transfer-encoding.md:413 => refused Malformed
+
+reason llhttp's lenient mode accepts a bare CR or LF as a line end; mttp requires CRLF (CONTRACT.md "HTTP/1 codec": strict CRLF; h1 README "What is refused": bare CR or LF).
+diff llhttp request/sample.md:454 => refused Malformed
+diff llhttp request/lenient-headers.md:109 => refused Malformed
+diff llhttp request/content-length.md:519 => refused Malformed
+diff llhttp request/transfer-encoding.md:1051 => refused Malformed
+diff llhttp request/invalid.md:181 => refused Malformed
+diff llhttp request/invalid.md:568 => refused Malformed
+diff llhttp response/sample.md:351 => refused Malformed
+diff llhttp response/invalid.md:151 => refused Malformed
+diff llhttp response/invalid.md:304 => refused Malformed
+diff llhttp response/invalid.md:348 => refused Malformed
+
+reason llhttp's lenient mode accepts a control character in a field value; mttp refuses it (CONTRACT.md "HTTP/1 codec": controls are refused; RFC 9110 section 5.5 field-vchar excludes CTL).
+diff llhttp request/lenient-headers.md:6 => refused Malformed
+diff llhttp request/lenient-headers.md:34 => request GET /url 1.1 ; header host: h ; header header1: Okay ; complete ; refused Malformed
+diff llhttp request/lenient-header-value-relaxed.md:8 => refused Malformed
+diff llhttp request/lenient-header-value-relaxed.md:38 => refused Malformed
+
+reason llhttp's lenient mode accepts whitespace between a field name and its colon; mttp refuses it, as RFC 9112 section 5.1 requires of a server (CONTRACT.md "HTTP/1 codec").
+diff llhttp request/connection.md:637 => refused Malformed
+diff llhttp request/content-length.md:189 => refused Malformed
+
+reason llhttp's lenient mode accepts Content-Length with Transfer-Encoding; mttp refuses it as smuggling (CONTRACT.md "HTTP/1 codec": CL+TE is rejected as smuggling; h1server README "Strict framing").
+diff llhttp request/content-length.md:229 => refused Smuggling
+
+reason llhttp's lenient mode accepts chunk data not followed by CRLF and spaces after a chunk size; mttp refuses both (h1 README "What is refused": an invalid chunk size; RFC 9112 section 7.1).
+diff llhttp request/transfer-encoding.md:1166 => refused Malformed
+diff llhttp request/transfer-encoding.md:1241 => refused Malformed
+
+reason llhttp's lenient mode accepts an HTTP version other than 1.x; mttp refuses it as unsupported (h1 README "What is refused": an HTTP version other than 1.x; h1server README "Strict framing": 505).
+diff llhttp request/lenient-version.md:4 => refused Unsupported
+diff llhttp response/lenient-version.md:4 => refused Unsupported
+
+reason llhttp's lenient mode reads on after a message that ends the connection; mttp's engines close it there (h1server README "Peers": HTTP/1.0 keeps a connection only when it asks for keep-alive; Connection: close ends it, RFC 9112 section 9.6).
+diff llhttp request/connection.md:107 => request PUT /url 1.0 ; header content-length: 0 ; complete ; closed
+diff llhttp request/connection.md:392 => request POST / 1.1 ; header host: www.example.com ; header content-type: application/x-www-form-urlencoded ; header content-length: 4 ; header connection: close ; body q=42 ; complete ; closed
+diff llhttp response/connection.md:191 => response 200 1.1 ; header content-length: 5 ; header connection: close ; body 2ad73 ; complete ; closed
+diff llhttp response/connection.md:260 => response 204 1.1 ; header connection: close ; complete ; closed
+
+# --- llhttp: what llhttp accepts by default and RFC 9112 or mttp's documented strictness refuses
+
+reason A transfer coding other than a single chunked is refused as unsupported, also on a response, where llhttp reads the body to the close; mttp cannot decode it (h1 README "What is refused"; CONTRACT.md "HTTP/1 codec": only chunked is supported).
+diff llhttp response/transfer-encoding.md:67 => refused Unsupported
+diff llhttp response/transfer-encoding.md:98 => refused Unsupported
+diff llhttp response/transfer-encoding.md:134 => refused Unsupported
+
+reason A request target with a fragment is refused: origin-form has none (RFC 9112 section 3.2.1; h1 README "What is refused": an invalid target form). These cases' targets carry `#hey`, so the fragment is refused before the transfer coding the case is about, which is refused too where it is not a single chunked.
+diff llhttp request/uri.md:165 => refused Malformed
+diff llhttp request/transfer-encoding.md:556 => refused Malformed
+diff llhttp request/transfer-encoding.md:706 => refused Malformed
+diff llhttp request/transfer-encoding.md:739 => refused Malformed
+diff llhttp request/transfer-encoding.md:777 => refused Malformed
+diff llhttp request/transfer-encoding.md:819 => refused Malformed
+kind llhttp request/transfer-encoding.md:521 => refused Malformed
+
+reason A request target with characters outside RFC 3986 (here `"` and `\`) is refused (RFC 9112 section 3.2; h1 README "What is refused": an invalid target form).
+diff llhttp request/uri.md:4 => refused Malformed
+
+reason An absolute-form target with userinfo is refused: RFC 9110 section 4.2.4 deprecates userinfo in http URIs and has recipients treat it as an error.
+diff llhttp request/uri.md:222 => refused Malformed
+
+reason The asterisk-form target is only for OPTIONS (RFC 9112 section 3.2.4), so SSDP's `M-SEARCH *` is refused.
+diff llhttp request/method.md:135 => refused Malformed
+
+reason A request line needs an HTTP version (RFC 9112 section 3); mttp does not read HTTP/0.9 simple requests, which llhttp does.
+diff llhttp request/sample.md:314 => refused Malformed
+
+reason HTTP/0.9 is refused as an unsupported version (h1 README "What is refused": an HTTP version other than 1.x).
+diff llhttp response/sample.md:645 => refused Unsupported
+
+reason A client refuses an empty line before a status line, which llhttp skips; only a server skips empty lines before its start line (h1 README "What is refused"; RFC 9112 section 2.2 asks it of a server only).
+diff llhttp response/sample.md:695 => refused Malformed
+diff llhttp response/connection.md:492 => response 304 1.1 ; header content-length: 10 ; complete ; refused Malformed
+diff llhttp response/connection.md:586 => response 100 1.1 ; complete ; refused Malformed
+diff llhttp response/pipelining.md:4 => response 200 1.1 ; header content-length: 3 ; body AAA ; complete ; refused Malformed
+
+reason A method is any token (RFC 9110 section 9.1), so mttp reads ANNOUNCE on HTTP/1.0, which llhttp refuses as an RTSP method.
+diff llhttp request/invalid.md:66 => request ANNOUNCE /music/sweet/music 1.0 ; header host: example.com ; complete
+
+reason mttp's codec frames a CONNECT request by its Content-Length like any other request; llhttp hands the bytes after the head to the tunnel. RFC 9110 section 9.3.6 gives CONNECT no content, and mttp's server answers CONNECT with 501 and closes (h1server README "Strict framing"), so the body is never tunnelled.
+diff llhttp request/method.md:96 => request CONNECT foo.bar.com:443 1.0 ; header user-agent: Mozilla/1.1N ; header proxy-authorization: basic aGVsbG86d29ybGQ= ; header content-length: 10 ; body blarfcicle ; complete ; handoff
+
+reason The input ends before the empty line that ends the head. llhttp refuses at the offending byte; mttp parses a head once it is complete, so it waits for more bytes, and its engines refuse the truncated head at the end of input.
+diff llhttp request/lenient-header-value-relaxed.md:190 => incomplete
+diff llhttp request/content-length.md:75 => incomplete
+diff llhttp request/content-length.md:100 => incomplete
+diff llhttp request/invalid.md:490 => incomplete
+diff llhttp request/invalid.md:509 => incomplete
+diff llhttp response/invalid.md:212 => incomplete
+
+reason Content-Length with an empty Transfer-Encoding is smuggling in mttp, as any Transfer-Encoding with Content-Length is (h1 README "What is refused").
+kind llhttp request/transfer-encoding.md:4 => refused Smuggling
+kind llhttp response/transfer-encoding.md:4 => refused Smuggling
+
+reason A transfer coding other than chunked is unsupported (501 from a server), not malformed (h1 README "What is refused").
+kind llhttp request/transfer-encoding.md:490 => refused Unsupported
+
+reason An HTTP version other than 1.x is unsupported (505 from a server), not malformed (h1 README "What is refused").
+kind llhttp response/invalid.md:195 => refused Unsupported
+
+# --- web-platform-tests fetch: where browsers' consensus is laxer or stricter than RFC 9112
+
+reason The bytes are the same as those of `SP at <before-reason>`, which the table expects to be valid: a reason phrase may start with SP (RFC 9112 section 4: reason-phrase = 1*( HTAB / SP / VCHAR / obs-text )), so mttp reads both.
+diff wpt h1-parsing SP after-num => response 200 1.1 ; header x-frame-options: DENY ; header content-length: 5 ; body Test. ; complete
+
+reason A colon is a VCHAR (RFC 5234 appendix B.1: %x21-7E), so it may appear in a reason phrase (RFC 9112 section 4) and in a field value (RFC 9110 section 5.5), and a field line ends its name at the first colon (RFC 9112 section 5.1); the table's comment says otherwise.
+diff wpt h1-parsing COLON before-reason => response 200 1.1 ; header x-frame-options: DENY ; header content-length: 5 ; body Test. ; complete
+diff wpt h1-parsing COLON after-reason => response 200 1.1 ; header x-frame-options: DENY ; header content-length: 5 ; body Test. ; complete
+diff wpt h1-parsing COLON in-name => response 200 1.1 ; header x-frame: -Options:DENY ; header content-length: 5 ; body Test. ; complete
+diff wpt h1-parsing COLON before-colon => response 200 1.1 ; header x-frame-options: :DENY ; header content-length: 5 ; body Test. ; complete
+diff wpt h1-parsing COLON after-colon => response 200 1.1 ; header x-frame-options: :DENY ; header content-length: 5 ; body Test. ; complete
+diff wpt h1-parsing COLON in-value => response 200 1.1 ; header x-frame-options: DE:NY ; header content-length: 5 ; body Test. ; complete
+diff wpt h1-parsing COLON after-value => response 200 1.1 ; header x-frame-options: DENY: ; header content-length: 5 ; body Test. ; complete
+
+reason A status code is three digits (RFC 9112 section 4: status-code = 3DIGIT); fetch reads shorter ones.
+diff wpt status-code "0 OK" => refused Malformed
+diff wpt status-code "1 OK" => refused Malformed
+diff wpt status-code "99 NOT OK" => refused Malformed
+
+reason A status code outside 100 to 599 is invalid (RFC 9110 section 15); mttp refuses it, where fetch reads it and RFC 9110 has a client treat it as a 5xx (a SHOULD). The h1 corpus refuses it on purpose (status below 100, status above 599).
+diff wpt status-code "077 77" => refused Malformed
+diff wpt status-code "099 HELLO" => refused Malformed
+diff wpt status-code "999 DOES IT MATTER" => refused Malformed
+
+reason A Content-Length list or a repeated Content-Length is refused, even with equal values, which fetch combines (CONTRACT.md "HTTP/1 codec": duplicate Content-Length is rejected, even identical duplicates; RFC 9110 section 8.6 allows rejecting them).
+diff wpt content-length 2 => refused Malformed
+diff wpt content-length 3 => refused Malformed
+diff wpt content-length 4 => refused Malformed
+diff wpt content-length 6 => refused Malformed
+diff wpt content-length 7 => refused Malformed
+diff wpt content-length 8 => refused Malformed
+diff wpt content-length 9 => refused Malformed
+diff wpt content-length 10 => refused Malformed
+
+reason An invalid Content-Length is refused; fetch ignores it and reads to the close. RFC 9112 section 6.3 makes it an unrecoverable framing error that a user agent must close the connection on (h1 README "What is refused": an invalid length).
+diff wpt content-length 23 => refused Malformed
+diff wpt content-length 24 => refused Malformed
+diff wpt content-length 25 => refused Malformed
+diff wpt content-length 26 => refused Malformed
+diff wpt content-length 27 => refused Malformed
+diff wpt content-length 28 => refused Malformed
+diff wpt content-length 29 => refused Malformed
+diff wpt content-length 33 => refused Malformed
+diff wpt content-length 35 => refused Malformed
+
+reason The resource ends its lines with bare LF and repeats Content-Length; mttp requires CRLF and refuses a repeated Content-Length (CONTRACT.md "HTTP/1 codec").
+diff wpt content-length identical-duplicates => refused Malformed

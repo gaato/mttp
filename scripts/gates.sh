@@ -111,6 +111,9 @@ static_gates() {
   step script scripts/gen_schema_objects.mbtx -- --check
   step script scripts/gen_apispec.mbtx -- --check
   step script scripts/gen_endpoint_maps.mbtx -- --check
+  # The HTTP/1 vectors, from the upstream cases kept in conformance/data/,
+  # so this check needs no checkout and no network.
+  step script scripts/gen_vectors.mbtx -- --check
   step script scripts/docs_audit.mbtx --self-test
   # The root README's code, outputs, links and MoonBit badge. It runs the
   # README's examples (native builds, about two seconds of retry waits),

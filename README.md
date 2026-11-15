@@ -223,7 +223,8 @@ nightly toolchains:
   each package runs on each target, and the gates fail when a count changes
   unrecorded or differs between targets.
 - [conformance](conformance) checks URL parsing against WHATWG URL test
-  vectors, and forms and cookies against WPT and http-state data, on all four
+  vectors, forms and cookies against WPT and http-state data, and the HTTP/1
+  codec against llhttp's tests and WPT's response parsing tables, on all four
   targets.
 - [RESOURCE_BOUNDS.md](RESOURCE_BOUNDS.md) lists every structure that grows
   with input from the network or with the number of requests, with its bound
