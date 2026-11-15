@@ -63,7 +63,7 @@ Decided by the owner on 2026-11-11 after a review from first principles; the mod
   - Re-exporting core/async's concurrency API (tasks, task groups) from gaato/mttp so that apps need no opt-in for it: that would name runtime types in gaato/mttp's public API (principle 9). The README shows `run` in plain tests and says where concurrency comes from.
 - **Trial before the first release** (2026-11-11): a short-link service built on these modules found that `@schema.pattern` raised (now it records a definition problem instead, so endpoints can be top-level values), that error types lacked `Show`, that typed SSE dropped event ids and names and could not stop early, and that endless streams held up shutdown; all were fixed before 0.2.0, together with the full RFC 9110 reason-phrase table and the documentation gaps it found. A second and third round served the same definitions from Deno and from a Rabbita admin page: `Router::must` lets a router be a top-level value, the process-host shims gained `shutdown()` so SSE ends at shutdown there too, aborts after a completed response are ignored, and the README of gaato/mttp_core says how to use it on another runtime (a framework on the registry `moonbitlang/async` was then thought unable to share a program with core/async; since its 0.22.6 it runs on core/async's runtime, verified on 2026-11-12 with gaato/mttp's server and client and a gaato/mttp_core Client over moonbitstack/moonfetch in one native program. Adapters for such libraries live in their own repositories, because this repository does not depend on `moonbitlang/async`). A fourth round served Discord interactions on workerd: the Workers entry the hosts README showed did not start, because evaluating a compiled MoonBit module draws its hash seed from `crypto.getRandomValues` and Workers refuses that in global scope (moonbitlang/core#2901, open). The Workers shim now imports the app inside the first request, `scripts/gates.sh full` runs a Workers app on workerd, and `@fetch.env_string` reads a string binding without hand-written FFI. A minimal js bundle measured about 650 KB raw (90 KB gzipped) for the client, mostly the client itself, core's number formatting and JSON parsing; with no size target and no obvious waste, nothing was changed.
 - **HTTP/2 and HTTP/3 in mind** (2026-11-15). HTTP/2 and HTTP/3 reach mttp's Client through backends such as gaato/mttp_moonfetch, so the layers above the engines no longer assume HTTP/1.1, while an engine of our own still waits (below). Reasons: such a backend had to report a refused stream as phase Pool, which promises that no byte was written, to keep it retryable; and the Router told the server to close by writing `Connection: close`, a header HTTP/2 and HTTP/3 forbid. So `Kind::Refused` says that the peer did not process a request (REFUSED_STREAM, a stream above GOAWAY, H3_REQUEST_REJECTED) in the phase reached, and `is_unsent` counts it; the `abandon_request_body` response attribute says that the server will not read the rest of the request body, which h1server carries out by closing and an HTTP/2 server would by resetting the stream; `Response::closes_connection` is deprecated, since only h1server reads the Connection header; the `protocol` attribute records the ALPN identifier of the protocol that carried a message; and the Backend contract allows early data (0-RTT) only for requests that may be replayed (rules 10 and 11). Not done, with reasons: a connection-scoped task port in `rt` for multiplexing (its shape depends on an engine that does not exist, and only this repository implements `rt`, so changing it later is cheap); ALPN in `Dialer` (core/tls has none); response trailers (nobody asks; adding a field to `pub(all)` Response is a 0.x minor change when someone does); Alt-Svc (a backend's concern); WebSockets over HTTP/2 (RFC 8441), deferred with WebSockets.
-- **Waiting on outside facts**: OpenAPI 3.2 output (code generators and Redoc cannot read 3.2 yet); WebSockets (core/async's websocket lacks bounds and masking checks, X-06); HTTP/2 (core/tls has no ALPN). HTTP/2 and HTTP/3 come through gaato/mttp_moonfetch, a Backend over moonbitstack/moonfetch in its own repository, which requires `moonbitlang/async@0.22.6` or later so both runtimes are one.
+- **Waiting on outside facts**: OpenAPI 3.2 as the default output (openapi-generator cannot read 3.2 yet, F71); HTTP/2 (core/tls has no ALPN). WebSockets no longer wait: §4.13 (2026-11-15). HTTP/2 and HTTP/3 come through gaato/mttp_moonfetch, a Backend over moonbitstack/moonfetch in its own repository, which requires `moonbitlang/async@0.22.6` or later so both runtimes are one.
 
 
 ### 0.1 Rebuild (2026-11-08)
@@ -1116,6 +1116,78 @@ The wrapper passes SendOptions through unchanged, so the engine caps **wire** by
 - **Phase 2** (opt-in, later): Endpoint values as `pub let`; needs header outputs, nesting beyond map8 and multipart bodies.
 - **`gaato/mttp-gen`** is dropped until a consumer exists (F51).
 
+### 4.13 WebSockets (ws)
+
+Decided by the owner on 2026-11-15: RFC 6455 of our own, as a codec without I/O in gaato/mttp_core, verified with the Autobahn TestSuite; not core/async's websocket (F69). The names and shapes below are agreed before code; the stages are W1–W9 of the plan.
+
+Packages, dependencies pointing left: `internal/sha1` ← `ws/frame` ← `ws` ← `ws/handshake` ← `h1client`, `h1server`, `endpoint` ← gaato/mttp's `ws` and `fetch`.
+
+```moonbit
+// ws/frame: bytes in, events out; any split of the input gives the same events
+pub(all) enum Opcode { Continuation; Text; Binary; Close; Ping; Pong }
+pub(all) enum Role { Client; Server }                 // which side reads: decides the mask direction
+pub(all) struct FrameHead { fin : Bool; rsv1 : Bool; opcode : Opcode; masked : Bool; length : Int64 }
+pub fn Parser::new(role~ : Role, max_frame_bytes~ : Int, allow_rsv1~ : Bool) -> Parser
+pub fn Parser::feed(Self, BytesView) -> Unit
+pub fn Parser::next(Self) -> Event? raise FrameError  // Head | Payload | End; an error stays
+pub fn encode_head(FrameHead, mask? : Bytes) -> Bytes raise FrameError
+pub fn Utf8Validator::push(Self, BytesView) -> Bool   // false: invalid for certain, across frames
+pub fn Utf8Validator::finish(Self) -> Bool
+
+// ws: what an app holds
+pub(all) enum Message { Text(String); Binary(Bytes) }
+#non_exhaustive
+pub(all) enum CloseCode { Normal; GoingAway; ProtocolError; UnsupportedData; NoStatus; Abnormal
+  InvalidPayload; PolicyViolation; MessageTooBig; MissingExtension; InternalError; Other(Int) }
+pub fn CloseCode::sendable(Self) -> Bool              // false for 1005, 1006, 1015 and reserved codes
+pub(all) struct CloseFrame { code : CloseCode; reason : String }   // reason at most 123 bytes
+#non_exhaustive
+pub(all) enum WsErrorKind { Closed(CloseFrame); Protocol; TooLarge(limit~ : Int); Timeout(ms~ : Int)
+  Transport(@mttp_core.TransportError); Handshake(status~ : Int) }
+pub(all) suberror WsError { WsError(kind~ : WsErrorKind, detail~ : String) }
+pub(open) trait Session {
+  async fn recv(Self) -> Message raise WsError        // one receiving task; answers Ping and Close itself
+  async fn send(Self, Message) -> Unit raise WsError  // one frame per message, senders queue in order
+  async fn close(Self, CloseFrame) -> Unit noraise    // idempotent; waits for the peer's Close up to close_timeout_ms
+  fn abort(Self) -> Unit                              // drops the connection (1006), idempotent
+  fn subprotocol(Self) -> String?
+}
+pub(open) trait Extension {                           // per message, so a JS host's API can carry it
+  fn name(Self) -> String
+  fn encode(Self, Bytes) -> (Bytes, Bool)             // payload and RSV1
+  fn decode(Self, Bytes, rsv1~ : Bool, max_bytes~ : Int) -> Bytes raise WsError
+}
+pub fn WsLimits::default() -> WsLimits                // table below
+
+// ws/handshake
+pub(all) enum OriginPolicy { SameOrigin; Allow(Array[String]); Any }   // default SameOrigin; no Origin field is allowed
+pub fn accept_value(String) -> String                 // Sec-WebSocket-Accept, over internal/sha1
+pub fn client_request(String, key~ : String, subprotocols? : Array[String], headers? : @mttp_core.Headers) -> @mttp_core.Request raise WsError
+pub fn check_client_request(@mttp_core.Request, origins? : OriginPolicy) -> Offer raise Refusal   // 400, 403 or 426
+
+// gaato/mttp_core root: the hand-over, carried in attributes (§5.4)
+pub let upgrade : AttributeKey[...]                   // server: set on a 101 by the handler
+pub let upgraded : AttributeKey[...]                  // client: set by an engine on an accepted 101
+pub let ws_session : AttributeKey[&@ws.Session]       // a backend that has a session already (Router, JS hosts, HTTP/2 later)
+
+// endpoint: one definition, four uses
+pub struct WsEndpoint[S, I, In, Out]                  // security, handshake inputs, client-to-server and server-to-client messages
+```
+
+| Limit | Default | Why |
+|---|---|---|
+| frame, message | 16 MiB each | as SSE events; tungstenite 16/64 MiB, ws 100 MiB, gorilla none: the smaller side |
+| control payload | 125 bytes, fixed | RFC 6455 §5.5 |
+| send wait | 30 s | a slow reader cannot hold a sender forever |
+| close wait | 5 s | as `body_timeout_ms` |
+| ping interval / answer | 30 s / 10 s, can be off | below the 60 s idle cutoff of common load balancers |
+| pending Pongs | the latest one | a Ping flood takes no memory |
+| empty frames in a row | 1024 | as the JS host's empty-chunk bound |
+| decompressed message | the message bound, its own ledger row | wire and decoded bytes are bounded apart (§5.2) |
+| permessage-deflate | off; window 15 required; no context takeover offered | gaato/deflate has a fixed 32 KiB window; constant memory per connection |
+
+Not done: a frame-level API (a JS host's WebSocket exposes messages only), and extensions per frame. Forecloses: a Backend wrapper that drops response attributes turns an upgrade into "101 without a session" at run time, so `check_backend_contract` gains a test that attributes pass.
+
 ## 5. Cross-cutting concerns
 
 ### 5.1 Error taxonomy
@@ -1188,7 +1260,7 @@ Every policy takes `&@rt.Clock`, and where needed `&@rt.Timer`, `&@rt.Gate` and 
 - **Server SSE.** A handler returns an `EventStream[T]` through `sse_out` (JSON data) or `sse_body_out` (any body codec's text, such as HTML for htmx); the endpoint encodes it as a stream; the adapter writes it with backpressure; Router-as-Backend passes it through unbuffered. The stream opens with an SSE comment, because every server (ours, the fetch adapter, a host's) pulls a stream's first piece before writing the head, so that a producer failing at once still gets a 500; without it an idle stream has no head, and a host cannot attach shutdown handling to it.
 - **No push bodies.** A producer-style handler bridges through a runtime queue in the application.
 - **Client SSE.** `as_sse` with a `stop` predicate for sentinels such as OpenAI's `data: [DONE]`.
-- **WebSockets** stay deferred (§0.2). When added: a 101 Response carrying the upgrade callback in an attribute, a sans-IO frame codec in gaato/mttp_core, `WebSocketStub` in sim, and scheme validation before any runtime call.
+- **WebSockets** (§4.13): the HTTP/1.1 engines hand the connection over on a 101 through response attributes: the client accepts a 101 only to a request that asked for an upgrade, and passes the connection with the bytes read past the head; the server writes a 101 only for a response that carries an upgrade, then leaves its HTTP loop and keeps the connection's slot until the session ends, sending Close 1001 at shutdown. A `Session` is message-level, so it has an implementation over a byte connection and one over a JS host's WebSocket. Router-as-Backend passes the upgrade attributes and answers in process with a `WebSocketStub` pair.
 
 ### 5.5 Target matrix
 
@@ -1555,7 +1627,7 @@ The log of 2026-10-24, with statuses updated by §0.1. Ids are kept so that §10
 | X-03 | UriBuilder/UriPart/Trusted at v0.2; `uri()` returns String (no raise). | proposed | No v0.1 consumer (S-11). |
 | X-04 | Pull-only bodies in both directions; one `Response` type; `#non_exhaustive Body`. | proposed | S-04e/f; verified. |
 | X-05 | Server SSE as pull `EventStream` → `Body::Stream`; no push bridge. | proposed | Replaces the old needs-prototype item; verified through Router-as-Backend. |
-| X-06 | WebSockets deferred beyond v0.4; later order: sans-IO `mttp/ws` codec with bounds (+ Autobahn), client over `@http.Client` passthrough, server via the h1 101 hand-off, `WsEndpoint` last. | decided (§0.2) | No consumer (S-08). The runtime client can send request headers on native/wasm; the real gaps are listed in §0. |
+| X-06 | WebSockets of our own (2026-11-15, §4.13): a codec without I/O in gaato/mttp_core with bounds and Autobahn, the client and the server through the h1 101 hand-off, JS hosts, `WsEndpoint`, then discord and discord_voice moved onto it. Supersedes the earlier order with a client over `@http.Client` passthrough. | decided | discord's Gateway and voice are the consumers; core/async's websocket lacks receive bounds, mask checks, strict UTF-8 and a full close handshake (F69). |
 | X-07 | Evolution rules (§5.6): `#non_exhaustive` on every enum that may grow (incl. AuthScheme, Location, Framing, FailureStage, Decision); a growing suberror takes the kind form (DecodeFailure, ParseError), all other suberrors frozen; frozen-struct lists per tier; Atom/VariantDoc/EndpointDoc read-only with constructors. | proposed | S-05; F3, F4, F52. |
 | X-08 | `impl Eq` (Stream by identity) and `Debug` for `Body`. | proposed | The moved multipart `Part` derives Eq and Debug over its body. |
 | P-01 | Input = atoms + staged closures; `Input::new` public with `Staged::ready`/`after_body`, an opaque `RequestSink` with setters, and `Atom::new`; `attribute(key)` input; client_ip/query_params/headers at v0.3. | proposed (Input::new usable outside endpoint: not yet verified) | SC-07; attribute input verified; in wf3/rev `Input::new` fails outside the package (E4015, E4094). |
