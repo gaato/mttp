@@ -7,7 +7,8 @@ code written against the ports
 (the connection engines, the mttp client, an SDK) is tested with plain `test`
 blocks on wasm-gc, wasm, js and native, without sockets or an event loop.
 
-It is test infrastructure: production packages do not import it. It imports
+The Driver-based doubles are test infrastructure. `WebSocketStub` also accepts
+runtime Coordination for in-process upgrades without byte framing. The package imports
 the experimental driver, so its Driver-taking constructors change when the
 driver does; the package itself does not need the experimental opt-in.
 
@@ -23,6 +24,7 @@ driver does; the package itself does not need the experimental opt-in.
 | `ScriptedConn` (`ReadStep`) | `Conn` | Scripted reads (chunks, EOF, failures, waits) and recorded writes, for fault injection |
 | `ScriptedDialer` | `Dialer` | Hands out prepared connections and records dials and TLS upgrades |
 | `Feed` (`FeedStep`) | `BodyStream` | A scripted body with virtual waits, counting reads, closes and cancellations |
+| `WebSocketStub::pair` | Two `&ws.Session`s | Complete messages in call order, retryable recv cancellation, and immediate in-process Close acknowledgement |
 
 ## Contract checks
 

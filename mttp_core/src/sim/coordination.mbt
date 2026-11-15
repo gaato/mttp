@@ -97,4 +97,19 @@ pub impl @rt.Coordination for SimCoordination with fn supervise(
 
 ///|
 /// The coordination operations as methods of the double.
-pub extend SimCoordination with @rt.Coordination::{signal, supervise}
+pub extend SimCoordination with @rt.Coordination::{signal, supervise, protect}
+
+///|
+/// Shields this task, while child tasks (notably a Timer's callback) remain
+/// independently cancellable. Errors keep their original transport identity.
+pub impl @rt.Coordination for SimCoordination with fn protect(self, work~) {
+  let failure : Ref[@mttp_core.TransportError?] = Ref(None)
+  self.driver.protect(work=() => {
+    work() catch {
+      error => failure.val = Some(error)
+    }
+  })
+  if failure.val is Some(error) {
+    raise error
+  }
+}

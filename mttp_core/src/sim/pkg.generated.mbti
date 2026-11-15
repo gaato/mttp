@@ -5,6 +5,7 @@ import {
   "gaato/mttp_core",
   "gaato/mttp_core/driver",
   "gaato/mttp_core/rt",
+  "gaato/mttp_core/ws",
   "moonbitlang/core/debug",
   "moonbitlang/core/quickcheck",
 }
@@ -121,6 +122,7 @@ pub struct SimCoordination {
   // private fields
 }
 pub fn SimCoordination::new(@driver.Driver) -> Self
+pub async fn SimCoordination::protect(Self, work~ : async () -> Unit raise @mttp_core.TransportError) -> Unit raise @mttp_core.TransportError
 pub fn SimCoordination::signal(Self) -> &@rt.Signal
 pub async fn SimCoordination::supervise(Self, primary~ : async () -> Unit raise @mttp_core.TransportError, monitor~ : async () -> Unit raise @mttp_core.TransportError) -> Unit raise @mttp_core.TransportError
 pub impl @rt.Coordination for SimCoordination
@@ -141,6 +143,17 @@ pub struct SimTimer {
 pub fn SimTimer::new(@driver.Driver) -> Self
 pub async fn SimTimer::within(Self, Int32, async () -> Unit noraise) -> Bool noraise
 pub impl @rt.Timer for SimTimer
+
+pub struct WebSocketStub {
+  // private fields
+}
+pub fn WebSocketStub::abort(Self) -> Unit
+pub async fn WebSocketStub::close(Self, @ws.CloseFrame) -> Unit noraise
+pub fn WebSocketStub::pair(&@rt.Coordination, subprotocol? : String) -> (&@ws.Session, &@ws.Session)
+pub async fn WebSocketStub::recv(Self) -> @ws.Message raise @ws.WsError
+pub async fn WebSocketStub::send(Self, @ws.Message) -> Unit raise @ws.WsError
+pub fn WebSocketStub::subprotocol(Self) -> String?
+pub impl @ws.Session for WebSocketStub
 
 // Type aliases
 

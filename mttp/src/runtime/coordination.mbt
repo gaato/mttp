@@ -29,7 +29,26 @@ pub fn RuntimeCoordination::new() -> RuntimeCoordination {
 
 ///|
 /// Makes coordination operations available as methods.
-pub extend RuntimeCoordination with @rt.Coordination::{signal, supervise}
+pub extend RuntimeCoordination with @rt.Coordination::{
+  signal,
+  supervise,
+  protect,
+}
+
+///|
+/// Lets a bounded operation finish before a pending cancellation is delivered
+/// at the next cancellable suspension, using the runtime's task-local shield.
+pub impl @rt.Coordination for RuntimeCoordination with fn protect(_, work~) {
+  @async.protect_from_cancel(() => work()) catch {
+    @mttp_core.TransportError(..) as error => raise error
+    error =>
+      raise @mttp_core.TransportError(
+        kind=Network,
+        phase=Unknown,
+        detail=error.to_string(),
+      )
+  }
+}
 
 ///|
 /// Creates a sticky one-shot runtime notification.

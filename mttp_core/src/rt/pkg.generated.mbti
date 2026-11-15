@@ -28,6 +28,7 @@ pub(open) trait Conn {
 
 pub(open) trait Coordination {
   fn signal(Self) -> &Signal
+  async fn protect(Self, work~ : async () -> Unit raise @mttp_core.TransportError) -> Unit raise @mttp_core.TransportError
   async fn supervise(Self, primary~ : async () -> Unit raise @mttp_core.TransportError, monitor~ : async () -> Unit raise @mttp_core.TransportError) -> Unit raise @mttp_core.TransportError
 }
 

@@ -57,6 +57,15 @@ pub(open) trait Signal {
 pub(open) trait Coordination {
   /// A new signal on this coordination's scheduler.
   fn signal(Self) -> &Signal
+  /// Defers cancellation of the calling task while `work` runs. A pending
+  /// cancellation remains pending and is delivered at the next cancellable
+  /// suspension after return; nested protection does not unmask its caller.
+  /// `work` must enforce its own deadline, because caller cancellation cannot
+  /// interrupt it. This lets a control reply finish without corrupting a frame.
+  async fn protect(
+    Self,
+    work~ : async () -> Unit raise @mttp_core.TransportError,
+  ) -> Unit raise @mttp_core.TransportError
   /// Runs `primary` and `monitor` as children and returns when both have
   /// finished their cleanup. The monitor completing normally lets `primary`
   /// continue; the monitor failing cancels `primary` and raises the

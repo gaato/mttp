@@ -30,11 +30,128 @@ test "sim coordination satisfies the coordination contract" {
 }
 
 ///|
+test "protection contract and independent child deadlines hold under explored schedules" {
+  @sim.explore(schedule => {
+    let d = @driver.Driver::new(schedule~)
+    let c = @sim.SimCoordination::new(d)
+    let timer = @sim.SimTimer::new(d)
+    d.run(() => {
+      @sim.check_coordination_contract(c, suspend=() => d.pause())
+      let entered = c.signal()
+      let expired = Ref(false)
+      let worker = d.spawn(() => {
+        c.protect(work=() => {
+          entered.notify()
+          let completed = timer.within(3, () => d.sleep(100))
+          expired.val = !completed
+        })
+        d.pause()
+        fail("pending cancellation escaped protection")
+      })
+      entered.wait()
+      worker.cancel()
+      ignore(worker.wait())
+      assert_true(worker.is_cancelled())
+      assert_true(expired.val)
+    })
+    assert_eq((d.live_tasks(), d.pending_timers()), (0, 0))
+  })
+}
+
+///|
+priv struct BadProtection {
+  inner : &@rt.Coordination
+  mode : Int32
+}
+
+///|
+impl @rt.Coordination for BadProtection with fn signal(self) {
+  self.inner.signal()
+}
+
+///|
+impl @rt.Coordination for BadProtection with fn supervise(
+  self,
+  primary~,
+  monitor~,
+) {
+  self.inner.supervise(primary~, monitor~)
+}
+
+///|
+impl @rt.Coordination for BadProtection with fn protect(self, work~) {
+  if self.mode == 1 {
+    self.inner.protect(work~) catch {
+      _ => ()
+    }
+  } else if self.mode == 2 {
+    self.inner.protect(work~) catch {
+      _ =>
+        raise @mttp_core.TransportError(
+          kind=Network,
+          phase=Unknown,
+          detail="rewritten",
+        )
+    }
+  } else {
+    work()
+  }
+}
+
+///|
+test "coordination check refuses unprotected work and swallowed protection errors" {
+  for mode in [0, 1, 2] {
+    let d = @driver.Driver::new()
+    let bad = BadProtection::{ inner: @sim.SimCoordination::new(d), mode, }
+    let seen = d.run(() => {
+      outcome(() => {
+        @sim.check_coordination_contract(bad, suspend=() => d.pause())
+      })
+    })
+    assert_eq(
+      seen,
+      if mode != 0 {
+        "check_coordination_contract: protect must preserve transport errors"
+      } else {
+        "check_coordination_contract: protect must finish nested work and retain pending cancellation"
+      },
+    )
+    assert_eq((d.live_tasks(), d.pending_timers()), (0, 0))
+  }
+  for fail_at in [8, 9] {
+    let d = @driver.Driver::new()
+    let bad = WrongOutcome::{
+      inner: @sim.SimCoordination::new(d),
+      fail_at,
+      calls: Ref(0),
+    }
+    let seen = d.run(() => {
+      outcome(() => {
+        @sim.check_coordination_contract(bad, suspend=() => d.pause())
+      })
+    })
+    assert_eq(
+      seen,
+      if fail_at == 8 {
+        "check_coordination_contract: protect must finish nested work and retain pending cancellation"
+      } else {
+        "check_coordination_contract: protection must leave children independently cancellable"
+      },
+    )
+  }
+}
+
+///|
 /// Raises a wrong error from the `fail_at`-th supervision.
 priv struct WrongOutcome {
   inner : &@rt.Coordination
   fail_at : Int32
   calls : Ref[Int32]
+}
+
+///|
+impl @rt.Coordination for WrongOutcome with fn protect(self, work~) {
+  self.inner.protect(work~)
 }
 
 ///|
@@ -99,6 +216,11 @@ priv struct Leaky {
 }
 
 ///|
+impl @rt.Coordination for Leaky with fn protect(self, work~) {
+  self.inner.protect(work~)
+}
+
+///|
 impl @rt.Coordination for Leaky with fn signal(self) {
   self.inner.signal()
 }
@@ -152,6 +274,11 @@ priv struct Flawed {
   driver : @driver.Driver
   inner : &@rt.Coordination
   flaw : Flaw
+}
+
+///|
+impl @rt.Coordination for Flawed with fn protect(self, work~) {
+  self.inner.protect(work~)
 }
 
 ///|
@@ -302,6 +429,11 @@ test "coordination check refuses each flawed supervision" {
 priv struct MonitorFirst {
   driver : @driver.Driver
   inner : &@rt.Coordination
+}
+
+///|
+impl @rt.Coordination for MonitorFirst with fn protect(self, work~) {
+  self.inner.protect(work~)
 }
 
 ///|

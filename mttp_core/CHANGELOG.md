@@ -9,6 +9,19 @@ never does.
 
 ### Added
 
+- `ws`: message-level `Session`, strict Close payloads, per-message extensions
+  and a portable `session_over_conn` over rt ports. It bounds frames, wire and
+  decoded messages, empty frames and waits, masks client frames with injected
+  entropy, serializes senders and drives Ping/Pong and Close from one receiver.
+  `sim.WebSocketStub::pair` supplies message-level sessions for in-process use.
+- **Breaking for rt.Coordination implementers:** add
+  `protect(work~ : async () -> Unit raise TransportError)`. It defers caller
+  cancellation while bounded work finishes, retaining the cancellation for
+  the next unprotected suspension. `Driver::protect` supplies nested task-local
+  cancellation masks; shutdown preserves protected work's deadline timers.
+  WebSocket control replies use protection; data sends cancelled mid-frame
+  still fail the session and close its connection.
+
 - `h1server.serve_conn(auto_date~ : Bool = true)` sends Date on every final
   response without one, including errors and HEAD/204/304. It uses the
   injected clock and caches IMF-fixdate per connection and second. A handler's

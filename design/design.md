@@ -1162,6 +1162,9 @@ pub(open) trait Extension {                           // per message, so a JS ho
 }
 pub fn WsLimits::default() -> WsLimits                // table below
 
+// rt: finish bounded control writes before delivering caller cancellation
+pub async fn Coordination::protect(Self, work~ : async () -> Unit raise @mttp_core.TransportError) -> Unit raise @mttp_core.TransportError
+
 // ws/handshake
 pub(all) enum OriginPolicy { SameOrigin; Allow(Array[String]); Any }   // default SameOrigin; no Origin field is allowed
 pub fn accept_value(String) -> String                 // Sec-WebSocket-Accept, over internal/sha1
@@ -1188,6 +1191,9 @@ pub struct WsEndpoint[S, I, In, Out]                  // security, handshake inp
 | empty frames in a row | 1024 | as the JS host's empty-chunk bound |
 | decompressed message | the message bound, its own ledger row | wire and decoded bytes are bounded apart (§5.2) |
 | permessage-deflate | off; window 15 required; no context takeover offered | gaato/deflate has a fixed 32 KiB window; constant memory per connection |
+
+`recv` retains parser/assembly state and committed messages across cancellation; its control writes use `rt.Coordination.protect` with their own send deadline, which closes the Conn on expiry, so a cancelled receiver never leaves a partial Pong or Close reply on a reusable connection (owner decision, 2026-11-15).
+The answer wait starts after the Ping write completes, since the peer cannot answer an incomplete frame; a byte received during that write already establishes life.
 
 Not done: a frame-level API (a JS host's WebSocket exposes messages only), and extensions per frame. Forecloses: a Backend wrapper that drops response attributes turns an upgrade into "101 without a session" at run time, so `check_backend_contract` gains a test that attributes pass.
 

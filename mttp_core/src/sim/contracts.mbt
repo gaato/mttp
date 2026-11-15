@@ -35,7 +35,9 @@ fn is_sentinel(error : @mttp_core.TransportError, detail : String) -> Bool {
 /// primary failure is raised; a primary success delivered before a monitor
 /// error is final; and a cancelled supervision, nested inside another,
 /// joins every child's cleanup before it returns. `supervise` returns only
-/// after its children's cleanup in every case.
+/// after its children's cleanup in every case. Protection nests, preserves
+/// transport errors and lets a callback finish despite caller cancellation;
+/// the next unprotected suspension still delivers that cancellation.
 ///
 /// `suspend` yields to the scheduler once (a zero-length sleep or a pause),
 /// so a child can reach its wait before the other acts.
@@ -207,6 +209,80 @@ pub async fn check_coordination_contract(
   if nested.val != 3 {
     raise violation(
       check, "a cancelled supervision must join both children's cleanup",
+    )
+  }
+  let entered = coordination.signal()
+  let release = coordination.signal()
+  let protected_done = Ref(false)
+  let escaped = Ref(false)
+  let detail = "\{check}: shield cancellation"
+  let raised = try {
+    coordination.supervise(
+      primary=() => {
+        coordination.protect(work=() => {
+          entered.notify()
+          release.wait()
+          coordination.protect(work=() => suspend())
+          suspend()
+          protected_done.val = true
+        })
+        forever.wait()
+        escaped.val = true
+      },
+      monitor=() => {
+        entered.wait()
+        release.notify()
+        raise sentinel(check, "shield cancellation")
+      },
+    )
+    false
+  } catch {
+    @mttp_core.TransportError(_) as error if is_sentinel(error, detail) => true
+    _ => false
+  }
+  if !raised || !protected_done.val || escaped.val {
+    raise violation(
+      check, "protect must finish nested work and retain pending cancellation",
+    )
+  }
+  let detail = "\{check}: shield error"
+  let preserved = try {
+    coordination.protect(work=() => raise sentinel(check, "shield error"))
+    false
+  } catch {
+    @mttp_core.TransportError(_) as error if is_sentinel(error, detail) => true
+    _ => false
+  }
+  if !preserved {
+    raise violation(check, "protect must preserve transport errors")
+  }
+  let child_cleaned = Ref(false)
+  let child_entered = coordination.signal()
+  let detail = "\{check}: protected child cancellation"
+  let independent = try {
+    coordination.protect(work=() => {
+      coordination.supervise(
+        primary=() => {
+          defer {
+            child_cleaned.val = true
+          }
+          child_entered.notify()
+          forever.wait()
+        },
+        monitor=() => {
+          child_entered.wait()
+          raise sentinel(check, "protected child cancellation")
+        },
+      )
+    })
+    false
+  } catch {
+    @mttp_core.TransportError(_) as error if is_sentinel(error, detail) => true
+    _ => false
+  }
+  if !independent || !child_cleaned.val {
+    raise violation(
+      check, "protection must leave children independently cancellable",
     )
   }
 }

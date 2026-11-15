@@ -221,6 +221,12 @@ async fn budgets(
     if !measured(modules, file) {
       continue
     }
+    // Canary installs these sources only after detecting the newer I/O
+    // traits. Apply their budgets after adoption, not on the pinned tree
+    // where the source is absent; ordinary stale ledger rows still fail.
+    if !@fs.exists(file) && @fs.exists("compat/core_async_next/\{file}.next") {
+      continue
+    }
     let count = cell[2].trim(chars=" ")
     if count.length() > 0 && count.iter().all(c => c is ('0'..<='9')) {
       budget[file] = @string.parse_int(count) catch { _ => continue }

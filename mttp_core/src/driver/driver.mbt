@@ -683,8 +683,9 @@ pub fn Driver::step(self : Driver) -> Bool raise DriverError {
 
 ///|
 /// Cancels every live task and runs them until they have unwound, for at
-/// most `max_unwind_rounds` rounds. Time is not advanced: a task that parks
-/// again while being cancelled resumes at once with Cancelled. Returns the
+/// most `max_unwind_rounds` rounds. Ordinary cancellation advances no time;
+/// protected cleanup keeps its timers and may advance to its own deadline.
+/// An unprotected task that parks again resumes at once with Cancelled. Returns the
 /// number of tasks still alive and the first error a step raised while
 /// unwinding (other than the spent step budget, which ends the round).
 fn Driver::shutdown(self : Driver) -> (Int32, DriverError?) {
@@ -692,10 +693,11 @@ fn Driver::shutdown(self : Driver) -> (Int32, DriverError?) {
   let mut first_error : DriverError? = None
   while !self.live.is_empty() && rounds < max_unwind_rounds {
     rounds += 1
-    // B3: cancelled tasks are woken directly and time does not advance, so
-    // armed timers only matter as callbacks. Each round starts without any,
-    // including those a task armed while unwinding in the round before.
-    self.timers.clear()
+    // Ordinary cancellation wakes tasks directly. A shielded task instead
+    // needs its own wakeup/deadline, so retain timers until protection ends.
+    if !self.has_protected() {
+      self.timers.clear()
+    }
     self.budget_base = self.steps
     self.timer_firings = 0
     self.budget_limit = self.max_steps.max(
@@ -719,6 +721,9 @@ fn Driver::shutdown(self : Driver) -> (Int32, DriverError?) {
         }
       }
       if !progressed {
+        if self.has_protected() && self.advance_to_next_timer() {
+          continue
+        }
         break
       }
     }
@@ -726,6 +731,16 @@ fn Driver::shutdown(self : Driver) -> (Int32, DriverError?) {
   self.timers.clear()
   self.failure = None
   (self.live.length(), first_error)
+}
+
+///|
+fn Driver::has_protected(self : Driver) -> Bool {
+  for _, task in self.live {
+    if task.cancel_mask > 0 {
+      return true
+    }
+  }
+  false
 }
 
 ///|
@@ -919,6 +934,34 @@ pub fn Waker::task(self : Waker) -> Task {
 // ----------------------------------------------------------------- Task
 
 ///|
+/// Defers task cancellation until `work` returns and a later cancellable
+/// suspension observes it. Masks are task-local and nest; children spawned
+/// by `work` retain their own cancellation state, so a Timer can still expire.
+/// The callback must have its own deadline. Outside this driver's task this
+/// reports NotInTask, like cancel_and_join, without invoking the callback.
+pub async fn Driver::protect(
+  self : Driver,
+  work~ : async () -> Unit noraise,
+) -> Unit noraise {
+  guard self.is_stepping() && self.current is Some(task) else {
+    if active.val is Some(stepping) {
+      stepping.report(
+        DriverError(
+          kind=NotInTask,
+          detail="Driver::protect called outside its task",
+        ),
+      )
+    }
+    return
+  }
+  task.cancel_mask += 1
+  defer {
+    task.cancel_mask -= 1
+  }
+  work()
+}
+
+///|
 /// Requests cancellation. A parked task is made ready and resumes with
 /// Cancelled; a ready or running task observes it at its next park. A task
 /// that was woken and is cancelled before it resumes also resumes with
@@ -937,7 +980,9 @@ pub fn Task::cancel(self : Task) -> Unit {
       self.cancel_requested = true
       // A real runtime delivers the cancellation now, however late the I/O
       // event that woke the task is: later tasks may no longer overtake it.
-      self.io_ready = false
+      if self.cancel_mask == 0 {
+        self.io_ready = false
+      }
     }
   }
 }

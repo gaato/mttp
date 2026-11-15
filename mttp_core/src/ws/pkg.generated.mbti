@@ -1,0 +1,107 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/ws"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "gaato/mttp_core/ws/frame",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn session_over_conn(&@rt.Conn, role~ : @frame.Role, pending~ : Bytes, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, entropy~ : (Int32) -> Bytes?, limits? : WsLimits, extension? : &Extension, subprotocol? : String) -> &Session
+
+// Errors
+#derive(@debug.Debug)
+pub(all) suberror WsError {
+  WsError(kind~ : WsErrorKind, detail~ : String)
+}
+pub fn WsError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum CloseCode {
+  Normal
+  GoingAway
+  ProtocolError
+  UnsupportedData
+  NoStatus
+  Abnormal
+  InvalidPayload
+  PolicyViolation
+  MessageTooBig
+  MissingExtension
+  InternalError
+  Other(Int32)
+}
+pub fn CloseCode::equal(Self, Self) -> Bool
+pub fn CloseCode::from_int(Int32) -> Self
+pub fn CloseCode::not_equal(Self, Self) -> Bool
+pub fn CloseCode::sendable(Self) -> Bool
+pub fn CloseCode::to_int(Self) -> Int32
+pub fn CloseCode::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct CloseFrame {
+  code : CloseCode
+  reason : String
+}
+pub fn CloseFrame::encode(Self) -> Bytes raise WsError
+pub fn CloseFrame::equal(Self, Self) -> Bool
+pub fn CloseFrame::not_equal(Self, Self) -> Bool
+pub fn CloseFrame::parse(Bytes) -> Self raise WsError
+pub fn CloseFrame::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum Message {
+  Text(String)
+  Binary(Bytes)
+}
+pub fn Message::equal(Self, Self) -> Bool
+pub fn Message::not_equal(Self, Self) -> Bool
+pub fn Message::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(@debug.Debug)
+pub(all) enum WsErrorKind {
+  Closed(CloseFrame)
+  Protocol
+  TooLarge(limit~ : Int32)
+  Timeout(ms~ : Int32)
+  Transport(@mttp_core.TransportError)
+  Handshake(status~ : Int32)
+}
+pub fn WsErrorKind::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct WsLimits {
+  max_frame_bytes : Int32
+  max_message_bytes : Int32
+  max_empty_frames : Int32
+  send_timeout_ms : Int32
+  close_timeout_ms : Int32
+  ping_interval_ms : Int32?
+  pong_timeout_ms : Int32?
+}
+pub fn WsLimits::default() -> Self
+pub fn WsLimits::equal(Self, Self) -> Bool
+pub fn WsLimits::not_equal(Self, Self) -> Bool
+pub fn WsLimits::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
+pub(open) trait Extension {
+  fn name(Self) -> String
+  fn encode(Self, Bytes) -> (Bytes, Bool)
+  fn decode(Self, Bytes, rsv1~ : Bool, max_bytes~ : Int32) -> Bytes raise WsError
+}
+
+pub(open) trait Session {
+  async fn recv(Self) -> Message raise WsError
+  async fn send(Self, Message) -> Unit raise WsError
+  async fn close(Self, CloseFrame) -> Unit noraise
+  fn abort(Self) -> Unit
+  fn subprotocol(Self) -> String?
+}

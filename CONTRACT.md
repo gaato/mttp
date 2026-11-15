@@ -107,6 +107,17 @@ and every exit joins cleanup. The first delivered outcome wins. Parent
 cancellation propagates after both children finish cleanup. The shared
 coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
 
+`Coordination.protect(work~)` runs bounded work with caller cancellation
+deferred. Protection is task-local and nests: returning from an inner region
+does not unprotect its caller. A pending cancellation stays pending after
+return and is delivered at the next unprotected cancellable suspension, as
+with core/async's `protect_from_cancel`; transport errors retain their
+identity. Work must have its own deadline because the caller cannot interrupt
+it. Children remain independently cancellable, so a Timer can expire inside
+protection. WebSocket control replies use this to finish a frame before a
+cancelled recv can be retried; the deadline also closes the Conn to wake a
+blocked write. Application data sends remain cancellable.
+
 ## Backend
 
 `send(Request, SendOptions) async -> Response raise TransportError`;
@@ -218,8 +229,13 @@ all four targets. Its cancellation semantics match core/async's:
    suspension point (`park`, `sleep`, `pause`). A task that never suspends is
    never interrupted.
 3. Unwinding runs every pending `defer`. Cleanup that must finish runs in a
-   `nocancel` section (`cancel_and_join`, `park_check_cancel`); a deadline
+   `nocancel` section (`cancel_and_join`, `park_check_cancel`) or inside
+   `Driver::protect`; a deadline
    requests cancellation and may be followed by the required cleanup time.
+   Protection increments a task-local mask, restores it on every exit and
+   does not clear the cancellation request. Driver shutdown preserves timers
+   while protected work remains, advancing virtual time for bounded cleanup;
+   ordinary cancellation cleanup still advances no time.
 4. `run_sync(f)` and `Driver::run(f)` return `f`'s value when the main task
    completes. A cancelled main task raises `DriverError(MainCancelled)`. A
    main task waiting on nothing that can happen raises `Suspended` or

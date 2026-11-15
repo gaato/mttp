@@ -2,6 +2,7 @@
 package "gaato/mttp_core/internal/control"
 
 import {
+  "moonbitlang/core/debug",
   "moonbitlang/core/immut/hashmap",
   "moonbitlang/core/immut/vector",
 }
@@ -126,6 +127,64 @@ pub(all) enum TicketState {
   Granted
   Refused
 }
+
+#derive(Eq, @debug.Debug)
+pub(all) enum WsAssembly {
+  Idle
+  InMessage(WsData)
+}
+pub fn WsAssembly::data(Self, WsData?, fin~ : Bool) -> (Self, WsData)?
+pub fn WsAssembly::equal(Self, Self) -> Bool
+pub fn WsAssembly::not_equal(Self, Self) -> Bool
+pub fn WsAssembly::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct WsCloseState {
+  phase : WsClosing
+  sent : Bool
+  received : Bool
+}
+pub fn WsCloseState::data_allowed(Self) -> Bool
+pub fn WsCloseState::equal(Self, Self) -> Bool
+pub fn WsCloseState::finish(Self) -> Self
+pub fn WsCloseState::new() -> Self
+pub fn WsCloseState::not_equal(Self, Self) -> Bool
+pub fn WsCloseState::receive(Self) -> Self
+pub fn WsCloseState::request(Self) -> Self
+pub fn WsCloseState::send(Self) -> (Self, Bool)
+pub fn WsCloseState::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum WsClosing {
+  Open
+  Closing(locally~ : Bool)
+  Closed
+}
+pub fn WsClosing::equal(Self, Self) -> Bool
+pub fn WsClosing::not_equal(Self, Self) -> Bool
+pub fn WsClosing::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum WsData {
+  Text
+  Binary
+}
+pub fn WsData::equal(Self, Self) -> Bool
+pub fn WsData::not_equal(Self, Self) -> Bool
+pub fn WsData::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum WsLife {
+  Alive(Int64)
+  Waiting(Int64)
+  Zombie
+}
+pub fn WsLife::equal(Self, Self) -> Bool
+pub fn WsLife::not_equal(Self, Self) -> Bool
+pub fn WsLife::received(Self, Int64) -> Self
+pub fn WsLife::sent(Self, Int64) -> Self
+pub fn WsLife::tick(Self, Int64, Int32?, Int32?) -> (Self, Bool)
+pub fn WsLife::to_repr(Self) -> @debug.Repr
 
 // Type aliases
 

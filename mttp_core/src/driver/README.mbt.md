@@ -22,6 +22,13 @@ way on wasm-gc, wasm, js and native without an async runtime.
   `park_check_cancel` lets a gate see a cancellation before it unwinds.
 - `Task::cancel` unwinds a task by the compiler's cancellation signal: its
   `defer` and `errdefer` blocks run, and no `catch` can intercept it.
+- `Driver::protect(work~)` defers cancellation of the current task while
+  bounded work runs. Task-local masks nest and restore on exit; pending
+  cancellation is delivered at the next unprotected suspension. Children
+  keep independent cancellation, so a Timer inside protection can expire.
+  Shutdown retains protected work's timers and advances virtual time for its
+  bounded cleanup, including after a `run_sync` error; ordinary cleanup
+  advances no time.
 - Time is virtual. `Driver::sleep` arms a timer; when no task is ready, `run`
   jumps to the earliest timer (auto-advance). `Driver::add_timer` runs a
   callback at a virtual instant; one step fires only the timers armed before

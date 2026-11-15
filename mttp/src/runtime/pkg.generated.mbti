@@ -32,6 +32,7 @@ pub impl @rt.Timer for ClockTimer
 pub struct RuntimeCoordination {
 }
 pub fn RuntimeCoordination::new() -> Self
+pub async fn RuntimeCoordination::protect(Self, work~ : async () -> Unit raise @mttp_core.TransportError) -> Unit raise @mttp_core.TransportError
 pub fn RuntimeCoordination::signal(Self) -> &@rt.Signal
 pub async fn RuntimeCoordination::supervise(Self, primary~ : async () -> Unit raise @mttp_core.TransportError, monitor~ : async () -> Unit raise @mttp_core.TransportError) -> Unit raise @mttp_core.TransportError
 pub impl @rt.Coordination for RuntimeCoordination

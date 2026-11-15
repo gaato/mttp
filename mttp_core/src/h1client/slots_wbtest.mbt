@@ -18,6 +18,12 @@ impl @rt.Signal for Unwaited with fn notify(_) {
 priv struct SignalsOnly {}
 
 ///|
+impl @rt.Coordination for SignalsOnly with fn protect(_, work~) {
+  ignore(work)
+  abort("not used by the slot tests")
+}
+
+///|
 impl @rt.Coordination for SignalsOnly with fn signal(_) {
   Unwaited::{ }
 }

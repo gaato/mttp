@@ -1,4 +1,5 @@
 import {
+  "gaato/mttp_core/ws",
   "gaato/mttp_core",
   "gaato/mttp_core/rt",
   "gaato/mttp_core/driver",
@@ -9,3 +10,7 @@ import {
 options(
   "allow-experimental-packages": [ "gaato/mttp_core/driver" ],
 )
+
+import {
+  "gaato/mttp_core/ws",
+} for "test"

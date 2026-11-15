@@ -47,6 +47,7 @@ pub async fn Driver::park(Self, (Waker) -> Unit) -> Unit noraise
 pub async fn Driver::park_check_cancel(Self, (Waker) -> Unit) -> Resume noraise + nocancel
 pub async fn Driver::pause(Self) -> Unit noraise
 pub fn Driver::pending_timers(Self) -> Int32
+pub async fn Driver::protect(Self, work~ : async () -> Unit noraise) -> Unit noraise
 pub fn Driver::ready_tasks(Self) -> Int32
 pub fn[X] Driver::run(Self, async () -> X) -> X raise
 pub async fn Driver::sleep(Self, Int32) -> Unit noraise

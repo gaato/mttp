@@ -9,6 +9,11 @@ never does.
 
 ### Added
 
+- `RuntimeCoordination.protect(work~)` implements the new mttp_core
+  cancellation-protection port with core/async's `protect_from_cancel`, so
+  bounded WebSocket control replies can finish before a receiver is cancelled.
+  Its behavior is covered by the same coordination contract check as sim.
+
 - `server.serve(auto_date~ : Bool = true)` passes through the HTTP/1
   engine's automatic Date setting. Final responses without a handler's
   Date now carry it, including errors and HEAD/204/304; `auto_date=false`
