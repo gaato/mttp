@@ -95,6 +95,25 @@ pub let close_on_shutdown : AttributeKey[Bool] = AttributeKey::new(
 )
 
 ///|
+/// Set on a response by its handler: the server will not read the rest of
+/// the request body, so the engine need not wait for it, as when a body
+/// exceeded the handler's bound. An HTTP/1.1 server ends the connection
+/// after the response (it sends `Connection: close` and does not drain);
+/// an HTTP/2 or HTTP/3 server would reset only the request's stream
+/// (RFC 9113, section 8.1). It replaces a handler-written Connection
+/// header, which only HTTP/1.1 has.
+pub let abandon_request_body : AttributeKey[Bool] = AttributeKey::new(
+  "abandon_request_body",
+)
+
+///|
+/// The protocol that carried a message, as its ALPN identifier (`http/1.0`,
+/// `http/1.1`, `h2`, `h3`): set by a backend on a response and by a server
+/// engine on a request, when it knows (CONTRACT.md, Backend rule 11). JS
+/// fetch cannot tell, so its responses leave it unset.
+pub let protocol : AttributeKey[String] = AttributeKey::new("protocol")
+
+///|
 /// A caller's statement that resending this request is safe even after it
 /// was written (discord's REPLAY_SAFE_HEADER, without a wire header).
 pub let replay_safe : AttributeKey[Bool] = AttributeKey::new("replay_safe")

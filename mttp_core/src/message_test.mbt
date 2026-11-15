@@ -200,6 +200,9 @@ test "unsent classification is conservative" {
     (Closed, Unknown, false),
     (Closed, Pool, true),
     (Closed, Head, false),
+    (Refused, Write, true),
+    (Refused, Head, true),
+    (Refused, Unknown, true),
   ]
   for (kind, phase, unsent) in cases {
     let error = @mttp_core.TransportError(kind~, phase~, detail="test failure")

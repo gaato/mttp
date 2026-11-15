@@ -59,7 +59,11 @@ test "rejected heads close unread bodies and limits survive caught read errors" 
     }
     let response = server.dispatch(req, Map([]), ctx)
     assert_eq(response.status, 413)
-    assert_eq(response.headers.get("connection"), Some("close"))
+    assert_eq(response.headers.get("connection"), None)
+    assert_eq(
+      response.attributes.get(@mttp_core.abandon_request_body),
+      Some(true),
+    )
   })
   assert_eq(closes.val, 1)
   assert_eq(reads.val, 1)

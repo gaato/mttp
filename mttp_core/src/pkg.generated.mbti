@@ -7,6 +7,8 @@ import {
 }
 
 // Values
+pub let abandon_request_body : AttributeKey[Bool]
+
 pub fn append_query(String, String, String) -> String
 
 pub let background : AttributeKey[(async () -> Unit) -> Unit]
@@ -36,6 +38,8 @@ pub fn percent_decode(String) -> String raise UrlError
 pub fn percent_encode(String) -> String
 
 pub fn percent_encode_path(String) -> String
+
+pub let protocol : AttributeKey[String]
 
 pub async fn read_bounded(&BodyStream, Int32) -> Bytes raise TransportError
 
@@ -146,6 +150,7 @@ pub(all) enum Kind {
   Unreplayable
   Closed
   IncompleteClose
+  Refused
 }
 pub fn Kind::equal(Self, Self) -> Bool
 pub fn Kind::not_equal(Self, Self) -> Bool
@@ -236,6 +241,7 @@ pub(all) struct Response {
 }
 pub fn Response::close(Self) -> Unit
 pub fn Response::close_if_unclaimed(Self) -> Unit
+#deprecated
 pub fn Response::closes_connection(Self) -> Bool
 pub fn Response::head(Self) -> ResponseHead
 pub fn Response::new(Int32, headers? : Headers, body? : Body) -> Self

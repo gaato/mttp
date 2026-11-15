@@ -230,6 +230,7 @@ pub fn Response::close_if_unclaimed(self : Response) -> Unit {
 
 ///|
 /// Reports a close token across all Connection header values.
+#deprecated("The Connection header exists only in HTTP/1.1, whose server engine reads it itself; a handler that stops reading the request body sets `abandon_request_body` instead.")
 pub fn Response::closes_connection(self : Response) -> Bool {
   self.headers
   .get_all("connection")

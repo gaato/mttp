@@ -2,10 +2,10 @@
 # Regenerate with 'scripts/gates.sh manifest --update' after adding or
 # removing tests.
 module	package	target	count
-gaato/mttp_core	gaato/mttp_core	js	81
-gaato/mttp_core	gaato/mttp_core	native	81
-gaato/mttp_core	gaato/mttp_core	wasm	81
-gaato/mttp_core	gaato/mttp_core	wasm-gc	81
+gaato/mttp_core	gaato/mttp_core	js	80
+gaato/mttp_core	gaato/mttp_core	native	80
+gaato/mttp_core	gaato/mttp_core	wasm	80
+gaato/mttp_core	gaato/mttp_core	wasm-gc	80
 gaato/mttp_core	gaato/mttp_core/apispec	js	12
 gaato/mttp_core	gaato/mttp_core/apispec	native	12
 gaato/mttp_core	gaato/mttp_core/apispec	wasm	12
@@ -46,14 +46,14 @@ gaato/mttp_core	gaato/mttp_core/h1	js	39
 gaato/mttp_core	gaato/mttp_core/h1	native	39
 gaato/mttp_core	gaato/mttp_core/h1	wasm	39
 gaato/mttp_core	gaato/mttp_core/h1	wasm-gc	39
-gaato/mttp_core	gaato/mttp_core/h1client	js	101
-gaato/mttp_core	gaato/mttp_core/h1client	native	101
-gaato/mttp_core	gaato/mttp_core/h1client	wasm	101
-gaato/mttp_core	gaato/mttp_core/h1client	wasm-gc	101
-gaato/mttp_core	gaato/mttp_core/h1server	js	81
-gaato/mttp_core	gaato/mttp_core/h1server	native	81
-gaato/mttp_core	gaato/mttp_core/h1server	wasm	81
-gaato/mttp_core	gaato/mttp_core/h1server	wasm-gc	81
+gaato/mttp_core	gaato/mttp_core/h1client	js	102
+gaato/mttp_core	gaato/mttp_core/h1client	native	102
+gaato/mttp_core	gaato/mttp_core/h1client	wasm	102
+gaato/mttp_core	gaato/mttp_core/h1client	wasm-gc	102
+gaato/mttp_core	gaato/mttp_core/h1server	js	83
+gaato/mttp_core	gaato/mttp_core/h1server	native	83
+gaato/mttp_core	gaato/mttp_core/h1server	wasm	83
+gaato/mttp_core	gaato/mttp_core/h1server	wasm-gc	83
 gaato/mttp_core	gaato/mttp_core/internal/control	js	9
 gaato/mttp_core	gaato/mttp_core/internal/control	native	9
 gaato/mttp_core	gaato/mttp_core/internal/control	wasm	9

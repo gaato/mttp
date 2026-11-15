@@ -107,7 +107,11 @@ test "server buffered and streamed bodies admit the exact default and endpoint o
           )
           assert_eq(response.status, if extra == 0 { 200 } else { 413 })
           if extra == 1 {
-            assert_eq(response.headers.get("connection"), Some("close"))
+            assert_eq(response.headers.get("connection"), None)
+            assert_eq(
+              response.attributes.get(@mttp_core.abandon_request_body),
+              Some(true),
+            )
           }
         })
         assert_eq(source.closes(), 1)
@@ -163,7 +167,11 @@ test "adapter TooLarge keeps the smaller ceiling for buffered and streamed input
       )
       assert_eq(response.status, 413)
       assert_eq(source.closes(), 1)
-      assert_eq(response.headers.get("connection"), Some("close"))
+      assert_eq(response.headers.get("connection"), None)
+      assert_eq(
+        response.attributes.get(@mttp_core.abandon_request_body),
+        Some(true),
+      )
     }
   })
   assert_eq(failures.length(), 2)

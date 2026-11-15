@@ -117,15 +117,21 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
    which is unsent.
 2. **Phases are honest.** Every failure carries the phase in which it
    happened. A failure reported in Pool or Dial means no request byte reached
-   the peer; `is_unsent` relies on this.
+   the peer; `is_unsent` relies on this. A peer that says it did not process
+   the request (HTTP/2's REFUSED_STREAM or a stream above a GOAWAY's last
+   stream identifier, HTTP/3's H3_REQUEST_REJECTED) is reported with kind
+   `Refused` in the phase the exchange had reached, not as Pool: `is_unsent`
+   counts `Refused` too, because the request may be sent again whatever its
+   method.
 3. **Request bodies.** The backend takes a stream body at most once and closes
    it on success, failure and cancellation. It performs the stream's first
    read before writing the request head, so a failing stream or one falsely
    declared empty sends nothing.
 4. **Response ownership.** A returned Response's body belongs to the caller,
-   who reads it to EOF or closes it. Closing early releases the connection;
-   whether it may be pooled again is the engine's decision, never the
-   caller's.
+   who reads it to EOF or closes it. Closing early releases what the
+   exchange holds (its connection, or its stream on a multiplexed one);
+   whether a connection may be used again is the engine's decision, never
+   the caller's.
 5. **Raw bytes.** A backend moves bytes. It does not follow redirects, retry,
    store cookies or undo content codings; wrappers that do so say so in their
    name and documentation (FollowRedirects, Cookies, Decompress). JS fetch is
@@ -143,6 +149,15 @@ coordination suite runs against `RuntimeCoordination` and `SimCoordination`.
    meets a variant it does not implement refuses the send before any I/O with
    `TransportError(kind=Invalid, phase=Pool, ..)`, as in rule 1, rather than
    guessing its meaning.
+10. **Early data.** A backend that sends requests in TLS 1.3 early data
+    (0-RTT, as HTTP/3 over QUIC may) sends there only requests that may be
+    replayed: idempotent ones or ones marked `replay_safe`
+    (`@mttp_core.is_idempotent`), because an attacker can replay early data
+    (RFC 8470, section 3).
+11. **Protocol.** A backend that knows which protocol carried a response
+    records it under the `@mttp_core.protocol` attribute as its ALPN
+    identifier (`http/1.0`, `http/1.1`, `h2`, `h3`). One that cannot know,
+    such as JS fetch, leaves it unset.
 
 A backend written outside this repository, for example over another HTTP
 engine, passes `@sim.check_backend_contract(make_backend)` from

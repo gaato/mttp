@@ -343,6 +343,32 @@ test "decide covers every step in order" {
       Wait(100),
     ),
     (
+      "refused after writing, any method",
+      decide_request(
+        r,
+        Failure(
+          TransportError(kind=Refused, phase=Head, detail="REFUSED_STREAM"),
+        ),
+        post,
+        attempt=0,
+        random=0.0,
+      ),
+      Wait(100),
+    ),
+    (
+      "refused with unsent failures off",
+      decide_request(
+        { ..r, unsent_failures: false, },
+        Failure(
+          TransportError(kind=Refused, phase=Head, detail="REFUSED_STREAM"),
+        ),
+        get,
+        attempt=0,
+        random=0.0,
+      ),
+      Stop(NotRetryable),
+    ),
+    (
       "unsent failures off",
       decide_request(
         { ..r, unsent_failures: false, },

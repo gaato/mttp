@@ -116,7 +116,10 @@ pub async fn ServerEndpoint::dispatch(
   }
   transferred = response.body is Stream(_)
   let response = if response.status == 413 {
-    { ..response, headers: response.headers.set("connection", "close"), }
+    {
+      ..response,
+      attributes: response.attributes.put(@mttp_core.abandon_request_body, true),
+    }
   } else {
     response
   }

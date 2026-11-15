@@ -7,7 +7,19 @@ never does.
 
 ## [Unreleased]
 
+### Added
+
+- The root re-exports gaato/mttp_core's `abandon_request_body` and
+  `protocol` attribute keys. Responses of the HTTP/1.1 backend carry
+  `protocol` (`http/1.1` or `http/1.0`), and so do requests that
+  `@server.serve` hands to a handler; the JS fetch backend leaves it unset,
+  since fetch does not say which protocol it used.
+
 ### Changed
+
+- `@server.serve` ends the connection after a 413 from a Router as before,
+  now because the Router sets `abandon_request_body` instead of writing
+  `Connection: close` itself.
 
 - A TLS connection whose peer closes the connection beneath without
   close_notify raises `IncompleteClose` (gaato/mttp_core) from its reads, on

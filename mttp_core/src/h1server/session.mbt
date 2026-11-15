@@ -125,7 +125,10 @@ async fn Session::exchange(
     )
   }
   defer (if body is Stream(stream) { stream.close() })
-  let mut attributes = @mttp_core.Attributes::empty()
+  let mut attributes = @mttp_core.Attributes::empty().put(
+    @mttp_core.protocol,
+    alpn_id(version),
+  )
   if self.peer is Some(peer) {
     attributes = attributes.put(@mttp_core.remote_addr, peer)
   }
@@ -199,7 +202,8 @@ async fn Session::respond(
   }
   let close = (self.stopping)() ||
     !keep_alive ||
-    response.closes_connection() ||
+    has_token(response.headers, "connection", "close") ||
+    response.attributes.get(@mttp_core.abandon_request_body) == Some(true) ||
     source.expect
   let sent = Ref(false)
   let reused = self.write_response(
@@ -354,6 +358,15 @@ fn protocol(detail : String) -> @mttp_core.TransportError {
 ///|
 fn lower_trim(value : String) -> String {
   value.trim(chars=" \t").to_owned().to_lower()
+}
+
+///|
+/// The ALPN identifier of a wire version (`@mttp_core.protocol`).
+fn alpn_id(version : @h1.Version) -> String {
+  match version {
+    Http10 => "http/1.0"
+    _ => "http/1.1"
+  }
 }
 
 ///|

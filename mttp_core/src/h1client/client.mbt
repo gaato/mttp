@@ -281,10 +281,17 @@ async fn Client::send_request(
         response.version == Http11 ||
         connection_token(response.headers, "keep-alive")
       )
+    let attributes = @mttp_core.Attributes::empty().put(
+      @mttp_core.protocol,
+      match response.version {
+        Http10 => "http/1.0"
+        _ => "http/1.1"
+      },
+    )
     let attributes = if fresh {
-      @mttp_core.Attributes::empty().put(stale_resend, true)
+      attributes.put(stale_resend, true)
     } else {
-      @mttp_core.Attributes::empty()
+      attributes
     }
     owned = false
     transferred = true

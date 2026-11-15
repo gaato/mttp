@@ -521,3 +521,26 @@ test "unframeable responses and port failures are reported in their phase" {
   assert_eq(conn.closes(), 1)
   assert_eq(h.dialer.tls_hosts, ["example.test"])
 }
+
+///|
+/// CONTRACT.md, Backend rule 11: a response records the protocol that
+/// carried it as its ALPN identifier.
+test "a response records its wire version as the protocol" {
+  for
+    (head, expected) in [
+      (b"HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n", "http/1.0"),
+      (b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok", "http/1.1"),
+    ] {
+    let h = Harness::new()
+    let _ = h.scripted([Chunk(head)])
+    h.run(() => {
+      let response = h.client.send(
+        @mttp_core.Request::get("http://example.test/"),
+        exchange(),
+      )
+      assert_eq(response.attributes.get(@mttp_core.protocol), Some(expected))
+      ignore(body_of(response))
+      h.finish()
+    })
+  }
+}

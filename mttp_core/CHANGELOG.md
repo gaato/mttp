@@ -9,14 +9,39 @@ never does.
 
 ### Added
 
+- `Kind::Refused`: the peer said it did not process the request, as an
+  HTTP/2 stream reset with REFUSED_STREAM or above a GOAWAY's last stream
+  identifier, or HTTP/3's H3_REQUEST_REJECTED. `is_unsent` counts it, so
+  the Client resends such a request whatever its method. A backend reports
+  it in the phase the exchange reached instead of claiming phase Pool
+  (CONTRACT.md, Backend rule 2).
+- The `abandon_request_body` response attribute: the server will not read
+  the rest of the request body. `h1server` ends the connection after such
+  a response; the Router sets it on its 413 answers instead of writing
+  `Connection: close`, a header that HTTP/2 and HTTP/3 forbid.
+- The `protocol` attribute: the ALPN identifier (`http/1.0`, `http/1.1`,
+  `h2`, `h3`) of the protocol that carried a message. `h1client` sets it on
+  responses and `h1server` on requests (CONTRACT.md, Backend rule 11).
+- CONTRACT.md, Backend rule 10: a backend sends in TLS 1.3 early data only
+  requests that may be replayed.
+
 - `Kind::IncompleteClose`: a transport ended without its own end-of-stream
   signal, as a TLS session does when its peer closes the connection beneath
   without close_notify (RFC 9112, section 9.8 calls this an incomplete
   close). `rt.Conn` reads may raise it; like EOF it is permanent
   (CONTRACT.md, Connections and coordination).
 
+### Deprecated
+
+- `Response::closes_connection`: the Connection header exists only in
+  HTTP/1.1, and `h1server` reads it itself. A handler that stops reading
+  the request body sets `abandon_request_body`.
+
 ### Changed
 
+- The Router's and the endpoint layer's 413 answers no longer carry
+  `Connection: close`; they set `abandon_request_body`, which `h1server`
+  turns into the same header and close.
 - `h1client` and `h1server` treat `IncompleteClose` as EOF wherever the
   message framing delimits the message: response heads, a proxy's CONNECT
   answer, Content-Length and chunked bodies, every read of the server

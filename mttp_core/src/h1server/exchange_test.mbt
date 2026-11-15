@@ -486,3 +486,55 @@ test "an invalid scheme is reported before reading and closes the connection" {
   assert_eq(conn.closes(), 1)
   assert_eq(conn.written(), [])
 }
+
+///|
+/// A handler ends the connection with Connection: close, which only
+/// HTTP/1.1 has, or with `abandon_request_body`, which every protocol can
+/// carry out; the attribute itself never reaches the wire.
+test "a handler's Connection close or abandoned body ends the connection" {
+  let closing = @mttp_core.Response::new(
+    200,
+    headers=@mttp_core.Headers::of([
+      ("connection", "keep-alive"),
+      ("connection", "upgrade, CLOSE"),
+    ]),
+  )
+  let abandoning = {
+    ..@mttp_core.Response::new(200),
+    attributes: @mttp_core.Attributes::empty().put(
+      @mttp_core.abandon_request_body, true,
+    ),
+  }
+  for response in [closing, abandoning] {
+    let h = Harness::new()
+    h.run(() => {
+      let (client, task) = h.serve(_ => response)
+      client.send(get("/"))
+      let out = client.rest()
+      assert_true(out.has_prefix("HTTP/1.1 200 OK\r\n"), msg=out)
+      assert_true(out.contains("connection: close\r\n"), msg=out)
+      assert_false(out.contains("abandon"), msg=out)
+      ignore(task.wait())
+      client.conn.close()
+    })
+  }
+}
+
+///|
+test "a request records its wire version as the protocol" {
+  let h = Harness::new()
+  let seen = []
+  h.run(() => {
+    let (client, task) = h.serve(request => {
+      seen.push(request.attributes.get(@mttp_core.protocol))
+      @mttp_core.Response::new(204)
+    })
+    client.send(get("/"))
+    ignore(client.expect())
+    client.send("GET / HTTP/1.0\r\nHost: example.test\r\n\r\n")
+    ignore(client.rest())
+    ignore(task.wait())
+    client.conn.close()
+  })
+  assert_eq(seen, [Some("http/1.1"), Some("http/1.0")])
+}

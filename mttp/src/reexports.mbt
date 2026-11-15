@@ -18,6 +18,8 @@ pub using @mttp_core {
   background,
   remote_addr,
   close_on_shutdown,
+  abandon_request_body,
+  protocol,
   replay_safe,
   read_bounded,
 }

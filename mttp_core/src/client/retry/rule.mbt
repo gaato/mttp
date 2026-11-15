@@ -244,8 +244,8 @@ pub(all) struct RetryRule {
   /// For which methods a failure after the request may have been sent (a
   /// timeout or network error once connected) is retried.
   sent_failures : Methods
-  /// Whether a failure that proves nothing was sent (`TransportError::is_unsent`)
-  /// is retried, whatever the method. A proxy's refusal is retried only when
+  /// Whether a failure that proves nothing was sent or processed
+  /// (`TransportError::is_unsent`) is retried, whatever the method. A proxy's refusal is retried only when
   /// its status also matches `statuses`.
   unsent_failures : Bool
   /// A response header that overrides the decision: `true` retries any

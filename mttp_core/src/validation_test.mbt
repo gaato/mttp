@@ -78,16 +78,3 @@ test "attribute identities and persistent maps" {
   assert_eq(second.get(a), Some(2))
   assert_eq(first.get(a), Some(1))
 }
-
-///|
-test "connection close examines repeated fields and comma tokens" {
-  let response = @mttp_core.Response::new(
-    200,
-    headers=@mttp_core.Headers::of([
-      ("connection", "keep-alive"),
-      ("connection", "upgrade, CLOSE"),
-    ]),
-  )
-  assert_true(response.closes_connection())
-  assert_false(@mttp_core.Response::new(200).closes_connection())
-}

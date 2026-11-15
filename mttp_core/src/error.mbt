@@ -33,6 +33,13 @@ pub(all) enum Kind {
   /// Where the message framing delimits the message, it counts as EOF;
   /// only a body delimited by the close itself is then truncated.
   IncompleteClose
+  /// The peer said it did not process the request, so it may be sent again
+  /// whatever its method: an HTTP/2 stream reset with REFUSED_STREAM or
+  /// above a GOAWAY's last stream identifier (RFC 9113, section 8.7), or
+  /// HTTP/3's H3_REQUEST_REJECTED (RFC 9114, section 8.1). The phase stays
+  /// the one the exchange reached, since request bytes may have been
+  /// written before the refusal.
+  Refused
 }
 
 ///|
@@ -43,14 +50,16 @@ pub(all) suberror TransportError {
 }
 
 ///|
-/// Whether the failure proves no request bytes reached the origin: it
-/// happened in phase Pool or Dial (CONTRACT.md, Backend rule 2), or it is a
-/// connect failure or a proxy's refusal, which precede the request. Whether
-/// resending is worthwhile is a separate question: an `Invalid` request is
-/// unsent and fails the same way again.
+/// Whether the failure proves the origin did not act on the request: no
+/// request bytes reached it, because the failure happened in phase Pool or
+/// Dial (CONTRACT.md, Backend rule 2) or is a connect failure or a proxy's
+/// refusal, which precede the request; or the origin said it did not
+/// process the request (`Refused`). Whether resending is worthwhile is a
+/// separate question: an `Invalid` request is unsent and fails the same way
+/// again.
 pub fn TransportError::is_unsent(self : TransportError) -> Bool {
   let TransportError(kind~, phase~, ..) = self
-  kind is (Connect | Proxy(..)) || phase is (Pool | Dial)
+  kind is (Connect | Proxy(..) | Refused) || phase is (Pool | Dial)
 }
 
 ///|

@@ -62,6 +62,7 @@ Decided by the owner on 2026-11-11 after a review from first principles; the mod
   - Reporting core/async/http's head bound and CL+TE handling: core's own review tracks both as P0-2 with reproductions.
   - Re-exporting core/async's concurrency API (tasks, task groups) from gaato/mttp so that apps need no opt-in for it: that would name runtime types in gaato/mttp's public API (principle 9). The README shows `run` in plain tests and says where concurrency comes from.
 - **Trial before the first release** (2026-11-11): a short-link service built on these modules found that `@schema.pattern` raised (now it records a definition problem instead, so endpoints can be top-level values), that error types lacked `Show`, that typed SSE dropped event ids and names and could not stop early, and that endless streams held up shutdown; all were fixed before 0.2.0, together with the full RFC 9110 reason-phrase table and the documentation gaps it found. A second and third round served the same definitions from Deno and from a Rabbita admin page: `Router::must` lets a router be a top-level value, the process-host shims gained `shutdown()` so SSE ends at shutdown there too, aborts after a completed response are ignored, and the README of gaato/mttp_core says how to use it on another runtime (a framework on the registry `moonbitlang/async` was then thought unable to share a program with core/async; since its 0.22.6 it runs on core/async's runtime, verified on 2026-11-12 with gaato/mttp's server and client and a gaato/mttp_core Client over moonbitstack/moonfetch in one native program. Adapters for such libraries live in their own repositories, because this repository does not depend on `moonbitlang/async`). A fourth round served Discord interactions on workerd: the Workers entry the hosts README showed did not start, because evaluating a compiled MoonBit module draws its hash seed from `crypto.getRandomValues` and Workers refuses that in global scope (moonbitlang/core#2901, open). The Workers shim now imports the app inside the first request, `scripts/gates.sh full` runs a Workers app on workerd, and `@fetch.env_string` reads a string binding without hand-written FFI. A minimal js bundle measured about 650 KB raw (90 KB gzipped) for the client, mostly the client itself, core's number formatting and JSON parsing; with no size target and no obvious waste, nothing was changed.
+- **HTTP/2 and HTTP/3 in mind** (2026-11-15). HTTP/2 and HTTP/3 reach mttp's Client through backends such as gaato/mttp_moonfetch, so the layers above the engines no longer assume HTTP/1.1, while an engine of our own still waits (below). Reasons: such a backend had to report a refused stream as phase Pool, which promises that no byte was written, to keep it retryable; and the Router told the server to close by writing `Connection: close`, a header HTTP/2 and HTTP/3 forbid. So `Kind::Refused` says that the peer did not process a request (REFUSED_STREAM, a stream above GOAWAY, H3_REQUEST_REJECTED) in the phase reached, and `is_unsent` counts it; the `abandon_request_body` response attribute says that the server will not read the rest of the request body, which h1server carries out by closing and an HTTP/2 server would by resetting the stream; `Response::closes_connection` is deprecated, since only h1server reads the Connection header; the `protocol` attribute records the ALPN identifier of the protocol that carried a message; and the Backend contract allows early data (0-RTT) only for requests that may be replayed (rules 10 and 11). Not done, with reasons: a connection-scoped task port in `rt` for multiplexing (its shape depends on an engine that does not exist, and only this repository implements `rt`, so changing it later is cheap); ALPN in `Dialer` (core/tls has none); response trailers (nobody asks; adding a field to `pub(all)` Response is a 0.x minor change when someone does); Alt-Svc (a backend's concern); WebSockets over HTTP/2 (RFC 8441), deferred with WebSockets.
 - **Waiting on outside facts**: OpenAPI 3.2 output (code generators and Redoc cannot read 3.2 yet); WebSockets (core/async's websocket lacks bounds and masking checks, X-06); HTTP/2 (core/tls has no ALPN). HTTP/2 and HTTP/3 come through gaato/mttp_moonfetch, a Backend over moonbitstack/moonfetch in its own repository, which requires `moonbitlang/async@0.22.6` or later so both runtimes are one.
 
 
@@ -110,7 +111,7 @@ Made by the user on 2026-10-24; they superseded the corresponding [needs-user-in
 | A runtime-free core (`gaato/mttp_core`) that libraries build on, so an app chooses the I/O | A second runtime, or code that runs on two event loops in one process |
 | Sans-IO by default: every package except `gaato/mttp` builds and tests on wasm-gc, wasm, js and native | Building on `moonbitlang/core/async/http` (§0.1) |
 | Move gaato's existing consumers (discord, discord_voice, discord-cli, openai, anthropic, github, codex-protocol, kbbi, nekosama, profile-readme) onto one stack, with one retry loop, one error pair and one transport trait | Keeping sdk-runtime, requesto, gaato/http or gaato/http-async as parallel long-term APIs; a neutral HTTP vocabulary of our own (it belongs in the standard library) |
-| Keep gaato's strengths: injected clock and randomness; bounded-by-default with ledgers; phase-tagged errors with `is_unsent`; the incremental SSE parser; deterministic tests on every target | HTTP/2 and ALPN (core/tls has no ALPN), server TLS, AsyncAPI and WebSockets |
+| Keep gaato's strengths: injected clock and randomness; bounded-by-default with ledgers; phase-tagged errors with `is_unsent`; the incremental SSE parser; deterministic tests on every target | An HTTP/2 engine of our own and ALPN (core/tls has no ALPN; HTTP/2 and HTTP/3 come through other backends, §0.0), server TLS, AsyncAPI and WebSockets |
 
 ## 2. Principles
 
@@ -357,9 +358,9 @@ pub(all) enum Phase { Pool; Dial; Write; Head; Body; Unknown } derive(Eq, Debug)
 #non_exhaustive
 pub(all) enum Kind { Invalid; Connect; Timeout(ms~ : Int); Network; Protocol; Proxy(status~ : Int)
   TooLarge(limit~ : Int); TooManyRedirects(max~ : Int); RedirectRefused; Unreplayable; Closed
-  IncompleteClose } derive(Eq, Debug) // IncompleteClose: a TLS peer closed without close_notify; EOF where framing delimits (RFC 9112 §9.8)
+  IncompleteClose; Refused } derive(Eq, Debug) // IncompleteClose: a TLS peer closed without close_notify; EOF where framing delimits (RFC 9112 §9.8). Refused: the peer did not process the request (RFC 9113 §8.7, RFC 9114 §8.1)
 pub(all) suberror TransportError { TransportError(kind~ : Kind, phase~ : Phase, detail~ : String) } derive(Debug)
-pub fn TransportError::is_unsent(self : TransportError) -> Bool        // message
+pub fn TransportError::is_unsent(self : TransportError) -> Bool        // Pool/Dial, Connect, Proxy or Refused; message
 
 pub(open) trait BodyStream { async fn read_some(Self) -> Bytes? raise TransportError; fn close(Self) -> Unit }
 pub struct StreamBody { /* take-once cell */ }
@@ -374,13 +375,15 @@ pub fn[T] AttributeKey::new(name : String) -> AttributeKey[T]          // Attrib
 pub let remote_addr : AttributeKey[String]                            // set by server adapters
 pub let replay_safe : AttributeKey[Bool]                              // "resend is safe even after the write"
 pub let background : AttributeKey[(async () -> Unit) -> Unit]         // set by adapters that can run detached work
+pub let abandon_request_body : AttributeKey[Bool]                     // on a response: the rest of the request body is not read
+pub let protocol : AttributeKey[String]                               // ALPN identifier of the carrying protocol (http/1.1, h2, h3)
 
 pub(all) struct Request { meth : Method; url : String; headers : Headers; body : Body; attributes : Attributes }
 pub fn Request::new(meth : Method, url : String) -> Request           // get, post, put, patch, delete, options
 // header, set_header, bearer, basic, query, body_bytes, body_text, body_json, body_form, body_stream, attribute, head
 pub fn is_idempotent(req : Request) -> Bool                           // method, or replay_safe; an Idempotency-Key header alone is not enough
 pub(all) struct Response { status : Int; headers : Headers; body : Body; attributes : Attributes }   // both directions
-pub fn Response::new(status : Int, headers? : Headers, body? : Body) -> Response   // head, close, closes_connection
+pub fn Response::new(status : Int, headers? : Headers, body? : Body) -> Response   // head, close; closes_connection (deprecated)
 pub type Handler = async (Request) -> Response noraise
 
 // URLs and helpers (moved): Url::parse/resolve/path_segments/query_params, join_url, encode_path, append_query,
@@ -1763,5 +1766,5 @@ Waiting on outside facts, each saying what it waits for:
 
 1. **OpenAPI 3.2 output**: until openapi-generator (swagger-parser) and Redoc read 3.2. The move renames `x-oai-itemSchema` to `itemSchema` and sets the version.
 2. **WebSockets** (and with them AsyncAPI): until core/async's websocket bounds its frames and checks masking (X-06; core's review tracks both).
-3. **HTTP/2**: until core/tls offers ALPN (F67).
+3. **An HTTP/2 engine of our own**: until core/tls offers ALPN (F67) and an app needs HTTP/2 on the system's TLS; until then HTTP/2 and HTTP/3 come through gaato/mttp_moonfetch (§0.0).
 4. **Upstream**: a new core issue proposing a runtime-independent HTTP vocabulary (referencing #4613 and #4686), and a report that core/async/http mishandles status lines without a reason phrase, which core's review does not cover. Both go out after the owner reads the drafts; the head bound and CL+TE are already core's P0-2.

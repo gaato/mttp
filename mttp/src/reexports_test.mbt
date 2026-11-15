@@ -36,9 +36,13 @@ test "request attributes and their keys are reachable through gaato/mttp" {
   let attributes = @mttp.Attributes::empty()
     .put(@mttp.remote_addr, "192.0.2.1:50000")
     .put(@mttp.close_on_shutdown, true)
+    .put(@mttp.abandon_request_body, true)
+    .put(@mttp.protocol, "h2")
     .put(user, "ada")
   assert_eq(attributes.get(@mttp.remote_addr), Some("192.0.2.1:50000"))
   assert_eq(attributes.get(@mttp.close_on_shutdown), Some(true))
+  assert_eq(attributes.get(@mttp_core.abandon_request_body), Some(true))
+  assert_eq(attributes.get(@mttp_core.protocol), Some("h2"))
   assert_eq(attributes.get(user), Some("ada"))
   assert_true(attributes.get(@mttp.background) is None)
   // The keys are the core's: an attribute set through one module is read

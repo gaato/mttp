@@ -71,7 +71,11 @@ test "known adapter body ceilings are advisory and actual upstream caps still wi
       @mttp_core.Request::post("/").body_stream(feed),
     )
     assert_eq(response.status, 413)
-    assert_eq(response.headers.get("connection"), Some("close"))
+    assert_eq(response.headers.get("connection"), None)
+    assert_eq(
+      response.attributes.get(@mttp_core.abandon_request_body),
+      Some(true),
+    )
   })
   assert_true(feed.is_closed())
   for

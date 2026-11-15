@@ -85,7 +85,10 @@ pub fn default_decode_failure(
     .iter()
     .any(f => f.failure is @schema.DecodeFailure(kind=TooLarge(..), ..)) {
     let response = problem(413, "Content Too Large", errors~)
-    return { ..response, headers: response.headers.set("connection", "close"), }
+    return {
+      ..response,
+      attributes: response.attributes.put(@mttp_core.abandon_request_body, true),
+    }
   }
   if context.stage is Security {
     for f in context.failures {
