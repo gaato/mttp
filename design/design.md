@@ -1121,7 +1121,7 @@ The wrapper passes SendOptions through unchanged, so the engine caps **wire** by
 
 ### 4.13 WebSockets (ws)
 
-Decided by the owner on 2026-11-15: RFC 6455 of our own, as a codec without I/O in gaato/mttp_core, verified with the Autobahn TestSuite; not core/async's websocket (F69). The names and shapes below are agreed before code; the stages are W1–W9 of the plan.
+Decided by the owner on 2026-11-15: RFC 6455 of our own, as a codec without I/O in gaato/mttp_core, verified with the Autobahn TestSuite; not core/async's websocket (F69). The names and shapes below were agreed before the code was written.
 
 Packages, dependencies pointing left: `internal/sha1` ← `ws/frame` ← `ws` ← `ws/handshake` ← `h1client`, `h1server`, `endpoint` ← gaato/mttp's `ws` and `fetch`.
 
