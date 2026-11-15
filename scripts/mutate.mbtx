@@ -261,15 +261,18 @@ async fn copy_source(root : String) -> String {
 ///|
 async fn run_tests(moon : String, source : String) -> @shell.Output {
   let vars = { "MOON_CC": @env.get_env_var("MOON_CC").unwrap_or("cc") }
+  // GNU timeout puts the command in a separate process group unless
+  // --foreground is used, so both TERM and the follow-up KILL reach the native
+  // test executable and its descendants rather than only the moon process.
   @shell.Cmd(
-    moon,
+    "timeout",
     [
-      "test", "--target", "native", "mttp_core/src/h1", "mttp_core/src/h1client",
-      "mttp_core/src/h1server",
+      "--signal=TERM", "--kill-after=5s", "120s", moon, "test", "--target", "native",
+      "mttp_core/src/h1", "mttp_core/src/h1client", "mttp_core/src/h1server",
     ],
     cwd=source,
     env=vars,
-  ).output(timeout_ms=120000, max_output_bytes=16777216)
+  ).output(max_output_bytes=16777216)
 }
 
 ///|
@@ -362,4 +365,9 @@ async fn main {
   println(
     "SUMMARY\tsites=\{killed + survived + equivalent + timeout}\tkilled=\{killed}\tsurvived=\{survived}\tequivalent=\{equivalent}\ttimeout=\{timeout}",
   )
+  if survived != 0 || timeout != 0 {
+    raise MutationError(
+      "mutation audit failed: survived=\{survived}, timeout=\{timeout}",
+    )
+  }
 }
