@@ -34,7 +34,8 @@ let smuggling_corpus : Array[(String, String)] = [
   ("Transfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n", "400"),
   ("Transfer-Encoding: chunked, chunked\r\n", "400"),
   ("Transfer-Encoding: gzip, chunked\r\n", "501"),
-  ("Transfer-Encoding: chunked, identity\r\n", "501"),
+  ("Transfer-Encoding: chunked, identity\r\n", "400"),
+  ("Transfer-Encoding: chunked, gzip\r\n", "400"),
   ("Transfer-Encoding: xchunked\r\n", "501"),
 ]
 

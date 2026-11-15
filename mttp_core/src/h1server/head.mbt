@@ -27,6 +27,7 @@ async fn Wire::head(self : Wire, limits : ServerLimits) -> HeadOutcome noraise {
       max=limits.max_header_bytes,
       skip_leading_crlf=true,
     )
+    let line = StartLine::new(limits.max_header_bytes)
     outcome = for ;; {
       let bytes = self.read(io_bytes, Head) catch { error => break Lost(error) }
       guard bytes is Some(bytes) else {
@@ -40,8 +41,9 @@ async fn Wire::head(self : Wire, limits : ServerLimits) -> HeadOutcome noraise {
         }
       }
       started = true
+      line.feed(bytes)
       let result = decoder.feed(bytes) catch {
-        error => break refuse_head(error, limits)
+        error => break refuse_head(error, limits, part=line.part)
       }
       if result.head is Some(head) {
         self.unread(bytes[result.consumed:])
@@ -71,15 +73,70 @@ async fn Wire::head(self : Wire, limits : ServerLimits) -> HeadOutcome noraise {
 }
 
 ///|
-/// The answer to a head the codec refused: 431 for a head past its limits,
-/// 505 for an HTTP version other than 1.x, 400 otherwise (smuggling
-/// included).
-fn refuse_head(error : @h1.ParseError, limits : ServerLimits) -> HeadOutcome {
+/// The part of the request line the limit ran out in.
+priv enum LinePart {
+  /// Before the request line, in the empty lines a server skips.
+  Leading
+  Method
+  Target
+  Version
+  /// Past the request line, in the header fields.
+  Fields
+}
+
+///|
+/// Follows the request line through the head's first `max` bytes, so that
+/// a head past its limit is answered for the part that was too long.
+priv struct StartLine {
+  max : Int32
+  mut seen : Int32
+  mut part : LinePart
+}
+
+///|
+fn StartLine::new(max : Int32) -> StartLine {
+  { max, seen: 0, part: Leading, }
+}
+
+///|
+fn StartLine::feed(self : StartLine, bytes : Bytes) -> Unit {
+  for byte in bytes {
+    if self.seen >= self.max || self.part is Fields {
+      return
+    }
+    self.seen += 1
+    self.part = match (self.part, byte) {
+      (Leading, b'\r' | b'\n') => Leading
+      (Leading, b' ') => Target
+      (Leading, _) => Method
+      (Method, b' ') => Target
+      (Target, b' ') => Version
+      (_, b'\r' | b'\n') => Fields
+      (part, _) => part
+    }
+  }
+}
+
+///|
+/// The answer to a head the codec refused: past its limits, 501 for a
+/// method longer than any the server implements and 414 for a target
+/// longer than it parses (RFC 9112, section 3), 431 otherwise; 505 for an
+/// HTTP version other than 1.x, 400 otherwise (smuggling included).
+fn refuse_head(
+  error : @h1.ParseError,
+  limits : ServerLimits,
+  part~ : LinePart = Fields,
+) -> HeadOutcome {
   let @h1.ParseError(kind~, detail~) = error
   match kind {
     HeadTooLarge =>
       Refuse(
-        status=431,
+        status=match part {
+          Method => 501
+          Target => 414
+          Version => 400
+          Leading | Fields => 431
+        },
         error=@mttp_core.TransportError(
           kind=TooLarge(limit=limits.max_header_bytes),
           phase=Head,

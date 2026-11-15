@@ -5,14 +5,17 @@
 #           (interop/mttp_client/main.mbt describes each case).
 #           server: gaato/mttp's server driven by a third-party client
 #           (interop/clients/*), directly or through a reverse proxy.
-#   case    the case id the program understands
+#   case    the case id the program understands, or a prefix ending in
+#           `*` for a program that names its own cases (Http11Probe): it
+#           names every case starting with what precedes the `*`, and a case
+#           the program reports that no row names fails the run
 #   where   which runs the row applies to. Client side:
 #           <runtime>/<server>/<scheme>, with runtime native, node, bun or
 #           deno (js under that host), server nginx, caddy or apache, scheme
 #           http or https. Server side: <client>/<target>, with client curl,
-#           go, httpx, node, bun, deno or raw (Python raw-socket probes),
-#           target direct, nginx, caddy or apache. Each part is `*` or
-#           alternatives separated by `|`.
+#           go, httpx, node, bun, deno, raw (Python raw-socket probes) or
+#           http11probe, target direct, nginx, caddy or apache. Each part
+#           is `*` or alternatives separated by `|`.
 #   expect  pass: the case must pass.
 #           known: the case shows a documented third-party quirk; it is
 #           reported as KNOWN with the note, and fails the run if it passes,
@@ -127,3 +130,9 @@ server	head-cl-unread	raw/*	pass
 server	options-cl-unread	raw/*	pass
 server	unrouted-cl-unread	raw/*	pass
 server	expect-early-answer	raw/*	pass
+# Http11Probe (github.com/MDA2AV/Http11Probe, interop/clients/http11probe),
+# which names its own cases: each of its tests is h11p-<test id,
+# lowercased>, decided by the last row that names it, `h11p-*` included.
+# Only directly: through a proxy its verdicts would be the proxy's.
+server	h11p-*	http11probe/direct	pass
+server	h11p-cook-parsed-*	http11probe/direct	n/a	the /cookie tests check a framework's Cookie parser; mttp's server has none (cookies are the client's jar only), so an endpoint for them would test the interop server's own parsing

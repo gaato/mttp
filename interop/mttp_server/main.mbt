@@ -6,7 +6,13 @@
 //
 //   GET  /conn                 the peer address, which names the connection
 //   ANY  /echo                 method, target, framing, Expect and the
-//                              body's length and digest
+//                              body's length and digest, then the
+//                              request's header fields, one per line
+//   POST /                     the request body
+//   ANY  /                     `OK` (Http11Probe's baseline; with the
+//                              POST above and /echo's header lines, the
+//                              endpoints its server contract asks for)
+//   OPTIONS *                  `OK`
 //   GET  /headers              the request's header fields, one per line
 //   GET  /stream?pieces=&size=&delay_ms=
 //                              the binary pattern, streamed in pieces
@@ -133,6 +139,15 @@ async fn handle(request : @mttp_core.Request) -> @mttp_core.Response noraise {
   log.push("\{request.meth} \{target} \{framing(request.headers)}")
   match url.path {
     "/conn" => text(200, "\{peer}\n")
+    "/" if request.meth is Post => {
+      let body = request.body.read_all(max=max_body) catch {
+        error => return text(400, "body: \{error}\n")
+      }
+      @mttp_core.Response::new(200, body=Bytes(body))
+    }
+    "/" => text(200, "OK")
+    // OPTIONS * reaches the handler as /* (h1server's request_url).
+    "/*" if request.meth is Options => text(200, "OK")
     "/echo" => {
       let digest = @pattern.Digest::new()
       let body = request.body.read_all(max=max_body) catch {
@@ -146,6 +161,7 @@ async fn handle(request : @mttp_core.Request) -> @mttp_core.Response noraise {
         "expect \{field(request.headers, "expect")}",
         "body \{digest.summary()}",
         "peer \{peer}",
+        ..request.headers.iter().map(h => "\{h.0}: \{h.1}"),
       ]
       text(200, lines.join("\n") + "\n")
     }

@@ -673,10 +673,10 @@ Codec rules (RFC 9112, stricter where noted):
 
 | Case | Behaviour |
 |---|---|
-| `HeadTooLarge` | 431 and close |
-| `Malformed` (incl. a missing `Host` on HTTP/1.1; obs-fold, controls, whitespace before a colon; any duplicate Content-Length) | 400 and close |
+| `HeadTooLarge` | 431 and close; 501 when the method runs past the limit, 414 when the target does (RFC 9112 §3) |
+| `Malformed` (incl. a missing `Host` on HTTP/1.1; obs-fold, controls, whitespace before a colon; any duplicate Content-Length; a request with `chunked` before another transfer coding) | 400 and close |
 | `Smuggling` (CL and TE together) | 400 and close, in **both** engines through the same `request_framing`/`response_framing` |
-| `Unsupported` (any transfer coding other than a single `chunked`) | 501 |
+| `Unsupported` (any other transfer coding than a single `chunked`) | 501 |
 | HTTP/1.0 request | Keep-alive only when asked for; framed by `Length` or `UntilClose`, never `Chunked` |
 | `Expect: 100-continue` | `100 Continue` only after the route, the security inputs and the head inputs passed; otherwise the final status and close, without reading the body |
 | Successful CONNECT | `NoBody` describes the message only; the engine hands the remaining bytes to the tunnel |

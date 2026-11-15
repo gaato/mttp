@@ -1,7 +1,11 @@
 ///|
 /// Resolves Content-Length and Transfer-Encoding, or `None` when neither is
-/// present (RFC 9112, section 6).
-fn framing_fields(headers : @mttp_core.Headers) -> Framing? raise ParseError {
+/// present (RFC 9112, section 6). `request` is whether the fields are a
+/// request's.
+fn framing_fields(
+  headers : @mttp_core.Headers,
+  request~ : Bool,
+) -> Framing? raise ParseError {
   let lengths = headers.get_all("content-length")
   let encodings = headers.get_all("transfer-encoding")
   if !lengths.is_empty() && !encodings.is_empty() {
@@ -39,6 +43,12 @@ fn framing_fields(headers : @mttp_core.Headers) -> Framing? raise ParseError {
   if codings is ["chunked"] {
     return Some(Chunked)
   }
+  // RFC 9112, section 6.3: a request whose codings include chunked but not
+  // last has no reliable length, which the server MUST answer with 400; a
+  // coding it does not know is only a SHOULD for 501 (section 6.1).
+  if request && codings.contains("chunked") && codings.last() != Some("chunked") {
+    raise malformed("chunked is not the final transfer coding")
+  }
   raise ParseError(kind=Unsupported, detail="unsupported transfer coding")
 }
 
@@ -65,8 +75,9 @@ fn content_length(value : String) -> Int64 raise ParseError {
 /// Resolves the framing of a request body: `Length` from one valid
 /// Content-Length, `Chunked` from a Transfer-Encoding of exactly `chunked`,
 /// and `NoBody` when neither field is present. Refuses Content-Length with
-/// Transfer-Encoding as smuggling, any duplicate or invalid Content-Length as
-/// malformed, and any other transfer coding as unsupported.
+/// Transfer-Encoding as smuggling, any duplicate or invalid Content-Length
+/// and `chunked` before another coding as malformed, and any other transfer
+/// coding as unsupported.
 ///
 /// ```mbt check
 /// test {
@@ -83,7 +94,7 @@ fn content_length(value : String) -> Int64 raise ParseError {
 pub fn request_framing(
   headers : @mttp_core.Headers,
 ) -> Framing raise ParseError {
-  framing_fields(headers).unwrap_or(NoBody)
+  framing_fields(headers, request=true).unwrap_or(NoBody)
 }
 
 ///|
@@ -97,7 +108,7 @@ pub fn response_framing(
   status~ : Int32,
   meth~ : @mttp_core.Method = Get,
 ) -> Framing raise ParseError {
-  let framing = framing_fields(headers)
+  let framing = framing_fields(headers, request=false)
   if has_no_body(status, meth) {
     return NoBody
   }

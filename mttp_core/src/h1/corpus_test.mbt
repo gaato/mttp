@@ -222,9 +222,10 @@ let refused_requests : Array[(String, @h1.ParseKind, Bytes)] = [
     Unsupported,
     b"POST / HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: gzip, chunked\r\n\r\n0\r\n\r\n",
   ),
+  // RFC 9112, section 6.3: the server MUST answer 400.
   (
     "chunked not last",
-    Unsupported,
+    Malformed,
     b"POST / HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked, gzip\r\n\r\n0\r\n\r\n",
   ),
   (
@@ -366,6 +367,14 @@ let refused_responses : Array[(String, @h1.ParseKind, Bytes)] = [
     "gzip transfer coding",
     Unsupported,
     b"HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\nabc",
+  ),
+  // A response may end chunked with another coding and be read to its
+  // close (RFC 9112, section 6.3), so unlike a request it is not
+  // malformed; the client only decodes chunked.
+  (
+    "chunked not last",
+    Unsupported,
+    b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked, gzip\r\n\r\nabc",
   ),
   (
     "truncated chunked body",

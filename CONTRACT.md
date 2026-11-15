@@ -304,7 +304,8 @@ The codec follows the message syntax and framing of
 [RFC 9112](https://www.rfc-editor.org/rfc/rfc9112.html), with strict CRLF and a
 stricter rejection of duplicate Content-Length, even identical duplicates.
 CL+TE is rejected as smuggling. Only the single transfer coding `chunked` is
-supported. Header values retain Latin-1 octets and duplicate fields in order;
+supported; a request with `chunked` before another coding is malformed (RFC
+9112 section 6.3), any other coding unsupported. Header values retain Latin-1 octets and duplicate fields in order;
 obs-fold, controls and whitespace before a header colon are refused.
 
 Response readers preserve three-digit statuses 100–999. Invalid HTTP

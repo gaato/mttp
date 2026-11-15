@@ -97,10 +97,10 @@ Every refusal is a `ParseError` whose `kind` says how to answer:
 
 | Kind | Inputs | A server answers |
 |---|---|---|
-| `HeadTooLarge` | a head, chunk-size line or trailer section past its `Limits` | 431 for a head; 400 inside a body |
-| `Malformed` | bare CR or LF, an empty line before a status line, obs-fold, whitespace before a colon, controls in a field, a missing or invalid `Host` on HTTP/1.1, an invalid target form, any duplicate Content-Length (even identical), an invalid or overflowing length or chunk size | 400 |
+| `HeadTooLarge` | a head, chunk-size line or trailer section past its `Limits` | 431 for a head (501 or 414 when its method or target is what runs past the limit); 400 inside a body |
+| `Malformed` | bare CR or LF, an empty line before a status line, obs-fold, whitespace before a colon, controls in a field, a missing or invalid `Host` on HTTP/1.1, an invalid target form, any duplicate Content-Length (even identical), an invalid or overflowing length or chunk size, a request with `chunked` before another transfer coding | 400 |
 | `Smuggling` | Content-Length with Transfer-Encoding, Transfer-Encoding on HTTP/1.0, a framing or routing field in trailers | 400 |
-| `Unsupported` | a transfer coding other than a single `chunked`, an HTTP version other than 1.x | 501 or 505 |
+| `Unsupported` | any other transfer coding than a single `chunked`, an HTTP version other than 1.x | 501 or 505 |
 
 Each case closes the connection. `ParseKind` may grow, so a `match` on it
 needs a wildcard arm.

@@ -13,7 +13,8 @@ import {
 /// The interoperability suite: gaato/mttp's client against nginx,
 /// Caddy and Apache httpd, and its server against curl, Go, Python httpx,
 /// Node, Bun, Deno and raw-socket probes, directly and behind the three
-/// servers as reverse proxies. interop/README.md says what is tested.
+/// servers as reverse proxies, and against Http11Probe directly.
+/// interop/README.md says what is tested.
 ///
 ///   moon run interop/run.mbtx [-- <prefix>...]
 ///
@@ -97,8 +98,21 @@ let schemes : Array[String] = ["http", "https"]
 
 ///|
 let clients : Array[String] = [
-  "curl", "go", "httpx", "node", "bun", "deno", "raw",
+  "curl", "go", "httpx", "node", "bun", "deno", "raw", "http11probe",
 ]
+
+///|
+/// Http11Probe, built from source at this commit in the SDK image
+/// images.tsv pins as `dotnet`, since the project publishes no image. To
+/// update it, take the commit of the new release (or of main) and check
+/// that it still builds with that SDK.
+let http11probe_repo : String = "https://github.com/MDA2AV/Http11Probe.git"
+
+///|
+let http11probe_commit : String = "d50d818a0e008e9feb3bb9860ad5d9cc40342bc3"
+
+///|
+let http11probe_work : String = "\{work}/http11probe"
 
 ///|
 let targets : Array[String] = ["direct", "nginx", "caddy", "apache"]
@@ -156,21 +170,60 @@ fn covers(pattern : Array[String], run : Array[String]) -> Bool {
 }
 
 ///|
-/// The cases of one run, in table order, each with the last row that
-/// covers it; `n/a` cases are left out.
-fn plan(rows : Array[Row], side : String, run : String) -> Array[Row] {
+/// Whether a row's case is a prefix, `<prefix>*`, which names every case
+/// starting with `<prefix>`; a client that names its own cases (such as
+/// Http11Probe's tests) reports them under one.
+fn Row::is_prefix(self : Row) -> Bool {
+  self.id.has_suffix("*")
+}
+
+///|
+/// Whether a row decides case `id`: the same id, or a prefix of it.
+fn Row::names(self : Row, id : String) -> Bool {
+  if self.is_prefix() {
+    id.has_prefix(self.id[:self.id.length() - 1])
+  } else {
+    self.id == id
+  }
+}
+
+///|
+/// The rows that cover one run, in table order.
+fn rows_of(rows : Array[Row], side : String, run : String) -> Array[Row] {
   let parts = run.split("/").map(s => s.to_owned()).to_array()
-  let order : Array[String] = []
-  let chosen : Map[String, Row] = Map([])
-  for row in rows {
-    if row.side == side && covers(row.where_, parts) {
-      if !chosen.contains(row.id) {
-        order.push(row.id)
-      }
-      chosen[row.id] = row
+  rows.filter(row => row.side == side && covers(row.where_, parts))
+}
+
+///|
+/// The row that decides case `id` in a run: the last that names it.
+fn decide(rows : Array[Row], id : String) -> Row? {
+  for i = rows.length() - 1; i >= 0; i = i - 1 {
+    if rows[i].names(id) {
+      return Some(rows[i])
     }
   }
-  order.map(id => chosen[id]).filter(row => row.expect != "n/a")
+  None
+}
+
+///|
+/// The cases to ask a run for, in table order: each case id or prefix once,
+/// with the row that decides it (for a prefix, the last row whose prefix
+/// covers it); `n/a` cases are left out.
+fn plan(rows : Array[Row]) -> Array[Row] {
+  let seen : Map[String, Bool] = Map([])
+  let cases = []
+  for row in rows {
+    if seen.contains(row.id) {
+      continue
+    }
+    seen[row.id] = true
+    match decide(rows, row.id) {
+      Some(decided) if decided.expect != "n/a" =>
+        cases.push({ ..decided, id: row.id, })
+      _ => ()
+    }
+  }
+  cases
 }
 
 // Reporting.
@@ -184,17 +237,53 @@ priv struct Tally {
 }
 
 ///|
-/// Compares what a program printed with the plan and prints one line per
-/// case.
+/// Prints one case's line and counts it.
+fn Tally::case(
+  self : Tally,
+  name : String,
+  row : Row,
+  result : (Bool, String)?,
+  problem : String,
+) -> Unit {
+  let (verdict, detail) = match result {
+    None => ("FAIL", "no result: \{problem}")
+    Some((true, detail)) if row.expect == "pass" => ("PASS", detail)
+    Some((false, detail)) if row.expect == "pass" => ("FAIL", detail)
+    Some((false, detail)) => ("KNOWN", "\{detail} [\{row.note}]")
+    Some((true, detail)) =>
+      (
+        "FAIL",
+        "\{detail} [passes, though interop/cases.tsv records a known quirk: \{row.note}]",
+      )
+  }
+  match verdict {
+    "PASS" => self.pass += 1
+    "KNOWN" => self.known += 1
+    _ => {
+      self.fail += 1
+      self.failures.push(name)
+    }
+  }
+  println("\{verdict} \{name}: \{detail}")
+}
+
+///|
+/// Compares what a program printed with the run's rows and prints one line
+/// per case: each case id the plan asked for, then each case the program
+/// reported under a prefix, decided by the last row that names it. A case
+/// no row names fails, a prefix no reported case falls under fails, and
+/// cases decided `n/a` are not printed.
 fn Tally::report(
   self : Tally,
   side : String,
   run : String,
+  rows : Array[Row],
   cases : Array[Row],
   output : String,
   problem : String,
 ) -> Unit {
   let results : Map[String, (Bool, String)] = Map([])
+  let order : Array[String] = []
   for line in output.split("\n") {
     guard line.has_prefix("CASE ") else { continue }
     let parts = line["CASE ".length():]
@@ -202,30 +291,47 @@ fn Tally::report(
       .map(s => s.to_owned())
       .to_array()
     guard parts is [id, verdict, .. detail] else { continue }
+    if !results.contains(id) {
+      order.push(id)
+    }
     results[id] = (verdict == "ok", detail.join(" "))
   }
+  let asked : Map[String, Bool] = Map([])
   for row in cases {
-    let name = "\{side} \{run} \{row.id}"
-    let (verdict, detail) = match results.get(row.id) {
-      None => ("FAIL", "no result: \{problem}")
-      Some((true, detail)) if row.expect == "pass" => ("PASS", detail)
-      Some((false, detail)) if row.expect == "pass" => ("FAIL", detail)
-      Some((false, detail)) => ("KNOWN", "\{detail} [\{row.note}]")
-      Some((true, detail)) =>
-        (
-          "FAIL",
-          "\{detail} [passes, though interop/cases.tsv records a known quirk: \{row.note}]",
-        )
+    if !row.is_prefix() {
+      asked[row.id] = true
+      self.case("\{side} \{run} \{row.id}", row, results.get(row.id), problem)
     }
-    match verdict {
-      "PASS" => self.pass += 1
-      "KNOWN" => self.known += 1
+  }
+  let covered : Map[String, Bool] = Map([])
+  for id in order {
+    if asked.contains(id) {
+      continue
+    }
+    let name = "\{side} \{run} \{id}"
+    match decide(rows, id) {
+      Some(row) if row.expect == "n/a" => ()
+      Some(row) if cases.any(c => c.is_prefix() && c.names(id)) => {
+        for c in cases {
+          if c.is_prefix() && c.names(id) {
+            covered[c.id] = true
+          }
+        }
+        self.case(name, row, results.get(id), problem)
+      }
       _ => {
         self.fail += 1
         self.failures.push(name)
+        println(
+          "FAIL \{name}: reported, but interop/cases.tsv has no row for it",
+        )
       }
     }
-    println("\{verdict} \{name}: \{detail}")
+  }
+  for row in cases {
+    if row.is_prefix() && !covered.contains(row.id) {
+      self.case("\{side} \{run} \{row.id}", row, None, problem)
+    }
   }
 }
 
@@ -491,8 +597,9 @@ async fn stop_servers(env : Env) -> Unit {
 
 ///|
 /// Builds what the server-side clients need: the Go client (a static
-/// binary the host runs) and httpx with its dependencies.
-async fn prepare_clients(env : Env) -> Unit {
+/// binary the host runs), httpx with its dependencies, and Http11Probe
+/// when a run of it is selected.
+async fn prepare_clients(env : Env, filters : Array[String]) -> Unit {
   make_dir("\{work}/go")
   ignore(
     must(
@@ -552,6 +659,86 @@ async fn prepare_clients(env : Env) -> Unit {
         "/src/requirements.txt",
       ],
     ),
+  )
+  if selected(filters, "server/http11probe") {
+    build_http11probe(env)
+  }
+}
+
+///|
+/// Builds Http11Probe at its pinned commit into _build/interop/http11probe
+/// (interop/clients/http11probe/build.sh); a build of the same commit is
+/// kept, so later runs need no network.
+async fn build_http11probe(env : Env) -> Unit {
+  make_dir(http11probe_work)
+  ignore(
+    must(
+      env.engine,
+      [
+        "run",
+        "--rm",
+        ..env.user,
+        ..env.mount("interop/clients/http11probe", "/src"),
+        ..env.mount(http11probe_work, "/work", writable=true),
+        ..http11probe_env,
+        "--entrypoint",
+        "sh",
+        env.image("dotnet"),
+        "/src/build.sh",
+        http11probe_repo,
+        http11probe_commit,
+      ],
+    ),
+  )
+}
+
+///|
+/// The .NET settings of both Http11Probe containers: a home and NuGet cache
+/// in the work directory, no telemetry and no first-run banner.
+let http11probe_env : Array[String] = [
+  "-e", "DOTNET_CLI_HOME=/work/home", "-e", "NUGET_PACKAGES=/work/nuget", "-e", "DOTNET_CLI_TELEMETRY_OPTOUT=1",
+  "-e", "DOTNET_NOLOGO=1",
+]
+
+///|
+/// Runs every Http11Probe test against the mttp server. The SDK image has
+/// no Python and the Python image no .NET, so the probe writes its report
+/// to _build/interop/http11probe/out and the adapter (`server_command`)
+/// reads it in the Python image. A probe that fails leaves no report, and
+/// the adapter says so.
+async fn run_http11probe(env : Env) -> Unit {
+  let out = "\{http11probe_work}/out"
+  make_dir(out)
+  if @fs.exists("\{out}/report.json") {
+    @fs.remove("\{out}/report.json")
+  }
+  let (host, port) = match server_addr.rev_find(":") {
+    Some(i) => (server_addr[:i].to_owned(), server_addr[i + 1:].to_owned())
+    None => (server_addr, "80")
+  }
+  println("+ http11probe \{host}:\{port}")
+  let (status, stdout, stderr) = capture(
+    env.engine,
+    env.run_args(
+      "dotnet",
+      [
+        ..env.user,
+        ..env.mount(http11probe_work, "/work", writable=true),
+        ..http11probe_env,
+        "--entrypoint",
+        "dotnet",
+      ],
+      [
+        "/work/bin/Http11Probe.Cli.dll", "--host", host, "--port", port, "--output",
+        "/work/out/report.json",
+      ],
+    ),
+  ) catch {
+    error => (-1, "", "\{error}")
+  }
+  @fs.write_text(
+    "\{out}/console.log",
+    "exit status \{status}\n\{stdout}\{stderr}",
   )
 }
 
@@ -671,6 +858,21 @@ fn server_command(
           ["-I", "/src/probes.py", host, prefix, server_addr, ids],
         ),
       )
+    // Only directly: through a proxy the probe would test the proxy.
+    "http11probe" =>
+      (
+        env.engine,
+        env.run_args(
+          "python",
+          [
+            "--entrypoint",
+            "python3",
+            ..env.mount("interop/clients/http11probe", "/src"),
+            ..env.mount("\{http11probe_work}/out", "/in"),
+          ],
+          ["-I", "/src/adapter.py", "/in/report.json", "/in/console.log", ids],
+        ),
+      )
     runtime => {
       let script = match runtime {
         "deno" => ["run", "-A", "/src/client.mjs"]
@@ -694,6 +896,7 @@ async fn run_one(
   tally : Tally,
   side : String,
   run : String,
+  rows : Array[Row],
   cases : Array[Row],
   command : (String, Array[String]),
 ) -> Unit {
@@ -707,7 +910,7 @@ async fn run_one(
       (out, "the program exited with status \{status}: \{last}")
     }
   }
-  tally.report(side, run, cases, output, problem)
+  tally.report(side, run, rows, cases, output, problem)
 }
 
 ///|
@@ -752,7 +955,7 @@ async fn main_run(filters : Array[String]) -> Int32 {
       ignore(must(engine, ["pull", "--quiet", image]))
     }
   }
-  prepare_clients(env)
+  prepare_clients(env, filters)
   let tally = { pass: 0, fail: 0, known: 0, failures: [], }
   @async.with_task_group(group => {
     let server = @process.spawn(
@@ -771,7 +974,8 @@ async fn main_run(filters : Array[String]) -> Int32 {
       for server in servers {
         for scheme in schemes {
           let run = "\{runtime}/\{server.name}/\{scheme}"
-          let cases = plan(rows, "client", run)
+          let rows = rows_of(rows, "client", run)
+          let cases = plan(rows)
           if cases.is_empty() || !selected(filters, "client/\{run}") {
             continue
           }
@@ -779,6 +983,7 @@ async fn main_run(filters : Array[String]) -> Int32 {
             tally,
             "client",
             run,
+            rows,
             cases,
             client_command(env, runtime, server, scheme, cases.map(c => c.id)),
           )
@@ -788,14 +993,19 @@ async fn main_run(filters : Array[String]) -> Int32 {
     for client in clients {
       for target in targets {
         let run = "\{client}/\{target}"
-        let cases = plan(rows, "server", run)
+        let rows = rows_of(rows, "server", run)
+        let cases = plan(rows)
         if cases.is_empty() || !selected(filters, "server/\{run}") {
           continue
+        }
+        if client == "http11probe" {
+          run_http11probe(env)
         }
         run_one(
           tally,
           "server",
           run,
+          rows,
           cases,
           server_command(env, client, target, cases.map(c => c.id)),
         )

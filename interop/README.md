@@ -27,12 +27,27 @@ third-party implementations instead:
   through a proxy, whatever reaches the server must be unambiguous. Among
   them are bodies the server answers without reading (the 0.CL and CL.0
   shapes and early answers), which must never be read as a request.
+- **The server** probed directly by
+  [Http11Probe](https://github.com/MDA2AV/Http11Probe), a third-party suite
+  of about 200 raw-socket tests of RFC 9110 and 9112 compliance, request
+  smuggling, malformed input, header normalization, cookies, conditional
+  requests and WebSocket upgrades. Each of its tests is a case
+  `h11p-<test id>` (lowercased); a Warn, which the RFC allows, passes with
+  `warn:` in its detail. The project publishes no image, so it is built
+  from source at a pinned commit in the .NET SDK image
+  ([build.sh](clients/http11probe/build.sh)), and
+  [adapter.py](clients/http11probe/adapter.py) reads its report. The
+  build is kept in `_build/interop/http11probe`, so later runs with the same
+  pin need no network for it.
 
 [cases.tsv](cases.tsv) lists every case, where it runs and what it expects;
-the server configurations are in [servers](servers). Every third-party
+a case ending in `*` names every case starting with what precedes it, which
+is how Http11Probe's tests are listed. The server configurations are in
+[servers](servers). Every third-party
 program runs from an image pinned by digest in [images.tsv](images.tsv), and
 httpx is pinned with hashes in
-[requirements.txt](clients/python/requirements.txt).
+[requirements.txt](clients/python/requirements.txt). Http11Probe is pinned
+by commit in [run.mbtx](run.mbtx).
 
 ## Running it
 
@@ -47,7 +62,8 @@ such as `moon run interop/run.mbtx -- client/native/apache` or `-- server/raw`.
 It needs podman or docker (podman is preferred; `INTEROP_ENGINE` chooses),
 openssl, a C compiler for moon's native target, and ports 39000, 39010,
 39011, 39020, 39021, 39030 and 39031 free on 127.0.0.1 and 127.0.0.2. A run
-takes a few minutes once the images are pulled. CI runs it daily, in the
+takes a few minutes once the images are pulled, about one of them
+Http11Probe's (`-- server/http11probe`). CI runs it daily, in the
 `interop` job of [canary.yml](../.github/workflows/canary.yml), not on pull
 requests.
 

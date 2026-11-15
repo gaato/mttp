@@ -67,7 +67,9 @@ test "serve a request" {
   Transfer-Encoding, a duplicate or invalid Content-Length, Transfer-Encoding
   on HTTP/1.0) is answered with 400 and the connection closes, so no byte
   after the head is read as another request. Other heads are refused with
-  431 (past the head limits), 400 (malformed, a missing or duplicate `Host`),
+  431 (past the head limits, or 501 and 414 when the method or the target is
+  what runs past them, as RFC 9112 section 3 asks), 400 (malformed, a missing or duplicate `Host`,
+  `chunked` before another transfer coding, as RFC 9112 section 6.3 asks),
   501 (CONNECT, a transfer coding other than `chunked`), 505 (an HTTP version
   other than 1.x) or 417 (an expectation other than `100-continue`).
 - **Bounded input.** Heads within `max_header_bytes` and 100 fields, chunk

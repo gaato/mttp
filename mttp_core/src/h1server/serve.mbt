@@ -14,7 +14,8 @@
 /// The engine reads heads, chunk-size lines and trailers through the
 /// bounded `gaato/http/h1` codec and applies `limits` (see `ServerLimits`).
 /// A head the codec refuses is answered and the connection closed: 431 for
-/// a head past `max_header_bytes` or its field limit, 400 for malformed
+/// a head past `max_header_bytes` or its field limit (501 when the method
+/// runs past it, 414 when the target does), 400 for malformed
 /// heads and request smuggling (Content-Length with Transfer-Encoding, a
 /// duplicate Content-Length), 501 for an unsupported transfer coding and for
 /// CONNECT, 505 for an HTTP version other than 1.x, 417 for an expectation

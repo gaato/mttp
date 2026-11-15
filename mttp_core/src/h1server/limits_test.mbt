@@ -98,6 +98,45 @@ test "a head of max_header_bytes is served and one byte more is 431" {
 }
 
 ///|
+test "a request line past max_header_bytes is answered for its longest part" {
+  // RFC 9112, section 3: 501 for a method longer than any implemented, 414
+  // for a target longer than the server parses; 431 is for header fields.
+  let limits = { ..@h1server.ServerLimits::default(), max_header_bytes: 128, }
+  for
+    (wire, status) in [
+      (
+        String::make(200, 'A') + " / HTTP/1.1\r\nHost: example.test\r\n\r\n",
+        "501",
+      ),
+      ("\r\n" + String::make(200, 'A'), "501"),
+      (
+        "GET /" +
+        String::make(200, 'a') +
+        " HTTP/1.1\r\nHost: example.test\r\n\r\n",
+        "414",
+      ),
+      // No method at all: what runs past the limit is still the target.
+      (" /" + String::make(200, 'a'), "414"),
+      ("GET / HTTP/1.1" + String::make(200, '1') + "\r\n\r\n", "400"),
+      ("GET / HTTP/1.1\r\nX: " + String::make(200, 'a') + "\r\n\r\n", "431"),
+      ("\r\n".repeat(100), "431"),
+    ] {
+    for chunk_bytes in [1, 17, 65536] {
+      let h = Harness::new()
+      let out = h.exchange(
+        @mttp_core.encode_utf8(wire),
+        reply("ok"),
+        limits~,
+        chunk_bytes~,
+      )
+      assert_true(out.has_prefix("HTTP/1.1 \{status} "), msg="\{wire}: \{out}")
+      assert_eq(out.split("HTTP/1.1 ").count(), 2, msg=wire)
+      assert_eq(h.errors.map(kind_phase), [(TooLarge(limit=128), Head)])
+    }
+  }
+}
+
+///|
 test "a head of 100 fields is served and 101 are 431" {
   @sim.explore(schedule => {
     for fields in [100, 101] {
