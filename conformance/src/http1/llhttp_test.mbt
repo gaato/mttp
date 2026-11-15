@@ -10,7 +10,7 @@ test "llhttp cases read as llhttp expects, at every split" {
   inspect(
     "\{cases} cases, \{differences} differences",
     content=(
-      #|155 cases, 57 differences
+      #|154 cases, 58 differences
     ),
   )
   debug_inspect(

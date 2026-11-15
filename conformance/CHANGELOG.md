@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Document llhttp's acceptance of a raw pipe in a request query as a
+  difference: mttp validates RFC 3986 wire targets before URL construction.
+
 ### Added
 
 - Port the private HTTP URL, form, cookie and SSE corpora to gaato/http and

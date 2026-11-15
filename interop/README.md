@@ -85,3 +85,95 @@ Every case prints one line:
 Cases that do not apply to a run are not printed; their `n/a` rows in
 [cases.tsv](cases.tsv) say why. Most are js runs, where the host's fetch
 owns connections, decoding and `Expect`.
+
+## HTTP Garden
+
+`mttp_server garden [address]` serves the HTTP Garden's base64 JSON echo on
+`0.0.0.0:80` by default. It reads the complete body (up to 64 MiB), preserves
+header names, duplicate order and Latin-1 value octets as handed to the handler,
+and reports the request's protocol attribute. A failed body read lets the
+engine return its error status. Garden mode retains no request log.
+As in the codec, HTTP/1 minor versions above 1 are reported as `1.1`.
+
+The `uri` is the handler URL's path and query, extracted without URL
+normalization. The handler API has already converted origin-form to an absolute
+URL and `OPTIONS *` to `/*` (`h1server/session.mbt`, `request_url`); the echo
+cannot distinguish original absolute-form from origin-form, or `OPTIONS *`
+from `OPTIONS /*`. Account for these adapter differences when interpreting
+results. HEAD suppresses the response body as usual; Garden's mutation method
+list excludes HEAD.
+
+In a checkout of [http-garden](https://github.com/narfindustries/http-garden),
+create `images/mttp/Dockerfile` with the following text. The commit selected by
+`APP_VERSION` must contain Garden mode. The toolchain and core archive URLs use
+that commit's `moonbit-version`; the binary archive is checked against MoonBit's
+[published SHA-256](https://www.moonbitlang.com/download#verifying-binaries).
+The pinned core archive currently has no published `.sha256` (403).
+
+```dockerfile
+FROM http-garden-soil:latest
+
+RUN apt -y update \
+ && apt -y install --no-install-recommends curl
+
+ARG APP_REPO
+ARG APP_BRANCH
+ARG APP_VERSION
+RUN git clone --branch "$APP_BRANCH" "$APP_REPO" /app/mttp \
+ && cd /app/mttp \
+ && git checkout --detach "$APP_VERSION"
+
+ENV MOON_HOME=/opt/moon
+ENV PATH="/opt/moon/bin:$PATH"
+ENV MOON_CC=cc
+RUN cd /app/mttp \
+ && version=$(sed 's/+/%2B/g' moonbit-version) \
+ && arch=$(uname -m) \
+ && curl -fsSLo /tmp/moon.tar.gz "https://cli.moonbitlang.com/binaries/$version/moonbit-linux-$arch.tar.gz" \
+ && curl -fsSLo /tmp/moon.sha256 "https://cli.moonbitlang.com/binaries/$version/moonbit-linux-$arch.tar.gz.sha256" \
+ && echo "$(cut -d ' ' -f 1 /tmp/moon.sha256)  /tmp/moon.tar.gz" | sha256sum -c - \
+ && mkdir -p "$MOON_HOME" \
+ && tar xzf /tmp/moon.tar.gz -C "$MOON_HOME" \
+ && chmod +x "$MOON_HOME"/bin/* "$MOON_HOME"/bin/internal/tcc \
+ && curl -fsSLo /tmp/core.tar.gz "https://cli.moonbitlang.com/cores/core-$version.tar.gz" \
+ && tar xzf /tmp/core.tar.gz -C "$MOON_HOME/lib" \
+ && moon -C "$MOON_HOME/lib/core" bundle --warn-list -a --all \
+ && rm /tmp/moon.tar.gz /tmp/moon.sha256 /tmp/core.tar.gz
+
+WORKDIR /app/mttp
+RUN moon update \
+ && moon build --deny-warn --target native interop/mttp_server \
+ && cp _build/native/debug/build/gaato/mttp-interop/mttp_server/mttp_server.exe /app/server
+
+EXPOSE 80
+CMD ["/app/server", "garden", "0.0.0.0:80"]
+```
+
+Add this service under `services` in Garden's `docker-compose.yml`, replacing
+`<commit-containing-garden-mode>` with the reviewed commit:
+
+```yaml
+  mttp:
+    build:
+      context: ./images/mttp
+      args:
+        APP_REPO: https://github.com/gaato/mttp
+        APP_BRANCH: main
+        APP_VERSION: <commit-containing-garden-mode>
+    x-props:
+      role: origin
+```
+
+Use Garden's normal `./garden.sh start --build mttp gunicorn go_stdlib hyper
+nginx node_stdlib` and `./garden.sh repl`. For example:
+
+```text
+payload 'POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n0\n\r\n' | fanout mttp gunicorn go_stdlib hyper nginx node_stdlib | grid mttp gunicorn go_stdlib hyper nginx node_stdlib
+```
+
+Keep the input and full `fanout` output, not just the grid: Garden normalizes
+some header differences, including Content-Length and Transfer-Encoding, and
+its RFC validator is deliberately incomplete. Check each discrepancy against
+[CONTRACT.md](../CONTRACT.md),
+[h1server's guarantees](../mttp_core/src/h1server/README.mbt.md) and
+[documented conformance differences](../conformance/data/h1_differences.txt).

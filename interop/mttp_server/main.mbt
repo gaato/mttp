@@ -25,6 +25,7 @@
 //                              connection (`error ...`)
 //
 //   mttp_server <address>      serves on <address>
+//   mttp_server garden [address]  HTTP Garden JSON echo (default 0.0.0.0:80)
 //   mttp_server www <dir>      writes the static files the third-party
 //                              servers serve (interop/pattern) into <dir>
 
@@ -206,6 +207,26 @@ async fn handle(request : @mttp_core.Request) -> @mttp_core.Response noraise {
 ///|
 fn main {
   let args = @env.args()
+  if args is [_, "garden", .. rest] {
+    guard rest.length() <= 1 else {
+      println("usage: mttp_server garden [address]")
+      @env.exit(2)
+    }
+    let addr = rest.get(0).unwrap_or("0.0.0.0:80")
+    @mttp.run(async fn() {
+      @server.serve(
+        garden,
+        addr~,
+        limits={
+          ..@h1server.ServerLimits::default(),
+          max_body_bytes: max_body,
+          drain_max_bytes: max_body,
+        },
+        on_listen=addr => println("listening on \{addr}"),
+      )
+    })
+    return
+  }
   if args is [_, "www", dir] {
     @mttp.run(async fn() {
       // `mkdir`'s flag for an existing directory is `allow_exist` on

@@ -104,6 +104,9 @@ never does.
 
 ### Fixed
 
+- HTTP/1 request targets now validate RFC 3986 path/query characters and
+  percent escapes before URL construction, refusing malformed origin-form
+  and absolute-form targets instead of handing them to the handler.
 - `h1client` no longer writes a request to a parked connection the server
   has closed. Servers close idle keep-alive connections after a few seconds
   (Apache after 5), and a POST sent after such a pause failed as sent, so it

@@ -354,14 +354,67 @@ fn validate_target(
     if meth != Options {
       raise malformed("asterisk-form requires OPTIONS")
     }
-  } else if !target.has_prefix("/") {
+  } else if target.has_prefix("/") {
+    validate_path_query(target[:])
+  } else {
     let url = @mttp_core.Url::parse(target) catch {
       _ => raise malformed("invalid absolute target")
     }
-    if !(url.scheme is Some("http" | "https")) ||
-      url.host is (None | Some("")) ||
-      url.userinfo is Some(_) {
+    guard url.scheme is Some("http" | "https") &&
+      url.host is Some(host) &&
+      !host.is_empty() &&
+      url.userinfo is None &&
+      target.find("://") is Some(separator) else {
       raise malformed("expected origin-form or absolute HTTP target")
+    }
+    // Url::parse is a URL constructor: it percent-encodes illegal path
+    // characters and preserves malformed escapes. Validate the wire form
+    // before any such normalization can hide an invalid request line.
+    for i in (separator + 3)..<target.length() {
+      if target[i] is ('/' | '?') {
+        validate_path_query(target[i:])
+        break
+      }
+    }
+  }
+}
+
+///|
+/// RFC 3986 pchar, plus path separators and the query delimiter. Once the
+/// first '?' begins the query, '/' and further '?' remain legal there.
+fn validate_path_query(text : StringView) -> Unit raise ParseError {
+  for i = 0; i < text.length(); {
+    match text[i] {
+      'a'..<='z'
+      | 'A'..<='Z'
+      | '0'..<='9'
+      | '-'
+      | '.'
+      | '_'
+      | '~'
+      | '!'
+      | '$'
+      | '&'
+      | '\''
+      | '('
+      | ')'
+      | '*'
+      | '+'
+      | ','
+      | ';'
+      | '='
+      | ':'
+      | '@'
+      | '/'
+      | '?' => continue i + 1
+      '%' => {
+        guard text.get_char(i + 1) is Some('0'..<='9' | 'a'..<='f' | 'A'..<='F') &&
+          text.get_char(i + 2) is Some('0'..<='9' | 'a'..<='f' | 'A'..<='F') else {
+          raise malformed("invalid percent escape in request target")
+        }
+        continue i + 3
+      }
+      _ => raise malformed("invalid character in request target")
     }
   }
 }

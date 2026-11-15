@@ -165,3 +165,6 @@ diff wpt content-length 35 => refused Malformed
 
 reason The resource ends its lines with bare LF and repeats Content-Length; mttp requires CRLF and refuses a repeated Content-Length (CONTRACT.md "HTTP/1 codec").
 diff wpt content-length identical-duplicates => refused Malformed
+
+reason A raw vertical bar is not a path/query pchar (RFC 3986 sections 3.3 and 3.4); HTTP request-targets must already use URI syntax (RFC 9112 section 3.2). mttp refuses it before a URL constructor can percent-encode it (h1 README "What is refused": invalid target form).
+diff llhttp request/uri.md:98 => refused Malformed

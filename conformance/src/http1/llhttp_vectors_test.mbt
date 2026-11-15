@@ -260,14 +260,6 @@ let llhttp_cases : String =
   #|expect request GET http://hypnotoad.org:1234?hail=all 1.1
   #|expect header host: h
   #|expect complete
-  #|case llhttp request/uri.md:98
-  #|name Query URL with vertical bar character
-  #|side request
-  #|wire GET /test.cgi?query=| HTTP/1.1\r\nHost: h\r\n\r\n
-  #|note Host: h added after the request line
-  #|expect request GET /test.cgi?query=| 1.1
-  #|expect header host: h
-  #|expect complete
   #|case llhttp request/uri.md:125
   #|name `host:port` terminated by a space
   #|side request
@@ -1404,6 +1396,16 @@ let llhttp_differences : String =
   #|reason A request target with characters outside RFC 3986 (here `"` and `\`) is refused (RFC 9112 section 3.2; h1 README "What is refused": an invalid target form).
   #|expect refused Malformed
   #|upstream request GET /with_"lovely"_quotes?foo=\\"bar\\" 1.1
+  #|upstream header host: h
+  #|upstream complete
+  #|case llhttp request/uri.md:98
+  #|name Query URL with vertical bar character
+  #|side request
+  #|wire GET /test.cgi?query=| HTTP/1.1\r\nHost: h\r\n\r\n
+  #|note Host: h added after the request line
+  #|reason A raw vertical bar is not a path/query pchar (RFC 3986 sections 3.3 and 3.4); HTTP request-targets must already use URI syntax (RFC 9112 section 3.2). mttp refuses it before a URL constructor can percent-encode it (h1 README "What is refused": invalid target form).
+  #|expect refused Malformed
+  #|upstream request GET /test.cgi?query=| 1.1
   #|upstream header host: h
   #|upstream complete
   #|case llhttp request/uri.md:165

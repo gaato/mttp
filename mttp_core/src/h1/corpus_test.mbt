@@ -82,6 +82,24 @@ let smuggling_responses : Array[(String, Bytes)] = [
 /// kind each one is refused with. The disguises fail before framing is
 /// resolved, so they never reach `request_framing`.
 let refused_requests : Array[(String, @h1.ParseKind, Bytes)] = [
+  // HTTP Garden: Url::parse can encode these, but a wire target must
+  // already satisfy RFC 3986 (RFC 9112 section 3.2), before normalization.
+  ("quote in origin target", Malformed, b"GET /\" HTTP/1.1\r\nHost: h\r\n\r\n"),
+  ("brace in origin target", Malformed, b"GET /{ HTTP/1.1\r\nHost: h\r\n\r\n"),
+  ("bracket in path", Malformed, b"GET /[x] HTTP/1.1\r\nHost: h\r\n\r\n"),
+  ("pipe in query", Malformed, b"GET /?x=| HTTP/1.1\r\nHost: h\r\n\r\n"),
+  ("invalid percent escape", Malformed, b"GET /%zz HTTP/1.1\r\nHost: h\r\n\r\n"),
+  ("short percent escape", Malformed, b"GET /?x=%0 HTTP/1.1\r\nHost: h\r\n\r\n"),
+  (
+    "quote in absolute target",
+    Malformed,
+    b"GET http://h/\" HTTP/1.1\r\nHost: h\r\n\r\n",
+  ),
+  (
+    "invalid escape in absolute query",
+    Malformed,
+    b"GET http://h?x=%zz HTTP/1.1\r\nHost: h\r\n\r\n",
+  ),
   // Disguised field names and line structure.
   (
     "space before the colon",
@@ -415,6 +433,20 @@ test "accepted requests read identically at every split" {
   // (name, wire, framing, body, rest)
   let cases : Array[(String, Bytes, @h1.Framing, Bytes, Bytes)] = [
     ("no body", b"GET / HTTP/1.1\r\nHost: h\r\n\r\n", NoBody, b"", b""),
+    (
+      "all path and query characters with escaped non-pchars",
+      b"GET /-._~!$&'()*+,;=:@/%22%7B%25?x=/?%ff HTTP/1.1\r\nHost: h\r\n\r\n",
+      NoBody,
+      b"",
+      b"",
+    ),
+    (
+      "absolute IPv6 authority and empty path query",
+      b"GET http://[::1]?x=%ff/? HTTP/1.1\r\nHost: h\r\n\r\n",
+      NoBody,
+      b"",
+      b"",
+    ),
     (
       "length with a pipelined request",
       b"POST /a HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\nabcGET / HTTP/1.1\r\n",

@@ -93,6 +93,11 @@ test "write a chunked response" {
 
 ## What is refused
 
+Request-target paths and queries must already satisfy RFC 3986: pchar,
+`/`, `?`, and complete `%HH` escapes. The wire codec refuses raw quotes,
+braces, brackets and pipes there instead of letting a URL constructor
+percent-encode them. Bracketed IPv6 authorities remain valid.
+
 Every refusal is a `ParseError` whose `kind` says how to answer:
 
 | Kind | Inputs | A server answers |
