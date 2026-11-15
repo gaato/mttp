@@ -36,6 +36,8 @@
 #                                           and mttp under ASan, using a
 #                                           disposable source/toolchain copy.
 #                                           Daily in canary, outside full
+#   scripts/gates.sh mutate [SITE]...       the hand-run HTTP/1 mutation
+#                                           sample; not part of full or CI
 #   scripts/gates.sh full                   quick on all four targets, static,
 #                                           the self-test of this script, the
 #                                           resolver gate and workerd
@@ -200,6 +202,10 @@ case "$mode" in
   sanitize)
     [ $# = 0 ] || usage
     step script scripts/sanitize.mbtx
+    finish
+    ;;
+  mutate)
+    step script scripts/mutate.mbtx -- "$@"
     finish
     ;;
   manifest)

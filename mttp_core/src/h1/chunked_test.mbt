@@ -90,6 +90,15 @@ test "chunk lines trailers and field counts enforce exact limits" {
 }
 
 ///|
+test "chunk size accepts the exact Int64 boundary" {
+  let decoder = @h1.ChunkedDecoder::new(@h1.Limits::default())
+  let result = decoder.feed(b"7fffffffffffffff\r\n")
+  assert_eq(result.consumed, 18)
+  assert_false(result.done)
+  assert_true(result.chunks.is_empty())
+}
+
+///|
 test "chunk decoder rejects malformed sizes extensions delimiters and framing trailers" {
   for
     wire in [

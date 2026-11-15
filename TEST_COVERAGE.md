@@ -118,6 +118,23 @@ The conformance suites exercise the harness through URL, cookie and SSE
 corpora, including seeded SSE mutations and every short-input split. No
 uncovered-line budget is needed for these additions.
 
+## HTTP/1 mutation adequacy (2026-11-16)
+
+`moon_mutest` 0.1.7 and `moonseal` 0.1.6 could not be installed on this
+toolchain because their CLI dependency graphs support JS only, so
+`scripts/mutate.mbtx` runs a bounded, hand-selected sample in a disposable
+copy. The 50 sites cover comparison and limit boundaries, boolean operators,
+negated guards, deleted raises/returns, ParseKind changes and swapped arms in
+`head.mbt` (including HeadDecoder), `framing.mbt`, `chunked.mbt` and
+`write.mbt`; h1, h1client and h1server tests run for each site.
+
+Before closing gaps, 48 were killed, with two survivors and no timeout. H13 is
+equivalent: the request-line three-part check removes every SP from the target
+before its character guard. C03 exposed a gap at the maximum Int64 chunk size;
+the exact `7fffffffffffffff` boundary test now kills it. Final result: 49
+killed, zero survived, one equivalent, zero timeout. Run with
+`scripts/gates.sh mutate`.
+
 ## Accepted uncovered
 
 | File | Budget | Reason |

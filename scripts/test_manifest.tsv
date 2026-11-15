@@ -42,10 +42,10 @@ gaato/mttp_core	gaato/mttp_core/endpoint/testkit	js	4
 gaato/mttp_core	gaato/mttp_core/endpoint/testkit	native	4
 gaato/mttp_core	gaato/mttp_core/endpoint/testkit	wasm	4
 gaato/mttp_core	gaato/mttp_core/endpoint/testkit	wasm-gc	4
-gaato/mttp_core	gaato/mttp_core/h1	js	48
-gaato/mttp_core	gaato/mttp_core/h1	native	48
-gaato/mttp_core	gaato/mttp_core/h1	wasm	48
-gaato/mttp_core	gaato/mttp_core/h1	wasm-gc	48
+gaato/mttp_core	gaato/mttp_core/h1	js	49
+gaato/mttp_core	gaato/mttp_core/h1	native	49
+gaato/mttp_core	gaato/mttp_core/h1	wasm	49
+gaato/mttp_core	gaato/mttp_core/h1	wasm-gc	49
 gaato/mttp_core	gaato/mttp_core/h1client	js	104
 gaato/mttp_core	gaato/mttp_core/h1client	native	104
 gaato/mttp_core	gaato/mttp_core/h1client	wasm	104

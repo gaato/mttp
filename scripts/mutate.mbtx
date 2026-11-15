@@ -1,0 +1,327 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/env",
+}
+----
+
+// A deliberately small, reviewable mutation sample for the HTTP/1 codec.
+// Every mutant is applied to a disposable copy, never to the working tree.
+// The sample emphasizes framing boundaries and branches whose wrong result can
+// still parse and compile; adding every syntactic operator would mostly repeat
+// the same decision and make this hand-run audit needlessly slow.
+
+///|
+struct Site {
+  id : String
+  path : String
+  rule : String
+  old : String
+  new : String
+}
+
+///|
+suberror MutationError {
+  MutationError(String)
+}
+
+///|
+fn site(
+  id : String,
+  path : String,
+  rule : String,
+  old : String,
+  new_ : String,
+) -> Site {
+  { id, path, rule, old, new: new_, }
+}
+
+///|
+let sites : Array[Site] = [
+  site(
+    "H01", "mttp_core/src/h1/head.mbt", "&& -> ||", "self.previous_cr && byte != b'\\n'",
+    "self.previous_cr || byte != b'\\n'",
+  ),
+  site(
+    "H02", "mttp_core/src/h1/head.mbt", "== -> !=", "self.matched == 4", "self.matched != 4",
+  ),
+  site(
+    "H03", "mttp_core/src/h1/head.mbt", "boundary +1", "if max < 0 {", "if max <= 0 {",
+  ),
+  site(
+    "H04", "mttp_core/src/h1/head.mbt", ">= -> >", "if i >= max {", "if i > max {",
+  ),
+  site(
+    "H05", "mttp_core/src/h1/head.mbt", "boundary +1", "if self.max < 0 {", "if self.max <= 0 {",
+  ),
+  site(
+    "H06", "mttp_core/src/h1/head.mbt", ">= -> >", "if self.seen >= self.max {",
+    "if self.seen > self.max {",
+  ),
+  site(
+    "H07", "mttp_core/src/h1/head.mbt", "delete early return", "return false\n    }\n    self.leading = false",
+    "ignore(false)\n    }\n    self.leading = false",
+  ),
+  site(
+    "H08", "mttp_core/src/h1/head.mbt", "== -> !=", "end == head.length()", "end != head.length()",
+  ),
+  site(
+    "H09", "mttp_core/src/h1/head.mbt", ">= -> >", "pairs.length() >= limits.max_headers",
+    "pairs.length() > limits.max_headers",
+  ),
+  site(
+    "H10", "mttp_core/src/h1/head.mbt", "ParseKind arm", "kind=Unsupported, detail=\"unsupported HTTP version\"",
+    "kind=Malformed, detail=\"unsupported HTTP version\"",
+  ),
+  site(
+    "H11", "mttp_core/src/h1/head.mbt", "== -> !=", "if v == Http10 && headers.contains(\"transfer-encoding\") {",
+    "if v != Http10 && headers.contains(\"transfer-encoding\") {",
+  ),
+  site(
+    "H12", "mttp_core/src/h1/head.mbt", "> -> >=", "if hosts.length() > 1 ||", "if hosts.length() >= 1 ||",
+  ),
+  site(
+    "H13", "mttp_core/src/h1/head.mbt", "boundary -1", "target.iter().any(c => c <= ' ' || c >= '\\u{7f}' || c == '#')",
+    "target.iter().any(c => c < ' ' || c >= '\\u{7f}' || c == '#')",
+  ),
+  site(
+    "H14", "mttp_core/src/h1/head.mbt", "== -> !=", "if meth == Connect {", "if meth != Connect {",
+  ),
+  site(
+    "H15", "mttp_core/src/h1/head.mbt", "boundary +1", "line.length() >= 12 &&",
+    "line.length() > 12 &&",
+  ),
+  site(
+    "H16", "mttp_core/src/h1/head.mbt", "boundary +1", "if status < 100 {", "if status <= 100 {",
+  ),
+  site(
+    "F01", "mttp_core/src/h1/framing.mbt", "&& -> ||", "if !lengths.is_empty() && !encodings.is_empty() {",
+    "if !lengths.is_empty() || !encodings.is_empty() {",
+  ),
+  site(
+    "F02", "mttp_core/src/h1/framing.mbt", "> -> >=", "if lengths.length() > 1 {",
+    "if lengths.length() >= 1 {",
+  ),
+  site(
+    "F03", "mttp_core/src/h1/framing.mbt", "delete raise", "raise malformed(\"duplicate Content-Length\")",
+    "ignore(malformed(\"duplicate Content-Length\"))",
+  ),
+  site(
+    "F04", "mttp_core/src/h1/framing.mbt", "negate guard", "if encodings.is_empty() {\n    return None",
+    "if !encodings.is_empty() {\n    return None",
+  ),
+  site(
+    "F05", "mttp_core/src/h1/framing.mbt", "negate guard", "if coding.is_empty() {",
+    "if !coding.is_empty() {",
+  ),
+  site(
+    "F06", "mttp_core/src/h1/framing.mbt", "> -> >=", "codings.filter(c => c == \"chunked\").length() > 1",
+    "codings.filter(c => c == \"chunked\").length() >= 1",
+  ),
+  site(
+    "F07", "mttp_core/src/h1/framing.mbt", "&& -> ||", "if request && codings.contains(\"chunked\") && codings.last() != Some(\"chunked\") {",
+    "if request || codings.contains(\"chunked\") && codings.last() != Some(\"chunked\") {",
+  ),
+  site(
+    "F08", "mttp_core/src/h1/framing.mbt", "ParseKind arm", "kind=Unsupported, detail=\"unsupported transfer coding\"",
+    "kind=Malformed, detail=\"unsupported transfer coding\"",
+  ),
+  site(
+    "F09", "mttp_core/src/h1/framing.mbt", "negate guard", "if value.is_empty() {",
+    "if !value.is_empty() {",
+  ),
+  site(
+    "F10", "mttp_core/src/h1/framing.mbt", "> -> >=", "if length > (9223372036854775807L - digit) / 10L {",
+    "if length >= (9223372036854775807L - digit) / 10L {",
+  ),
+  site(
+    "F11", "mttp_core/src/h1/framing.mbt", "boundary +1", "status == 304 ||", "status == 305 ||",
+  ),
+  site(
+    "C01", "mttp_core/src/h1/chunked.mbt", "&& -> ||", "while j < line.length() && line[j] is (' ' | '\\t') {",
+    "while j < line.length() || line[j] is (' ' | '\\t') {",
+  ),
+  site(
+    "C02", "mttp_core/src/h1/chunked.mbt", "== -> !=", "if j == i {", "if j != i {",
+  ),
+  site(
+    "C03", "mttp_core/src/h1/chunked.mbt", "> -> >=", "if size > (9223372036854775807L - digit.to_int64()) / 16L {",
+    "if size >= (9223372036854775807L - digit.to_int64()) / 16L {",
+  ),
+  site(
+    "C04", "mttp_core/src/h1/chunked.mbt", "|| -> &&", "self.limits.max_chunk_line_bytes < 0 ||\n    self.limits.max_trailer_bytes < 0 ||",
+    "self.limits.max_chunk_line_bytes < 0 &&\n    self.limits.max_trailer_bytes < 0 ||",
+  ),
+  site(
+    "C05", "mttp_core/src/h1/chunked.mbt", "== -> !=", "if remaining == count.to_int64() {",
+    "if remaining != count.to_int64() {",
+  ),
+  site(
+    "C06", "mttp_core/src/h1/chunked.mbt", "!= -> ==", "if bytes[i] != b'\\r' {",
+    "if bytes[i] == b'\\r' {",
+  ),
+  site(
+    "C07", "mttp_core/src/h1/chunked.mbt", "!= -> ==", "if bytes[i] != b'\\n' {",
+    "if bytes[i] == b'\\n' {",
+  ),
+  site(
+    "C08", "mttp_core/src/h1/chunked.mbt", ">= -> >", "self.trailer_bytes >= self.limits.max_trailer_bytes",
+    "self.trailer_bytes > self.limits.max_trailer_bytes",
+  ),
+  site(
+    "C09", "mttp_core/src/h1/chunked.mbt", ">= -> >", "self.line.length() >= self.limits.max_chunk_line_bytes",
+    "self.line.length() > self.limits.max_chunk_line_bytes",
+  ),
+  site(
+    "C10", "mttp_core/src/h1/chunked.mbt", "&& -> ||", "self.line_cr && byte != b'\\n'",
+    "self.line_cr || byte != b'\\n'",
+  ),
+  site(
+    "C11", "mttp_core/src/h1/chunked.mbt", "!= -> ==", "if byte != b'\\n' {", "if byte == b'\\n' {",
+  ),
+  site(
+    "C12", "mttp_core/src/h1/chunked.mbt", "swap match arms", "if size == 0L { Trailers } else { Data(size) }",
+    "if size == 0L { Data(size) } else { Trailers }",
+  ),
+  site(
+    "C13", "mttp_core/src/h1/chunked.mbt", ">= -> >", "self.trailers.length() >= self.limits.max_headers",
+    "self.trailers.length() > self.limits.max_headers",
+  ),
+  site(
+    "C14", "mttp_core/src/h1/chunked.mbt", "negate guard", "if forbidden_trailers.contains(pair.0) {",
+    "if !forbidden_trailers.contains(pair.0) {",
+  ),
+  site(
+    "C15", "mttp_core/src/h1/chunked.mbt", "negate guard", "if !(self.state is Done) {",
+    "if self.state is Done {",
+  ),
+  site(
+    "W01", "mttp_core/src/h1/write.mbt", "boundary +1", "if n < 0L {", "if n <= 0L {",
+  ),
+  site(
+    "W02", "mttp_core/src/h1/write.mbt", "== -> !=", "if v == Http10 {", "if v != Http10 {",
+  ),
+  site(
+    "W03", "mttp_core/src/h1/write.mbt", "swap match arms", "Http10 => \"HTTP/1.0\"\n    Http11 => \"HTTP/1.1\"",
+    "Http10 => \"HTTP/1.1\"\n    Http11 => \"HTTP/1.0\"",
+  ),
+  site(
+    "W04", "mttp_core/src/h1/write.mbt", "boundary +1", "if status < 100 ||", "if status <= 100 ||",
+  ),
+  site(
+    "W05", "mttp_core/src/h1/write.mbt", "boundary -1", "status > 599 {", "status >= 599 {",
+  ),
+  site(
+    "W06", "mttp_core/src/h1/write.mbt", "&& -> ||", ") &&\n    framing != NoBody {",
+    ") ||\n    framing != NoBody {",
+  ),
+  site(
+    "W07", "mttp_core/src/h1/write.mbt", "== -> !=", "if framing == UntilClose {",
+    "if framing != UntilClose {",
+  ),
+  site(
+    "W08", "mttp_core/src/h1/write.mbt", "delete match arm", "empty_length=meth is (Post | Put | Patch)",
+    "empty_length=meth is (Post | Put)",
+  ),
+]
+
+///|
+async fn command(program : String, args : Array[String]) -> @shell.Output {
+  @shell.Cmd(program, args).output(timeout_ms=120000, max_output_bytes=1048576)
+}
+
+///|
+async fn copy_source(root : String) -> String {
+  let archive = root + "/source.tar"
+  let source = root + "/source"
+  @fs.mkdir(source)
+  command("tar", [
+    "--exclude=mttp_core/_build", "--exclude=mttp_core/target", "--exclude=mttp_core/.mooncakes",
+    "-cf", archive, "mttp_core",
+  ]).check()
+  command("tar", ["-xf", archive, "-C", source]).check()
+  @fs.write_text(source + "/moon.work", "members = [\"mttp_core\"]\n")
+  source
+}
+
+///|
+async fn run_tests(moon : String, source : String) -> @shell.Output {
+  let vars = { "MOON_CC": @env.get_env_var("MOON_CC").unwrap_or("cc") }
+  @shell.Cmd(
+    moon,
+    [
+      "test", "--target", "native", "mttp_core/src/h1", "mttp_core/src/h1client",
+      "mttp_core/src/h1server",
+    ],
+    cwd=source,
+    env=vars,
+  ).output(timeout_ms=120000, max_output_bytes=16777216)
+}
+
+///|
+fn selected(site : Site, wanted : Array[String]) -> Bool {
+  wanted.is_empty() || wanted.contains(site.id)
+}
+
+///|
+async fn main {
+  let args = @env.args()[1:].to_owned()
+  if args is ["--list"] {
+    for site in sites {
+      println("\{site.id}\t\{site.rule}\t\{site.path}")
+    }
+    return
+  }
+  for id in args {
+    guard sites.any(site => site.id == id) else {
+      raise MutationError("unknown mutation site: " + id)
+    }
+  }
+  let root = @fs.tmpdir(prefix="mttp-mutate-")
+  println("mutate: disposable copy at " + root)
+  defer @fs.rmdir(root, recursive=true)
+  let source = copy_source(root)
+  let moon = command("which", ["moon"]).stdout().trim().to_owned()
+  let baseline = run_tests(moon, source)
+  if baseline.exit_code() != 0 {
+    println(baseline.stdout())
+    eprintln(baseline.stderr())
+    raise MutationError("baseline tests failed")
+  }
+  println("BASELINE\tPASS")
+  let mut killed = 0
+  let mut survived = 0
+  let mut timeout = 0
+  for site in sites {
+    if !selected(site, args) {
+      continue
+    }
+    let path = source + "/" + site.path
+    let original = @fs.read_text(path)
+    let pieces = original.split(site.old).collect()
+    guard pieces.length() == 2 else {
+      raise MutationError(
+        "\{site.id}: expected one occurrence, found \{pieces.length() - 1}",
+      )
+    }
+    @fs.write_text(path, original.replace(old=site.old, new=site.new))
+    let result = run_tests(moon, source)
+    @fs.write_text(path, original)
+    let log = result.stdout() + result.stderr()
+    if result.exit_code() == 0 {
+      survived += 1
+      println("SURVIVED\t\{site.id}\t\{site.rule}\t\{site.path}")
+    } else if result.exit_code() == 124 || log.to_lower().contains("timed out") {
+      timeout += 1
+      println("TIMEOUT\t\{site.id}\t\{site.rule}\t\{site.path}")
+    } else {
+      killed += 1
+      println("KILLED\t\{site.id}\t\{site.rule}\t\{site.path}")
+    }
+  }
+  println(
+    "SUMMARY\tsites=\{killed + survived + timeout}\tkilled=\{killed}\tsurvived=\{survived}\ttimeout=\{timeout}",
+  )
+}
