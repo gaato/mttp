@@ -287,3 +287,133 @@ test "multipart OpenAPI properties and per part encoding survive model round tri
   let decoded : @apispec.MediaTypeObject = @json.from_json(media.to_json())
   assert_eq(decoded, media)
 }
+
+///|
+test "multipart pairs preserve TooLarge through either side and nested composition" {
+  let bounded = @endpoint.multipart_field(
+    "form",
+    @schema.form_body(max_pairs=1),
+  )
+  let text = @endpoint.multipart_field("text", @schema.text_body)
+  let left = @endpoint.endpoint
+    .post("/left")
+    .input(
+      @endpoint.multipart_body(@endpoint.MultipartCodec::pair(bounded, text)),
+    )
+    .serve_public(_ => Ok(()))
+  let right = @endpoint.endpoint
+    .post("/right")
+    .input(
+      @endpoint.multipart_body(@endpoint.MultipartCodec::pair(text, bounded)),
+    )
+    .serve_public(_ => Ok(()))
+  let nested = @endpoint.endpoint
+    .post("/nested")
+    .input(
+      @endpoint.multipart_body(
+        @endpoint.MultipartCodec::pair(
+          @endpoint.MultipartCodec::pair(text, bounded),
+          @endpoint.multipart_field("other", @schema.text_body),
+        ),
+      ),
+    )
+    .serve_public(_ => Ok(()))
+  let router = @router.Router::new([left, right, nested])
+  @driver.run_sync(() => {
+    for path in ["/left", "/right", "/nested"] {
+      let response = router.dispatch(
+        @multipart.body(
+          @mttp_core.Request::post(path),
+          [
+            @multipart.Part::{
+              name: "form",
+              filename: None,
+              content_type: Some("application/x-www-form-urlencoded"),
+              body: Bytes(b"a=1&b=2"),
+            },
+            @multipart.Part::text("text", "ok"),
+            @multipart.Part::text("other", "ok"),
+          ],
+          boundary="B",
+        ),
+      )
+      assert_eq(response.status, 413)
+      assert_eq(
+        response.headers.get("content-type"),
+        Some("application/problem+json"),
+      )
+    }
+  })
+}
+
+///|
+test "typed multipart required optional and file names match writer escaping" {
+  for name in ["a\"b", "a\rb", "a\nb", "a%22b"] {
+    let ep : @endpoint.Endpoint[
+      Unit,
+      (String, String?),
+      @endpoint.NoError,
+      String,
+      @client.Buffered,
+    ] = @endpoint.endpoint
+      .post("/names")
+      .input(
+        @endpoint.multipart_body(
+          @endpoint.MultipartCodec::pair(
+            @endpoint.multipart_field(name, @schema.text_body),
+            @endpoint.multipart_field("optional-" + name, @schema.text_body).optional(),
+          ),
+        ),
+      )
+      .output(@endpoint.json_out(@schema.jstring.body()))
+    let router = @router.Router::new([
+      ep.serve_public(pair => Ok(pair.0 + ":" + pair.1.unwrap_or("absent"))),
+    ])
+    let client = @client.Client::new(router, @sim.FakeClock::new())
+    @driver.run_sync(() => {
+      assert_eq(
+        ep.call(client, (), ("required", Some("present"))).unwrap().unwrap(),
+        "required:present",
+      )
+      assert_eq(
+        ep.call(client, (), ("required", None)).unwrap().unwrap(),
+        "required:absent",
+      )
+    })
+    let file_ep : @endpoint.Endpoint[
+      Unit,
+      @multipart.ReadPart,
+      @endpoint.NoError,
+      String,
+      @client.Buffered,
+    ] = @endpoint.endpoint
+      .post("/file-name")
+      .input(@endpoint.multipart_body(@endpoint.multipart_file(name)))
+      .output(@endpoint.json_out(@schema.jstring.body()))
+    let file_router = @router.Router::new([
+      file_ep.serve_public(part => {
+        let bytes = Buffer()
+        while part.body.read_some() is Some(chunk) {
+          bytes.write_bytes(chunk)
+        }
+        Ok(part.head.name + ":" + bytes.to_bytes().length().to_string())
+      }),
+    ])
+    let client = @client.Client::new(file_router, @sim.FakeClock::new())
+    let d = @driver.Driver::new()
+    let source = @sim.Feed::bytes(d, [b"file"])
+    let part : @multipart.ReadPart = {
+      head: {
+        name,
+        filename: Some("file.bin"),
+        content_type: Some("application/octet-stream"),
+        headers: @mttp_core.Headers::empty(),
+      },
+      body: source,
+    }
+    d.run(() => {
+      assert_eq(file_ep.call(client, (), part).unwrap().unwrap(), name + ":4")
+    })
+    assert_eq(source.closes(), 1)
+  }
+}

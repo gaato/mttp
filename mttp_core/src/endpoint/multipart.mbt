@@ -77,11 +77,23 @@ fn multipart_single(
   parts : Array[@multipart.Part],
   name : String,
 ) -> @multipart.Part raise @schema.DecodeFailure {
-  match parts.filter(p => p.name == name) {
+  let wire_name = multipart_wire_name(name)
+  match parts.filter(p => p.name == wire_name) {
     [part] => part
     [] => raise missing()
     values => raise multiple(values.length())
   }
+}
+
+///|
+// The writer escapes these characters in disposition parameters, while the
+// reader preserves percent sequences. Normalize declarations, not received
+// names, so literal percent sequences keep the writer's existing meaning.
+fn multipart_wire_name(name : String) -> String {
+  name
+  .replace_all(old="\"", new="%22")
+  .replace_all(old="\r", new="%0D")
+  .replace_all(old="\n", new="%0A")
 }
 
 ///|
@@ -145,7 +157,8 @@ pub fn multipart_file(
 }
 
 ///|
-/// Combines fields, collecting failures from both codecs as named issues.
+/// Combines fields, collecting validation failures as named issues. Resource
+/// bounds propagate immediately so enclosing pairs retain their 413 status.
 pub fn[A, B] MultipartCodec::pair(
   a : MultipartCodec[A],
   b : MultipartCodec[B],
@@ -220,8 +233,9 @@ fn multipart_issues(
   issues : Array[@schema.Issue],
   schema : Json,
   error : @schema.DecodeFailure,
-) -> Unit {
+) -> Unit raise @schema.DecodeFailure {
   match error {
+    @schema.DecodeFailure(kind=TooLarge(..), ..) => raise error
     @schema.DecodeFailure(kind=Invalid(nested), ..) =>
       for issue in nested {
         issues.push(
@@ -334,7 +348,12 @@ pub fn[T] MultipartCodec::optional(
     { ..self.schema_, json: Json(fields), },
     parts => {
       if self.schema_.json is { "properties": Object(fields), .. } &&
-        fields.keys().all(name => !parts.iter().any(part => part.name == name)) {
+        fields
+        .keys()
+        .all(name => {
+          let wire_name = multipart_wire_name(name)
+          !parts.iter().any(part => part.name == wire_name)
+        }) {
         return None
       }
       Some((self.decode_)(parts)) catch {
