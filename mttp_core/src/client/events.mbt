@@ -7,6 +7,8 @@
 /// `AttemptStart`. Nothing about an attempt is reported after its
 /// `AttemptEnd`, including after a cancellation. The client README maps the
 /// fields onto OpenTelemetry's HTTP semantic conventions.
+/// Every event carries `send_id`, unique within its Client and unchanged
+/// across all retries and redirects of one logical send.
 #non_exhaustive
 pub(all) enum ClientEvent {
   /// The attempt was admitted and is about to be sent. `request` is the
@@ -14,23 +16,25 @@ pub(all) enum ClientEvent {
   /// factory runs; `attempt` counts from zero (OpenTelemetry
   /// `http.request.resend_count`); `bucket` is its rate-limit bucket.
   AttemptStart(
+    send_id~ : Int64,
     request~ : @mttp_core.RequestHead,
     attempt~ : Int32,
     bucket~ : String
   )
   /// The backend reached `phase` in attempt `attempt`.
-  Phase(attempt~ : Int32, phase~ : @mttp_core.PhaseEvent)
+  Phase(send_id~ : Int64, attempt~ : Int32, phase~ : @mttp_core.PhaseEvent)
   /// The attempt settled, as reported to the observer.
-  AttemptEnd(Attempt)
+  AttemptEnd(Attempt, send_id~ : Int64)
   /// Attempt `attempt` is being sent after a wait of `wait_ms`, because the
   /// previous one ended with `reason`: its status code (`"503"`), or the
   /// kind of its transport failure (`"timeout"`, `"network"`, ...), as
   /// OpenTelemetry's `error.type` names them. Reported when the retry is
-  /// sent, so a retry that closing or the retry budget cancels during its
-  /// wait reports none.
-  Retry(attempt~ : Int32, wait_ms~ : Int32, reason~ : String)
+  /// admitted, immediately before `AttemptStart`: closing, budget exhaustion,
+  /// cancellation, a total deadline or an acquisition failure before admission
+  /// reports none.
+  Retry(send_id~ : Int64, attempt~ : Int32, wait_ms~ : Int32, reason~ : String)
   /// A redirect was followed from `from` to `to` on a `status` response.
-  Redirect(from~ : String, to~ : String, status~ : Int32)
+  Redirect(send_id~ : Int64, from~ : String, to~ : String, status~ : Int32)
 }
 
 ///|
@@ -71,6 +75,7 @@ fn kind_name(kind : @mttp_core.Kind) -> String {
 priv struct AttemptEvents {
   sink : ((ClientEvent) -> Unit)?
   attempt : Int32
+  send_id : Int64
   mut open : Bool
 }
 
@@ -78,8 +83,9 @@ priv struct AttemptEvents {
 fn AttemptEvents::new(
   sink : ((ClientEvent) -> Unit)?,
   attempt : Int32,
+  send_id : Int64,
 ) -> AttemptEvents {
-  { sink, attempt, open: true, }
+  { sink, attempt, send_id, open: true, }
 }
 
 ///|
@@ -91,16 +97,18 @@ fn AttemptEvents::attach(
 ) -> @mttp_core.Request {
   guard self.sink is Some(sink) else { return request }
   let attempt = self.attempt
+  let send_id = self.send_id
   let attributes = request.attributes
     .put(@mttp_core.on_phase, phase => {
       if self.open {
-        sink(Phase(attempt~, phase~))
+        sink(Phase(send_id~, attempt~, phase~))
       }
     })
     .put(redirect_events, hop => {
       if self.open {
         sink(
           Redirect(
+            send_id~,
             from=hop.request.url,
             to=hop.next.url,
             status=hop.head.status,
@@ -117,7 +125,7 @@ fn AttemptEvents::end(self : AttemptEvents, info : Attempt) -> Unit {
   if self.open {
     self.open = false
     if self.sink is Some(sink) {
-      sink(AttemptEnd(info))
+      sink(AttemptEnd(info, send_id=self.send_id))
     }
   }
 }

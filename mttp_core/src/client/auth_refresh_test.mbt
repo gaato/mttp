@@ -43,6 +43,54 @@ fn Tokens::apply(self : Tokens) -> (@mttp_core.Request) -> @mttp_core.Request {
 }
 
 ///|
+test "AuthRefresh does not reapply credentials on a cross-origin Client redirect" {
+  for
+    destination in [
+      "http://other.example/end", "http://api.example:81/end", "https://api.example/end",
+    ] {
+    let d = @driver.Driver::new()
+    let seen = []
+    let refreshes = Ref(0)
+    let backend = @client.AuthRefresh::new(
+      @client.from_fn((request, _) => {
+        seen.push((request.url, request.headers.get("authorization")))
+        if request.url == "http://api.example/start" {
+          @mttp_core.Response::new(
+            302,
+            headers=@mttp_core.Headers::of([("location", destination)]),
+          )
+        } else {
+          @mttp_core.Response::new(401)
+        }
+      }),
+      origin=@mttp_core.Url::parse("HTTP://API.EXAMPLE:80/credentials"),
+      refresh=() => refreshes.val += 1,
+      apply=request => request.bearer("secret"),
+      coordination=@sim.SimCoordination::new(d),
+    )
+    let client = @client.Client::new(backend, @sim.SimClock::new(d))
+    let reply = d.run(() => client.send(@client.get("http://api.example/start")))
+    assert_eq(reply.status, 401)
+    assert_eq(seen, [
+      ("http://api.example/start", Some("Bearer secret")),
+      (destination, None),
+    ])
+    assert_eq(refreshes.val, 0)
+    for url in [destination, "/relative", "http://["] {
+      let response = d.run(() => {
+        backend.send(
+          @mttp_core.Request::get(url).bearer("caller-owned"),
+          @mttp_core.SendOptions::default(),
+        )
+      })
+      response.close()
+      assert_eq(seen.last(), Some((url, Some("Bearer caller-owned"))))
+    }
+    assert_eq(refreshes.val, 0)
+  }
+}
+
+///|
 async fn auth_send(
   backend : @client.AuthRefresh,
   request : @mttp_core.Request,
@@ -60,6 +108,7 @@ test "concurrent 401s share one refresh under every schedule" {
     let tokens = Tokens::new()
     let backend = @client.AuthRefresh::new(
       tokens.backend(d),
+      origin=@mttp_core.Url::parse("https://api.example/"),
       refresh=() => {
         tokens.refreshes += 1
         d.pause()
@@ -94,6 +143,7 @@ test "a persistent 401 is resent once and a marked request never" {
   let tokens = { ..Tokens::new(), accepted: -1, }
   let backend = @client.AuthRefresh::new(
     tokens.backend(d),
+    origin=@mttp_core.Url::parse("https://api.example/"),
     refresh=() => tokens.refreshes += 1,
     apply=tokens.apply(),
     coordination=@sim.SimCoordination::new(d),
@@ -121,6 +171,7 @@ test "an unreplayable body gets its 401 without a refresh" {
   let tokens = Tokens::new()
   let backend = @client.AuthRefresh::new(
     tokens.backend(d),
+    origin=@mttp_core.Url::parse("https://api.example/"),
     refresh=() => tokens.refreshes += 1,
     apply=tokens.apply(),
     coordination=@sim.SimCoordination::new(d),
@@ -138,12 +189,13 @@ test "an unreplayable body gets its 401 without a refresh" {
 }
 
 ///|
-test "a failing refresh returns the original 401 and the next 401 tries again" {
+test "a failing refresh returns the closed 401 head and the next 401 tries again" {
   let d = @driver.Driver::new()
   let tokens = Tokens::new()
   let failing = Ref(true)
   let backend = @client.AuthRefresh::new(
     tokens.backend(d),
+    origin=@mttp_core.Url::parse("https://api.example/"),
     refresh=() => {
       tokens.refreshes += 1
       if failing.val {
@@ -157,7 +209,7 @@ test "a failing refresh returns the original 401 and the next 401 tries again" {
   let first = d.run(() => {
     auth_send(backend, @mttp_core.Request::get("https://api.example/"))
   })
-  assert_eq(first, (401, b"first"))
+  assert_eq(first, (401, b""))
   assert_eq((tokens.refreshes, tokens.sends), (1, 1))
   failing.val = false
   let second = d.run(() => {
@@ -168,6 +220,60 @@ test "a failing refresh returns the original 401 and the next 401 tries again" {
 }
 
 ///|
+test "AuthRefresh releases the 401 connection before refreshing through a one-slot HTTP client" {
+  let d = @driver.Driver::new()
+  let clock = @sim.SimClock::new(d)
+  let timer = @sim.SimTimer::new(d)
+  let rejected = @sim.ScriptedConn::new([
+    Chunk(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 4\r\n\r\nbody"),
+  ])
+  let accepted = @sim.ScriptedConn::new([
+    Chunk(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"),
+    Chunk(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"),
+  ])
+  let engine = @h1client.Client::new(
+    dialer=@sim.ScriptedDialer::new([rejected, accepted]),
+    clock~,
+    timer~,
+    coordination=@sim.SimCoordination::new(d),
+    config={ ..@h1client.ClientConfig::default(), max_connections: Some(1), },
+  )
+  let refreshed = Ref(false)
+  let origin = @mttp_core.Url::parse("http://api.example/")
+  let backend = @client.AuthRefresh::new(
+    engine,
+    origin~,
+    refresh=() => {
+      let response = engine.send(
+        @mttp_core.Request::post("http://api.example/token"),
+        @mttp_core.SendOptions::default(),
+      )
+      response.close()
+      refreshed.val = true
+    },
+    apply=request => request.bearer(if refreshed.val { "new" } else { "old" }),
+    coordination=@sim.SimCoordination::new(d),
+  )
+  d.run(() => {
+    let completed = timer.within(100, () => {
+      let response = backend.send(
+        @mttp_core.Request::get("http://api.example/me"),
+        { timeout_ms: None, body: Stream(idle_ms=None), },
+      ) catch {
+        error => abort(error.to_string())
+      }
+      defer response.close()
+      assert_eq(response.status, 200) catch {
+        error => abort(error.to_string())
+      }
+    })
+    assert_true(completed)
+    assert_true(refreshed.val)
+    backend.close()
+  })
+}
+
+///|
 test "a refresh cancelled with its caller hands over to a waiting request" {
   let d = @driver.Driver::new()
   let tokens = Tokens::new()
@@ -175,6 +281,7 @@ test "a refresh cancelled with its caller hands over to a waiting request" {
   let blocked = coordination.signal()
   let backend = @client.AuthRefresh::new(
     tokens.backend(d),
+    origin=@mttp_core.Url::parse("https://api.example/"),
     refresh=() => {
       tokens.refreshes += 1
       if tokens.refreshes == 1 {
@@ -215,9 +322,11 @@ test "a refresh cancelled with its caller hands over to a waiting request" {
 test "the auth refresh wrapper keeps the backend contract" {
   @driver.run_sync(() => {
     let d = @driver.current()
+    let origin = @mttp_core.Url::parse("https://example.test/")
     let wrap = (inner : &@mttp_core.Backend) => {
       @client.AuthRefresh::new(
         inner,
+        origin~,
         refresh=() => (),
         apply=request => request,
         coordination=@sim.SimCoordination::new(d),

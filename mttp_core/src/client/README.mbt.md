@@ -154,8 +154,9 @@ send, inline and in order. For each attempt it gets `AttemptStart`, then the
 backend's `Phase` events and a `Redirect` for each hop followed inside the
 attempt, then `AttemptEnd` with the `Attempt` the observer gets. A `Retry`
 comes between one attempt's end and the next one's start, when the retry is
-sent; a retry that closing or the retry budget cancels during its wait
-reports none. Nothing about an attempt follows its `AttemptEnd`, a cancelled
+admitted, immediately before `AttemptStart`; a retry stopped by closing,
+budget exhaustion, cancellation, a total deadline or failure during limiter
+acquisition reports none. Nothing about an attempt follows its `AttemptEnd`, a cancelled
 one included: a late phase report from the backend is dropped.
 
 `Phase` events come from the backend through the `@mttp_core.on_phase`
@@ -167,11 +168,19 @@ pool reports `Pooled(reused=true)` without `Dialed` or `TlsDone`. JS fetch
 cannot see connections or TLS and reports none. Each redirect hop is its own
 exchange, so the phases start again after each `Redirect`.
 
+Every event has an Int64 `send_id`, increasing from 1 and unique within that
+`Client`, preserved across all attempts and redirect hops of one `send`.
+Concurrent sends can therefore be grouped by `(Client, send_id)`; the
+`observer` still receives the unchanged `Attempt`. Exhausting Int64 refuses
+further sends with `Invalid` in phase Pool before admission instead of reusing
+an identifier.
+
 The fields are named so that an OpenTelemetry exporter, built in a module of
 its own, maps them onto the HTTP client semantic conventions directly:
 
 | Event field | OpenTelemetry attribute |
 |---|---|
+| every event's `send_id` | exporter correlation key for one logical send's parent span; `(send_id, attempt)` identifies its attempt child spans, and phases/redirects attach to the active child; local to a Client, not a trace/span id |
 | `AttemptStart.request.meth` | `http.request.method` |
 | `AttemptStart.request.url` | `url.full` (redact it first if it carries secrets) |
 | `AttemptStart.attempt`, `Retry.attempt` | `http.request.resend_count` |
@@ -215,7 +224,7 @@ test "log each attempt with its phases, credentials hidden" {
         }
         Phase(phase=Written, ..) => log.push("written")
         Phase(phase=FirstByte, ..) => log.push("first byte")
-        AttemptEnd(attempt) => log.push("end \{attempt.status}")
+        AttemptEnd(attempt, ..) => log.push("end \{attempt.status}")
         _ => ()
       }
     },
@@ -378,12 +387,23 @@ test "a failing origin is cut off and probed again" {
 
 ### Refreshing credentials
 
-`AuthRefresh::new(backend, refresh~, apply~, coordination~)` puts the current
-credentials on every request with `apply`. When one gets a 401, it calls the
+`AuthRefresh::new(backend, origin~, refresh~, apply~, coordination~)` puts the
+current credentials on requests to the explicitly bound absolute HTTP(S)
+`origin` with `apply`. Scheme, host and effective port must all match; a
+same-host HTTP-to-HTTPS upgrade is a different origin too. Other requests
+pass through untouched, without `apply` or refresh, so `Client`'s redirect
+layer cannot reapply these credentials to a different origin. Bind one
+wrapper per credential origin; `apply` should only set credentials, keeping
+the request URL unchanged. When a matching request gets a 401, it calls the
 async `refresh` once, shared by every 401 that arrives meanwhile (they wait on
 an `@rt.Signal` from `coordination`), and sends the request once more,
 marked with `auth_refreshed` so it is never refreshed again. A stream body
-that was already sent, or a refresh that raises, returns the original 401.
+that was already sent returns its original 401 without refreshing. Before
+starting or joining a refresh, the 401 transport is closed, releasing the
+pool slot even with `max_connections=1`; `refresh` may therefore use that
+same HTTP client. If refresh raises, the original 401 status, headers and
+attributes are returned with an empty body. Closing instead of buffering
+keeps this independent of the size or speed of an untrusted 401 body.
 
 ```mbt check
 ///|
@@ -397,6 +417,7 @@ test "an expired token is refreshed once and the request resent" {
       seen.push(auth)
       @mttp_core.Response::new(if auth == "Bearer new" { 200 } else { 401 })
     }),
+    origin=@mttp_core.Url::parse("https://api.example/"),
     refresh=() => token.val = "new",
     apply=request => request.bearer(token.val),
     coordination=@sim.SimCoordination::new(d),

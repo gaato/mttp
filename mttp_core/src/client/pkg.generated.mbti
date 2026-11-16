@@ -117,7 +117,7 @@ pub struct AuthRefresh {
   // private fields
 }
 pub fn AuthRefresh::close(Self) -> Unit
-pub fn AuthRefresh::new(&@mttp_core.Backend, refresh~ : async () -> Unit, apply~ : (@mttp_core.Request) -> @mttp_core.Request, coordination~ : &@rt.Coordination) -> Self
+pub fn AuthRefresh::new(&@mttp_core.Backend, origin~ : @mttp_core.Url, refresh~ : async () -> Unit, apply~ : (@mttp_core.Request) -> @mttp_core.Request, coordination~ : &@rt.Coordination) -> Self
 pub async fn AuthRefresh::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
 pub impl @mttp_core.Backend for AuthRefresh
 
@@ -147,11 +147,11 @@ pub async fn Client::sse_reconnecting(Self, @mttp_core.Request, async (@sse.SseE
 
 #non_exhaustive
 pub(all) enum ClientEvent {
-  AttemptStart(request~ : @mttp_core.RequestHead, attempt~ : Int32, bucket~ : String)
-  Phase(attempt~ : Int32, phase~ : @mttp_core.PhaseEvent)
-  AttemptEnd(Attempt)
-  Retry(attempt~ : Int32, wait_ms~ : Int32, reason~ : String)
-  Redirect(from~ : String, to~ : String, status~ : Int32)
+  AttemptStart(send_id~ : Int64, request~ : @mttp_core.RequestHead, attempt~ : Int32, bucket~ : String)
+  Phase(send_id~ : Int64, attempt~ : Int32, phase~ : @mttp_core.PhaseEvent)
+  AttemptEnd(Attempt, send_id~ : Int64)
+  Retry(send_id~ : Int64, attempt~ : Int32, wait_ms~ : Int32, reason~ : String)
+  Redirect(send_id~ : Int64, from~ : String, to~ : String, status~ : Int32)
 }
 
 pub struct FollowRedirects {

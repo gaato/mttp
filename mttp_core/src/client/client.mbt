@@ -32,6 +32,7 @@ pub struct Client {
   priv total_ms : Int32?
   priv observer : (Attempt) -> Unit
   priv events : ((ClientEvent) -> Unit)?
+  priv mut send_sequence : Int64
   priv random : () -> Double
   priv mut closed : Bool
   priv upgrades : @rt.Upgrades
@@ -123,6 +124,7 @@ pub fn Client::new(
     total_ms,
     observer,
     events,
+    send_sequence: 0L,
     random,
     closed: false,
     upgrades: @rt.Upgrades::new(),
@@ -329,6 +331,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
   decide_retry? : (AttemptResult[T], RetryContext) -> Decision,
 ) -> Reply[T] {
   let raw = self.prepare(request.wire())
+  let send_id = self.next_send_id()
   let limits = request.limits(self.limits)
   validate_limits(limits)
   let body = body_timing(
@@ -340,6 +343,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
   let replayable = request.body_factory is Some(_) ||
     raw.body is (Empty | Bytes(_))
   self.retry_budget.deposit(self.clock.now_unix_ms())
+  let mut pending_retry : (Int32, String)? = None
   for attempt = 0; ; attempt = attempt + 1 {
     if self.closed {
       raise @mttp_core.TransportError(
@@ -350,10 +354,14 @@ async fn[T, M : ResponseMode] Client::send_loop(
     }
     self.check_total(started)
     let admission = self.limiter.acquire(bucket, global_exempt=exempt)
-    let events = AttemptEvents::new(self.events, attempt)
+    let events = AttemptEvents::new(self.events, attempt, send_id)
     if self.events is Some(sink) {
-      sink(AttemptStart(request=raw.head(), attempt~, bucket~))
+      if pending_retry is Some((wait_ms, reason)) {
+        sink(Retry(send_id~, attempt~, wait_ms~, reason~))
+      }
+      sink(AttemptStart(send_id~, request=raw.head(), attempt~, bucket~))
     }
+    pending_retry = None
     let received = Ref(None)
     let attempt_started = self.clock.now_unix_ms()
     let mut releasing = false
@@ -518,11 +526,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
             discard(value)
           }
           held = None
-          if self.events is Some(sink) {
-            sink(
-              Retry(attempt=attempt + 1, wait_ms=ms, reason=retry_reason(event)),
-            )
-          }
+          pending_retry = Some((ms, retry_reason(event)))
           continue
         }
       }
@@ -549,6 +553,20 @@ async fn[T, M : ResponseMode] Client::send_loop(
       }
     }
   }
+}
+
+///|
+/// Never reuse an event identity, even if a Client outlives its counter.
+fn Client::next_send_id(self : Client) -> Int64 raise @mttp_core.TransportError {
+  if self.send_sequence == 9223372036854775807L {
+    raise @mttp_core.TransportError(
+      kind=Invalid,
+      phase=Pool,
+      detail="client send sequence exhausted",
+    )
+  }
+  self.send_sequence += 1L
+  self.send_sequence
 }
 
 ///|

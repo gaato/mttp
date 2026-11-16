@@ -25,8 +25,10 @@ priv struct Flight {
 /// A backend that refreshes expired credentials once when a request gets
 /// 401 Unauthorized, and sends that request once more with the new ones.
 ///
-/// `apply` sets the current credentials on every request this wrapper
-/// sends, so requests after a refresh carry the new ones from the start;
+/// `apply` sets the current credentials only on requests to `origin` (scheme,
+/// host and effective port), so requests after a refresh carry the new ones
+/// from the start. Requests to other origins pass through untouched, without
+/// applying credentials or refreshing a 401; this also covers redirect hops.
 /// `refresh` obtains new credentials (and stores them where `apply` reads
 /// them). On a 401:
 ///
@@ -37,19 +39,22 @@ priv struct Flight {
 ///   it is resent at once; if a refresh is running, it waits for that one;
 ///   if none is, it calls `refresh` itself. Concurrent 401s therefore share
 ///   one refresh, waiting through the coordination's `Signal`.
-/// - After a successful refresh, the 401 is closed and the request is sent
+/// - Before starting or joining a refresh, the 401's transport is closed,
+///   so refresh may use the same connection pool even with only one slot.
+///   After a successful refresh, the request is sent
 ///   once more, marked with `auth_refreshed`, and that response is returned
-///   whatever its status. A refresh that raises returns the original 401,
-///   unread, to its caller and to every request waiting for it; the next
+///   whatever its status. A refresh that raises returns the original 401's
+///   status, headers and attributes with an empty body; the next
 ///   401 tries again. A refresh cancelled with its caller hands the work to
 ///   the next waiter, which starts a refresh of its own.
 ///
-/// Cancellation propagates unchanged and closes a 401 still held.
+/// Cancellation propagates unchanged; no 401 transport is held while waiting.
 /// `SendOptions` pass through unchanged, so each of the two sends gets the
 /// attempt deadline. Place it under `Client::new` (as its `backend`), so a
 /// Client retry starts from the wrapper again.
 pub struct AuthRefresh {
   priv inner : &@mttp_core.Backend
+  priv origin : @mttp_core.Url
   priv coordination : &@rt.Coordination
   priv refresh : async () -> Unit
   priv apply : (@mttp_core.Request) -> @mttp_core.Request
@@ -61,17 +66,20 @@ pub struct AuthRefresh {
 }
 
 ///|
-/// Wraps `inner`. `refresh` obtains new credentials, `apply` puts the
+/// Wraps `inner` for the absolute HTTP(S) `origin`; only its scheme, host and
+/// effective port matter. `refresh` obtains new credentials, `apply` puts the
 /// current ones on a request, and `coordination` supplies the signal that
 /// concurrent 401s wait on.
 pub fn AuthRefresh::new(
   inner : &@mttp_core.Backend,
+  origin~ : @mttp_core.Url,
   refresh~ : async () -> Unit,
   apply~ : (@mttp_core.Request) -> @mttp_core.Request,
   coordination~ : &@rt.Coordination,
 ) -> AuthRefresh {
   {
     inner,
+    origin,
     coordination,
     refresh,
     apply,
@@ -155,6 +163,12 @@ pub async fn AuthRefresh::send(
   }
   request.validate()
   options.validate()
+  let url = @mttp_core.Url::parse(request.url) catch {
+    _ => return self.inner.send(request, options)
+  }
+  if !self.origin.same_origin(url) {
+    return self.inner.send(request, options)
+  }
   let first = (self.apply)(request)
   first.validate()
   let generation = self.generation
@@ -164,18 +178,12 @@ pub async fn AuthRefresh::send(
     request.attributes.get(auth_refreshed) is Some(true) {
     return response
   }
-  let renewed = {
-    errdefer {
-      @rt.close_unclaimed(response.attributes)
-      response.close()
-    }
-    self.renewed(generation)
-  }
-  if !renewed {
-    return response
-  }
   @rt.close_unclaimed(response.attributes)
   response.close()
+  let renewed = self.renewed(generation)
+  if !renewed {
+    return { ..response, body: Empty, }
+  }
   let again = (self.apply)(request.attribute(auth_refreshed, true))
   again.validate()
   self.inner.send(again, options)
