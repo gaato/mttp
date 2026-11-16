@@ -15,6 +15,10 @@ pub let background : AttributeKey[(async () -> Unit) -> Unit]
 
 pub let close_on_shutdown : AttributeKey[Bool]
 
+pub let connection_scheme : AttributeKey[String]
+
+pub fn connection_scheme_of(String) -> String?
+
 pub fn encode_path(Array[String]) -> String
 
 pub fn encode_utf8(String) -> Bytes

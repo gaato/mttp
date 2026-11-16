@@ -32,13 +32,20 @@ never does.
 
 ### Added
 
+- `connection_scheme` (re-exported from gaato/mttp_core): the scheme the
+  connection was accepted under, set by the server and Router-as-Backend;
+  left unset on the JS fetch hosts, whose request URL may keep a
+  client-written scheme.
+
 - RFC 9842 compression dictionaries on the server:
-  `dictionary_compress(handler, dictionaries, secure~)` codes a response
-  with the dictionary a request's Available-Dictionary names when it
-  weighs `dcz` or `dcb` at least as much as identity and every other
-  coding, it came over a secure context (`secure`, which the caller
-  supplies: a request's URL cannot tell, as a client may write an https
-  target over cleartext), and section 9.3.3's Sec-Fetch and CORS check
+  `dictionary_compress(handler, dictionaries)` codes a response with the
+  dictionary a request's Available-Dictionary names when it weighs `dcz`
+  or `dcb` at least as much as identity and every other coding, it came
+  over a secure context (`secure`, by default `secure_context`: a
+  connection accepted under https, as `connection_scheme` records; never
+  the request's URL, which a client may write as https over cleartext,
+  nor a loopback peer, which a local proxy also is), and section 9.3.3's
+  Sec-Fetch and CORS check
   passes (`dictionary_allowed`). It adds `Vary: Accept-Encoding,
   Available-Dictionary`, and the check's Sec-Fetch-Site, Sec-Fetch-Mode
   and Origin when it decided, and compresses as `compress` otherwise.

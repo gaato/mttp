@@ -67,16 +67,20 @@ keeps is not held. `partition` keeps the dictionaries of one user, site or
 profile apart, as section 10 asks. The store hashes with the SHA-256 it was
 given; `ServerDictionary::new` likewise.
 
-On the server side, `dictionary_compress(handler, dictionaries, secure~)` is
+On the server side, `dictionary_compress(handler, dictionaries)` is
 `compress` with RFC 9842's dictionaries: a request whose
 `Available-Dictionary` names one of `dictionaries` (`ServerDictionary`, whose
 Brotli and Zstandard forms are built once and shared) and whose
 `Accept-Encoding` takes `dcz` or `dcb` at least as much as identity and every
 other coding gets the response coded with it, `dcz` at equal weights. It
-must have come over a secure context, as section 8 requires, which
-`secure` tells: the request's URL cannot, since a client may write an
-`https` target on a cleartext connection. Pass `_ => true` for a server that
-listens only over TLS, or read a header a trusted TLS proxy sets. Section 9.3.3's check (`dictionary_allowed`: no Sec-Fetch-Site,
+must have come over a secure context, as section 8 requires. By default
+(`secure_context`) that is a connection accepted under https, as the server
+records it in `@mttp_core.connection_scheme`. The request's URL does not
+count, since a client may write an `https` target on a cleartext
+connection, and neither does a loopback peer, since a local reverse proxy
+is one too. Behind a proxy that ends TLS, on a JS host, or on a development
+server on localhost, pass a `secure` that states the deployment, such as
+one reading a trusted proxy's X-Forwarded-Proto. Section 9.3.3's check (`dictionary_allowed`: no Sec-Fetch-Site,
 same origin, a navigation, or a CORS response that allows the request's
 Origin) must pass as well. Every response it may code varies on
 `Accept-Encoding` and `Available-Dictionary`, as section 6.2 asks of a
@@ -100,12 +104,9 @@ test "serve a dictionary, then responses coded with it" {
     id="v1",
   )
   let app : @mttp_core.Handler = _ => @mttp_core.Response::new(200)
-  // This server listens only over TLS.
-  let _served : @mttp_core.Handler = @codings.dictionary_compress(
-    app,
-    [dictionary],
-    secure=_ => true,
-  )
+  let _served : @mttp_core.Handler = @codings.dictionary_compress(app, [
+    dictionary,
+  ])
   let marked = @codings.use_as_dictionary(
     @mttp_core.Response::new(200),
     match_="/app/*",

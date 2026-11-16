@@ -41,14 +41,17 @@ pub impl @mttp_core.Backend for Router with fn send(self, request, options) {
       }
       body => body
     }
-    self.dispatch({
-      ..request,
-      body,
-      url: @mttp_core.join_url("http://in-process", request.url),
-      attributes: @mttp_core.Attributes::empty().put(
-        @mttp_core.remote_addr, "in-process",
-      ),
-    })
+    let url = @mttp_core.join_url("http://in-process", request.url)
+    let attributes = @mttp_core.Attributes::empty().put(
+      @mttp_core.remote_addr, "in-process",
+    )
+    // In process there is no connection: the request's own scheme is the
+    // one its caller chose. join_url gives an absolute URL.
+    let scheme = url[:url.find("://").unwrap_or(0)].to_owned()
+    let attributes = @mttp_core.connection_scheme_of(scheme)
+      .map(s => attributes.put(@mttp_core.connection_scheme, s))
+      .unwrap_or(attributes)
+    self.dispatch({ ..request, body, url, attributes, })
   })
   transferred = true
   errdefer response.close()

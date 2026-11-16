@@ -136,9 +136,9 @@ let server_dictionary : @codings.ServerDictionary = @codings.ServerDictionary::n
 )
 
 ///|
-/// /dict/page through dictionary_compress. The server listens over
-/// cleartext on loopback, where the third-party clients run: RFC 9842
-/// section 8's secure context is the loopback peer here.
+/// /dict/page through dictionary_compress. The suite serves over cleartext
+/// on loopback, which the default secure context (an https connection)
+/// refuses; this deployment states its own: its clients run on this host.
 let dictionary_page : @mttp_core.Handler = @codings.dictionary_compress(
   _ => {
     let page = @pattern.dictionary_page()
@@ -152,10 +152,7 @@ let dictionary_page : @mttp_core.Handler = @codings.dictionary_compress(
     )
   },
   [server_dictionary],
-  secure=request => {
-    let peer = request.attributes.get(@mttp_core.remote_addr).unwrap_or("")
-    peer.has_prefix("127.") || peer.has_prefix("[::1]")
-  },
+  secure=_ => true,
 )
 
 ///|

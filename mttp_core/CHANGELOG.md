@@ -9,6 +9,11 @@ never does.
 
 ### Added
 
+- `connection_scheme`, a request attribute: the scheme the connection was
+  accepted under (`http` or `https`), never the request target's. h1server
+  sets it from its `scheme`, Router-as-Backend from the in-process
+  request's scheme; `connection_scheme_of` normalizes a scheme to it.
+
 - `h1server.serve_conn(on_response_complete~)` acknowledges each returned
   HTTP response after writing, body cleanup and unread-request draining,
   including failure and cancellation. Successful upgrades retain ownership

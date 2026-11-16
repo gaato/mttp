@@ -1075,7 +1075,7 @@ pub fn ContentEncoder::new(c : Coding) -> ContentEncoder                        
 pub fn negotiate_encoding(h : @mttp_core.Headers) -> EncodingChoice raise @mttp_core.TransportError
 pub fn Decompress::new(inner : &@mttp_core.Backend, dictionaries? : @dictionary.DictionaryStore, partition? : String) -> Decompress  // (new) impl @mttp_core.Backend; RFC 9842 with a store
 pub fn compress(handler : @mttp_core.Handler, min_bytes? : Int) -> @mttp_core.Handler   // (new) negotiates and encodes responses
-pub fn dictionary_compress(handler, dictionaries : Array[ServerDictionary], min_bytes?, secure~ : (Request) -> Bool) -> @mttp_core.Handler  // compress, plus dcb/dcz (RFC 9842)
+pub fn dictionary_compress(handler, dictionaries : Array[ServerDictionary], min_bytes?, secure? : (Request) -> Bool = secure_context) -> @mttp_core.Handler  // compress, plus dcb/dcz (RFC 9842); secure_context reads @mttp_core.connection_scheme
 pub fn use_as_dictionary(response, match_~ : String, match_dest?, id?) -> @mttp_core.Response raise @mttp_core.TransportError
 
 // fetch, hosts (js)

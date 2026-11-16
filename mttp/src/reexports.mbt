@@ -17,6 +17,7 @@ pub using @mttp_core {
   trait Backend,
   background,
   remote_addr,
+  connection_scheme,
   close_on_shutdown,
   abandon_request_body,
   protocol,

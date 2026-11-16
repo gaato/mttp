@@ -20,7 +20,7 @@ pub fn decode_head(@mttp_core.ResponseHead, dictionary? : @dictionary.Dictionary
 
 pub fn dictionary_allowed(@mttp_core.Headers, @mttp_core.Headers) -> Bool
 
-pub fn dictionary_compress(async (@mttp_core.Request) -> @mttp_core.Response noraise, Array[ServerDictionary], min_bytes? : Int32, secure~ : (@mttp_core.Request) -> Bool) -> async (@mttp_core.Request) -> @mttp_core.Response noraise
+pub fn dictionary_compress(async (@mttp_core.Request) -> @mttp_core.Response noraise, Array[ServerDictionary], min_bytes? : Int32, secure? : (@mttp_core.Request) -> Bool) -> async (@mttp_core.Request) -> @mttp_core.Response noraise
 
 pub fn encode_body(@mttp_core.Body, Coding, dictionary? : ServerDictionary) -> @mttp_core.Body raise @mttp_core.TransportError
 
@@ -31,6 +31,8 @@ pub fn negotiate_encoding(@mttp_core.Headers) -> EncodingChoice raise @mttp_core
 pub async fn read_decoded(async () -> Bytes?, ContentDecoder?) -> Bytes?
 
 pub async fn read_encoded(async () -> Bytes?, ContentEncoder) -> Bytes?
+
+pub fn secure_context(@mttp_core.Request) -> Bool
 
 pub fn use_as_dictionary(@mttp_core.Response, match_~ : String, match_dest? : Array[String], id? : String) -> @mttp_core.Response raise @mttp_core.TransportError
 

@@ -114,6 +114,23 @@ test "router backend strips local attributes and enforces closed state" {
     )
     let response = router.send(request, @mttp_core.SendOptions::default())
     assert_eq(response.body, @mttp_core.Bytes(b"in-process"))
+    // In process, the request's own scheme stands for the connection's.
+    let scheme_router = @router.Router::new([
+      @endpoint.endpoint
+      .get("/scheme")
+      .input(@endpoint.attribute(@mttp_core.connection_scheme))
+      .output(@endpoint.json_out(@schema.text_body))
+      .serve_public(scheme => Ok(scheme.unwrap_or("unset"))),
+    ])
+    for case in [("https://app.test/scheme", b"https"), ("/scheme", b"http")] {
+      let (url, want) = case
+      let r = scheme_router.send(
+        @mttp_core.Request::get(url),
+        @mttp_core.SendOptions::default(),
+      )
+      assert_eq(r.body, @mttp_core.Bytes(want))
+    }
+    scheme_router.close()
     assert_eq(response.attributes.get(@endpoint.route_template), None)
     router.close()
     router.close()

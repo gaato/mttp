@@ -82,10 +82,14 @@ pub fn fetch_handler(
         } else {
           attributes
         }
+        // connection_scheme stays unset: a host's request URL may keep an
+        // absolute-form target's scheme as the client wrote it (Deno does),
+        // so it cannot say whether TLS carried the request.
+        let url = request.url()
         let model = @mttp_core.Request::{
           ..@mttp_core.Request::new(
             @mttp_core.Method::parse(request.verb()),
-            request.url(),
+            url,
           ),
           headers,
           attributes,

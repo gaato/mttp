@@ -37,6 +37,8 @@ pub fn clock() -> &@rt.Clock
 
 pub let close_on_shutdown : @mttp_core.AttributeKey[Bool]
 
+pub let connection_scheme : @mttp_core.AttributeKey[String]
+
 pub fn coordination() -> &@rt.Coordination
 
 pub fn get(String) -> @client.RequestPlan[Result[String, @client.ResponseFailure], @client.Buffered]

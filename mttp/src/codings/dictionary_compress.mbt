@@ -119,10 +119,14 @@ pub fn dictionary_allowed(
 /// at equal weights), when it came over a secure context, as section 8
 /// requires, and section 9.3.3 allows it (`dictionary_allowed`).
 ///
-/// `secure` says whether a request came over TLS. The request's URL cannot
-/// tell: a client may write an `https` target on a cleartext connection.
-/// Pass `_ => true` for a server that listens only over TLS, or check a
-/// header a trusted proxy that ends TLS sets, such as its X-Forwarded-Proto.
+/// `secure` says whether a request came over a secure context. By default,
+/// `secure_context`, only a connection accepted under https counts, as
+/// `@mttp_core.connection_scheme` records it: never the request's URL, which
+/// a client may write as `https` over cleartext, nor a loopback peer, which
+/// a local reverse proxy also is. Elsewhere it is off and fails closed: on
+/// the JS fetch hosts, behind a proxy that ends TLS, or for a development
+/// server on localhost, pass a `secure` that states the deployment, such as
+/// one reading a trusted proxy's X-Forwarded-Proto.
 ///
 /// Every response it may code carries `Vary: Accept-Encoding,
 /// Available-Dictionary`, as section 6.2 asks, so a cache keeps the
@@ -135,7 +139,7 @@ pub fn dictionary_compress(
   handler : @mttp_core.Handler,
   dictionaries : Array[ServerDictionary],
   min_bytes~ : Int32 = 1024,
-  secure~ : (@mttp_core.Request) -> Bool,
+  secure~ : (@mttp_core.Request) -> Bool = secure_context,
 ) -> @mttp_core.Handler {
   request => {
     let response = handler(request)
@@ -192,6 +196,16 @@ pub fn dictionary_compress(
     }
     encoded_response(response, headers, coding, Some(dictionary))
   }
+}
+
+///|
+/// Whether `request` came over a secure context, by what its adapter
+/// recorded: a connection accepted under `https` (`connection_scheme`).
+/// Nothing else counts: not the request's URL, which a client may write as
+/// https over cleartext, and not a loopback peer, which is also what a local
+/// reverse proxy looks like whatever reached it.
+pub fn secure_context(request : @mttp_core.Request) -> Bool {
+  request.attributes.get(@mttp_core.connection_scheme) == Some("https")
 }
 
 ///|

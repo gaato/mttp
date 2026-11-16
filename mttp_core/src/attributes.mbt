@@ -65,6 +65,29 @@ pub fn[T] Attributes::get(self : Attributes, key : AttributeKey[T]) -> T? {
 pub let remote_addr : AttributeKey[String] = AttributeKey::new("remote_addr")
 
 ///|
+/// The scheme the connection was accepted under, `http` or `https`, never
+/// taken from the request target: a client can write an `https` target over
+/// a cleartext connection, so only this says whether TLS carried the
+/// request. Set by server adapters that know it (h1server from its `scheme`,
+/// the Router in process from the request's own scheme); unset when
+/// unknown, as on the JS fetch hosts, whose request URL may keep a
+/// client-written scheme.
+pub let connection_scheme : AttributeKey[String] = AttributeKey::new(
+  "connection_scheme",
+)
+
+///|
+/// `scheme` as a `connection_scheme` value: `http` or `https`, case aside,
+/// or None for anything else, which is left unset.
+pub fn connection_scheme_of(scheme : String) -> String? {
+  match scheme.to_lower() {
+    "http" => Some("http")
+    "https" => Some("https")
+    _ => None
+  }
+}
+
+///|
 /// Adapter-owned scheduling for work that may outlive the response. Invoke
 /// during request handling; the adapter owns completion and shutdown policy.
 pub let background : AttributeKey[(async () -> Unit) -> Unit] = AttributeKey::new(

@@ -142,6 +142,10 @@ async fn Session::exchange(
   if self.peer is Some(peer) {
     attributes = attributes.put(@mttp_core.remote_addr, peer)
   }
+  // The scheme serve_conn was given, not the target's.
+  if @mttp_core.connection_scheme_of(self.scheme) is Some(scheme) {
+    attributes = attributes.put(@mttp_core.connection_scheme, scheme)
+  }
   if self.background is Some(schedule) {
     attributes = attributes.put(@mttp_core.background, schedule)
   }

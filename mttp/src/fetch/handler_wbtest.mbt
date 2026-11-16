@@ -107,6 +107,10 @@ async test "Web Requests preserve metadata environment cookies and body ownershi
     if request.attributes.get(env) is None {
       abort("environment lost")
     }
+    // A host's URL may keep a client-written scheme: no connection_scheme.
+    if request.attributes.get(@mttp_core.connection_scheme) is Some(_) {
+      abort("connection_scheme taken from the host's URL")
+    }
     @mttp_core.Response::new(
       201,
       headers=@mttp_core.Headers::of([

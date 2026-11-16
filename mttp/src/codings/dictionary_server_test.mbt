@@ -256,3 +256,41 @@ impl @mttp_core.Backend for HandlerBackend with fn send(self, request, _) {
 impl @mttp_core.Backend for HandlerBackend with fn close(_) {
   ()
 }
+
+///|
+test "by default a secure context is a connection accepted under https" {
+  @driver.run_sync(() => {
+    let server = @codings.ServerDictionary::new(vector_dictionary(), sha256~)
+    let handler = @codings.dictionary_compress(_ => page(vector_input()), [
+      server,
+    ])
+    let coded = (attributes : Array[(String, String)]) => {
+      let mut request = @mttp_core.Request::get(
+          "https://example.test/app/main.js",
+        )
+        .header("accept-encoding", "dcz")
+        .header(
+          "available-dictionary",
+          @sf.serialize_bare_item(Bytes(server.hash)).unwrap(),
+        )
+      for pair in attributes {
+        request = if pair.0 == "scheme" {
+          request.attribute(@mttp_core.connection_scheme, pair.1)
+        } else {
+          request.attribute(@mttp_core.remote_addr, pair.1)
+        }
+      }
+      handler(request).headers.get("content-encoding") == Some("dcz")
+    }
+    assert_true(coded([("scheme", "https"), ("peer", "192.0.2.1:443")]))
+    // Cleartext, even from loopback: a local proxy looks the same.
+    assert_false(coded([("scheme", "http"), ("peer", "127.0.0.1:5000")]))
+    assert_false(
+      coded([("scheme", "http"), ("peer", "[::ffff:127.0.0.1]:5000")]),
+    )
+    // The URL says https, the connection does not: off.
+    assert_false(coded([("scheme", "http"), ("peer", "192.0.2.1:80")]))
+    assert_false(coded([("peer", "in-process")]))
+    assert_false(coded([]))
+  })
+}

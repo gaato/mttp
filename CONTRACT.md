@@ -427,3 +427,23 @@ Each byte-pair direction retains at most 64 KiB and backpressures its writer.
 The caller owns the returned session; close or abort it independently of the
 empty response body. Closing the Router turns the callback's stopping probe
 true. Neither the server callback nor other server-local attributes escape.
+
+## Server request attributes
+
+`connection_scheme` is the scheme the connection was accepted under, `http`
+or `https`, never taken from the request target: an absolute-form target
+may say `https` on a cleartext connection, and the request's URL keeps what
+the client wrote. Server adapters set it where they know it:
+
+1. h1server (`serve_conn`, and so `@server.serve`) from its `scheme` argument.
+2. Router-as-Backend from the in-process request's own scheme.
+
+An adapter that does not know it leaves it unset. The JS fetch hosts do: a
+host's request URL may keep an absolute-form target's scheme as the client
+wrote it (Deno does), so it does not say whether TLS carried the request. A
+policy that needs a secure context (RFC 9842's `dictionary_compress` by
+default) trusts only `https` here, not a loopback `remote_addr`, which a
+local reverse proxy also is, and fails closed otherwise; a deployment
+behind a proxy that ends TLS, on a JS host, or on localhost supplies its
+own verdict.
+

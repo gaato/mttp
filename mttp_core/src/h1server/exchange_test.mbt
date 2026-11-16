@@ -144,6 +144,7 @@ test "keep-alive serves several requests on one connection with absolute URLs" {
             (
               request.attributes.get(@mttp_core.remote_addr),
               request.attributes.get(@mttp_core.background) is Some(_),
+              request.attributes.get(@mttp_core.connection_scheme),
             ),
           )
           @mttp_core.Response::new(
@@ -170,8 +171,8 @@ test "keep-alive serves several requests on one connection with absolute URLs" {
       ignore(task.wait())
     })
     assert_eq(seen, [
-      (Some("192.0.2.1:4000"), false),
-      (Some("192.0.2.1:4000"), false),
+      (Some("192.0.2.1:4000"), false, Some("https")),
+      (Some("192.0.2.1:4000"), false, Some("https")),
     ])
     assert_eq(h.errors.length(), 0)
   })
@@ -710,5 +711,34 @@ test "a request records its wire version as the protocol" {
       client.conn.close()
     })
     assert_eq(seen, [Some("http/1.1"), Some("http/1.0")])
+  })
+}
+
+///|
+test "connection_scheme is the scheme the connection was accepted under, never the target's" {
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let seen = []
+    h.run(() => {
+      let (client, task) = h.serve(
+        request => {
+          seen.push(
+            (request.url, request.attributes.get(@mttp_core.connection_scheme)),
+          )
+          @mttp_core.Response::new(204)
+        },
+        scheme="http",
+        peer="192.0.2.1:4000",
+      )
+      // An absolute-form target may claim https over this cleartext
+      // connection; the URL keeps it, the attribute does not.
+      client.send(
+        "GET https://example.test/claimed HTTP/1.1\r\nhost: example.test\r\n\r\n",
+      )
+      assert_eq(client.expect().status, 204)
+      client.conn.close()
+      ignore(task.wait())
+    })
+    assert_eq(seen, [("https://example.test/claimed", Some("http"))])
   })
 }
