@@ -22,6 +22,7 @@ priv struct Wire {
   mut closed : Bool
   /// When the connection was last parked, on the client's clock.
   mut parked_at : Int64
+  mut opened_at : Int64
 }
 
 ///|
@@ -34,6 +35,7 @@ fn Wire::new(conn : &@rt.Conn) -> Wire {
     refused: false,
     closed: false,
     parked_at: 0L,
+    opened_at: 0L,
   }
 }
 

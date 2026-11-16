@@ -13,9 +13,15 @@ fn[C] IdlePool::new(
   max_total~ : Int32,
   max_per_origin~ : Int32,
   idle_max_ms~ : Int32,
+  max_connection_age_ms? : Int32,
 ) -> IdlePool[C] {
   {
-    control: @control.PoolState::new(max_total~, max_per_origin~, idle_max_ms~),
+    control: @control.PoolState::new(
+      max_total~,
+      max_per_origin~,
+      idle_max_ms~,
+      max_connection_age_ms?,
+    ),
     resources: Map([]),
     next_id: 0L,
   }
@@ -69,12 +75,22 @@ fn[C] IdlePool::put(
   user_agent : String?,
   conn : C,
   now~ : Int64,
+  opened_at_ms? : Int64,
 ) -> Array[C] {
   self.next_id += 1L
   let id = self.next_id
   self.resources[id] = conn
   self.apply(
-    self.control.put(origin, { id, user_agent, parked_at_ms: now, }, now~),
+    self.control.put(
+      origin,
+      {
+        id,
+        user_agent,
+        parked_at_ms: now,
+        opened_at_ms: opened_at_ms.unwrap_or(now),
+      },
+      now~,
+    ),
   )
 }
 

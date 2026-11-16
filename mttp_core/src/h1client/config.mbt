@@ -46,9 +46,9 @@ pub(all) struct ClientConfig {
   /// is bounded by this ceiling alone, so `None` lets it run without end.
   max_body_bytes : Int32?
   /// Bounds on the response head, chunk-size lines and trailers, and on a
-  /// proxy's answer to CONNECT.
+  /// HTTP proxy's answer to CONNECT.
   head_limits : @h1.Limits
-  /// The HTTP proxies and the hosts that skip them.
+  /// HTTP(S) or SOCKS5h proxies and the hosts that skip them.
   proxy : ProxyConfig
 }
 

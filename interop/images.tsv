@@ -5,6 +5,8 @@
 #   skopeo inspect --raw docker://<image>:<tag> | sha256sum
 # Columns, separated by one tab: the name interop/run.mbtx uses, the image.
 name	image
+# SOCKS server source revision: serjs/socks5-server 3c8d31b9e9f67b9ecee2b7ad6868ecd44e6b4eeb.
+socks5	docker.io/serjs/go-socks5-proxy:master@sha256:0af522996f402c03ecd985a87997158eabeb28935365e3a384df37eafcf740ea
 autobahn	docker.io/crossbario/autobahn-testsuite:latest@sha256:519915fb568b04c9383f70a1c405ae3ff44ab9e35835b085239c258b6fac3074
 nginx	docker.io/library/nginx:1.31.8-alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
 caddy	docker.io/library/caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829fb031af2cf50056ea1246559fee

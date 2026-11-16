@@ -295,6 +295,35 @@ async test "injected clock expires parked sockets at the idle boundary" {
 }
 
 ///|
+async test "optional connection age expires a frequently reused socket through AsyncBackend" {
+  with_server(_ => @mttp_core.Response::new(200, body=Bytes(b"reuse")), (
+    url,
+    accepts,
+  ) => {
+    let clock = @runtime.VirtualClock()
+    let backend = @backend.AsyncBackend::new(
+      config=@h1client.ClientConfig::default(),
+      clock~,
+      max_connection_age_ms=100,
+    )
+    defer backend.close()
+    for (elapsed, expected) in [(0, 1), (49, 1), (50, 1), (1, 2)] {
+      clock.advance(elapsed)
+      assert_eq(
+        body(
+          backend.send(
+            @mttp_core.Request::get(url),
+            @mttp_core.SendOptions::default(),
+          ),
+        ),
+        b"reuse",
+      )
+      assert_eq(accepts.val, expected)
+    }
+  })
+}
+
+///|
 async test "injected clock and optional timer drive the socket Head phase timeout" {
   for explicit_timer in [false, true] {
     let entered = Ref(false)

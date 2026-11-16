@@ -64,6 +64,7 @@ priv struct Harness {
 fn Harness::new(
   config~ : @h1client.ClientConfig = @h1client.ClientConfig::default(),
   schedule? : @driver.Schedule,
+  max_connection_age_ms? : Int32,
 ) -> Harness {
   let driver = @driver.Driver::new(schedule?)
   let coordination : &@rt.Coordination = @sim.SimCoordination::new(driver)
@@ -82,6 +83,7 @@ fn Harness::new(
     timer~,
     coordination~,
     config~,
+    max_connection_age_ms?,
   )
   { driver, coordination, dialer, client, closes: [], }
 }

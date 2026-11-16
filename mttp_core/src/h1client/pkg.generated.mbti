@@ -19,7 +19,7 @@ pub struct Client {
 }
 pub fn Client::close(Self) -> Unit
 pub fn Client::idle_connections(Self) -> Int32
-pub fn Client::new(dialer~ : &@rt.Dialer, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, config~ : ClientConfig) -> Self
+pub fn Client::new(dialer~ : &@rt.Dialer, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, config~ : ClientConfig, max_connection_age_ms? : Int32) -> Self
 pub async fn Client::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
 pub impl @mttp_core.Backend for Client
 

@@ -10,12 +10,18 @@ when finished.
 ```mbt check
 ///|
 test "construct and close a cross target backend" {
-  let backend = @backend.AsyncBackend::new()
+  let backend = @backend.AsyncBackend::new(max_connection_age_ms=300000)
   assert_eq(backend.idle_connections(), 0)
   backend.close()
   backend.close()
 }
 ```
+
+`max_connection_age_ms` is optional and defaults to off (`None`). On socket
+targets it closes parked connections at that total age, even after frequent
+reuse, so the next dial resolves DNS again. Active exchanges continue;
+zero or less prevents reuse. JS ignores it because the host owns pooling.
+`ClientConfig` is unchanged: construct it from `default()` and record update.
 
 On native and wasm the backend is `gaato/mttp_core`'s HTTP/1.1 client engine over
 TCP and TLS, with decompression. It negotiates gzip, deflate, Brotli and

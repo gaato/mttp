@@ -11,6 +11,8 @@ pub(all) struct Idle {
   user_agent : String?
   /// When it was parked, on the engine's clock.
   parked_at_ms : Int64
+  /// When this connection was opened; reuse does not reset its age.
+  opened_at_ms : Int64
 }
 
 ///|
@@ -22,6 +24,7 @@ pub(all) struct PoolState {
   max_per_origin : Int32
   /// How long a connection may stay parked; 0 or less parks nothing.
   idle_max_ms : Int32
+  max_connection_age_ms : Int32?
   /// The parked connections per key, oldest first; a key with none has no
   /// entry, so the index is bounded by `max_total` too.
   parked : @persistent.HashMap[String, @vector.Vector[Idle]]
@@ -42,11 +45,13 @@ pub fn PoolState::new(
   max_total~ : Int32 = 256,
   max_per_origin~ : Int32,
   idle_max_ms~ : Int32,
+  max_connection_age_ms? : Int32,
 ) -> PoolState {
   {
     max_total,
     max_per_origin,
     idle_max_ms,
+    max_connection_age_ms,
     parked: @persistent.HashMap::new(),
     closed: false,
   }
@@ -59,17 +64,29 @@ pub fn PoolState::count(self : PoolState) -> Int32 {
 }
 
 ///|
-/// Closes every connection parked for `idle_max_ms` or longer at `now`. A
-/// clock that went backward expires nothing that was parked later than
-/// `now`.
+/// Closes every connection parked for `idle_max_ms` or whose total age has
+/// reached `max_connection_age_ms`, when configured. A positive bound
+/// counts age only when its timestamp is not in the future. Nonpositive
+/// connection age prevents reuse even if the clock went backward.
 pub fn PoolState::sweep(self : PoolState, now~ : Int64) -> PoolChange {
   let mut parked = self.parked
   let closed = []
   for origin, entries in self.parked {
     let kept = entries.filter(entry => {
       let age = now - entry.parked_at_ms
-      let expired = now >= entry.parked_at_ms &&
-        (age < 0L || age >= self.idle_max_ms.to_int64())
+      let lifetime_expired = match self.max_connection_age_ms {
+        None => false
+        Some(limit) => {
+          let age = now - entry.opened_at_ms
+          limit <= 0 ||
+          (now >= entry.opened_at_ms && (age < 0L || age >= limit.to_int64()))
+        }
+      }
+      let expired = lifetime_expired ||
+        (
+          now >= entry.parked_at_ms &&
+          (age < 0L || age >= self.idle_max_ms.to_int64())
+        )
       if expired {
         closed.push(entry.id)
       }

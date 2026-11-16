@@ -15,7 +15,12 @@ fn pool_of(
     let entries = pool.control.parked
       .get(origin)
       .unwrap_or(@vector.Vector::new())
-    let entry : @control.Idle = { id, user_agent, parked_at_ms, }
+    let entry : @control.Idle = {
+      id,
+      user_agent,
+      parked_at_ms,
+      opened_at_ms: parked_at_ms,
+    }
     pool.control = {
       ..pool.control,
       parked: pool.control.parked.add(origin, entries.push(entry)),
@@ -48,6 +53,31 @@ fn sorted(conns : Array[Int32]) -> Array[Int32] {
   let copy = conns.copy()
   copy.sort()
   copy
+}
+
+///|
+test "maximum connection age handles the boundary backward clocks overflow and disabled reuse" {
+  for
+    (born, now, limit, expired) in [
+      (0L, 99L, 100, false),
+      (0L, 100L, 100, true),
+      (100L, 99L, 1, false),
+      (100L, 99L, 0, true),
+      (0L, 0L, 0, true),
+      (0L, 0L, -1, true),
+      (-9223372036854775808L, 9223372036854775807L, 100, true),
+    ] {
+    let pool : IdlePool[Int32] = IdlePool::new(
+      max_total=4,
+      max_per_origin=4,
+      idle_max_ms=1000,
+      max_connection_age_ms=limit,
+    )
+    assert_eq(pool.put("a", None, 1, now~, opened_at_ms=born), [])
+    let (taken, closed) = pool.take("a", None, now~)
+    assert_eq(taken, if expired { None } else { Some(1) })
+    assert_eq(closed, if expired { [1] } else { [] })
+  }
 }
 
 ///|

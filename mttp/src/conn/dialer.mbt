@@ -3,12 +3,21 @@
 /// ALPN negotiation is exposed by this adapter.
 pub struct TcpDialer {
   priv trust : @trust.Trust
+  priv refuse_internal : Bool
 }
 
 ///|
 /// Creates a dialer using system certificate roots unless specified otherwise.
-pub fn TcpDialer::new(trust~ : @trust.Trust = System) -> TcpDialer {
-  { trust, }
+/// `refuse_internal` defaults to false. When true, resolve once, refuse
+/// internal/special-purpose destinations as Invalid/Dial, then connect the
+/// exact answer. TLS still receives the original host. Every redirect dial
+/// is checked. With a proxy only the proxy address is checked: the target
+/// is resolved/connected by the proxy and needs a policy at that proxy.
+pub fn TcpDialer::new(
+  trust~ : @trust.Trust = System,
+  refuse_internal~ : Bool = false,
+) -> TcpDialer {
+  { trust, refuse_internal, }
 }
 
 ///|
@@ -45,7 +54,7 @@ impl SocketPort for UInt16 with fn of_port(port) {
 ///|
 /// Connects to a host; TCP and name-resolution failures are Connect/Dial,
 /// and a port outside 0..=65535 is Invalid/Dial.
-pub impl @rt.Dialer for TcpDialer with fn connect(_, host~, port~) {
+pub impl @rt.Dialer for TcpDialer with fn connect(self, host~, port~) {
   guard port >= 0 && port <= 65535 else {
     raise @mttp_core.TransportError(
       kind=Invalid,
@@ -53,7 +62,23 @@ pub impl @rt.Dialer for TcpDialer with fn connect(_, host~, port~) {
       detail="port \{port} is outside 0..=65535",
     )
   }
-  let tcp = @socket.Tcp::connect_to_host(host, port=SocketPort::of_port(port)) catch {
+  let tcp = try {
+    if self.refuse_internal {
+      let addr = @socket.Addr::resolve(host, port=SocketPort::of_port(port))
+      if internal_address(addr) {
+        raise @mttp_core.TransportError(
+          kind=Invalid,
+          phase=Dial,
+          detail="refuse_internal: resolved address \{addr} is internal or special-purpose",
+        )
+      }
+      // Connect this exact answer, never resolve a second time (DNS rebinding).
+      @socket.Tcp::connect(addr)
+    } else {
+      @socket.Tcp::connect_to_host(host, port=SocketPort::of_port(port))
+    }
+  } catch {
+    @mttp_core.TransportError(_) as error => raise error
     error => raise dial_error(error)
   }
   @socketconn.from_tcp(tcp)

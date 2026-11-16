@@ -15,6 +15,37 @@ fn port_of(addr : @socket.Addr) -> Int32 {
 }
 
 ///|
+async test "guarded HTTP dial refuses resolved localhost before sending any request" {
+  let server = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
+  defer server.close()
+  let clock = @runtime.AsyncClock::new()
+  let engine = @h1client.Client::new(
+    dialer=@conn.TcpDialer::new(refuse_internal=true),
+    clock~,
+    timer=@runtime.ClockTimer::new(clock~),
+    coordination=@runtime.RuntimeCoordination::new(),
+    config=@h1client.ClientConfig::default(),
+  )
+  defer engine.close()
+  for host in ["127.0.0.1", "localhost", "[::ffff:127.0.0.1]"] {
+    try
+      @mttp_core.Backend::send(
+        engine,
+        @mttp_core.Request::get("http://\{host}:\{port_of(server.addr)}/"),
+        @mttp_core.SendOptions::default(),
+      )
+    catch {
+      @mttp_core.TransportError(kind=Invalid, phase=Dial, detail~) =>
+        assert_true(detail.contains("refuse_internal: resolved address"))
+      error => raise error
+    } noraise {
+      _ => fail("internal destination was contacted")
+    }
+  }
+  assert_eq(engine.idle_connections(), 0)
+}
+
+///|
 /// A TLS server session over `tcp` with the test certificate. No Windows
 /// server exists (internal/testtls/testtls.mbt), so the tests that need
 /// one are not built there.

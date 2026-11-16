@@ -184,6 +184,45 @@ async fn case_get(ctx : Ctx) -> String {
 }
 
 ///|
+/// `alt` is the SOCKS proxy URL for this client-only case.
+async fn case_socks5h(ctx : Ctx) -> String {
+  let backend = @backend.AsyncBackend::new(trust=ctx.trust, config={
+    ..@h1client.ClientConfig::default(),
+    proxy: @h1client.ProxyConfig::fixed(ctx.alt),
+    connect_timeout_ms: Some(5000),
+  })
+  defer backend.close()
+  let connections = []
+  for _ in 0..<2 {
+    let (response, body) = exchange(
+      backend,
+      @mttp_core.Request::get(ctx.url("/small.txt")),
+    )
+    check(
+      response.status == 200 && body == b"hello interop\n",
+      "SOCKS tunnel response",
+    )
+    connections.push(conn_of(response))
+  }
+  check(connections[0] == connections[1], "SOCKS origin connection not reused")
+  check(backend.idle_connections() == 1, "SOCKS tunnel not reused")
+  let refused = @backend.AsyncBackend::new(trust=ctx.trust, config={
+    ..@h1client.ClientConfig::default(),
+    proxy: @h1client.ProxyConfig::fixed(
+      "socks5h://interop:wrong@127.0.0.1:39060",
+    ),
+  })
+  defer refused.close()
+  try exchange(refused, @mttp_core.Request::get(ctx.url("/small.txt"))) catch {
+    @mttp_core.TransportError(kind=Proxy(status=407), phase=Dial, ..) => ()
+    error => raise error
+  } noraise {
+    _ => raise Check("wrong SOCKS password accepted")
+  }
+  "remote DNS, authentication, reuse and TLS trust"
+}
+
+///|
 async fn case_keepalive(ctx : Ctx) -> String {
   let backend = ctx.backend()
   defer backend.close()
@@ -712,6 +751,7 @@ async fn case_drop(ctx : Ctx, post : Bool) -> String {
 /// Runs one case by its id.
 async fn run_case(ctx : Ctx, id : String) -> String {
   match id {
+    "socks5h" => case_socks5h(ctx)
     "get" => case_get(ctx)
     "keepalive" => case_keepalive(ctx)
     "idle-close-get" => case_idle_close_get(ctx)

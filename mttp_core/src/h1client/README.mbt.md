@@ -35,6 +35,7 @@ test "send a request and read the response" {
       ..@h1client.ClientConfig::default(),
       connect_timeout_ms: Some(10000),
     },
+    max_connection_age_ms=300000,
   )
   driver.run(() => {
     let response = client.send(
@@ -51,6 +52,26 @@ test "send a request and read the response" {
   assert_eq(conn.closes(), 1)
 }
 ```
+
+`max_connection_age_ms` is an optional constructor argument, separate from
+the frozen `ClientConfig`. It defaults to `None` (off), preserving existing
+reuse behavior. Age starts at the beginning of the dial and does not reset
+when a connection is parked again. At the boundary, the next pool take
+closes it and dials again, allowing DNS changes to take effect. Active
+exchanges continue; zero or less prevents reuse. Build `ClientConfig` from
+`default()` and record update as above.
+
+`ProxyConfig::fixed("socks5h://user:password@proxy.test:1080")` selects
+SOCKS5 CONNECT (RFC 1928) and optional username/password authentication
+(RFC 1929). The target name is sent as ATYP 3 and resolved by the proxy;
+HTTPS then starts TLS inside the tunnel with the original hostname.
+`from_env` and `NO_PROXY` work as for HTTP proxies. `socks5://` is refused
+with a message naming `socks5h://`: local DNS awaits a resolver port.
+SOCKS reply codes become `Proxy(status=code)` in phase Dial, authentication
+refusals `Proxy(status=407)`, malformed replies `Protocol`, and handshake
+EOF `Connect`. Transport failures retain their kind and acquire phase Dial.
+No proxy credential is sent to the origin. SOCKS credentials use cleartext
+on the connection to the proxy.
 
 ## What it guarantees
 
@@ -90,12 +111,13 @@ test "send a request and read the response" {
   resent once on a fresh connection, if its body is replayable and it is
   idempotent (`@mttp_core.is_idempotent`); such a response carries the
   `stale_resend` attribute.
-- **Proxies.** `ClientConfig.proxy` names an HTTP proxy per scheme and a
+- **Proxies.** `ClientConfig.proxy` names an HTTP(S) or SOCKS5h proxy per scheme and a
   `NO_PROXY` list, as data: `ProxyConfig::from_env(lookup)` reads the usual
   environment variables once, through a lookup the caller passes, and the
-  client never reads the environment itself. `http://` requests are
+  client never reads the environment itself. With HTTP proxies, `http://` requests are
   forwarded with an absolute target; `https://` requests go through a
-  `CONNECT` tunnel with TLS end to end. A request's own
+  `CONNECT` tunnel with TLS end to end. SOCKS5h tunnels both schemes with
+  proxy DNS, then starts TLS for HTTPS. A request's own
   `Proxy-Authorization` is never sent; a proxy's credentials (from its
   URL) go to that proxy only. Connections through different proxies, or
   none, are pooled apart.

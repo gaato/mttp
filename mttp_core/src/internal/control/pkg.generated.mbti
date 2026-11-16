@@ -16,6 +16,7 @@ pub(all) struct Idle {
   id : Int64
   user_agent : String?
   parked_at_ms : Int64
+  opened_at_ms : Int64
 }
 
 pub(all) struct Lifecycle {
@@ -42,12 +43,13 @@ pub(all) struct PoolState {
   max_total : Int32
   max_per_origin : Int32
   idle_max_ms : Int32
+  max_connection_age_ms : Int32?
   parked : @hashmap.HashMap[String, @vector.Vector[Idle]]
   closed : Bool
 }
 pub fn PoolState::count(Self) -> Int32
 pub fn PoolState::drain(Self) -> PoolChange
-pub fn PoolState::new(max_total? : Int32, max_per_origin~ : Int32, idle_max_ms~ : Int32) -> Self
+pub fn PoolState::new(max_total? : Int32, max_per_origin~ : Int32, idle_max_ms~ : Int32, max_connection_age_ms? : Int32) -> Self
 pub fn PoolState::put(Self, String, Idle, now~ : Int64) -> PoolChange
 pub fn PoolState::sweep(Self, now~ : Int64) -> PoolChange
 pub fn PoolState::take(Self, String, String?, now~ : Int64) -> (PoolChange, Int64?)

@@ -15,6 +15,7 @@ fn platform_backend(
   // The host's fetch negotiates content codings and dictionaries itself.
   _dictionaries : @dictionary.DictionaryStore?,
   _partition : String,
+  _max_connection_age_ms : Int32?,
 ) -> AsyncBackend {
   let driver = FetchDriver::{
     ceiling: config.unwrap_or_else(@h1client.ClientConfig::default).max_body_bytes,

@@ -24,6 +24,15 @@ never does.
 - `openapi.to_openapi(version=V3_2)` emits OpenAPI 3.2.0 with SSE `itemSchema`;
   the default remains 3.1.0 with `x-oai-itemSchema`.
 - `schema.object9` through `object16` support larger typed object codecs.
+- `h1client.Client::new(max_connection_age_ms?)` optionally expires parked
+  connections by total age, independently of idle time. Default off (`None`)
+  preserves existing behavior; zero or less prevents reuse, active exchanges
+  continue. No field is added to the frozen `ClientConfig`: keep building it
+  with `{ ..ClientConfig::default(), ... }` and pass the age to `new`.
+- `h1client.ProxyConfig`: `socks5h://` proxy DNS with bounded RFC 1928 CONNECT
+  and RFC 1929 username/password negotiation, environment selection and
+  NO_PROXY bypass, followed by TLS for HTTPS. `socks5://` remains refused
+  with a clear remote-DNS alternative until a resolver port exists.
 
 - `h1server.serve_conn(on_response_complete~)` acknowledges each returned
   HTTP response after writing, body cleanup and unread-request draining,

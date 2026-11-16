@@ -65,12 +65,12 @@ test "pool snapshots isolate reuse eviction and backwards time" {
   )
   let one = empty.put(
       "a",
-      { id: 1L, user_agent: Some("a"), parked_at_ms: 10L, },
+      { id: 1L, user_agent: Some("a"), parked_at_ms: 10L, opened_at_ms: 10L, },
       now=10L,
     ).state
   let two = one.put(
       "a",
-      { id: 2L, user_agent: Some("b"), parked_at_ms: 12L, },
+      { id: 2L, user_agent: Some("b"), parked_at_ms: 12L, opened_at_ms: 12L, },
       now=12L,
     ).state
   let (take, id) = two.take("a", Some("a"), now=9L)
@@ -82,7 +82,7 @@ test "pool snapshots isolate reuse eviction and backwards time" {
   assert_eq(two.count(), 2)
   let full = two.put(
     "b",
-    { id: 3L, user_agent: None, parked_at_ms: 13L, },
+    { id: 3L, user_agent: None, parked_at_ms: 13L, opened_at_ms: 13L, },
     now=13L,
   )
   assert_eq(full.close[0], 3L)
@@ -95,7 +95,7 @@ test "pool snapshots isolate reuse eviction and backwards time" {
   assert_eq(
     drained.state.put(
       "a",
-      { id: 4L, user_agent: None, parked_at_ms: 20L, },
+      { id: 4L, user_agent: None, parked_at_ms: 20L, opened_at_ms: 20L, },
       now=20L,
     ).close[0],
     4L,

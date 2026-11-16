@@ -19,6 +19,9 @@ pub struct AsyncBackend {
 /// from that store, in `dictionary_partition`, and fill it (see
 /// `@codings.Decompress`); on JS the host's fetch decides, and the store is
 /// not used.
+/// `max_connection_age_ms` limits socket connection age independently of
+/// idle time (default off; zero or less prevents reuse). It is ignored on
+/// JS, whose host owns connection pooling.
 pub fn AsyncBackend::new(
   config? : @h1client.ClientConfig,
   trust~ : @trust.Trust = System,
@@ -26,11 +29,12 @@ pub fn AsyncBackend::new(
   timer? : &@rt.Timer,
   dictionaries? : @dictionary.DictionaryStore,
   dictionary_partition~ : String = "",
+  max_connection_age_ms? : Int32,
 ) -> AsyncBackend {
   let clock = clock.unwrap_or_else(() => @runtime.AsyncClock::new())
   let timer = timer.unwrap_or_else(() => @runtime.ClockTimer::new(clock~))
   platform_backend(
-    config, trust, clock, timer, dictionaries, dictionary_partition,
+    config, trust, clock, timer, dictionaries, dictionary_partition, max_connection_age_ms,
   )
 }
 

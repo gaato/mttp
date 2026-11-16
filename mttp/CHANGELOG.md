@@ -12,6 +12,17 @@ never does.
 - gaato/deflate 0.2.0, gaato/brotli 0.5.0 and gaato/zstd 0.5.0: decoding
   errors read as those releases word them ("the input ends inside ...",
   "data after the last meta-block", "data after the last frame").
+### Added
+
+- `backend.AsyncBackend::new(max_connection_age_ms?)` forwards an optional
+  socket pool lifetime (default off) without changing ClientConfig; construct
+  config with `default()` plus record update. JS ignores the socket option.
+- `conn.TcpDialer::new(refuse_internal=false)` can opt into a conservative
+  RFC 6890/IANA destination policy. It resolves once, refuses internal and
+  special-purpose addresses (including restricted IPv4-mapped IPv6) as
+  `Invalid/Dial`, and connects the exact answer while keeping hostname SNI.
+  Each redirect dial is checked. With a proxy only its address is checked;
+  target restrictions belong at the proxy.
 
 ### Fixed
 

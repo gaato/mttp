@@ -5,6 +5,34 @@ fn serving(h : Harness, peer : Peer, body : String) -> @driver.Task {
 }
 
 ///|
+test "connection age expires despite frequent reuse and leaves active exchanges alone" {
+  for limit in [None, Some(100)] {
+    let h = Harness::new(max_connection_age_ms?=limit)
+    let first = h.peer()
+    let second = h.peer()
+    h.run(() => {
+      let servers = [serving(h, first, "1")]
+      if limit is Some(_) {
+        servers.push(serving(h, second, "2"))
+      }
+      let request = @mttp_core.Request::get("http://example.test/")
+      assert_eq(fetch(h.client, request), "1")
+      h.driver.sleep(99)
+      let held = h.client.send(request, exchange())
+      // A connection already in use is not interrupted by the lifetime.
+      h.driver.sleep(1)
+      assert_eq(body_of(held), b"1")
+      assert_eq(fetch(h.client, request), if limit is None { "1" } else { "2" })
+      h.finish()
+      for server in servers {
+        ignore(server.wait())
+      }
+    })
+    assert_eq(h.dialer.dialed.length(), if limit is None { 1 } else { 2 })
+  }
+}
+
+///|
 test "parked connections are reused per origin and User-Agent" {
   @sim.explore(schedule => {
     let h = Harness::new(schedule~)

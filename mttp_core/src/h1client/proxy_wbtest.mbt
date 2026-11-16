@@ -46,6 +46,42 @@ fn env_of(pairs : Array[(String, String)]) -> (String) -> String? {
 }
 
 ///|
+test "socks5h proxy parsing uses port 1080 remote DNS and bounded percent decoded credentials" {
+  guard parse_proxy("socks5h://proxy", scheme="http") is Ok(server) else {
+    fail("SOCKS proxy refused")
+  }
+  assert_true(server.socks)
+  assert_false(server.secure)
+  assert_eq(server.port, 1080)
+  assert_eq(server.authorization, None)
+  assert_eq(server.socks_auth, None)
+  assert_eq(server.origin, "socks5h://proxy:1080")
+  guard parse_proxy("socks5h://u:p%40ss@proxy:1081", scheme="https")
+    is Ok(server) else {
+    fail("SOCKS credentials refused")
+  }
+  assert_eq(server.socks_auth, Some(b"\x01\x01u\x04p@ss"))
+  assert_eq(server.authorization, None)
+  for
+    url in [
+      "socks5h://u@proxy",
+      "socks5h://u:@proxy",
+      "socks5h://u%FF:p@proxy",
+      "socks5h://" + "u".repeat(256) + ":secret@proxy",
+    ] {
+    guard parse_proxy(url, scheme="http") is Err(message) else {
+      fail("invalid credentials accepted")
+    }
+    assert_true(message.contains("1..255"))
+    assert_false(message.contains("secret"))
+  }
+  guard parse_proxy("ftp://proxy", scheme="http") is Err(message) else {
+    fail("unsupported scheme accepted")
+  }
+  assert_true(message.contains("socks5h://"))
+}
+
+///|
 test "parse_proxy takes http and https proxy URLs with Basic credentials" {
   for
     (text, expected) in [
@@ -72,7 +108,7 @@ test "parse_proxy takes http and https proxy URLs with Basic credentials" {
         "http://u%FF:p@proxy:1", "error: invalid https proxy URL: malformed credentials",
       ),
       (
-        "socks5://proxy:1080", "error: unsupported https proxy scheme socks5: only http and https proxies are supported",
+        "socks5://proxy:1080", "error: https proxy: socks5:// requires local DNS; use socks5h:// for proxy DNS",
       ),
       ("http:///path", "error: invalid https proxy URL: no host"),
     ] {
@@ -161,7 +197,7 @@ test "ProxyConfig reads the environment as curl and httpx do" {
   })
   assert_eq(
     describe_setting(proxies.https),
-    "error: unsupported https proxy scheme socks5: only http and https proxies are supported",
+    "error: https proxy: socks5:// requires local DNS; use socks5h:// for proxy DNS",
   )
   assert_eq(describe_setting(proxies.http), "none")
 }
@@ -214,7 +250,7 @@ test "an unusable proxy setting fails its requests unless NO_PROXY skips it" {
   })
   assert_eq(
     describe_route(proxies, "https://api.test/p"),
-    "Protocol: unsupported https proxy scheme ftp: only http and https proxies are supported",
+    "Protocol: unsupported https proxy scheme ftp: use http, https or socks5h://",
   )
   assert_eq(
     describe_route(proxies, "https://skip.test/p"),

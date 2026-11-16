@@ -1179,10 +1179,23 @@ async fn main_run(filters : Array[String]) -> Int32 {
   if filters == ["websocket"] {
     return run_js_websockets(Some(env))
   }
+  if !filters.is_empty() &&
+    filters.all(f => f.has_prefix("client/native/socks5h")) {
+    return run_socks5h(env, rows, filters)
+  }
   if !filters.is_empty() && filters.all(f => f.has_prefix("server/autobahn")) {
     return run_autobahn(env, rows)
   }
   println("interop: \{engine}, images pinned in interop/images.tsv")
+  let socks_status = if filters.is_empty() ||
+    filters.any(f => {
+      "client/native/socks5h".has_prefix(f) ||
+      f.has_prefix("client/native/socks5h")
+    }) {
+    run_socks5h(env, rows, filters)
+  } else {
+    0
+  }
   let ws_status = if selected(filters, "client/native/autobahn") {
     run_autobahn_client(env, rows)
   } else {
@@ -1297,10 +1310,116 @@ async fn main_run(filters : Array[String]) -> Int32 {
   } else {
     0
   }
-  if tally.fail > 0 || autobahn != 0 || ws_status != 0 {
+  if tally.fail > 0 || autobahn != 0 || ws_status != 0 || socks_status != 0 {
     1
   } else {
     0
+  }
+}
+
+///|
+/// Client-only RFC 1928/1929 interoperability. The proxy admits only the
+/// original FQDN localhost, so sending a locally resolved IP fails this run.
+async fn run_socks5h(
+  env : Env,
+  rows : Array[Row],
+  filters : Array[String],
+) -> Int32 {
+  for port in [39010, 39011, 39060] {
+    port_free("127.0.0.1:\{port}")
+  }
+  ignore(
+    must("moon", [
+      "build", "--target", "native", "interop/mttp_client", "interop/mttp_server",
+    ]),
+  )
+  make_dir(work)
+  ignore(must(native_server, ["www", "\{work}/www"]))
+  make_certs()
+  for image in ["nginx", "socks5"] {
+    ignore(must(env.engine, ["pull", "--quiet", env.image(image)]))
+  }
+  let names = ["mttp-c1-socks", "mttp-c1-socks-origin"]
+  defer @async.protect_from_cancel(() => {
+    for name in names {
+      ignore(capture(env.engine, ["rm", "-f", name]))
+    }
+  })
+  ignore(
+    must(
+      env.engine,
+      env.run_args(
+        "nginx",
+        [
+          "-d",
+          "--name",
+          names[1],
+          ..env.mount("interop/servers/nginx.conf", "/etc/nginx/nginx.conf"),
+          ..env.mount("\{work}/certs", "/certs"),
+          ..env.mount("\{work}/www", "/www"),
+        ],
+        [],
+      ),
+    ),
+  )
+  ignore(
+    must(
+      env.engine,
+      env.run_args(
+        "socks5",
+        [
+          "-d",
+          "--name",
+          names[0],
+          "-e",
+          "PROXY_PORT=39060",
+          "-e",
+          "PROXY_USER=interop",
+          "-e",
+          "PROXY_PASSWORD=secret",
+          "-e",
+          "ALLOWED_DEST_FQDN=^localhost$",
+          "-e",
+          "ALLOWED_IPS=127.0.0.1",
+        ],
+        [],
+      ),
+    ),
+  )
+  wait_port("127.0.0.1:39010", "SOCKS HTTP origin")
+  wait_port("127.0.0.1:39011", "SOCKS HTTPS origin")
+  wait_port("127.0.0.1:39060", "SOCKS5 server")
+  let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+  for scheme in ["http", "https"] {
+    let run = "native/socks5h/\{scheme}"
+    if !selected(filters, "client/\{run}") {
+      continue
+    }
+    let expected = rows_of(rows, "client", run).filter(row => {
+      row.id == "socks5h"
+    })
+    run_one(
+      tally,
+      "client",
+      run,
+      expected,
+      plan(expected),
+      (
+        native_client,
+        [
+          "\{scheme}://localhost:\{if scheme == "http" { 39010 } else { 39011 }}",
+          "socks5h://interop:secret@127.0.0.1:39060",
+          "\{work}/certs/ca.pem",
+          "socks5h",
+        ],
+      ),
+    )
+  }
+  println("SOCKS5 interop: \{tally.pass} passed, \{tally.fail} failed")
+  if tally.fail == 0 {
+    0
+  } else {
+    1
   }
 }
 

@@ -31,6 +31,8 @@
 # For one case and run the last matching row decides, so a general row comes
 # first and its exceptions after it. A case with no matching row is not run.
 side	case	where	expect	note
+client	socks5h	native/socks5h/http	pass	RFC 1928 remote DNS with RFC 1929 auth and wrong-password refusal
+client	socks5h	native/socks5h/https	pass	TLS with verified localhost SNI inside SOCKS5 tunnel
 client	websocket	node/websocket	pass	JS mttp Session against native echo: text binary subprotocol and close
 client	websocket	deno/websocket	pass	JS mttp Session against native echo: text binary subprotocol and close
 client	websocket	bun/websocket	pass	JS mttp Session against native echo: text binary subprotocol and close

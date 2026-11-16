@@ -33,6 +33,9 @@ pub let stale_resend : @mttp_core.AttributeKey[Bool] = @mttp_core.AttributeKey::
 
 ///|
 /// Creates a client with `config` over the given ports.
+/// `max_connection_age_ms` optionally limits connection age from the start
+/// of its dial, independently of idle time. It defaults to off; a value of
+/// zero or less prevents reuse. Active exchanges are never interrupted.
 ///
 /// ```mbt check
 /// test {
@@ -66,6 +69,7 @@ pub fn Client::new(
   timer~ : &@rt.Timer,
   coordination~ : &@rt.Coordination,
   config~ : ClientConfig,
+  max_connection_age_ms? : Int32,
 ) -> Client {
   {
     dialer,
@@ -78,6 +82,7 @@ pub fn Client::new(
       max_total=config.max_idle_connections,
       max_per_origin=config.max_idle_per_origin,
       idle_max_ms=config.idle_max_ms,
+      max_connection_age_ms?,
     ),
     slots: Slots::new(
       coordination~,
@@ -237,7 +242,16 @@ async fn Client::send_request(
       }
       None =>
         timer.run(Dial, () => {
-          dial_route(self.dialer, target, route, agent, self.config.head_limits)
+          let opened_at = self.clock.now_unix_ms()
+          let wire = dial_route(
+            self.dialer,
+            target,
+            route,
+            agent,
+            self.config.head_limits,
+          )
+          wire.opened_at = opened_at
+          wire
         })
     }
     let mut owned = true
@@ -408,7 +422,14 @@ fn Client::release(
   if reusable && wire.pending.is_empty() && !wire.closed {
     let now = self.clock.now_unix_ms()
     wire.parked_at = now
-    for rejected in self.pool.put(key, agent, wire, now~) {
+    for
+      rejected in self.pool.put(
+        key,
+        agent,
+        wire,
+        now~,
+        opened_at_ms=wire.opened_at,
+      ) {
       rejected.close()
     }
   } else {

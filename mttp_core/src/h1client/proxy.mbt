@@ -1,16 +1,21 @@
 ///|
-/// Which HTTP proxies a `Client` uses, as data fixed at construction: one
+/// Which proxies a `Client` uses, as data fixed at construction: one
 /// URL for `http://` requests, one for `https://` requests, and a
 /// `NO_PROXY` list of the hosts that go direct. Build it with `none`,
 /// `fixed` or `from_env`, or as a record.
 ///
-/// A proxy URL is `http://` or `https://` (a missing scheme is `http://`),
+/// A proxy URL is `http://`, `https://` or `socks5h://` (a missing scheme is `http://`),
 /// with an optional `user:password@` that becomes `Proxy-Authorization:
 /// Basic` for that proxy alone. `http://` requests are forwarded with an
 /// absolute target; `https://` requests go through a `CONNECT` tunnel, with
 /// TLS end to end inside it. A setting that cannot be used fails the
 /// requests it would carry with `Protocol` in phase Pool, rather than
 /// sending them direct.
+/// `socks5h://` uses SOCKS5 CONNECT with proxy DNS (ATYP domain name), on
+/// port 1080 by default, and optional RFC 1929 username/password auth. TLS
+/// for HTTPS starts inside the tunnel with the origin hostname. SOCKS
+/// credentials travel in cleartext to the proxy; use a trusted path.
+/// `socks5://` is refused: local DNS needs a future resolver port.
 ///
 /// ```mbt check
 /// test {
@@ -105,11 +110,13 @@ priv struct ProxyServer {
   host : String
   port : Int32
   secure : Bool
-  /// `http://host:port` or `https://host:port`, the port always written.
+  /// The proxy's scheme and authority, the port always written.
   origin : String
   /// `Basic` credentials from the proxy URL's userinfo; they go to the
   /// proxy alone.
   authorization : String?
+  socks : Bool
+  socks_auth : Bytes?
 }
 
 ///|
@@ -119,8 +126,8 @@ priv enum Route {
   /// An `http://` request handed to the proxy with its target in absolute
   /// form (RFC 9112 §3.2.2).
   Forward(ProxyServer)
-  /// An `https://` request sent through a tunnel the proxy opens with
-  /// `CONNECT` (RFC 9110 §9.3.6), TLS running end to end inside it.
+  /// A tunnel opened with HTTP CONNECT (RFC 9110 §9.3.6) or SOCKS5 CONNECT
+  /// (RFC 1928), then TLS inside it for HTTPS origins.
   Tunnel(ProxyServer)
 }
 
@@ -143,11 +150,11 @@ fn Proxies::new(config : ProxyConfig) -> Proxies {
 }
 
 ///|
-/// The proxy at `text`, set for requests of `scheme`: `http://` or
-/// `https://`, a missing scheme taken as `http://` (curl, httpx), a missing
-/// port as the scheme's default, and `user:password@` percent-decoded into
-/// `Basic` credentials. A path is ignored. Error messages never repeat the
-/// URL, which may hold credentials.
+/// Parses the setting for requests of `scheme`: an HTTP(S) or SOCKS5h
+/// proxy. A missing scheme means HTTP; a missing port uses its scheme's
+/// default (1080 for SOCKS). Userinfo is percent-decoded into HTTP Basic
+/// or RFC 1929 credentials. A path is ignored. Errors never repeat the URL,
+/// which may hold credentials.
 fn parse_proxy(text : String, scheme~ : String) -> Result[ProxyServer, String] {
   let source = "\{scheme} proxy"
   let text = text.trim().to_owned()
@@ -157,15 +164,36 @@ fn parse_proxy(text : String, scheme~ : String) -> Result[ProxyServer, String] {
       return Err("invalid \{source} URL: \{reason}")
   }
   let proxy_scheme = url.scheme.unwrap_or("")
-  guard proxy_scheme is ("http" | "https") else {
+  if proxy_scheme == "socks5" {
     return Err(
-      "unsupported \{source} scheme \{proxy_scheme}: only http and https proxies are supported",
+      "\{source}: socks5:// requires local DNS; use socks5h:// for proxy DNS",
+    )
+  }
+  guard proxy_scheme is ("http" | "https" | "socks5h") else {
+    return Err(
+      "unsupported \{source} scheme \{proxy_scheme}: use http, https or socks5h://",
     )
   }
   guard url.host is Some(host) && !host.is_empty() else {
     return Err("invalid \{source} URL: no host")
   }
-  let authorization = match url.userinfo {
+  let socks = proxy_scheme == "socks5h"
+  let socks_auth = if socks {
+    match url.userinfo {
+      None => None
+      Some(info) =>
+        match socks_credentials(info) {
+          Some(bytes) => Some(bytes)
+          None =>
+            return Err(
+              "invalid \{source} URL: SOCKS credentials must each contain 1..255 UTF-8 bytes",
+            )
+        }
+    }
+  } else {
+    None
+  }
+  let authorization = match (if socks { None } else { url.userinfo }) {
     None => None
     Some(userinfo) =>
       match basic_credentials(userinfo) {
@@ -174,7 +202,9 @@ fn parse_proxy(text : String, scheme~ : String) -> Result[ProxyServer, String] {
       }
   }
   let secure = proxy_scheme == "https"
-  let port = url.port_or_default().unwrap_or(if secure { 443 } else { 80 })
+  let port = url
+    .port_or_default()
+    .unwrap_or(if socks { 1080 } else if secure { 443 } else { 80 })
   let name = if host.contains(":") { "[" + host + "]" } else { host }
   Ok({
     host,
@@ -182,6 +212,8 @@ fn parse_proxy(text : String, scheme~ : String) -> Result[ProxyServer, String] {
     secure,
     origin: "\{proxy_scheme}://\{name}:\{port}",
     authorization,
+    socks,
+    socks_auth,
   })
 }
 
@@ -222,7 +254,12 @@ fn Proxies::route(
     return Direct
   }
   match setting {
-    Ok(server) => if target.secure { Tunnel(server) } else { Forward(server) }
+    Ok(server) =>
+      if target.secure || server.socks {
+        Tunnel(server)
+      } else {
+        Forward(server)
+      }
     Err(message) =>
       raise @mttp_core.TransportError(kind=Protocol, phase=Pool, detail=message)
   }
@@ -286,7 +323,11 @@ async fn dial_route(
     Tunnel(proxy) => {
       let wire = Wire::dial(dialer, proxy.host, proxy.port, proxy.secure)
       errdefer wire.close()
-      open_tunnel(wire, target, proxy, agent, limits)
+      if proxy.socks {
+        open_socks_tunnel(wire, target, proxy.socks_auth)
+      } else {
+        open_tunnel(wire, target, proxy, agent, limits)
+      }
       if target.secure {
         wire.conn = dialer.start_tls(wire.conn, host=target.host)
       }

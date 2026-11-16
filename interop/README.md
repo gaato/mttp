@@ -1,5 +1,14 @@
 # Interoperability suite
 
+`scripts/gates.sh interop client/native/socks5h` runs the native client
+through the digest-pinned `serjs/go-socks5-proxy` image against HTTP and
+verified HTTPS on nginx. It checks RFC 1929 authentication, wrong-password
+refusal and tunnel reuse. The proxy admits only the original FQDN
+`localhost`, ensuring the client uses ATYP domain-name remote DNS. No
+SOCKS server implementation is added to mttp. Ports 39010, 39011 and 39060
+must be free. The image and its source revision are pinned in images.tsv;
+the standard interop run includes these two client-only cases.
+
 `scripts/gates.sh interop websocket` runs the JS mttp Session on the
 digest-pinned Node, Deno and Bun images against W5's native WebSocket echo,
 then checks the fetch echo on Deno and Bun servers with the JS mttp client.

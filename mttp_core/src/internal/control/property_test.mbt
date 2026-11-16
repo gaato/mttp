@@ -211,7 +211,12 @@ test "pool transitions keep caps and account for every connection once" {
           parked[next_id] = (origins[o], agent_of(a), now)
           state.put(
             origins[o],
-            { id: next_id, user_agent: agent_of(a), parked_at_ms: now, },
+            {
+              id: next_id,
+              user_agent: agent_of(a),
+              parked_at_ms: now,
+              opened_at_ms: now,
+            },
             now~,
           )
         }

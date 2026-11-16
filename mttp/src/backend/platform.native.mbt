@@ -6,6 +6,7 @@ fn platform_backend(
   timer : &@rt.Timer,
   dictionaries : @dictionary.DictionaryStore?,
   partition : String,
+  max_connection_age_ms : Int32?,
 ) -> AsyncBackend {
   let config = config.unwrap_or_else(() => {
     ..@h1client.ClientConfig::default(),
@@ -17,6 +18,7 @@ fn platform_backend(
     timer~,
     coordination=@runtime.RuntimeCoordination::new(),
     config~,
+    max_connection_age_ms?,
   )
   {
     inner: @codings.Decompress::new(client, dictionaries?, partition~),
