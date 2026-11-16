@@ -39,9 +39,11 @@ The constructor takes ownership of the Conn and pending bytes. Keep one
 receiving task running: recv handles interleaved Ping/Pong and Close, validates
 UTF-8 incrementally across fragments, assembles messages and drives keepalive.
 Concurrent recv calls are refused. A cancelled recv retains partial input and
-committed messages. Control writes use `Coordination.protect` and their own
-send deadline; expiry closes Conn to wake a blocked writer. The caller must
-inject a concurrent Clock/Timer and a Coordination sharing its scheduler.
+committed messages. Control writes use `Coordination.protect` bounded by
+`min(send_timeout_ms, close_timeout_ms)` (5 s by default), including queue
+wait; expiry or another task's abort closes Conn to wake a blocked writer.
+The caller must inject a concurrent Clock/Timer and a Coordination sharing
+its scheduler.
 
 send emits one frame per message, with FIFO serialization and a deadline
 including queue wait. Cancelling a queued sender removes its ticket; cancelling

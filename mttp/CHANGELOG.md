@@ -9,6 +9,10 @@ never does.
 
 ### Fixed
 
+- JS WebSocket abort requests host `close()` without a status instead of
+  normal Close 1000, while retaining local Abnormal 1006. The Bun server
+  bridge preserves omitted close arguments too.
+
 - JS WebSocket shutdown also supervises startup: CONNECTING sockets use the
   close deadline rather than the send/open deadline, pending Bun upgrades are
   abandoned, and late sockets are closed without starting the handler.

@@ -350,13 +350,15 @@ async fn ConnSession::write_pong(self : ConnSession) -> Unit raise WsError {
 
 ///|
 /// Shield the caller, not the Timer's child. Its deadline can still cancel a
-/// write. The independent monitor also closes Conn at expiry, waking a write
-/// whose own cancellation cleanup needs the transport to be closed first.
+/// write. Control frames are at most 131 bytes, so shutdown only waits for
+/// the smaller send/close bound. The independent monitor closes Conn at
+/// expiry, waking a write whose cancellation cleanup needs it closed first.
 async fn ConnSession::control(
   self : ConnSession,
   opcode : @frame.Opcode,
   payload : Bytes,
 ) -> Unit raise WsError {
+  let timeout_ms = self.limits.send_timeout_ms.min(self.limits.close_timeout_ms)
   let mut failure : WsError? = None
   self.coordination.protect(work=() => {
     self.coordination.supervise(
@@ -372,9 +374,9 @@ async fn ConnSession::control(
         }
       },
       monitor=() => {
-        self.clock.sleep(self.limits.send_timeout_ms.max(0))
+        self.clock.sleep(timeout_ms.max(0))
         let error = WsError(
-          kind=Timeout(ms=self.limits.send_timeout_ms),
+          kind=Timeout(ms=timeout_ms),
           detail="control reply deadline",
         )
         if failure is None {

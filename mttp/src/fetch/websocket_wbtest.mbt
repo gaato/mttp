@@ -3,6 +3,92 @@
 let websocket_host_mock : @semaphore.Semaphore = @semaphore.Semaphore(1)
 
 ///|
+extern "js" fn abort_host_paths(
+  adapter : (JsRequest, JsBackground) -> JsPromise,
+  client : () -> @js_async.Promise[Unit],
+) -> @js_async.Promise[String] =
+  #| async (adapter, client) => {
+  #|   const {resolve} = await import('node:path');
+  #|   const {pathToFileURL} = await import('node:url');
+  #|   const {existsSync} = await import('node:fs');
+  #|   const root = existsSync(resolve('hosts/adapters.mjs')) ? resolve('hosts') : resolve('mttp/hosts');
+  #|   const shims = await import(pathToFileURL(resolve(root, 'adapters.mjs')).href);
+  #|   const names = ['Deno', 'Bun', 'WebSocketPair', 'WebSocket', 'fetch', 'Response'];
+  #|   const saved = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  #|   const OriginalResponse = globalThis.Response;
+  #|   const set = (name, value) => Object.defineProperty(globalThis, name, {configurable: true, writable: true, value});
+  #|   const results = [];
+  #|   try {
+  #|     for (const host of ['deno', 'bun', 'workers', 'client', 'bun-client', 'workers-client']) {
+  #|       const closes = [], errors = []; let options;
+  #|       const socket = Object.assign(new EventTarget(), {readyState: 1, bufferedAmount: 0, protocol: '', send() {}, accept() {},
+  #|         close(...args) { closes.push(args); this.readyState = 3; }, terminate() {}});
+  #|       set('Deno', host === 'deno' ? {upgradeWebSocket() { return {socket, response: {status: 101, headers: new Headers()}}; }} : undefined);
+  #|       set('Bun', host === 'bun-client' ? {} : undefined);
+  #|       set('WebSocketPair', host.startsWith('workers') ? function() { return {0: {}, 1: socket}; } : undefined);
+  #|       set('fetch', async () => ({status: 101, webSocket: socket, headers: new Headers()}));
+  #|       set('WebSocket', function() { queueMicrotask(() => socket.dispatchEvent(new Event('open'))); return socket; });
+  #|       function Response(body, init) {
+  #|         return init?.status === 101 ? {status: 101, headers: new Headers(init.headers)} : new OriginalResponse(body, init);
+  #|       }
+  #|       Object.setPrototypeOf(Response, OriginalResponse); Response.prototype = OriginalResponse.prototype;
+  #|       set('Response', Response);
+  #|       if (host.endsWith('client')) {
+  #|         await client();
+  #|       } else {
+  #|         const app = shims[host === 'bun' ? 'bun' : 'tracked'](adapter, error => errors.push(String(error)));
+  #|         const request = new Request('https://example.test/ws', {headers: {host: 'example.test', connection: 'Upgrade',
+  #|           upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ=='}});
+  #|         await app.fetch(request, {upgrade(_, value) { options = value; return true; }});
+  #|         if (host === 'bun') { socket.data = options.data; app.websocket.open(socket); }
+  #|         await app.whenIdle();
+  #|       }
+  #|       // The request-scoped pump runs asynchronously even though abort is synchronous.
+  #|       await new Promise(resolve => setTimeout(resolve, 1));
+  #|       results.push(`${host}: ${closes.length === 1 && closes[0].length === 0 && !errors.length ? 'no status' : JSON.stringify({closes, errors})}`);
+  #|     }
+  #|   } finally {
+  #|     for (const [name, descriptor] of saved) { if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name]; }
+  #|   }
+  #|   return results.join('|');
+  #| }
+
+///|
+async fn check_local_abort(session : &@ws.Session) -> Unit {
+  session.abort()
+  try session.recv() catch {
+    @ws.WsError(kind=Closed({ code: Abnormal, .. }), ..) => ()
+    _ => fail("host abort lost local 1006")
+  } noraise {
+    _ => fail("host abort left the session open")
+  }
+}
+
+///|
+async test "Workers Deno Bun and client abort paths request close without a status" {
+  websocket_host_mock.acquire()
+  defer websocket_host_mock.release()
+  let adapter = fetch_handler(request => {
+    @facade_ws.upgrade(request, handler=check_local_abort)
+  })
+  let result = abort_host_paths(adapter, () => {
+    @js_async.Promise::from_async(() => {
+      check_local_abort(
+        websocket_connect(
+          "ws://example.test/",
+          [],
+          @mttp_core.Headers::of([]),
+          @ws.WsLimits::default(),
+        ),
+      )
+    })
+  }).wait()
+  assert_eq(
+    result, "deno: no status|bun: no status|workers: no status|client: no status|bun-client: no status|workers-client: no status",
+  )
+}
+
+///|
 async test "Node fetch refuses a validated WebSocket upgrade with 501 without starting the handler" {
   websocket_host_mock.acquire()
   defer websocket_host_mock.release()

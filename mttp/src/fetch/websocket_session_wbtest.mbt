@@ -5,7 +5,7 @@ extend HostSession with @ws.Session::{recv, send, subprotocol}
 extern "js" fn fake_socket() -> Socket =
   #| () => Object.assign(new EventTarget(), {readyState: 1, bufferedAmount: 0, protocol: 'echo',
   #|   send(data) { this.sent = data; }, close(code, reason) {
-  #|     this.closeCode = code; this.readyState = 3;
+  #|     this.closeCode = code; this.closeArgs = [...arguments]; this.readyState = 3;
   #|     const event = new Event('close'); Object.assign(event, {code, reason}); this.dispatchEvent(event);
   #|   }})
 
@@ -18,8 +18,52 @@ extern "js" fn closed_code(socket : Socket) -> Int32 =
   #| socket => socket.closeCode || 0
 
 ///|
+extern "js" fn close_arg_count(socket : Socket) -> Int32 =
+  #| socket => socket.closeArgs?.length ?? -1
+
+///|
+async test "abort requests host close without a status and retains local abnormal closure" {
+  let socket = fake_socket()
+  let session = new_session(socket, @ws.WsLimits::default(), None)
+  emit(socket, "discarded", false)
+  session.abort()
+  session.abort()
+  @async.sleep(1)
+  assert_eq(close_arg_count(socket), 0)
+  try session.recv() catch {
+    @ws.WsError(kind=Closed({ code: Abnormal, .. }), ..) => ()
+    _ => fail("lost local abort status")
+  } noraise {
+    _ => fail("abort retained a queued message")
+  }
+}
+
+///|
 extern "js" fn queued(handle : Handle) -> Int32 =
   #| handle => handle.queue.length
+
+///|
+async test "cancelled send aborts with no host status and local abnormal closure" {
+  let socket = fake_socket()
+  block_drain(socket)
+  let session = new_session(socket, @ws.WsLimits::default(), None)
+  @async.with_task_group(group => {
+    let sender = group.spawn(() => session.send(Text("blocked")))
+    @async.sleep(1)
+    sender.cancel()
+    sender.wait() catch {
+      _ => ()
+    }
+  })
+  @async.sleep(1)
+  assert_eq(close_arg_count(socket), 0)
+  try session.recv() catch {
+    @ws.WsError(kind=Closed({ code: Abnormal, .. }), ..) => ()
+    _ => fail("cancelled send lost local abnormal closure")
+  } noraise {
+    _ => fail("cancelled send left the session open")
+  }
+}
 
 ///|
 extern "js" fn host_error(socket : Socket) -> Unit =
@@ -170,7 +214,13 @@ async test "send and close waits are bounded and oversized sends do not write" {
     _ => fail("unbounded send")
   }
   @async.sleep(1)
-  assert_eq(closed_code(socket), 1000)
+  assert_eq(close_arg_count(socket), 0)
+  try session.recv() catch {
+    @ws.WsError(kind=Closed({ code: Abnormal, .. }), ..) => ()
+    _ => fail("send timeout lost local abnormal closure")
+  } noraise {
+    _ => fail("send timeout left the session open")
+  }
   let socket = fake_socket()
   block_close(socket)
   let session = new_session(

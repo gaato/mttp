@@ -89,7 +89,7 @@ export function bun(fetch, onError) {
           get bufferedAmount() { return socket.bufferedAmount; },
           binaryType: 'arraybuffer',
           send: value => socket.send(value),
-          close: (code, reason) => socket.close(code, reason),
+          close: (...args) => socket.close(...args),
           terminate: () => socket.terminate(),
           addEventListener: (...args) => events.addEventListener(...args),
           removeEventListener: (...args) => events.removeEventListener(...args),

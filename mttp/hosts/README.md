@@ -196,7 +196,12 @@ bound retained application state, not the host's receive allocation.
 Senders serialize in arrival order. `send_timeout_ms` (30 s) includes their
 queue wait and bufferedAmount drain; cancellation or deadline aborts the session.
 Close waits at most `close_timeout_ms` (5 s). Where a host cannot terminate a
-socket, abort drops application state immediately and requests host closure.
+socket, abort drops application state immediately and calls the host's
+`close()` without a code or reason, rather than advertising a normal 1000
+closure. The peer sees an empty Close (1005, no status); the local session
+still reports Abnormal (1006). This applies to Workers, Deno, Bun (including
+its server bridge) and Web-standard clients. A host with `terminate()` also
+receives that request and may drop the connection before a Close is delivered.
 JS exposes neither frames nor Ping/Pong: `max_frame_bytes`, `ping_interval_ms`
 and `pong_timeout_ms` cannot be enforced here; the host owns framing/control
 validation and automatic replies. Deno's automatic idle timeout is disabled.

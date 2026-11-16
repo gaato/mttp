@@ -216,6 +216,7 @@ extern "js" fn Handle::close(
   #| (h, code, reason) => h.close(code, reason)
 
 ///|
+// 1005 selects close() without arguments; the local terminal stays 1006.
 extern "js" fn Handle::abort(self : Handle) -> Unit =
   #| h => { if (h.aborted) return; h.aborted = true; h.queue.length = 0; h.bytes = 0; h.terminal ??= {kind: 2, text: '', data: new Uint8Array(0), code: 1006, reason: ''};
-  #|   h.close(1000, ''); h.run(() => h.socket.terminate?.()).catch(() => {}); h.detach(); h.notify(); }
+  #|   h.close(1005, ''); h.run(() => h.socket.terminate?.()).catch(() => {}); h.detach(); h.notify(); }

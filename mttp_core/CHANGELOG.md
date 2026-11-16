@@ -101,6 +101,9 @@ never does.
 
 ### Fixed
 
+- Protected WebSocket control writes use the smaller send/close deadline
+  (5 s by default), bounding cancelled receiver joins when a peer stops reading.
+
 - WebSocket Pong draining returns completed messages without waiting for a
   partial next header. Speculative read errors, including TLS IncompleteClose,
   follow all messages already buffered instead of discarding them.

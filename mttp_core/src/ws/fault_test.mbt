@@ -650,22 +650,127 @@ test "cancelled recv during partial Pong write must remain retryable" {
 ///|
 test "a protected Pong deadline closes a blocked transport and joins cancelled recv" {
   @sim.explore(schedule => {
-    let d = @driver.Driver::new(schedule~)
-    let (conn, peer) = controlled(d)
-    let s = session(d, conn, limits={ ..limits(), send_timeout_ms: 5, })
-    d.run(() => {
-      peer.write(packet(Ping, b"x"))
-      let reader = d.spawn(() => {
-        let _ = s.recv()
+    for (send_ms, close_ms) in [(30000, 5), (5, 30000), (5, 5)] {
+      for opcode in [@frame.Opcode::Ping, @frame.Opcode::Close] {
+        let d = @driver.Driver::new(schedule~)
+        let (conn, peer) = controlled(d)
+        let s = session(d, conn, limits={
+          ..limits(),
+          send_timeout_ms: send_ms,
+          close_timeout_ms: close_ms,
+        })
+        d.run(() => {
+          peer.write(
+            packet(opcode, if opcode is Close { b"\x03\xe8" } else { b"x" }),
+          )
+          let reader = d.spawn(() => {
+            let _ = s.recv()
+          })
+          conn.entered.wait()
+          reader.cancel()
+          ignore(reader.wait())
+          assert_true(reader.is_cancelled())
+          assert_eq(d.now(), send_ms.min(close_ms).to_int64())
+          assert_eq(conn.inner.closes(), 1)
+          s.abort()
+          peer.close()
+        })
+        assert_eq((d.live_tasks(), d.pending_timers()), (0, 0))
+      }
+    }
+  })
+}
+
+///|
+test "a peer that stops reading Pong cannot hold cancelled recv past close timeout or abort" {
+  @sim.explore(schedule => {
+    for abort in [false, true] {
+      let d = @driver.Driver::new(schedule~)
+      let c = @sim.SimCoordination::new(d)
+      let (a, b) = @sim.pair(c)
+      let ab = PressureSlot::{
+        remaining: 0,
+        closed: false,
+        changed: c.signal(),
+        coordination: c,
+      }
+      let ba = PressureSlot::{
+        remaining: 0,
+        closed: false,
+        changed: c.signal(),
+        coordination: c,
+      }
+      let conn = PressureConn::{
+        inner: a,
+        input: ba,
+        output: ab,
+        piece_bytes: 1,
+      }
+      let peer = PressureConn::{
+        inner: b,
+        input: ab,
+        output: ba,
+        piece_bytes: 64,
+      }
+      let s = session(d, conn, limits={ ..limits(), close_timeout_ms: 5, })
+      d.run(() => {
+        @rt.Conn::write(peer, packet(Ping, b"x"))
+        let reader = d.spawn(() => {
+          let _ = s.recv()
+        })
+        // Consume only the first Pong byte, leaving the rest backpressured.
+        assert_eq(@rt.Conn::read(peer, max_len=1), Some(b"\x8a"))
+        reader.cancel()
+        if abort {
+          s.abort()
+        }
+        ignore(reader.wait())
+        assert_true(reader.is_cancelled())
+        assert_eq(d.now(), if abort { 0L } else { 5L })
+        assert_eq(a.closes(), 1)
+        @rt.Conn::close(peer)
       })
-      conn.entered.wait()
-      reader.cancel()
-      ignore(reader.wait())
-      assert_eq(d.now(), 5L)
-      assert_eq(conn.inner.closes(), 1)
-      peer.close()
-    })
-    assert_eq((d.live_tasks(), d.pending_timers()), (0, 0))
+      assert_eq(
+        (a.closes(), b.closes(), d.live_tasks(), d.pending_timers()),
+        (1, 1, 0, 0),
+      )
+    }
+  })
+}
+
+///|
+test "abort immediately releases protected Pong and Close writes even after recv cancellation" {
+  @sim.explore(schedule => {
+    for opcode in [@frame.Opcode::Ping, @frame.Opcode::Close] {
+      for cancel in [false, true] {
+        let d = @driver.Driver::new(schedule~)
+        let (conn, peer) = controlled(d)
+        let s = session(d, conn)
+        d.run(() => {
+          peer.write(
+            packet(opcode, if opcode is Close { b"\x03\xe8" } else { b"x" }),
+          )
+          let reader = d.spawn(() => {
+            ignore(
+              s.recv() catch {
+                @ws.WsError(..) => @ws.Message::Binary(b"")
+              },
+            )
+          })
+          conn.entered.wait()
+          if cancel {
+            reader.cancel()
+            d.pause()
+            assert_false(reader.is_finished())
+          }
+          s.abort()
+          ignore(reader.wait())
+          assert_eq((d.now(), conn.inner.closes()), (0L, 1))
+          peer.close()
+        })
+        assert_eq((d.live_tasks(), d.pending_timers()), (0, 0))
+      }
+    }
   })
 }
 
