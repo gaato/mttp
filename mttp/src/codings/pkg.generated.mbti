@@ -61,7 +61,7 @@ pub struct ContentEncoder {
 }
 pub fn ContentEncoder::end(Self) -> Unit raise @mttp_core.TransportError
 pub fn ContentEncoder::feed(Self, Bytes) -> Unit raise @mttp_core.TransportError
-pub fn ContentEncoder::new(Coding) -> Self raise @mttp_core.TransportError
+pub fn ContentEncoder::new(Coding) -> Self
 pub fn ContentEncoder::pull(Self) -> Pulled raise @mttp_core.TransportError
 
 pub struct Decompress {

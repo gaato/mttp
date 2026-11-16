@@ -14,17 +14,16 @@ pub struct ContentEncoder {
 }
 
 ///|
-/// Creates gzip, zlib-wrapped deflate, or Brotli compression. Zstd encoding
-/// is unavailable in the codec dependency and raises Invalid before allocation.
-/// Brotli uses a 22-bit window; gzip and deflate use a 32 KiB history window.
-pub fn ContentEncoder::new(
-  coding : Coding,
-) -> ContentEncoder raise @mttp_core.TransportError {
+/// Creates gzip, zlib-wrapped deflate, Brotli or zstd compression. Brotli
+/// uses a 22-bit window; gzip and deflate use a 32 KiB history window; zstd
+/// is level 3, whose window for a stream of unknown length is 2 MiB, within
+/// the 8 MB RFC 9659 lets HTTP's zstd coding use.
+pub fn ContentEncoder::new(coding : Coding) -> ContentEncoder {
   let encoder : &@codec_bytes.Encode = match coding {
     Gzip => (@gzip.Encoder() : &@codec_bytes.Encode)
     Deflate => @zlib.Encoder()
     Brotli => @brotli.Encoder(window_bits=22)
-    Zstd => raise encoder_misuse("zstd encoding is unavailable")
+    Zstd => @zstd.Encoder(level=3)
   }
   {
     encoder,

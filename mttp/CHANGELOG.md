@@ -9,6 +9,17 @@ never does.
 
 ### Added
 
+- The server compresses with zstd too: `compress` and `negotiate_encoding`
+  accept `zstd`, and `ContentEncoder::new(Zstd)` encodes at level 3 (a 2 MiB
+  window, within RFC 9659's 8 MB) instead of raising. At equal weights gzip,
+  deflate and Brotli still come first, so answers to clients that offer
+  them do not change.
+
+### Changed
+
+- `ContentEncoder::new` no longer raises: every coding has an encoder.
+  Callers that caught its Invalid can drop the handler.
+
 - `ws.upgrade` validates server handshakes, selects subprotocols and hands a
   bounded Session to a handler. Shutdown sends GoingAway and retains the
   connection's admission slot until completion or the listener drain deadline.

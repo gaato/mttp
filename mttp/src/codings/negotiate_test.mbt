@@ -12,7 +12,14 @@ test "encoding negotiation honors weights exclusions aliases and identity" {
       ("gzip;q=0, *;q=0.5", @codings.Encoded(Deflate)),
       ("gzip;q=0.4, identity;q=0.5", @codings.Identity),
       ("*;q=0", @codings.Unacceptable),
-      ("zstd, identity;q=0", @codings.Unacceptable),
+      ("zstd", @codings.Encoded(Zstd)),
+      ("zstd, identity;q=0", @codings.Encoded(Zstd)),
+      ("gzip;q=0.5, zstd", @codings.Encoded(Zstd)),
+      // At equal weights, the earlier codings win, so that answers to
+      // clients that offered zstd before it was served do not change.
+      ("zstd, br, deflate, gzip", @codings.Encoded(Gzip)),
+      ("zstd;q=0.9, br;q=0.9", @codings.Encoded(Brotli)),
+      ("compress, identity;q=0", @codings.Unacceptable),
       ("*;q=0, identity;q=0.1", @codings.Identity),
       ("GZIP;q=0, x-gzip;q=1", @codings.Identity),
       ("br;q=1.000, deflate;q=1.", @codings.Encoded(Deflate)),

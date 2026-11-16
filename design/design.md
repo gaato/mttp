@@ -1067,7 +1067,7 @@ pub impl @mttp_core.Backend for AsyncBackend                      // idle_connec
 // codings (native, wasm, js)
 pub fn coding_plan(content_encoding : String) -> Array[Coding] raise @mttp_core.TransportError     // <= 5 codings
 pub fn ContentDecoder::new(plan : Array[Coding]) -> ContentDecoder raise @mttp_core.TransportError  // feed, pull (<= 64 KiB), end
-pub fn ContentEncoder::new(c : Coding) -> ContentEncoder raise @mttp_core.TransportError           // gzip, deflate, br; zstd decode-only
+pub fn ContentEncoder::new(c : Coding) -> ContentEncoder                                           // gzip, deflate, br, zstd (level 3)
 pub fn negotiate_encoding(h : @mttp_core.Headers) -> EncodingChoice raise @mttp_core.TransportError
 pub fn Decompress::new(inner : &@mttp_core.Backend) -> Decompress  // (new) impl @mttp_core.Backend
 pub fn compress(handler : @mttp_core.Handler, min_bytes? : Int) -> @mttp_core.Handler   // (new) negotiates and encodes responses

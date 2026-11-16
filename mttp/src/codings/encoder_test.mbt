@@ -113,7 +113,13 @@ test "encoded buffered bodies decode incrementally and explicit close is lazy" {
 ///|
 test "content encoders roundtrip split input and finish empty streams" {
   @driver.run_sync(() => {
-    for coding in [@codings.Gzip, @codings.Deflate, @codings.Brotli] {
+    for
+      coding in [
+        @codings.Gzip,
+        @codings.Deflate,
+        @codings.Brotli,
+        @codings.Zstd,
+      ] {
       for chunks in [[], [b""], [b"a", b"bc", b"def"], [b"abcdef"]] {
         let encoder = @codings.ContentEncoder::new(coding)
         let offset = Ref(0)
@@ -162,15 +168,10 @@ test "content encoders roundtrip split input and finish empty streams" {
 }
 
 ///|
-test "encoder refuses overwrite premature end unsupported coding and input after EOF" {
+test "encoder refuses overwrite premature end and input after EOF" {
   let encoder = @codings.ContentEncoder::new(Gzip)
   encoder.feed(b"pending")
-  for
-    action in [
-      () => encoder.feed(b"lost"),
-      () => encoder.end(),
-      () => ignore(@codings.ContentEncoder::new(Zstd)),
-    ] {
+  for action in [() => encoder.feed(b"lost"), () => encoder.end()] {
     let refused = try {
       action()
       false
@@ -196,7 +197,8 @@ test "encoder refuses overwrite premature end unsupported coding and input after
 
 ///|
 test "sync flushed chunks can be decoded before upstream EOF" {
-  for coding in [@codings.Gzip, @codings.Deflate, @codings.Brotli] {
+  for
+    coding in [@codings.Gzip, @codings.Deflate, @codings.Brotli, @codings.Zstd] {
     let encoder = @codings.ContentEncoder::new(coding)
     encoder.feed(b"data: hello\n\n")
     let wire = Buffer()

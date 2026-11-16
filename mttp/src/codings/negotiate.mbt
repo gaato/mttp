@@ -17,10 +17,10 @@ pub extend EncodingChoice with Eq::{equal, not_equal}
 pub extend EncodingChoice with @debug.Debug::{to_repr}
 
 ///|
-/// Negotiates gzip, deflate and Brotli using RFC 9110 quality weights.
-/// Missing or empty Accept-Encoding selects identity. Explicit exclusions
-/// override wildcard weights, repeated names use their lowest weight, and
-/// ties prefer gzip, deflate, then Brotli. An explicit higher identity weight
+/// Negotiates gzip, deflate, Brotli and zstd using RFC 9110 quality
+/// weights. Missing or empty Accept-Encoding selects identity. Explicit
+/// exclusions override wildcard weights, repeated names use their lowest
+/// weight, and ties prefer gzip, deflate, Brotli, then zstd. An explicit higher identity weight
 /// wins; Unacceptable means identity and every available encoder are refused.
 /// At most 16 KiB of field values and 128 nonempty entries are accepted.
 pub fn negotiate_encoding(
@@ -39,7 +39,7 @@ fn choose_encoding(
   if fields.is_empty() {
     return (Identity, true)
   }
-  let weights : FixedArray[Int32?] = FixedArray::make(5, None)
+  let weights : FixedArray[Int32?] = FixedArray::make(6, None)
   let mut remaining = 16384
   let mut count = 0
   for field in fields {
@@ -78,6 +78,7 @@ fn choose_encoding(
         "br" => Some(2)
         "identity" => Some(3)
         "*" => Some(4)
+        "zstd" => Some(5)
         _ => None
       }
       if index is Some(index) {
@@ -90,7 +91,9 @@ fn choose_encoding(
     !(weights[3] is None && weights[4] == Some(0))
   let mut best : Coding? = None
   let mut score = 0
-  for index, coding in [Gzip, Deflate, Brotli] {
+  // In the order ties prefer.
+  for candidate in [(0, Gzip), (1, Deflate), (2, Brotli), (5, Zstd)] {
+    let (index, coding) = candidate
     let weight = weights[index].unwrap_or(wildcard)
     if weight > score {
       best = Some(coding)

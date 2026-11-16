@@ -3,8 +3,9 @@
 Bounded content codings for native, wasm (under moonrun) and js.
 
 `ContentDecoder` incrementally decodes gzip, deflate, Brotli and zstd.
-`ContentEncoder` produces gzip, zlib-wrapped deflate and Brotli; the current
-codec dependency has no zstd encoder. Both use feed/pull/end and return slices
+`ContentEncoder` produces gzip, zlib-wrapped deflate, Brotli and zstd (level 3,
+a 2 MiB window, within the 8 MB [RFC 9659](https://www.rfc-editor.org/rfc/rfc9659.html)
+lets HTTP's zstd use). Both use feed/pull/end and return slices
 of at most 64 KiB. Feed only after `NeedInput`; end at the final `NeedInput`.
 
 `encode_body` transfers a streamed body's reader and returns a lazy compressed
@@ -44,8 +45,9 @@ It passes SendOptions unchanged: the engine counts wire bytes and the caller's
 reader bounds decoded bytes. Decoding is lazy and closes its upstream source
 on EOF, error, cancellation, or early close.
 
-`compress(handler, min_bytes=1024)` negotiates gzip, deflate or Brotli and
-returns a Handler. It skips HEAD, 1xx, 204, 304, Range requests, 206 and
+`compress(handler, min_bytes=1024)` negotiates gzip, deflate, Brotli or zstd
+and returns a Handler. At equal weights it prefers them in that order, so a
+client that offers several gets the same coding it got before zstd was served. It skips HEAD, 1xx, 204, 304, Range requests, 206 and
 Content-Range responses, already encoded responses and `Cache-Control:
 no-transform`. A known length below the threshold stays unencoded when
 identity is allowed; unknown-length streams are compressed without prefetching.
