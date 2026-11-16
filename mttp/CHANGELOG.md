@@ -7,6 +7,14 @@ never does.
 
 ## [Unreleased]
 
+### Added
+
+- `client()` takes `observer`, `events` and `random` and passes them to the
+  `Client` it builds. The root package re-exports `Attempt`, `ClientEvent`,
+  `PhaseEvent` and `on_phase`. On native and wasm the socket backend reports
+  connection phase events (`Dialed`, `TlsDone`, `Pooled`, `Written`,
+  `FirstByte`); JS fetch cannot see them and reports none.
+
 ## [0.4.0] - 2026-11-17
 
 ### Changed
@@ -19,12 +27,6 @@ never does.
   bytes after a frame.
 
 ### Added
-
-- `client()` takes `observer`, `events` and `random` and passes them to the
-  `Client` it builds. The root package re-exports `Attempt`, `ClientEvent`,
-  `PhaseEvent` and `on_phase`. On native and wasm the socket backend reports
-  connection phase events (`Dialed`, `TlsDone`, `Pooled`, `Written`,
-  `FirstByte`); JS fetch cannot see them and reports none.
 
 - `backend.AsyncBackend::new(max_connection_age_ms?)` forwards an optional
   socket pool lifetime (default off) without changing ClientConfig; construct

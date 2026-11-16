@@ -7,8 +7,6 @@ never does.
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-11-17
-
 ### Added
 
 - `client.ReconnectPolicy` and `ReconnectDecision`: when to reconnect a
@@ -46,7 +44,6 @@ never does.
   hid before.
 - Bounded streaming multipart/form-data reader and synchronous parser, typed
   multipart endpoint fields and file streams, and OpenAPI per-part encoding.
-
 - Opt-in router `rate_limit` (exact sliding windows, bounded LRU keys and
   draft-ietf-httpapi-ratelimit-headers-11 fields), `secure_headers` and signed
   cookie `sessions`, with a typed mutable `session` attribute. Signing and
@@ -56,6 +53,11 @@ never does.
   JSON output, separate request/response reports and Client/Server severities,
   local reference traversal and cycle protection. Raw OpenAPI 3.0 schema
   keywords remain JSON differences without 3.0 interpretation.
+
+## [0.2.0] - 2026-11-17
+
+### Added
+
 - `connection_scheme`, a request attribute: the scheme the connection was
   accepted under (`http` or `https`), never the request target's. h1server
   sets it from its `scheme`, Router-as-Backend from the in-process
