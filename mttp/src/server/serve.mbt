@@ -147,9 +147,7 @@ async fn run_listener(
                   request => {
                     response_finished.val = false
                     ignore(state.step(Activity(id, true)))
-                    lease(handler(request), request.meth, () => {
-                      response_finished.val = true
-                    })
+                    lease(handler(request))
                   },
                   clock~,
                   timer~,
@@ -165,10 +163,10 @@ async fn run_listener(
                     ignore(state.step(Activity(id, true)))
                     on_error(error)
                   },
+                  on_response_complete=() => response_finished.val = true,
                   stopping=() => {
-                    // Stream EOF can close its source before the final wire
-                    // write. Commit idle only at the engine's next-request
-                    // checkpoint, after all response writes have finished.
+                    // Commit idle at the next-request checkpoint, after the
+                    // final write/drain and the peer monitor have finished.
                     if response_finished.val {
                       ignore(state.step(Activity(id, false)))
                     }

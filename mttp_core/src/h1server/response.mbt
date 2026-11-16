@@ -68,6 +68,12 @@ async fn Session::write_response(
   let limit = self.limits.body_timeout_ms
   let cut = response.attributes.get(@mttp_core.close_on_shutdown) == Some(true)
   let stopped = Ref(false)
+  // Fixed bodies used to be leased as streams by the listener. Keep their
+  // shutdown cut at the first/EOF pull boundaries, without timed pulls or
+  // interrupting a Bytes body in the middle of its bounded wire writes.
+  if cut && !bodiless && reader is None && (self.stopping)() {
+    stopped.val = true
+  }
   let first = match reader {
     Some(reader) => {
       let first = self.produce(reader, cut~, stopped~)
@@ -94,7 +100,12 @@ async fn Session::write_response(
   sent.val = true
   self.wire.write(head, limit)
   match (response.body, reader) {
-    (Bytes(bytes), _) if !bodiless => self.wire.write(bytes, limit)
+    (Bytes(bytes), _) if !bodiless && !stopped.val => {
+      self.wire.write(bytes, limit)
+      if cut && !bytes.is_empty() && (self.stopping)() {
+        stopped.val = true
+      }
+    }
     (_, Some(reader)) => {
       let chunked = framing is Chunked
       let mut next = first

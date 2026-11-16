@@ -29,6 +29,7 @@ test "serve a request" {
   let coordination = @sim.SimCoordination::new(driver)
   let (client, server) = @sim.pair(coordination)
   let errors = []
+  let completed = Ref(0)
   driver.run(() => {
     let task = driver.spawn(() => {
       @h1server.serve_conn(
@@ -45,6 +46,7 @@ test "serve a request" {
         coordination~,
         scheme="https",
         on_error=error => errors.push(error),
+        on_response_complete=() => completed.val += 1,
       )
     })
     client.write(b"GET /docs HTTP/1.1\r\nHost: example.test\r\n\r\n")
@@ -62,6 +64,7 @@ test "serve a request" {
   })
   assert_eq(server.closes(), 1)
   assert_eq(errors.length(), 1)
+  assert_eq(completed.val, 1)
 }
 ```
 
@@ -69,6 +72,12 @@ test "serve a request" {
 
 - **Ownership.** `serve_conn` owns its connection from the start and closes
   it on every exit, cancellation and refused settings included.
+  `on_response_complete` acknowledges a returned HTTP response once, after
+  its final write, body cleanup and unread-request draining, also when the
+  attempt fails or is cancelled. It does not run for pre-handler refusals,
+  handler timeouts or successful upgrades; an upgrade owns the connection
+  until its callback ends. This lets a listener retain shutdown admission
+  without wrapping a Bytes body in a stream.
 - **Strict framing.** Request smuggling (Content-Length with
   Transfer-Encoding, a duplicate or invalid Content-Length, Transfer-Encoding
   on HTTP/1.0) is answered with 400 and the connection closes, so no byte

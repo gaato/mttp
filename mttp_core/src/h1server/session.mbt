@@ -16,6 +16,7 @@ priv struct Session {
   peer : String?
   authority : String
   on_error : (@mttp_core.TransportError) -> Unit
+  on_response_complete : () -> Unit
   stopping : () -> Bool
   background : ((async () -> Unit) -> Unit)?
   mut control : @control.SessionState
@@ -198,6 +199,10 @@ async fn Session::respond(
       response
     }
   }
+  // A returned body keeps admission through all wire writes and draining,
+  // also on error/cancellation. An accepted upgrade owns the connection
+  // beyond this HTTP exchange, until its hand-over callback has returned.
+  defer (if self.upgrade is None { (self.on_response_complete)() })
   // A body the handler could not read is answered with its own status, even
   // when the handler caught the failure and returned a response.
   let input_failed = source.failure is Some(_)

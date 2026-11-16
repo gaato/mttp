@@ -54,45 +54,47 @@ digests are in `images.tsv`.
 
 The raw values and image digests are in
 [`results/2026-11-16.json`](results/2026-11-16.json).
+These tables show V15a's third complete after run. The before/after
+three-run medians and instruction counts are in
+[`PROFILE-2026-11.md`](PROFILE-2026-11.md#v15a-direct-bytesempty-responses).
 
 ### Servers
 
 | implementation | body | connections | req/s | p50 ms | p99 ms | vs Go |
 |---|---:|---:|---:|---:|---:|---:|
-| mttp | 15 B | 1 | 8,244.3 | 0.11 | 0.17 | 0.42x |
-| mttp | 15 B | 32 | 10,418.4 | 3.04 | 3.90 | 0.07x |
-| mttp | 1 MiB | 1 | 1,837.5 | 0.52 | 0.68 | 0.36x |
-| mttp | 1 MiB | 32 | 1,828.8 | 17.44 | 19.81 | 0.37x |
-| core/async/http | 15 B | 1 | 27,716.2 | 0.03 | 0.05 | 1.41x |
-| core/async/http | 15 B | 32 | 60,221.7 | 0.50 | 0.70 | 0.42x |
-| core/async/http | 1 MiB | 1 | 218.4 | 4.29 | 7.91 | 0.04x |
-| core/async/http | 1 MiB | 32 | 181.7 | 175.50 | 206.10 | 0.04x |
-| Go net/http | 15 B | 1 | 19,678.1 | 0.04 | 0.11 | 1.00x |
-| Go net/http | 15 B | 32 | 144,332.4 | 0.12 | 1.33 | 1.00x |
-| Go net/http | 1 MiB | 1 | 5,086.9 | 0.18 | 0.39 | 1.00x |
-| Go net/http | 1 MiB | 32 | 4,984.3 | 6.24 | 13.44 | 1.00x |
-| Node http | 15 B | 1 | 23,153.1 | 0.04 | 0.07 | 1.18x |
-| Node http | 15 B | 32 | 31,619.1 | 0.86 | 3.40 | 0.22x |
-| Node http | 1 MiB | 1 | 6,629.5 | 0.14 | 0.21 | 1.30x |
-| Node http | 1 MiB | 32 | 6,888.8 | 4.54 | 8.84 | 1.38x |
+| mttp | 15 B | 1 | 9,344.6 | 0.09 | 0.24 | 0.33x |
+| mttp | 15 B | 32 | 12,142.7 | 2.57 | 3.06 | 0.07x |
+| mttp | 1 MiB | 1 | 1,978.2 | 0.49 | 0.66 | 0.36x |
+| mttp | 1 MiB | 32 | 1,910.5 | 16.70 | 20.14 | 0.30x |
+| core/async/http | 15 B | 1 | 28,523.6 | 0.03 | 0.05 | 1.02x |
+| core/async/http | 15 B | 32 | 63,653.6 | 0.47 | 0.64 | 0.34x |
+| core/async/http | 1 MiB | 1 | 204.7 | 5.03 | 6.89 | 0.04x |
+| core/async/http | 1 MiB | 32 | 181.2 | 174.41 | 222.31 | 0.03x |
+| Go net/http | 15 B | 1 | 27,905.0 | 0.03 | 0.05 | 1.00x |
+| Go net/http | 15 B | 32 | 186,329.4 | 0.10 | 0.97 | 1.00x |
+| Go net/http | 1 MiB | 1 | 5,568.9 | 0.15 | 0.64 | 1.00x |
+| Go net/http | 1 MiB | 32 | 6,392.6 | 4.86 | 10.20 | 1.00x |
+| Node http | 15 B | 1 | 25,478.9 | 0.04 | 0.06 | 0.91x |
+| Node http | 15 B | 32 | 40,454.5 | 0.73 | 1.55 | 0.22x |
+| Node http | 1 MiB | 1 | 7,107.5 | 0.14 | 0.18 | 1.28x |
+| Node http | 1 MiB | 32 | 7,199.3 | 4.30 | 8.25 | 1.13x |
 
 ### Clients against Go
 
 | implementation | body | connections | req/s | p50 ms | p99 ms | vs core |
 |---|---:|---:|---:|---:|---:|---:|
-| mttp | 15 B | 1 | 13,080.1 | 0.07 | 0.12 | 0.51x |
-| core/async/http | 15 B | 1 | 25,580.3 | 0.04 | 0.06 | 1.00x |
-| mttp | 15 B | 32 | 18,640.1 | 1.65 | 2.97 | 0.32x |
-| core/async/http | 15 B | 32 | 58,449.5 | 0.56 | 0.71 | 1.00x |
-| mttp | 1 MiB | 1 | 762.0 | 1.23 | 1.73 | 0.46x |
-| core/async/http | 1 MiB | 1 | 1,656.7 | 0.53 | 0.84 | 1.00x |
-| mttp | 1 MiB | 32 | 956.6 | 32.90 | 40.38 | 0.75x |
-| core/async/http | 1 MiB | 32 | 1,281.9 | 24.85 | 29.44 | 1.00x |
+| mttp | 15 B | 1 | 11,609.1 | 0.09 | 0.12 | 0.48x |
+| core/async/http | 15 B | 1 | 24,213.0 | 0.04 | 0.06 | 1.00x |
+| mttp | 15 B | 32 | 20,583.5 | 1.55 | 2.04 | 0.34x |
+| core/async/http | 15 B | 32 | 60,266.3 | 0.53 | 0.70 | 1.00x |
+| mttp | 1 MiB | 1 | 794.5 | 1.20 | 1.40 | 0.50x |
+| core/async/http | 1 MiB | 1 | 1,579.3 | 0.53 | 1.26 | 1.00x |
+| mttp | 1 MiB | 32 | 1,050.0 | 29.87 | 41.00 | 0.76x |
+| core/async/http | 1 MiB | 32 | 1,374.5 | 23.09 | 28.07 | 1.00x |
 
-No mttp row was 10x slower than core/async/http; the largest gap was 5.8x
-for the 15-byte server response at 32 connections. It was nevertheless only
-0.07x Go, so a future profile should start in mttp's listener/connection
-scheduling and HTTP/1 response write path under that row. Core's 1 MiB server
-path was also pathological at 0.04x Go; profile
-`ServerConnection::write` and response buffering/copying before drawing a
-broader conclusion. No optimization was made as part of this benchmark task.
+V15a keeps Bytes/Empty responses on the direct write path while preserving
+completion and shutdown admission. The 15-byte / 32-connection median rose
+13.98% over three runs, with 13.38% fewer Callgrind instructions. The other
+mttp throughput medians were lower by 3.54–6.61% on the shared host; the
+profile records all observations and comparison-server changes. These
+measurements establish no general throughput improvement for those rows.

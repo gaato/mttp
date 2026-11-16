@@ -226,6 +226,92 @@ test "a peer that stops reading is cut off by the write deadline" {
 }
 
 ///|
+test "a large Bytes response keeps its write deadline after the head and first slice" {
+  @sim.explore(schedule => {
+    for cancel in [false, true] {
+      let h = Harness::new(schedule~)
+      let conn = BodyWriteStop::{
+        reads: @sim.ScriptedConn::new([Chunk(@mttp_core.encode_utf8(get("/")))]),
+        stuck: h.coordination.signal(),
+        entered: h.coordination.signal(),
+        sizes: [],
+        completed: Ref(0),
+        premature: false,
+        closed: false,
+      }
+      h.run(() => {
+        let task = h.serve_on(
+          conn,
+          _ => {
+            @mttp_core.Response::new(
+              200,
+              body=Bytes(Bytes::make(3 * 65536, b'x')),
+            )
+          },
+          limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 25, },
+          on_response_complete=() => conn.completed.val += 1,
+        )
+        conn.entered.wait()
+        assert_eq(conn.completed.val, 0)
+        assert_eq(conn.sizes.length(), 3)
+        assert_eq(conn.sizes[1], 65536)
+        assert_eq(conn.sizes[2], 65536)
+        if cancel {
+          task.cancel()
+        }
+        ignore(task.wait() catch { _ => false })
+        assert_eq(conn.completed.val, 1)
+        assert_eq(h.driver.now(), if cancel { 0L } else { 25L })
+      })
+      assert_true(conn.closed)
+      assert_false(conn.premature)
+      assert_eq(conn.sizes.length(), 3) // No second status line after a sent head.
+      assert_eq(
+        h.errors.map(kind_phase),
+        if cancel {
+          []
+        } else {
+          [(Timeout(ms=25), Write)]
+        },
+      )
+    }
+  })
+}
+
+///|
+priv struct BodyWriteStop {
+  reads : @sim.ScriptedConn
+  stuck : &@rt.Signal
+  entered : &@rt.Signal
+  sizes : Array[Int32]
+  completed : Ref[Int32]
+  mut premature : Bool
+  mut closed : Bool
+}
+
+///|
+impl @rt.Conn for BodyWriteStop with fn read(self, max_len~) {
+  self.reads.read(max_len~)
+}
+
+///|
+impl @rt.Conn for BodyWriteStop with fn write(self, bytes) {
+  self.premature = self.premature || self.completed.val != 0
+  self.sizes.push(bytes.length())
+  if self.sizes.length() == 3 {
+    self.entered.notify()
+    self.stuck.wait()
+  }
+}
+
+///|
+impl @rt.Conn for BodyWriteStop with fn close(self) {
+  self.closed = true
+  self.reads.close()
+  self.stuck.notify()
+}
+
+///|
 test "an independent first response producer timeout is 500 with an unread request body" {
   @sim.explore(schedule => {
     for sent_body in ["", "abc"] {

@@ -9,6 +9,11 @@ never does.
 
 ### Added
 
+- `h1server.serve_conn(on_response_complete~)` acknowledges each returned
+  HTTP response after writing, body cleanup and unread-request draining,
+  including failure and cancellation. Successful upgrades retain ownership
+  until their callback ends instead of acknowledging an HTTP completion.
+
 - `rt.upgrade` and `ws.ws_session`: HTTP/1 server 101 connection hand-over,
   preserving read-ahead and admission until callback completion, with HTTP
   deadlines ending at the head. Router's in-process WebSocket path uses the

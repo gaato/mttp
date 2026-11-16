@@ -1,8 +1,9 @@
 # Small-response server profile — 2026-11-16
 
-Investigation of `8e6715c`, native release, `MOON_CC=cc`. No production code,
-API, dependency, or test changes. The two experiments below ran in a disposable
-source copy, not in this worktree.
+Original investigation of `8e6715c`, native release, `MOON_CC=cc`. No production
+code, API, dependency, or test changes were made during that investigation.
+Its two experiments ran in a disposable source copy. The V15a implementation
+and measurements of the first candidate are recorded at the end.
 
 ## Method and reproduction
 
@@ -242,3 +243,170 @@ Failed connection-refused exploratory runs (`core-callgrind.json`,
 `mttp-wire.json`) and empty interrupted strace summaries were discarded from
 analysis; only the successful replacements and 20,000-response summaries
 support the figures above. Profiles are not committed as large binary files.
+
+## V15a: direct Bytes/Empty responses
+
+Starting from `a861fe6`, implement only candidate 1. The listener leaves
+Bytes/Empty bodies on the engine's direct write path. Its private stream
+wrapper now only makes stream cleanup idempotent; it no longer holds a done
+callback, a sent flag, or special fixed-body/HEAD framing logic.
+`h1server.serve_conn(on_response_complete~)` acknowledges a returned response
+after its writes, body cleanup and unread-request drain, including failure
+and cancellation. The listener still commits idle at the next-request
+checkpoint, after the peer monitor has joined. Successful upgrades skip the
+HTTP acknowledgement and retain admission through their callback.
+
+Keep the observable `close_on_shutdown` behavior of formerly leased fixed
+bodies: check before sending the body and after a nonempty Bytes body, never
+cut a Bytes value in the middle of its bounded writes. An already-stopping
+marked Bytes response keeps its declared length and closes short, just as
+the old lease did. HEAD/204/304 and Empty framing, Date, abandonment, drain
+and keep-alive decisions, the sent-before-write marker, and each 64 KiB
+write's deadline stay in their existing engine paths. No buffer, socket-task,
+header-copy or write-coalescing optimization is included.
+
+### Instruction counts
+
+Same native release build flags and the container/libc/Valgrind versions
+above. Run each executable separately on port 39165, check the exact 15-byte
+body, use `callgrind_control --zero`, send 2,000 requests with pinned oha
+(`-n 2000 -c 32 --http-version 1.1 --no-tui --output-format json
+--wait-ongoing-requests-after-deadline`), then request a dump before SIGTERM.
+Both loads returned 2,000 HTTP 200s and an empty error distribution.
+`callgrind_annotate` PROGRAM TOTALS from the reset intervals are:
+
+| | Before | After | Change |
+|---|---:|---:|---:|
+| Total Ir / 2,000 responses | 1,182,893,835 | 1,024,669,270 | -13.38% |
+| Ir / response | 591,447 | 512,335 | -13.38% |
+
+Startup and the exact-body check are excluded on both sides. As in the
+original report, these are user-space instruction counts, not CPU cycles.
+The raw dumps are `before.callgrind.1` and `after.callgrind.1`, with
+`before-callgrind-annotated.txt` and `after-callgrind-annotated.txt`, under
+`/var/tmp/mttp-plan/scratch/v15a/`.
+
+### Regression coverage
+
+Five portable tests were added in `h1server/deadlines_test.mbt` and
+`ownership_test.mbt`: a large Bytes write stalled after its head and first
+64 KiB slice (timeout and cancellation); completion after the final Bytes
+write or stream terminator; once-only completion for Empty/HEAD/204/304 and
+pre-head failure; completion after unread-request draining with subsequent
+reuse; and no HTTP completion for a successful upgrade.
+Three real-TCP tests in `server/response_test.mbt` pin large Bytes shutdown
+draining (including `close_on_shutdown`), a nonreading peer's Write timeout,
+and cutting a marked Bytes response before its body when already stopping.
+The initial versions of these TCP regressions also passed against the
+unchanged baseline, pinning the behavior being preserved. The h1server count
+is 99 on each of the four targets; the listener count is 28 on native and wasm.
+
+The first static coverage run exposed timing-based synchronization in the
+already-stopping TCP test. Its exact failure was:
+
+```text
+[gaato/mttp] test server/response_test.mbt:270 ("close_on_shutdown still cuts Bytes before its first write when already stopping") failed: src/server/response_test.mbt:292:7-292:54@gaato/mttp FAILED: `false` is not true
+Total tests: 1485, passed: 1484, failed: 1.
+error: instrumented native test run failed
+FAIL: script scripts/coverage_report.mbtx
+```
+
+Replace the 1 ms sleep with an explicit handshake: after cancelling the
+listener, wait for a previously accepted idle connection to close before
+releasing the active handler. This proves the listener applied Stop before
+the response is returned. The focused instrumented listener suite then
+passed 28/28. No production code changed for this correction.
+
+### Throughput measurement conditions
+
+Run the complete `scripts/gates.sh bench` comparison three times before and
+three times after, using the pinned toolchain, `MOON_CC=cc` and Docker.
+Compare per-row medians rather than selecting a favorable run. Baseline
+run 2's 1 MiB / 1-connection interval overlapped a focused native test build
+from 12:37:11 to 12:37:14 JST; retain that observation in the three-run median.
+Profiler-tool preparation also overlapped baseline run 1 and may affect its
+control rows. The after runs are separate from correctness gates and tool
+preparation. The host remains shared and has no CPU affinity, so wall-time
+changes are observations;
+the independent instruction counts above establish the reduction in work.
+
+### Correctness gates
+
+`moon info` passed. `scripts/gates.sh manifest --update` passed with 186 rows;
+only h1server's 94→99 and the listener's 25→28 counts changed, in the original
+row order. `scripts/gates.sh quick` passed on all four targets:
+`test counts match scripts/test_manifest.tsv (186 package-target rows)`.
+After correcting the test synchronization described above,
+`scripts/gates.sh static` passed, including 1,485/1,485 instrumented tests,
+`runtime interfaces: OK (60 packages; no runtime types; every target agrees)`
+and `ledger check: OK - every uncovered line is ledgered`.
+`scripts/gates.sh full` then passed with the corrected test on every target,
+the gate self-tests, `resolver gate: OK (4 modules; isolated registry; no
+workspace overrides)`, and `workerd check: OK (wrangler 4.160.1, port 35019)`.
+Every final gate printed `gates: OK`; there were no remaining failure lines.
+Logs are `info.log`, `manifest.log`, `quick.log`, `static.log` (the initial
+test failure), `sync-coverage.log`, `static-retry.log` and `full.log` under
+`/var/tmp/mttp-plan/scratch/v15a/`.
+
+### Server medians: three complete runs per side
+
+All six `scripts/gates.sh bench` runs passed the exact-body checks and
+accepted only HTTP 200s without request errors. Each value below is the
+median of its field in the three runs, rather than a field taken from one
+selected run. Rates are requests/second; latency values are milliseconds.
+
+| implementation | body | connections | before req/s | after req/s | change | before p50 | after p50 | before p99 | after p99 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| mttp | 15 B | 1 | 10,006.3 | 9,344.6 | -6.61% | 0.095 | 0.092 | 0.149 | 0.243 |
+| mttp | 15 B | 32 | 10,619.5 | 12,104.3 | +13.98% | 2.973 | 2.638 | 3.407 | 3.107 |
+| mttp | 1 MiB | 1 | 1,920.6 | 1,852.7 | -3.54% | 0.505 | 0.495 | 0.730 | 0.838 |
+| mttp | 1 MiB | 32 | 1,812.1 | 1,705.0 | -5.91% | 17.519 | 18.413 | 19.811 | 23.103 |
+| core/async/http | 15 B | 1 | 28,309.7 | 27,791.9 | -1.83% | 0.032 | 0.032 | 0.054 | 0.049 |
+| core/async/http | 15 B | 32 | 60,003.1 | 60,303.2 | +0.50% | 0.501 | 0.486 | 0.732 | 0.816 |
+| core/async/http | 1 MiB | 1 | 200.4 | 199.3 | -0.54% | 5.166 | 4.746 | 6.372 | 8.652 |
+| core/async/http | 1 MiB | 32 | 178.5 | 148.7 | -16.70% | 175.782 | 209.390 | 250.992 | 310.269 |
+| Go net/http | 15 B | 1 | 27,248.7 | 23,130.2 | -15.11% | 0.033 | 0.041 | 0.053 | 0.061 |
+| Go net/http | 15 B | 32 | 183,154.2 | 133,821.5 | -26.94% | 0.100 | 0.129 | 1.041 | 1.427 |
+| Go net/http | 1 MiB | 1 | 6,400.2 | 5,998.5 | -6.28% | 0.146 | 0.162 | 0.207 | 0.215 |
+| Go net/http | 1 MiB | 32 | 6,090.3 | 5,983.3 | -1.76% | 5.121 | 5.212 | 10.713 | 11.139 |
+| Node http | 15 B | 1 | 24,768.4 | 25,095.5 | +1.32% | 0.036 | 0.036 | 0.068 | 0.059 |
+| Node http | 15 B | 32 | 40,950.1 | 40,454.5 | -1.21% | 0.736 | 0.769 | 1.559 | 1.568 |
+| Node http | 1 MiB | 1 | 6,887.8 | 7,107.5 | +3.19% | 0.138 | 0.136 | 0.203 | 0.186 |
+| Node http | 1 MiB | 32 | 6,939.9 | 7,209.1 | +3.88% | 4.443 | 4.295 | 8.554 | 8.248 |
+
+The target 15 B / 32-connection case improves **13.98%** in the observed
+median, with **13.38% fewer instructions**. Keep this change: it meets the
+10% target on that case and simplifies fixed-body handling. The other mttp
+medians are lower by 3.54–6.61%; this is not evidence of an improvement on
+those rows. Their after-run ranges, especially after run 1's 1 MiB row,
+and the changed comparison-server rates show substantial host variation.
+No general throughput guarantee follows from these observations.
+
+The mttp throughput observations, in execution order (not sorted), were:
+
+| body | connections | before runs 1, 2, 3 | after runs 1, 2, 3 |
+|---|---:|---|---|
+| 15 B | 1 | 10,077.2; 9,881.5; 10,006.3 | 8,448.1; 9,636.4; 9,344.6 |
+| 15 B | 32 | 10,989.5; 10,525.5; 10,619.5 | 9,945.3; 12,104.3; 12,142.7 |
+| 1 MiB | 1 | 1,958.3; 1,828.0; 1,920.6 | 719.3; 1,852.7; 1,978.2 |
+| 1 MiB | 32 | 1,868.2; 1,812.1; 1,740.1 | 1,299.7; 1,705.0; 1,910.5 |
+
+For context, the host's `/proc/loadavg` was `9.73 9.44 8.98` at 13:30:56
+JST during after run 2. This is an observation, not proof of the cause of
+any particular low result. After run 1's 1 MiB / 1-connection result was
+719.3 req/s; the same executable then gave 1,852.7 and 1,978.2 req/s.
+The timing executable and the Callgrind after-copy have identical SHA-256
+hashes (recorded in `executables.sha256`).
+
+Raw complete comparisons are `before1.json` through `before3.json` and
+`after1.json` through `after3.json` under
+`/var/tmp/mttp-plan/scratch/v15a/`. Their matching `.log` files contain the
+commands and `gates: OK`. The third complete after run was recorded with
+`scripts/gates.sh bench --record` in `benchmarks/results/2026-11-16.json`;
+`benchmarks/README.md` displays that run. These tables retain the median
+comparison separately from that full-run snapshot.
+
+The disposable writable toolchain, config/cache directories, profiler
+container and executable copies were removed after verification. Raw
+measurements, profiles, annotations and gate logs remain in the evidence
+directory above.

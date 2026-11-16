@@ -54,6 +54,11 @@
 /// Raises `ServerConfigError` for invalid `limits`, before reading anything;
 /// every other failure (including a scheme other than `http` or `https`)
 /// goes to `on_error`.
+/// `on_response_complete` runs once for each returned HTTP response after
+/// its writes, body cleanup and unread-request drain finish, including
+/// failure and cancellation. Pre-handler refusals, handler timeouts and
+/// successful upgrades do not call it: an upgrade retains the connection
+/// until its callback ends.
 ///
 /// ```mbt check
 /// test {
@@ -101,6 +106,7 @@ pub async fn serve_conn(
   peer? : String,
   authority~ : String = "localhost",
   on_error~ : (@mttp_core.TransportError) -> Unit = _ => (),
+  on_response_complete~ : () -> Unit = () => (),
   stopping~ : () -> Bool = () => false,
   background? : (async () -> Unit) -> Unit,
 ) -> Unit raise ServerConfigError {
@@ -129,6 +135,7 @@ pub async fn serve_conn(
     peer,
     authority,
     on_error,
+    on_response_complete,
     stopping,
     background,
     control: @control.SessionState::new(),

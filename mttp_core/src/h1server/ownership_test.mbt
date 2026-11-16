@@ -65,6 +65,171 @@ test "cancellation while producing a response closes its stream" {
 }
 
 ///|
+test "response completion follows the final wire write including the last stream chunk" {
+  @sim.explore(schedule => {
+    for streamed in [false, true] {
+      let h = Harness::new(schedule~)
+      let pieces = Pieces::new([b"first"])
+      let conn = BodyWriteStop::{
+        reads: @sim.ScriptedConn::new([
+          Chunk(
+            @mttp_core.encode_utf8(get("/", fields="Connection: close\r\n")),
+          ),
+        ]),
+        stuck: h.coordination.signal(),
+        entered: h.coordination.signal(),
+        sizes: [],
+        completed: Ref(0),
+        premature: false,
+        closed: false,
+      }
+      h.run(() => {
+        let task = h.serve_on(
+          conn,
+          _ => {
+            @mttp_core.Response::new(
+              200,
+              body=if streamed {
+                Stream(@mttp_core.StreamBody::new(pieces))
+              } else {
+                Bytes(Bytes::make(2 * 65536, b'x'))
+              },
+            )
+          },
+          on_response_complete=() => conn.completed.val += 1,
+        )
+        conn.entered.wait()
+        assert_eq(conn.completed.val, 0)
+        if streamed {
+          // EOF has closed the producer, but the final chunk is still blocked.
+          assert_eq(pieces.closes, 1)
+          assert_eq(conn.sizes[2], 5)
+        }
+        conn.stuck.notify()
+        ignore(task.wait())
+        assert_eq(conn.completed.val, 1)
+      })
+      assert_true(conn.closed)
+      assert_false(conn.premature)
+      assert_eq(h.errors.length(), 0)
+    }
+  })
+}
+
+///|
+test "response completion covers bodiless replies and failures before the head once" {
+  for
+    (meth, status, body) in [
+      ("GET", 200, @mttp_core.Body::Empty),
+      ("GET", 200, Bytes(b"")),
+      ("HEAD", 200, Bytes(b"hidden")),
+      ("GET", 204, Bytes(b"hidden")),
+      ("GET", 304, Bytes(b"hidden")),
+      ("GET", 199, Bytes(b"invalid")),
+    ] {
+    let h = Harness::new()
+    let conn = @sim.ScriptedConn::new([
+      Chunk(
+        @mttp_core.encode_utf8(
+          "\{meth} / HTTP/1.1\r\nHost: h\r\nConnection: close\r\n\r\n",
+        ),
+      ),
+    ])
+    let completed = Ref(0)
+    h.run(() => {
+      ignore(
+        h
+        .serve_on(conn, _ => @mttp_core.Response::new(status, body~), on_response_complete=() => {
+          completed.val += 1
+        })
+        .wait(),
+      )
+    })
+    assert_eq(completed.val, 1)
+    assert_eq(conn.written().length(), 1)
+    assert_true(
+      conn.written()[0].has_prefix(
+        @mttp_core.encode_utf8(
+          "HTTP/1.1 \{if status == 199 { 500 } else { status }} ",
+        ),
+      ),
+    )
+  }
+}
+
+///|
+test "response completion waits for unread request draining before keep alive" {
+  @sim.explore(schedule => {
+    let h = Harness::new(schedule~)
+    let completed = Ref(0)
+    h.run(() => {
+      let (client, server) = @sim.pair(h.coordination)
+      let task = h.serve_on(server, reply("ok"), on_response_complete=() => {
+        completed.val += 1
+      })
+      let client = Client::{ conn: client, pending: b"", }
+      client.send("POST / HTTP/1.1\r\nHost: h\r\nContent-Length: 3\r\n\r\n")
+      assert_eq(client.expect().text(), "ok")
+      h.driver.sleep(1)
+      assert_eq(completed.val, 0)
+      client.send("abc" + get("/next", fields="Connection: close\r\n"))
+      assert_eq(client.expect().text(), "ok")
+      ignore(task.wait())
+      assert_eq(completed.val, 2)
+      assert_eq(client.rest(), "")
+      client.conn.close()
+      assert_eq(server.closes(), 1)
+    })
+    assert_eq(h.errors.length(), 0)
+  })
+}
+
+///|
+test "a successful upgrade retains ownership without HTTP response completion" {
+  let h = Harness::new()
+  let completed = Ref(0)
+  let entered = Ref(false)
+  let observed = Ref(-1)
+  let conn = @sim.ScriptedConn::new([
+    Chunk(
+      b"GET / HTTP/1.1\r\nHost: h\r\nConnection: upgrade\r\nUpgrade: test\r\n\r\n",
+    ),
+  ])
+  h.run(() => {
+    ignore(
+      h
+      .serve_on(
+        conn,
+        _ => {
+          let response = @mttp_core.Response::new(
+            101,
+            headers=@mttp_core.Headers::of([
+              ("connection", "upgrade"),
+              ("upgrade", "test"),
+            ]),
+          )
+          {
+            ..response,
+            attributes: response.attributes.put(@rt.upgrade, (_, _, _) => {
+              entered.val = true
+              observed.val = completed.val
+              h.driver.sleep(10)
+            }),
+          }
+        },
+        on_response_complete=() => completed.val += 1,
+      )
+      .wait(),
+    )
+  })
+  assert_true(entered.val)
+  assert_eq(observed.val, 0)
+  assert_eq(completed.val, 0)
+  assert_eq(conn.closes(), 1)
+  assert_eq(h.errors.length(), 0)
+}
+
+///|
 test "a head read failure is reported in phase Head without an answer" {
   let h = Harness::new()
   let conn = @sim.ScriptedConn::new([

@@ -51,6 +51,10 @@ never does.
 
 ### Changed
 
+- `server.serve` writes Bytes and Empty responses directly, keeping per-write
+  deadlines and shutdown admission through the engine's completion signal
+  instead of wrapping fixed bodies in a timed stream.
+
 - `@server.serve` ends the connection after a 413 from a Router as before,
   now because the Router sets `abandon_request_body` instead of writing
   `Connection: close` itself.
