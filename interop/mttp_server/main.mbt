@@ -20,6 +20,13 @@
 //   GET  /bytes?n=             the binary pattern with a Content-Length
 //   GET  /delay?ms=            answers after `ms` milliseconds
 //   GET  /status/NNN           that status
+//   GET  /dict/dictionary      RFC 9842: interop/pattern's dictionary, with
+//                              Use-As-Dictionary (match /dict/*, id
+//                              interop-1) and a lifetime
+//   GET  /dict/page            its page, through dictionary_compress: dcb
+//                              or dcz with the dictionary when the request
+//                              names it, the coding in Content-Encoding and
+//                              the plain page's digest in X-Page-Digest
 //   GET  /log[?reset=1]        what reached the server since the last reset:
 //                              one line per request and per refused
 //                              connection (`error ...`)
@@ -121,6 +128,37 @@ impl @mttp_core.BodyStream for Pieces with fn close(self) {
 }
 
 ///|
+/// The interop dictionary, as dictionary_compress holds it.
+let server_dictionary : @codings.ServerDictionary = @codings.ServerDictionary::new(
+  @pattern.dictionary(),
+  sha256=data => Bytes::from_array(@crypto.sha256(data)),
+  id=@pattern.dictionary_id,
+)
+
+///|
+/// /dict/page through dictionary_compress. The server listens over
+/// cleartext on loopback, where the third-party clients run: RFC 9842
+/// section 8's secure context is the loopback peer here.
+let dictionary_page : @mttp_core.Handler = @codings.dictionary_compress(
+  _ => {
+    let page = @pattern.dictionary_page()
+    @mttp_core.Response::new(
+      200,
+      headers=@mttp_core.Headers::of([
+        ("content-type", "text/plain"),
+        ("x-page-digest", @pattern.digest(page)),
+      ]),
+      body=Bytes(page),
+    )
+  },
+  [server_dictionary],
+  secure=request => {
+    let peer = request.attributes.get(@mttp_core.remote_addr).unwrap_or("")
+    peer.has_prefix("127.") || peer.has_prefix("[::1]")
+  },
+)
+
+///|
 async fn handle(request : @mttp_core.Request) -> @mttp_core.Response noraise {
   let url = @mttp_core.Url::parse(request.url) catch {
     _ => return text(400, "unparsable target\n")
@@ -141,6 +179,24 @@ async fn handle(request : @mttp_core.Request) -> @mttp_core.Response noraise {
   log.push("\{request.meth} \{target} \{framing(request.headers)}")
   match url.path {
     "/conn" => text(200, "\{peer}\n")
+    "/dict/dictionary" => {
+      let response = @mttp_core.Response::new(
+        200,
+        headers=@mttp_core.Headers::of([
+          ("content-type", "text/plain"),
+          ("cache-control", "max-age=3600"),
+        ]),
+        body=Bytes(@pattern.dictionary()),
+      )
+      @codings.use_as_dictionary(
+        response,
+        match_="/dict/*",
+        id=@pattern.dictionary_id,
+      ) catch {
+        error => text(500, "\{error}\n")
+      }
+    }
+    "/dict/page" => dictionary_page(request)
     "/" if request.meth is Post => {
       let body = request.body.read_all(max=max_body) catch {
         error => return text(400, "body: \{error}\n")

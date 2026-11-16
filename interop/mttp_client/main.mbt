@@ -283,6 +283,47 @@ async fn case_chunked_response(ctx : Ctx) -> String {
 }
 
 ///|
+/// RFC 9842 against interop/servers/dictionary.mjs, Node's zlib on the other
+/// side: the backend stores /dict/dictionary once its body is read, then
+/// offers it for /dict/page, which the server codes with `coding` (dcb or
+/// dcz) and the backend decodes with the stored dictionary.
+async fn case_dictionary(ctx : Ctx, coding : String) -> String {
+  let store = @dictionary.DictionaryStore::new(
+    sha256=data => Bytes::from_array(@crypto.sha256(data)),
+    clock=@runtime.AsyncClock::new(),
+  )
+  let backend = @backend.AsyncBackend::new(trust=ctx.trust, dictionaries=store)
+  defer backend.close()
+  let options : @mttp_core.SendOptions = {
+    timeout_ms: Some(raw_timeout),
+    body: Stream(idle_ms=Some(raw_timeout)),
+  }
+  let read = async fn(path : String) -> (@mttp_core.Response, Bytes) {
+    let response = backend.send(@mttp_core.Request::get(ctx.url(path)), options)
+    defer response.close()
+    check(response.status == 200, "\{path}: status \{response.status}")
+    guard response.body is Stream(stream) else { raise Check("no body") }
+    (response, @mttp_core.read_bounded(stream.take(), 1 << 20))
+  }
+  let (_, dictionary) = read("/dict/dictionary")
+  check(dictionary == @pattern.dictionary(), "the dictionary differs")
+  check(store.size().0 == 1, "the dictionary was not stored")
+  let (page, body) = read("/dict/page?coding=\{coding}")
+  // The server says what it received and how it coded the page.
+  let coded = page.headers.get("x-coded").unwrap_or("-")
+  let why = page.headers.get("x-why").unwrap_or("")
+  check(coded == coding, "the server coded \{coded}: \{why}")
+  check(
+    page.headers.get("content-encoding") is None,
+    "content-encoding left on the decoded page",
+  )
+  let want = page.headers.get("x-page-digest").unwrap_or("-")
+  let got = @pattern.digest(body)
+  check(got == want, "page \{got}, not \{want}")
+  "\{coding} with the stored dictionary, \{want}"
+}
+
+///|
 /// The server encodes text.txt with `coding`; mttp's decoder undoes it.
 async fn case_coding(ctx : Ctx, coding : String) -> String {
   let backend = ctx.backend()
@@ -679,6 +720,8 @@ async fn run_case(ctx : Ctx, id : String) -> String {
     "gzip" => case_coding(ctx, "gzip")
     "br" => case_coding(ctx, "br")
     "zstd" => case_coding(ctx, "zstd")
+    "dictionary-dcb" => case_dictionary(ctx, "dcb")
+    "dictionary-dcz" => case_dictionary(ctx, "dcz")
     "decompress" => case_decompress(ctx)
     "head" => case_head(ctx, pools_connections)
     "no-content" => case_no_content(ctx, pools_connections)

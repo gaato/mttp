@@ -245,6 +245,12 @@ outside these ports.
 4. Decoded-byte limits are not a Backend concern. `Decompress` passes
    SendOptions through unchanged, so the engine bounds wire bytes, and the
    mttp Client's readers bound decoded bytes.
+5. With a dictionary store, the RFC 9842 headers `Decompress` adds itself
+   go only to https or loopback URLs of the dictionary's origin, and only
+   when the caller set neither Accept-Encoding nor Available-Dictionary
+   (headers a caller sets are sent as they are). It decodes dcb and dcz only
+   after their header names the dictionary it offered, and stores a
+   dictionary only from a 200 read to its end, within the store's bounds.
 
 JS fetch is the per-target exception: only host-decoded body bytes are
 visible, so both byte limits count those bytes. It cannot enforce a bound

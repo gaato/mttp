@@ -27,7 +27,7 @@ import {
 /// It needs podman or docker (INTEROP_ENGINE chooses; podman first),
 /// openssl, a C compiler for moon's native target, and the ports 39000,
 /// 39010, 39011, 39020, 39021, 39030 and 39031 free on 127.0.0.1 and
-/// 127.0.0.2, plus 39040 on 127.0.0.1. Every third-party program runs from the image
+/// 127.0.0.2, plus 39040, 39060 and 39061 on 127.0.0.1. Every third-party program runs from the image
 /// interop/images.tsv pins, on the host's network; nothing is installed on
 /// the host. Work files go to _build/interop.
 
@@ -65,12 +65,16 @@ let js_client_dir : String = "_build/js/debug/build/\{interop_module}/mttp_clien
 
 ///|
 /// The third-party servers: name (as in images.tsv), plain port (TLS is the
-/// next one), the container's mounts and command.
+/// next one), the container's mounts and command, and the prefix of the
+/// client cases it serves: "" for the full layout interop/mttp_client
+/// describes, or a narrower one for a server that serves only some of it,
+/// so that a row whose server is `*` does not reach it.
 priv struct Server {
   name : String
   port : Int32
   config : (String, String)
   command : Array[String]
+  serves : String
 }
 
 ///|
@@ -80,6 +84,7 @@ let servers : Array[Server] = [
     port: 39010,
     config: ("nginx.conf", "/etc/nginx/nginx.conf"),
     command: [],
+    serves: "",
   },
   {
     name: "caddy",
@@ -88,12 +93,24 @@ let servers : Array[Server] = [
     command: [
       "caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile",
     ],
+    serves: "",
   },
   {
     name: "apache",
     port: 39030,
     config: ("httpd.conf", "/usr/local/apache2/conf/httpd.conf"),
     command: [],
+    serves: "",
+  },
+  // RFC 9842's server side, for the client's dictionary cases only: no
+  // widely used server codes dcb or dcz yet, and Node's zlib takes the raw
+  // dictionaries RFC 9842 uses (interop/servers/dictionary.mjs).
+  {
+    name: "node",
+    port: 39060,
+    config: ("dictionary.mjs", "/srv/dictionary.mjs"),
+    command: ["node", "/srv/dictionary.mjs"],
+    serves: "dictionary-",
   },
 ]
 
@@ -1177,6 +1194,7 @@ async fn main_run(filters : Array[String]) -> Int32 {
   for
     addr in [
       server_addr, "127.0.0.1:39010", "127.0.0.1:39020", "127.0.0.1:39030", openapi_server_addr,
+      "127.0.0.1:39060", "127.0.0.1:39061",
     ] {
     port_free(addr)
   }
@@ -1225,7 +1243,9 @@ async fn main_run(filters : Array[String]) -> Int32 {
       for server in servers {
         for scheme in schemes {
           let run = "\{runtime}/\{server.name}/\{scheme}"
-          let rows = rows_of(rows, "client", run)
+          let rows = rows_of(rows, "client", run).filter(row => {
+            row.id.has_prefix(server.serves)
+          })
           let cases = plan(rows)
           if cases.is_empty() || !selected(filters, "client/\{run}") {
             continue

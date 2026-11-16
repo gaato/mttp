@@ -6,6 +6,12 @@ pub fn binary(Int32) -> Bytes
 
 pub fn byte_at(Int32) -> Byte
 
+pub fn dictionary() -> Bytes
+
+pub let dictionary_id : String
+
+pub fn dictionary_page() -> Bytes
+
 pub fn digest(BytesView) -> String
 
 pub fn digests() -> String

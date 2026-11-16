@@ -26,6 +26,10 @@ engine count wire bytes before decoding. Bound decoded bytes separately
 with `@mttp_core.read_bounded`. Reading to EOF permits connection reuse; closing
 early discards the connection.
 
+Given `dictionaries`, a `@dictionary.DictionaryStore`, the backend also uses
+and fills RFC 9842 compression dictionaries in `dictionary_partition`, as
+`@codings.Decompress` describes; on js the host's fetch decides instead.
+
 With no `config`, proxy variables are captured from the process environment
 at construction via `ProxyConfig::from_env`. An explicit `ClientConfig` is
 used verbatim, including `ProxyConfig::none()` to disable environment

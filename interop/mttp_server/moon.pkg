@@ -2,6 +2,7 @@ import {
   "gaato/mttp_core",
   "gaato/mttp_core/h1server",
   "gaato/mttp",
+  "gaato/mttp/codings",
   "gaato/mttp/server",
   "gaato/mttp/ws",
   "gaato/mttp_core/ws" @core_ws,
@@ -11,6 +12,7 @@ import {
   "moonbitlang/core/env",
   "moonbitlang/core/encoding/base64",
   "moonbitlang/core/string",
+  "moonbitlang/x/crypto",
 }
 
 supported_targets = "native"

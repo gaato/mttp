@@ -68,6 +68,10 @@ client	br	native/apache/*	pass
 client	br	native/nginx|caddy/*	n/a	nginx and Caddy have no Brotli encoder without third-party modules
 client	zstd	native/caddy/*	pass
 client	zstd	native/nginx|apache/*	n/a	nginx and Apache have no zstd encoder without third-party modules
+client	dictionary-dcb	native/node/*	pass
+client	dictionary-dcz	native/node/*	pass
+client	dictionary-dcb	node|bun|deno/node/*	n/a	on js the host's fetch negotiates codings and dictionaries itself; mttp's dictionary store is not used
+client	dictionary-dcz	node|bun|deno/node/*	n/a	on js the host's fetch negotiates codings and dictionaries itself; mttp's dictionary store is not used
 client	decompress	*/*/*	pass
 client	head	*/*/*	pass
 client	no-content	*/*/*	pass
@@ -105,6 +109,10 @@ server	large-upload	curl|go|httpx|node|bun|deno/*	pass
 server	expect	curl|go/*	pass
 server	expect-early-body	httpx/*	pass
 server	stream	go|httpx|node|bun|deno/*	pass
+server	dictionary-dcb	node/*	pass
+server	dictionary-dcz	node/*	pass
+server	dictionary-dcb	bun|deno/*	n/a	the client decodes with node:zlib's raw dictionaries, which only Node is checked to have
+server	dictionary-dcz	bun|deno/*	n/a	the client decodes with node:zlib's raw dictionaries, which only Node is checked to have
 server	head	curl|go|httpx|node|bun|deno/*	pass
 server	no-content	curl|go|httpx|node|bun|deno/*	pass
 server	parallel	go|httpx|node|bun|deno/*	pass

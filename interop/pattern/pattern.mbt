@@ -99,3 +99,21 @@ pub fn digests() -> String {
   lines.push("binary-4000 \{digest(binary(4000))}")
   lines.join("\n") + "\n"
 }
+
+///|
+/// The RFC 9842 dictionary the dictionary cases share: 64 KiB of the text
+/// pattern. Every party computes its SHA-256 itself.
+pub fn dictionary() -> Bytes {
+  text(64 << 10)
+}
+
+///|
+/// The page the dictionary cases code with that dictionary: 96 KiB of the
+/// same text, so most of it is in the dictionary and the rest is not.
+pub fn dictionary_page() -> Bytes {
+  text(96 << 10)
+}
+
+///|
+/// The id the dictionary is served with, echoed back in Dictionary-ID.
+pub let dictionary_id : String = "interop-1"

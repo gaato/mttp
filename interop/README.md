@@ -39,7 +39,10 @@ third-party implementations instead:
   httpd, over HTTP/1.1 and TLS, natively and as js under Node, Bun and Deno.
   It checks keep-alive reuse, a server closing an idle connection first,
   chunked responses, the content codings each server produces itself
-  (gzip everywhere, zstd from Caddy, Brotli from Apache), HEAD, 204 and 304,
+  (gzip everywhere, zstd from Caddy, Brotli from Apache), RFC 9842's
+  dictionary codings dcb and dcz from a Node server whose zlib codes with
+  the dictionary the client stored ([dictionary.mjs](servers/dictionary.mjs)),
+  HEAD, 204 and 304,
   301/302/307/308 redirects with credentials dropped across origins and no
   HTTPS-to-HTTP downgrade, `Expect: 100-continue` uploads and early refusals,
   16 MiB downloads and 8 MiB uploads, chunked uploads, trickled bodies and
@@ -50,7 +53,9 @@ third-party implementations instead:
   and behind nginx, Caddy and Apache as reverse proxies. It checks
   connection reuse (also through each proxy's upstream pool), chunked and
   large request bodies, `Expect: 100-continue`, streamed responses, HEAD and
-  204, concurrent requests, HTTP/1.0, pipelining, and request smuggling
+  204, concurrent requests, RFC 9842 dcb and dcz from `dictionary_compress`
+  (Node checks the header's hash and decodes them with node:zlib's
+  dictionaries), HTTP/1.0, pipelining, and request smuggling
   shapes from raw sockets ([probes.py](clients/python/probes.py)): sent
   directly they must be refused as [CONTRACT.md](../CONTRACT.md) says, and
   through a proxy, whatever reaches the server must be unambiguous. Among
@@ -101,7 +106,7 @@ such as `moon run interop/run.mbtx -- client/native/apache` or `-- server/raw`.
 It needs podman or docker (podman is preferred; `INTEROP_ENGINE` chooses),
 openssl, a C compiler for moon's native target, and ports 39000, 39010,
 39011, 39020, 39021, 39030 and 39031 free on 127.0.0.1 and 127.0.0.2, plus
-39040 on 127.0.0.1. A run
+39040, 39060 and 39061 (the Node dictionary server) on 127.0.0.1. A run
 takes a few minutes once the images are pulled, about one of them
 Http11Probe's (`-- server/http11probe`). CI runs it daily, in the
 `interop` job of [canary.yml](../.github/workflows/canary.yml), not on pull

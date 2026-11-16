@@ -79,7 +79,7 @@ Made by the user on 2026-11-08. They supersede the 2026-10-24 rows marked † in
 | Why core/async/http is not the foundation | No head-size bound, CL+TE accepted, gzip only, connection reuse still provisional (F65). A general lower layer cannot be built on it; gaato/http keeps its own codec and engines and uses core/async only through http-async's adapters. | — |
 | Runtime | **Stage R executes now**, on MoonBit 0.10.20 and `moonbitlang/core/async`. `moonbitlang/async` is forbidden in every module (gate, §5.13). Old-stack graphs (anything still on gaato/http ≤ 0.5 or http-async ≤ 0.5) are frozen: they are not patched onto core/async (Q15, G-06 answered with option (b)). | the former Stage R; G-06, Q15 |
 | Metadata | Request and response metadata stay `Attributes` with typed keys. MoonBit has no TypeId, so a type-keyed map in the style of hyper's Extensions cannot be built soundly. | — |
-| Compression | Engines move raw bytes only. Decoding is the `@codings.Decompress` Backend wrapper, encoding the `@codings.compress` Handler wrapper, both in http-async. Bounds are two-level: the engine counts wire bytes, the mttp Client counts decoded bytes (§5.2). | C-13 (`decompress` option) |
+| Compression | Engines move raw bytes only. Decoding is the `@codings.Decompress` Backend wrapper, encoding the `@codings.compress` Handler wrapper, both in http-async. Bounds are two-level: the engine counts wire bytes, the mttp Client counts decoded bytes (§5.2). RFC 9842 dictionaries ride on the same wrappers: `Decompress` given a `@dictionary.DictionaryStore` (mttp_core, I/O-free, with `cache`, `urlpattern` and `sf` beneath it), and `dictionary_compress`, a superset of `compress`. | C-13 (`decompress` option) |
 | Experimental packages | A stable module may hold experimental packages. They declare `options(experimental: true)` in moon.pkg, and every importer opts in by listing them, as in `options("allow-experimental-packages": ["gaato/http/h1client"])` (list form only; `true` is refused by the gate; the workspace PR confirms the list form). gaato/http's `h1client`, `h1server` and `driver` start experimental, and so do mttp's endpoint layer, router, apispec and openapi. | principle 8 (old) |
 | PRs | **PR #2 is superseded** by a stack of PRs from `main`, each ≲ 5k lines and passing every gate on its own (§7.1). They merge after the gates pass and the Codex review findings are resolved. PR #2 is closed with a link to the stack; its branch stays as the reference. Nothing is published from the PRs; publishing is a separate, owner-approved step: the train of §8.2, and since 2026-11-12 a pushed release tag (§5.8). | §0.2 "PRs" (kept in spirit) |
 | Rewrite or keep | Chosen per component by quality, from "move as is" to "rewrite" (§7.2). Starting from zero is allowed where the reference is weak. | — |
@@ -200,6 +200,10 @@ All of gaato/mttp_core builds on all four targets. The tiers of the 2026-10-24 d
 | `sse` | SseEvent, incremental SseParser, encoder | sttp-model sse |
 | `multipart` | Writer with MultipartError and streaming parts; boundary from injected randomness | sttp-model Part |
 | `cookie` | RFC 6265 CookieJar (clock injected); Set-Cookie helpers | CookieWithMeta + storage |
+| `sf` | RFC 9651 Structured Field Values: parse and serialize Lists, Dictionaries and Items | (new) |
+| `urlpattern` | WHATWG URL patterns without regular expressions, matched by an automaton | (new) |
+| `cache` | RFC 9111 freshness and age, RFC 5861 stale-while-revalidate and stale-if-error, as pure functions | (new) |
+| `dictionary` | RFC 9842 Use-As-Dictionary and the client's bounded, partitioned DictionaryStore | (new) |
 | `client` | RequestPlan/ResponsePlan with Buffered/Streaming modes, Result readers, ResponseFailure, Client (the policy loop), RetryPolicy and typed decisions, RateLimiter, Paginator, FollowRedirects (+ its config), `from_fn`, Retry-After and Link helpers | client4 core, wrappers, RetryWhen |
 | `client/retry` | Retry decisions as data | RetryWhen |
 | `client/ratelimit` | WindowLimiter, Pace, GlobalWindow, LimitScope, rate_limit_headers | — |
@@ -1069,8 +1073,10 @@ pub fn coding_plan(content_encoding : String) -> Array[Coding] raise @mttp_core.
 pub fn ContentDecoder::new(plan : Array[Coding]) -> ContentDecoder raise @mttp_core.TransportError  // feed, pull (<= 64 KiB), end
 pub fn ContentEncoder::new(c : Coding) -> ContentEncoder                                           // gzip, deflate, br, zstd (level 3)
 pub fn negotiate_encoding(h : @mttp_core.Headers) -> EncodingChoice raise @mttp_core.TransportError
-pub fn Decompress::new(inner : &@mttp_core.Backend) -> Decompress  // (new) impl @mttp_core.Backend
+pub fn Decompress::new(inner : &@mttp_core.Backend, dictionaries? : @dictionary.DictionaryStore, partition? : String) -> Decompress  // (new) impl @mttp_core.Backend; RFC 9842 with a store
 pub fn compress(handler : @mttp_core.Handler, min_bytes? : Int) -> @mttp_core.Handler   // (new) negotiates and encodes responses
+pub fn dictionary_compress(handler, dictionaries : Array[ServerDictionary], min_bytes?, secure~ : (Request) -> Bool) -> @mttp_core.Handler  // compress, plus dcb/dcz (RFC 9842)
+pub fn use_as_dictionary(response, match_~ : String, match_dest?, id?) -> @mttp_core.Response raise @mttp_core.TransportError
 
 // fetch, hosts (js)
 #external pub type JsRequest
@@ -1088,6 +1094,7 @@ pub fn fetch_handler(handler : @mttp_core.Handler, max_body_bytes? : Int) -> (Js
 |---|---|
 | Request without `Accept-Encoding` | Sends `Accept-Encoding: gzip, deflate, br, zstd`, undoes the codings in 64 KiB pulls, removes them from `Content-Encoding` and drops `Content-Length`. An unknown coding stays on the body untouched. |
 | Request with its own `Accept-Encoding` | Sent as is; the body comes back as sent. |
+| With a dictionary store, a request without its own `Accept-Encoding` or `Available-Dictionary` that a stored dictionary matches | Also sends `Available-Dictionary`, `Dictionary-ID` when the dictionary has an id, and `dcb, dcz`; a dcb/dcz response is decoded with that dictionary after its header's hash is checked. A 200 with `Use-As-Dictionary` is stored once read to the end. |
 | No wrapper | The engine never touches codings; bytes pass through. |
 | JS | fetch always negotiates and decodes; a per-target CONTRACT exception. |
 

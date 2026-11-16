@@ -95,7 +95,7 @@ pub async fn print_user(id : Int32) -> Unit {
 | Deadlines | 30 s per attempt, 120 s for the whole call, retries included | `timeout_ms=`, `total_ms=` |
 | Redirects | Up to 10 hops, never from HTTPS to HTTP, credentials dropped across origins | `redirect=`, `redirect=RedirectConfig::none()` to turn them off, or `.follow_redirects(false)` on a request |
 | Cookies | None kept | `cookies=` a `CookieJar` |
-| Decompression | gzip, deflate, br and zstd | per request, by setting `Accept-Encoding` |
+| Decompression | gzip, deflate, br and zstd | per request, by setting `Accept-Encoding`; RFC 9842's dcb and dcz with `@backend.AsyncBackend::new(dictionaries=)` |
 | Body size | Buffered bodies up to 64 MiB after decoding | `max_body_bytes=` |
 | TLS | The system's roots | `trust=PemFile(..)` |
 | Network, clock and timers | The real ones | `backend=`, `clock=`, `timer=`, for tests (see [Tests](#tests)) |

@@ -1,14 +1,17 @@
 import {
   "gaato/mttp_core",
   "gaato/mttp_core/client",
+  "gaato/mttp_core/dictionary",
   "gaato/mttp_core/h1client",
   "gaato/mttp",
   "gaato/mttp/backend",
   "gaato/mttp/codings",
+  "gaato/mttp/runtime",
   "gaato/mttp-interop/pattern",
   "moonbitlang/core/debug",
   "moonbitlang/core/env",
   "moonbitlang/core/encoding/utf8",
+  "moonbitlang/x/crypto",
 }
 
 supported_targets = "native+js"

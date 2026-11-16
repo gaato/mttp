@@ -51,7 +51,63 @@ async function upload(body, expected, extra = {}) {
   return `${echoed(text, 'framing')}, ${received}`;
 }
 
+// RFC 9842 as a client sees it, with Node's crypto and zlib (Node only:
+// interop/cases.tsv runs these under Node). The mttp server marks
+// /dict/dictionary as a dictionary and codes /dict/page with it; this checks
+// the header it sends before the coded stream, then decodes it with the
+// dictionary, as Chrome would, and compares the page with its digest.
+async function dictionaryCase(coding) {
+  const { createHash } = await import('node:crypto');
+  const zlib = await import('node:zlib');
+  const marked = await fetch(base + '/dict/dictionary');
+  want(marked.status === 200, `dictionary status ${marked.status}`);
+  const uad = marked.headers.get('use-as-dictionary') ?? '';
+  want(uad === 'match="/dict/*", id="interop-1"', `Use-As-Dictionary ${uad}`);
+  const dictionary = Buffer.from(await marked.arrayBuffer());
+  const hash = createHash('sha256').update(dictionary).digest();
+  const response = await fetch(base + '/dict/page', {
+    headers: {
+      'accept-encoding': coding,
+      'available-dictionary': `:${hash.toString('base64')}:`,
+      'dictionary-id': '"interop-1"',
+    },
+  });
+  want(response.status === 200, `page status ${response.status}`);
+  const sent = response.headers.get('content-encoding');
+  want(sent === coding, `content-encoding ${sent}`);
+  // A cache must key the coded page on everything that chose it: the coding,
+  // the dictionary, and what the section 9.3.3 check read.
+  const vary = (response.headers.get('vary') ?? '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase());
+  for (const name of [
+    'accept-encoding',
+    'available-dictionary',
+    'sec-fetch-site',
+    'sec-fetch-mode',
+    'origin',
+  ]) {
+    want(vary.includes(name), `vary ${vary.join(', ')} lacks ${name}`);
+  }
+  const wire = Buffer.from(await response.arrayBuffer());
+  const magic = coding === 'dcb'
+    ? Buffer.from([0xff, 0x44, 0x43, 0x42])
+    : Buffer.from([0x5e, 0x2a, 0x4d, 0x18, 0x20, 0x00, 0x00, 0x00]);
+  want(wire.subarray(0, magic.length).equals(magic), 'magic number');
+  const named = wire.subarray(magic.length, magic.length + 32);
+  want(named.equals(hash), 'the header names another dictionary');
+  const stream = wire.subarray(magic.length + 32);
+  const plain = coding === 'dcb'
+    ? zlib.brotliDecompressSync(stream, { dictionary })
+    : zlib.zstdDecompressSync(stream, { dictionary });
+  const want_digest = response.headers.get('x-page-digest');
+  want(digest(plain) === want_digest, `page ${digest(plain)}, not ${want_digest}`);
+  return `${coding}, ${wire.length} bytes for ${plain.length}`;
+}
+
 const run = {
+  'dictionary-dcb': () => dictionaryCase('dcb'),
+  'dictionary-dcz': () => dictionaryCase('dcz'),
   async get() {
     const response = await fetch(base + '/conn');
     want(response.status === 200, `status ${response.status}`);
