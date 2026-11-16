@@ -137,6 +137,10 @@ never does.
 
 ### Fixed
 
+- OpenAPI 3.2 SSE responses omit the complete-body wire-string `schema`,
+  retaining per-event `itemSchema` validation. Complete sequential content
+  maps to an array in 3.2; the 3.1 projection remains unchanged.
+
 - Protected WebSocket control writes use the smaller send/close deadline
   (5 s by default), bounding cancelled receiver joins when a peer stops reading.
 

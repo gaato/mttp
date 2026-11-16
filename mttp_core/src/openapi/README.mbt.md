@@ -9,7 +9,9 @@ definition ready for a separate AsyncAPI projection later.
 OpenAPI documents projected from endpoint definitions.
 
 `to_openapi(..., version=V3_2)` opts into OpenAPI 3.2.0 and its typed
-`itemSchema` member for SSE. The default remains 3.1.0 with
+`itemSchema` member for SSE, omitting the complete-body `schema`: OpenAPI 3.2
+maps complete SSE content to an array, while `itemSchema` validates each event
+independently without requiring a finite stream. The default remains 3.1.0 with
 `x-oai-itemSchema` for client-generator compatibility.
 
 `docs_ui_endpoint(spec_url="/openapi.json")` serves Scalar at `/docs`;
@@ -71,8 +73,8 @@ differing header schemas. Their accepted values may overlap; an exclusive
 merged representation of that status supplies it, including framework problem
 responses. Once any representation omits a header, it stays optional even if
 later representations supply it again.
-Fixed headers carry their `const` value. An SSE response describes the framed
-wire body as a string and each event under the media type's `x-oai-itemSchema`,
+Fixed headers carry their `const` value. In 3.1, an SSE response describes the
+framed wire body as a string and each event under the media type's `x-oai-itemSchema`,
 the OpenAPI Initiative's extension for OpenAPI 3.2's `itemSchema`: an object
 with string `event`, `data` and `id`, an integer `retry`, and the JSON payload
 as the `contentSchema` of `data`. Named payload schemas are hoisted and their

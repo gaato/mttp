@@ -241,7 +241,20 @@ pub fn to_openapi(
           let extensions = media.extensions.copy()
           let item_schema = extensions.get(item_schema_extension)
           extensions.remove(item_schema_extension)
-          response.content[name] = { ..media, item_schema, extensions, }
+          response.content[name] = {
+            ..media,
+            // OAS 3.2 section 4.14.3.1 maps complete SSE content to an
+            // array. Keep streaming validation item-only rather than
+            // applying the 3.1 wire-string schema to that array. Test the
+            // media type even if wildcard merging erased item constraints.
+            schema: if name == "text/event-stream" {
+              None
+            } else {
+              media.schema
+            },
+            item_schema,
+            extensions,
+          }
         }
       }
     }
