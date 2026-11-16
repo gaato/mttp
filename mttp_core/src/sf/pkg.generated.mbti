@@ -1,0 +1,68 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/sf"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn decimal_from_string(StringView) -> Int64?
+
+pub fn parse_dictionary(Array[String]) -> Array[(String, Member)]?
+
+pub fn parse_item(Array[String]) -> Item?
+
+pub fn parse_list(Array[String]) -> Array[Member]?
+
+pub fn serialize_bare_item(BareItem) -> String?
+
+pub fn serialize_dictionary(ArrayView[(String, Member)]) -> String?
+
+pub fn serialize_item(Item) -> String?
+
+pub fn serialize_list(ArrayView[Member]) -> String?
+
+// Errors
+
+// Types and methods
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum BareItem {
+  Integer(Int64)
+  Decimal(Int64)
+  String(String)
+  Token(String)
+  Bytes(Bytes)
+  Boolean(Bool)
+  Date(Int64)
+  DisplayString(String)
+}
+pub fn BareItem::equal(Self, Self) -> Bool
+pub fn BareItem::not_equal(Self, Self) -> Bool
+pub fn BareItem::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Item {
+  value : BareItem
+  params : Array[(String, BareItem)]
+}
+pub fn Item::equal(Self, Self) -> Bool
+pub fn Item::not_equal(Self, Self) -> Bool
+pub fn Item::of(BareItem) -> Self
+pub fn Item::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum Member {
+  Item(Item)
+  InnerList(Array[Item], Array[(String, BareItem)])
+}
+pub fn Member::equal(Self, Self) -> Bool
+pub fn Member::not_equal(Self, Self) -> Bool
+pub fn Member::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+pub type Dictionary = Array[(String, Member)]
+
+pub type Parameters = Array[(String, BareItem)]
+
+// Traits

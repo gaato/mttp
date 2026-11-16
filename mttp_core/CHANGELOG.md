@@ -14,6 +14,12 @@ never does.
   including failure and cancellation. Successful upgrades retain ownership
   until their callback ends instead of acknowledging an HTTP completion.
 
+- `sf`: RFC 9651 Structured Field Values. `parse_list`,
+  `parse_dictionary` and `parse_item` take a field's lines, and
+  `serialize_*` write the canonical text, both as section 4 states them;
+  Decimals are exact thousandths. All 2,160 tests of httpwg's
+  structured-field-tests pass in the conformance module.
+
 - `rt.upgrade` and `ws.ws_session`: HTTP/1 server 101 connection hand-over,
   preserving read-ahead and admission until callback completion, with HTTP
   deadlines ending at the head. Router's in-process WebSocket path uses the

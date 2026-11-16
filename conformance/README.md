@@ -10,6 +10,10 @@ commit `43f92f0`:
 - Form/query parsing and CookieJar behavior against WPT and http-state data.
 - SSE results, truncation, end-of-stream behavior and overflow under every
   short-input split, hostile UTF-8/CRLF splits and seeded mutations.
+- Structured Field Values (`gaato/mttp_core/sf`) against all 2,160 tests of
+  httpwg's structured-field-tests: 1,607 fields parsed, compared and
+  serialized back to their canonical form, and 553 values serialized or
+  refused, with no exclusions.
 - The HTTP/1 codec (`gaato/mttp_core/h1`) against 212 of llhttp's 255
   request and response tests and 165 rows of web-platform-tests' HTTP/1
   response parsing tables, each read whole, split in two at every offset,

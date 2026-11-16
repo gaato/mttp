@@ -20,12 +20,15 @@ import {
 //   moon run scripts/gen_vectors.mbtx -- cookie <parser.ts> <examples.ts> <bsd-examples.ts>
 //   moon run scripts/gen_vectors.mbtx -- llhttp <llhttp checkout>
 //   moon run scripts/gen_vectors.mbtx -- wpt-fetch <wpt checkout>
+//   moon run scripts/gen_vectors.mbtx -- sf <structured-field-tests checkout>
 //
 // `url` and `cookie` write their test files directly, the data as JSON in a
 // string, one entry per line: `url` keeps the rows of urltestdata.json whose
 // input or result is an http, https, ws or wss URL; `cookie` turns
 // tough-cookie's copies of the http-state tests, TypeScript object literals,
-// into JSON. `llhttp` and `wpt-fetch` copy the upstream cases verbatim into
+// into JSON; `sf` keeps every case of httpwg's structured-field-tests, its
+// parsing tests and its serialisation-tests, each with the name of its file.
+// `llhttp` and `wpt-fetch` copy the upstream cases verbatim into
 // conformance/data/: each llhttp test's markdown heading, metadata, input
 // block and expected callback log, and the HTTP/1 parsing resources and
 // expectation tables of web-platform-tests' fetch/h1-parsing and
@@ -198,6 +201,45 @@ async fn write_if_changed(target : String, text : String) -> Unit {
   } else {
     println("unchanged \{target}")
   }
+}
+
+///|
+/// httpwg's structured-field-tests in `root`: the cases of each JSON file at
+/// the top and in serialisation-tests/, in file name order, each with a
+/// "file" member naming its file.
+async fn sf_rows(root : String) -> Array[Json] {
+  let rows = []
+  for dir in ["", "serialisation-tests/"] {
+    let names = @fs.readdir(root + "/" + dir)
+    // By character, not as String's order sorts (shorter first).
+    names.sort_by((a, b) => {
+      for i in 0..<a.length().min(b.length()) {
+        if a[i] != b[i] {
+          return a[i].to_int() - b[i].to_int()
+        }
+      }
+      a.length() - b.length()
+    })
+    for name in names {
+      guard name.has_suffix(".json") else { continue }
+      let file = dir + name
+      let source = @fs.read_text(root + "/" + file)
+      // The numbers as written: 1.0 is a Decimal, 1 an Integer.
+      let cases = rows_of(@json.parse(source, preserve_number_repr=true)) catch {
+        e => fail("\{file}: \{e}")
+      }
+      for case in cases {
+        guard case is Object(fields) else { fail("\{file}: expected objects") }
+        let row : Map[String, Json] = Map([])
+        row["file"] = Json::string(file)
+        for k, v in fields {
+          row[k] = v
+        }
+        rows.push(Json::object(row))
+      }
+    }
+  }
+  rows
 }
 
 // ---------------------------------------------------------------------------
@@ -1487,11 +1529,16 @@ async fn main {
         )
       write_if_changed("conformance/src/cookie/http_state_test.mbt", text)
     }
+    ["sf", root] =>
+      write_if_changed(
+        "conformance/src/sf/structured_field_tests_test.mbt",
+        header + string_of_rows("structured_field_tests", sf_rows(root)),
+      )
     ["llhttp", root] => extract_llhttp(root)
     ["wpt-fetch", root] => extract_wpt_fetch(root)
     _ => {
       eprintln(
-        "usage: moon run scripts/gen_vectors.mbtx -- [--check] | url <urltestdata.json> | cookie <parser.ts> <examples.ts> <bsd-examples.ts> | llhttp <checkout> | wpt-fetch <checkout>",
+        "usage: moon run scripts/gen_vectors.mbtx -- [--check] | url <urltestdata.json> | cookie <parser.ts> <examples.ts> <bsd-examples.ts> | llhttp <checkout> | wpt-fetch <checkout> | sf <checkout>",
       )
       @env.exit(2)
     }
