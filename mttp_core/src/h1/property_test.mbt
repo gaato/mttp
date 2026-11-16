@@ -335,12 +335,15 @@ fn without_framing(headers : @mttp_core.Headers) -> @mttp_core.Headers {
 ///|
 /// Limits for reading back what the writer wrote. The writer may add a field
 /// (`Content-Length: 0`, `Connection: close`) and a byte per field (`a:b`
-/// becomes `a: b`), so a head at the default limits can come back over
-/// them; the property is about the language, not the bounds. fuzz/h1.mbt
-/// found a POST with exactly 100 fields that this used to refuse.
+/// becomes `a: b`, in the head and in trailers), so a head or a trailer
+/// section at the default limits can come back over them; the property is
+/// about the language, not the bounds. fuzz/h1.mbt found a POST with exactly
+/// 100 fields that this used to refuse. The growth is at most a field and
+/// a byte per field (100 by default), well inside these bounds.
 let read_back_limits : @h1.Limits = {
   ..@h1.Limits::default(),
   max_head_bytes: 65536,
+  max_trailer_bytes: 65536,
   max_headers: 1000,
 }
 
@@ -471,4 +474,24 @@ test "the rewrite property reads back past limits the writer may cross" {
   }
   wire.write_bytes(b"\r\n")
   assert_true(rewrite_request(wire.to_bytes()))
+}
+
+///|
+test "the rewrite property reads back a trailer section at its byte limit" {
+  // A trailer section of exactly 16,384 bytes (`x:`, 16,378 octets, CRLF,
+  // CRLF) comes back one byte longer as `x: ...`.
+  let limit = @h1.Limits::default().max_trailer_bytes
+  let wire = fn(value_bytes : Int32) -> Bytes {
+    let out = Buffer()
+    out.write_bytes(
+      b"POST / HTTP/1.1\r\nHost: h\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n0\r\nx:",
+    )
+    out.write_bytes(Bytes::make(value_bytes, b'a'))
+    out.write_bytes(b"\r\n\r\n")
+    out.to_bytes()
+  }
+  let at_limit = wire(limit - 6)
+  assert_true(read_request([at_limit]) is Ok(_))
+  assert_eq(read_request([wire(limit - 5)]), Err(HeadTooLarge))
+  assert_true(rewrite_request(at_limit))
 }

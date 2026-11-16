@@ -203,12 +203,14 @@ fn rewrite(
   response : Bool,
   meth : @mttp_core.Method,
 ) -> Unit {
-  // The writer may add a field and a byte per field (property_test.mbt's
-  // read_back_limits), so a head at the default limits can come back over
-  // them: read it back with room to spare.
+  // The writer may add a field and a byte per field, in the head and in
+  // trailers (property_test.mbt's read_back_limits), so a head or trailer
+  // section at the default limits can come back over them: read it back
+  // with room to spare.
   let limits = {
     ..@h1.Limits::default(),
     max_head_bytes: 65536,
+    max_trailer_bytes: 65536,
     max_headers: 1000,
   }
   let body = encode_body(message)
