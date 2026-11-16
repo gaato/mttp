@@ -3,8 +3,10 @@ package "gaato/mttp_core/router"
 
 import {
   "gaato/mttp_core",
+  "gaato/mttp_core/cookie",
   "gaato/mttp_core/endpoint",
   "gaato/mttp_core/rt",
+  "moonbitlang/core/debug",
   "moonbitlang/core/json",
 }
 
@@ -19,13 +21,31 @@ pub fn hide_endpoints_with_auth(@endpoint.FailureContext) -> @mttp_core.Response
 
 pub fn problem(Int32, String, errors? : @json.Json) -> @mttp_core.Response
 
+pub fn rate_limit(key~ : (@mttp_core.Request) -> String?, limit~ : Int32, window_ms~ : Int32, clock~ : &@rt.Clock, max_keys? : Int32) -> async (@mttp_core.Request, async (@mttp_core.Request) -> @mttp_core.Response noraise) -> @mttp_core.Response noraise
+
 pub fn request_id(generate? : () -> String) -> async (@mttp_core.Request, async (@mttp_core.Request) -> @mttp_core.Response noraise) -> @mttp_core.Response noraise
 
 pub fn same_origin(allowed_origins? : Array[String]) -> async (@mttp_core.Request, async (@mttp_core.Request) -> @mttp_core.Response noraise) -> @mttp_core.Response noraise
 
+pub fn secure_headers(hsts? : Int32, content_type_options? : Bool, frame_options? : FrameOptions, referrer_policy? : String, csp? : String) -> async (@mttp_core.Request, async (@mttp_core.Request) -> @mttp_core.Response noraise) -> @mttp_core.Response noraise
+
+pub let session : @mttp_core.AttributeKey[Session]
+
+pub fn sessions(sign~ : (Bytes) -> Bytes, verify~ : (Bytes, Bytes) -> Bool, cookie_name? : String, max_age_ms~ : Int32, clock~ : &@rt.Clock, secure? : Bool, same_site? : @cookie.SameSite, max_bytes? : Int32) -> async (@mttp_core.Request, async (@mttp_core.Request) -> @mttp_core.Response noraise) -> @mttp_core.Response noraise
+
 // Errors
 
 // Types and methods
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum FrameOptions {
+  Deny
+  SameOrigin
+}
+pub fn FrameOptions::equal(Self, Self) -> Bool
+pub fn FrameOptions::not_equal(Self, Self) -> Bool
+pub fn FrameOptions::to_repr(Self) -> @debug.Repr
+
 pub struct Router {
   // private fields
 }
@@ -48,9 +68,20 @@ pub(all) struct ServerOptions {
 }
 pub fn ServerOptions::default() -> Self
 
+pub struct Session {
+  // private fields
+}
+pub fn Session::changed(Self) -> Bool
+pub fn Session::clear(Self) -> Unit
+pub fn Session::get(Self, String) -> String?
+pub fn Session::remove(Self, String) -> Unit
+pub fn Session::set(Self, String, String) -> Unit
+
 // Type aliases
 pub using @endpoint {type FailureContext}
 
 pub type Middleware = async (@mttp_core.Request, async (@mttp_core.Request) -> @mttp_core.Response noraise) -> @mttp_core.Response noraise
+
+pub using @cookie {type SameSite}
 
 // Traits

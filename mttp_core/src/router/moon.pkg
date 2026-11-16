@@ -4,6 +4,13 @@ import {
   "gaato/mttp_core/endpoint",
   "gaato/mttp_core/schema",
   "gaato/mttp_core/ws",
+  "gaato/mttp_core/cookie",
+  "gaato/mttp_core/sf",
+  "gaato/mttp_core/internal/window",
+  "moonbitlang/core/encoding/base64",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/json",
+  "moonbitlang/core/string",
 }
 
 import {

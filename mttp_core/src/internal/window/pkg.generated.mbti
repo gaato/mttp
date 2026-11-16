@@ -1,0 +1,42 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/internal/window"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn delay_until(Int64, Int64) -> Int32
+
+pub fn fixed_step(Int64, limit~ : Int32, window_ms~ : Int32, start~ : Int64?, count~ : Int32) -> FixedStep
+
+pub fn saturating_add_i64(Int64, Int64) -> Int64
+
+pub fn saturating_add_ms(Int64, Int32) -> Int64
+
+pub fn sliding_step(Int64, limit~ : Int32, window_ms~ : Int32, Sliding?) -> SlidingStep
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub enum FixedStep {
+  Admit(start~ : Int64, count~ : Int32)
+  Wait(Int32)
+}
+pub fn FixedStep::equal(Self, Self) -> Bool
+pub fn FixedStep::not_equal(Self, Self) -> Bool
+pub fn FixedStep::to_repr(Self) -> @debug.Repr
+
+pub struct Sliding {
+  // private fields
+}
+
+pub enum SlidingStep {
+  Admit(Sliding, remaining~ : Int32, reset_ms~ : Int32)
+  Wait(Sliding, Int32)
+}
+
+// Type aliases
+
+// Traits

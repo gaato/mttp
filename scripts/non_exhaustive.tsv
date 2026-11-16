@@ -5,6 +5,7 @@
 # a row whose package or enum does not exist fails, so add a row together
 # with the enum.
 package	enum
+gaato/mttp_core/router	FrameOptions
 gaato/mttp/trust	Trust
 gaato/mttp/codings	Coding
 gaato/mttp/codings	Pulled

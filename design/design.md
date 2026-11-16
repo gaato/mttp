@@ -260,12 +260,13 @@ gaato/mttp_core  (core only; wasm-gc, wasm, js, native)        (A ──► B me
    sse, multipart, cookie ──► root (+ rt for cookie)
    client/retry ──► root
    client ──► root, rt, sse, client/retry
-   client/ratelimit ──► client, rt
+   internal/window             (core only; clock-free window arithmetic)
+   client/ratelimit ──► client, rt, internal/window
    client/cookies ──► client, cookie
    testing ──► root, client
    schema ──► jsonkit, internal/*                           (no HTTP vocabulary)
    endpoint ──► root, schema, client
-   router ──► root, schema, client, endpoint
+   router ──► root, schema, client, endpoint, rt, ws, cookie, sf, internal/window
    endpoint/testkit ──► root, client, endpoint, router, testing
    apispec                     (core json only)
    openapi ──► root, schema, endpoint, apispec

@@ -47,6 +47,11 @@ never does.
 - Bounded streaming multipart/form-data reader and synchronous parser, typed
   multipart endpoint fields and file streams, and OpenAPI per-part encoding.
 
+- Opt-in router `rate_limit` (exact sliding windows, bounded LRU keys and
+  draft-ietf-httpapi-ratelimit-headers-11 fields), `secure_headers` and signed
+  cookie `sessions`, with a typed mutable `session` attribute. Signing and
+  verification are caller-supplied; no crypto dependency is added. Window
+  arithmetic is shared internally with the unchanged client rate limiter.
 - `connection_scheme`, a request attribute: the scheme the connection was
   accepted under (`http` or `https`), never the request target's. h1server
   sets it from its `scheme`, Router-as-Backend from the in-process

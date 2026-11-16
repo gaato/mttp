@@ -2,6 +2,7 @@ import {
   "gaato/mttp_core",
   "gaato/mttp_core/rt",
   "gaato/mttp_core/client",
+  "gaato/mttp_core/internal/window",
   "moonbitlang/core/debug",
 }
 

@@ -1,0 +1,2 @@
+// Window arithmetic shared by the client limiter and the server's rate_limit:
+// pure functions of the instant and recorded admissions, no clock, no maps.

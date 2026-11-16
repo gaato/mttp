@@ -27,15 +27,16 @@ fn global_step(
     return Wait(delay_until(until, now))
   }
   guard window is Some(window) else { return Pass }
-  let (start, count) = match start {
-    Some(start) if now < saturating_add_ms(start, window.window_ms) =>
-      (start, count)
-    _ => (now, 0)
-  }
-  if count < window.limit {
-    Admit(start~, count=count + 1)
-  } else {
-    Wait(delay_until(saturating_add_ms(start, window.window_ms), now))
+  match
+    @window.fixed_step(
+      now,
+      limit=window.limit,
+      window_ms=window.window_ms,
+      start~,
+      count~,
+    ) {
+    Admit(start~, count~) => Admit(start~, count~)
+    Wait(delay) => Wait(delay)
   }
 }
 
@@ -72,25 +73,6 @@ fn pace_step(next_admit_at : Int64?, now : Int64) -> Int32 {
   match next_admit_at {
     Some(at) => delay_until(at, now)
     None => 0
-  }
-}
-
-///|
-/// How long to sleep from `now` until `until`, saturating at the longest sleep
-/// a clock takes instead of wrapping when the span overflows.
-fn delay_until(until : Int64, now : Int64) -> Int32 {
-  if until <= now {
-    return 0
-  }
-  let delta = if now < 0L && until > 9223372036854775807L + now {
-    9223372036854775807L
-  } else {
-    until - now
-  }
-  if delta > 2147483647L {
-    2147483647
-  } else {
-    delta.to_int()
   }
 }
 
@@ -139,15 +121,5 @@ fn release_effect(
 }
 
 ///|
-fn saturating_add_ms(now : Int64, milliseconds : Int32) -> Int64 {
-  saturating_add_i64(now, milliseconds.to_int64())
-}
-
-///|
-fn saturating_add_i64(left : Int64, right : Int64) -> Int64 {
-  if right > 0L && left > 9223372036854775807L - right {
-    9223372036854775807L
-  } else {
-    left + right
-  }
-}
+// The window arithmetic is shared with the server's rate_limit middleware.
+using @window {delay_until, saturating_add_ms, saturating_add_i64}
