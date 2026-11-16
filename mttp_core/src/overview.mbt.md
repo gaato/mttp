@@ -167,6 +167,8 @@ The router is itself a `Backend`, as above, and its `handler()` is what
 | `gaato/mttp_core/sse` | A bounded `text/event-stream` parser, reader and encoder |
 | `gaato/mttp_core/multipart` | A `multipart/form-data` writer with streamed parts |
 | `gaato/mttp_core/cookie` | An RFC 6265 cookie jar on an injected clock |
+| `gaato/mttp_core/cache` | RFC 9111 freshness and age, and RFC 5861's stale-while-revalidate and stale-if-error, as pure functions |
+| `gaato/mttp_core/dictionary` | RFC 9842 compression dictionaries: `Use-As-Dictionary`, and a bounded, partitioned client store that chooses which dictionary a request offers |
 | `gaato/mttp_core/urlpattern` | WHATWG URL patterns without regular expressions, matched in linear time, for RFC 9842's `match` |
 | `gaato/mttp_core/sf` | RFC 9651 Structured Field Values: parsing and serializing Lists, Dictionaries and Items |
 | `gaato/mttp_core/jsonkit` | `Presence`, an object builder, field decoders and open enums for JSON models |

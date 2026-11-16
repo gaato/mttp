@@ -1,0 +1,63 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/dictionary"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub const DEFAULT_MAX_DICTIONARY_BYTES : Int32 = 4194304
+
+pub const DEFAULT_MAX_ENTRIES : Int32 = 64
+
+pub const DEFAULT_MAX_TOTAL_BYTES : Int32 = 33554432
+
+pub const MAX_HEADER_BYTES : Int32 = 8192
+
+pub const MAX_ID_LENGTH : Int32 = 1024
+
+pub const MAX_MATCH_LENGTH : Int32 = 1024
+
+pub fn is_trustworthy(@mttp_core.Url) -> Bool
+
+// Errors
+
+// Types and methods
+pub struct Dictionary {
+  url : @mttp_core.Url
+  directive : UseAsDictionary
+  content : Bytes
+  hash : Bytes
+  partition : String
+  // private fields
+}
+pub fn Dictionary::available_dictionary(Self) -> String
+pub fn Dictionary::dictionary_id(Self) -> String?
+
+pub struct DictionaryStore {
+  // private fields
+}
+pub fn DictionaryStore::clear(Self, partition? : String) -> Unit
+pub fn DictionaryStore::find(Self, BytesView, partition? : String) -> Dictionary?
+pub fn DictionaryStore::new(sha256~ : (BytesView) -> Bytes, clock~ : &@rt.Clock, max_entries? : Int32, max_dictionary_bytes? : Int32, max_total_bytes? : Int32) -> Self
+pub fn DictionaryStore::offer(Self, @mttp_core.Url, @mttp_core.Headers, Bytes, request_time_ms~ : Int64, partition? : String) -> Bool
+pub fn DictionaryStore::select(Self, @mttp_core.Url, dest? : String, partition? : String) -> Dictionary?
+pub fn DictionaryStore::size(Self) -> (Int32, Int64)
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UseAsDictionary {
+  match_ : String
+  match_dest : Array[String]
+  id : String
+}
+pub fn UseAsDictionary::equal(Self, Self) -> Bool
+pub fn UseAsDictionary::not_equal(Self, Self) -> Bool
+pub fn UseAsDictionary::parse(ArrayView[String]) -> Self?
+pub fn UseAsDictionary::to_header(Self) -> String?
+pub fn UseAsDictionary::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

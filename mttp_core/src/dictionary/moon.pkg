@@ -1,0 +1,14 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/cache",
+  "gaato/mttp_core/rt",
+  "gaato/mttp_core/sf",
+  "gaato/mttp_core/urlpattern",
+  "moonbitlang/core/debug",
+}
+
+import {
+  "gaato/mttp_core/sim",
+  "moonbitlang/core/encoding/base64",
+  "moonbitlang/core/encoding/utf8",
+} for "test"

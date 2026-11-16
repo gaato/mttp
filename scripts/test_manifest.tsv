@@ -205,3 +205,11 @@ gaato/mttp_core	gaato/mttp_core/urlpattern	js	24
 gaato/mttp_core	gaato/mttp_core/urlpattern	native	24
 gaato/mttp_core	gaato/mttp_core/urlpattern	wasm	24
 gaato/mttp_core	gaato/mttp_core/urlpattern	wasm-gc	24
+gaato/mttp_core	gaato/mttp_core/cache	js	8
+gaato/mttp_core	gaato/mttp_core/cache	native	8
+gaato/mttp_core	gaato/mttp_core/cache	wasm	8
+gaato/mttp_core	gaato/mttp_core/cache	wasm-gc	8
+gaato/mttp_core	gaato/mttp_core/dictionary	js	11
+gaato/mttp_core	gaato/mttp_core/dictionary	native	11
+gaato/mttp_core	gaato/mttp_core/dictionary	wasm	11
+gaato/mttp_core	gaato/mttp_core/dictionary	wasm-gc	11

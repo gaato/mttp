@@ -14,6 +14,17 @@ never does.
   including failure and cancellation. Successful upgrades retain ownership
   until their callback ends instead of acknowledging an HTTP completion.
 
+- `cache`: RFC 9111 section 4.2 as pure functions: `CacheControl::parse`,
+  `freshness_lifetime`, `current_age` and `Freshness`, which says whether a
+  stored response is fresh and whether RFC 5861's stale-while-revalidate
+  or stale-if-error lets it be served stale.
+
+- `dictionary`: RFC 9842's client side without I/O. `UseAsDictionary`
+  reads and writes the header; `DictionaryStore` keeps the dictionaries
+  fresh responses name, per partition and bounded (64 dictionaries, 4 MiB
+  each, 32 MiB in all), and chooses the one a request offers as section
+  2.2.3 says. The caller passes SHA-256.
+
 - `urlpattern`: WHATWG URL patterns, `UrlPattern::parse` and
   `UrlPattern::new`, with `matches` and `matches_init`, for RFC 9842's
   `match`. Every component, named groups, wildcards and modifiers follow

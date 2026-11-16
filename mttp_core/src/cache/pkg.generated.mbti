@@ -1,0 +1,65 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/cache"
+
+import {
+  "gaato/mttp_core",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub const MAX_DELTA_SECONDS : Int64 = 2147483648
+
+pub fn current_age(@mttp_core.Headers, request_time_ms~ : Int64, response_time_ms~ : Int64, now_ms~ : Int64) -> Int64
+
+pub fn delta_seconds(StringView) -> Int64?
+
+pub fn freshness_lifetime(@mttp_core.Headers, shared~ : Bool, response_time_ms~ : Int64) -> Int64?
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct CacheControl {
+  max_age : Int64?
+  s_maxage : Int64?
+  no_cache : Bool
+  no_store : Bool
+  is_private : Bool
+  is_public : Bool
+  must_revalidate : Bool
+  proxy_revalidate : Bool
+  immutable : Bool
+  stale_while_revalidate : Int64?
+  stale_if_error : Int64?
+  max_stale : Int64?
+  max_stale_any : Bool
+  min_fresh : Int64?
+  only_if_cached : Bool
+}
+pub fn CacheControl::equal(Self, Self) -> Bool
+pub fn CacheControl::not_equal(Self, Self) -> Bool
+pub fn CacheControl::parse(ArrayView[String]) -> Self
+pub fn CacheControl::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Freshness {
+  cache_control : CacheControl
+  lifetime : Int64?
+  age : Int64
+  shared : Bool
+}
+pub fn Freshness::equal(Self, Self) -> Bool
+pub fn Freshness::is_fresh(Self) -> Bool
+pub fn Freshness::may_serve_on_error(Self, request? : CacheControl) -> Bool
+pub fn Freshness::may_serve_while_revalidating(Self) -> Bool
+pub fn Freshness::not_equal(Self, Self) -> Bool
+pub fn Freshness::of(@mttp_core.Headers, shared~ : Bool, request_time_ms~ : Int64, response_time_ms~ : Int64, now_ms~ : Int64) -> Self
+pub fn Freshness::reusable(Self) -> Bool
+pub fn Freshness::stale_forbidden(Self) -> Bool
+pub fn Freshness::staleness(Self) -> Int64
+pub fn Freshness::storable(Self) -> Bool
+pub fn Freshness::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
