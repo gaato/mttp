@@ -265,6 +265,7 @@ pub struct EndpointDoc {
   info : Info
   max_body_bytes : Int32?
   method_set_twice : Bool
+  websocket : WsDoc?
 }
 
 ///|
@@ -283,6 +284,7 @@ pub fn[S, I, E, O, M] Endpoint::doc(
     info: { ..self.info, tags: self.info.tags.copy(), },
     max_body_bytes: self.max_body_bytes,
     method_set_twice: self.method_set_twice,
+    websocket: None,
   }
 }
 
@@ -290,6 +292,30 @@ pub fn[S, I, E, O, M] Endpoint::doc(
 /// Per-endpoint problems; check_definitions adds cross-endpoint ones.
 pub fn EndpointDoc::problems(self : EndpointDoc) -> Array[String] {
   let out = []
+  if self.websocket is Some(ws) {
+    if ws.incoming is None || ws.outgoing is None {
+      out.push("WebSocket endpoint requires incoming and outgoing codecs")
+    }
+    if self.meth != Some(Get) {
+      out.push("WebSocket handshake must use GET")
+    }
+    let seen : Map[String, Bool] = Map([])
+    for protocol in ws.subprotocols {
+      if protocol.is_empty() ||
+        !protocol
+        .iter()
+        .all(c => {
+          (c >= 'a' && c <= 'z') ||
+          (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') ||
+          "!#$%&'*+-.^_`|~".contains(c.to_string())
+        }) ||
+        seen.contains(protocol) {
+        out.push("invalid or duplicate WebSocket subprotocol")
+      }
+      seen[protocol] = true
+    }
+  }
   if self.meth is None {
     out.push("no method")
   }
@@ -416,7 +442,8 @@ pub fn EndpointDoc::problems(self : EndpointDoc) -> Array[String] {
         )
       }
     }
-    if variant.status < 200 || variant.status > 599 {
+    if (variant.status < 200 || variant.status > 599) &&
+      !(variant.status == 101 && self.websocket is Some(_)) {
       out.push("response status must be between 200 and 599")
     }
     if (variant.status == 204 || variant.status == 304) &&
@@ -464,6 +491,13 @@ pub fn check_definitions(
       })
     }
     let schema_problems = []
+    if d.websocket is Some(ws) {
+      for schema in [ws.incoming, ws.outgoing] {
+        if schema is Some(schema) {
+          ignore(schema.reference(schemas, problems=schema_problems))
+        }
+      }
+    }
     for atom in [..d.security, ..d.inputs] {
       ignore(atom.schema.reference(schemas, problems=schema_problems))
     }

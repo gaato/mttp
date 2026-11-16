@@ -13,6 +13,12 @@ never does.
   accepted under (`http` or `https`), never the request target's. h1server
   sets it from its `scheme`, Router-as-Backend from the in-process
   request's scheme; `connection_scheme_of` normalizes a scheme to it.
+- `endpoint.WsEndpoint`, message codecs and `TypedSession`: one definition
+  serves a typed handler, connects through an injected runtime connector,
+  runs through Router's byte pair and pairs with a scripted peer in testkit.
+  Router docs retain message schemas; OpenAPI projects the GET handshake,
+  101 response, inputs, security and `x-websocket.subprotocols`.
+  Portable `ws.server_handler` upgrades use each server adapter's ports.
 
 - `h1server.serve_conn(on_response_complete~)` acknowledges each returned
   HTTP response after writing, body cleanup and unread-request draining,

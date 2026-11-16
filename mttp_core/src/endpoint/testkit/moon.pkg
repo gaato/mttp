@@ -4,6 +4,8 @@ import {
   "gaato/mttp_core/endpoint",
   "gaato/mttp_core/router",
   "gaato/mttp_core/testing",
+  "gaato/mttp_core/sim",
+  "gaato/mttp_core/ws",
 }
 
 import {

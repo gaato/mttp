@@ -6,6 +6,8 @@ import {
   "gaato/mttp_core/client",
   "gaato/mttp_core/rt",
   "gaato/mttp_core/schema",
+  "gaato/mttp_core/ws",
+  "gaato/mttp_core/ws/handshake",
   "moonbitlang/core/debug",
 }
 
@@ -92,6 +94,14 @@ pub fn text_out(status? : Int32) -> Out[String, @client.Buffered]
 
 pub fn unit() -> Input[Unit]
 
+pub fn ws_binary() -> WsCodec[Bytes]
+
+pub fn ws_endpoint() -> WsEndpoint[Unit, Unit, Unit, Unit]
+
+pub fn[T] ws_json(@schema.JsonCodec[T]) -> WsCodec[T]
+
+pub fn ws_text() -> WsCodec[String]
+
 // Errors
 #derive(@debug.Debug)
 pub(all) suberror DefinitionError {
@@ -108,6 +118,13 @@ pub(all) suberror InputErrors {
 pub fn InputErrors::output(Self, &Logger) -> Unit
 pub fn InputErrors::to_string(Self) -> String
 pub impl Show for InputErrors
+
+#derive(@debug.Debug)
+pub(all) suberror WsReceiveError {
+  SessionFailure(@ws.WsError)
+  MessageDecode(code~ : @ws.CloseCode, failure~ : @schema.DecodeFailure)
+}
+pub fn WsReceiveError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
 pub struct Atom {
@@ -204,6 +221,7 @@ pub struct EndpointDoc {
   info : Info
   max_body_bytes : Int32?
   method_set_twice : Bool
+  websocket : WsDoc?
 }
 pub fn EndpointDoc::problems(Self) -> Array[String]
 
@@ -368,6 +386,16 @@ pub struct Staged[T] {
 pub fn[T] Staged::after_body((BodyValue) -> T raise InputErrors) -> Self[T]
 pub fn[T] Staged::ready(T) -> Self[T]
 
+pub struct TypedSession[R, W] {
+  // private fields
+}
+pub fn[R, W] TypedSession::abort(Self[R, W]) -> Unit
+pub async fn[R, W] TypedSession::close(Self[R, W], @ws.CloseFrame) -> Unit noraise
+pub fn[R, W] TypedSession::new(&@ws.Session, incoming~ : WsCodec[R], outgoing~ : WsCodec[W]) -> Self[R, W]
+pub async fn[R, W] TypedSession::recv(Self[R, W]) -> R raise WsReceiveError
+pub async fn[R, W] TypedSession::send(Self[R, W], W) -> Unit raise @ws.WsError
+pub fn[R, W] TypedSession::subprotocol(Self[R, W]) -> String?
+
 pub struct Variant[T] {
   // private fields
 }
@@ -390,6 +418,45 @@ pub struct VariantDoc {
 }
 pub fn VariantDoc::new(Int32, media_type? : String, schema? : @schema.Schema, item_schema? : @schema.Schema, headers? : Array[String], description? : String, header_schemas? : Map[String, @schema.Schema], dynamic_status? : Bool, dynamic_media? : Bool) -> Self
 
+pub struct WsCodec[T] {
+  // private fields
+}
+pub fn[T] WsCodec::schema(Self[T]) -> @schema.Schema
+
+#non_exhaustive
+#derive(@debug.Debug)
+pub(all) enum WsConnectFailure {
+  InvalidDefinition(Array[DefinitionProblem])
+  InvalidHandshakeInput(String)
+  ConnectFailed(@ws.WsError)
+}
+pub fn WsConnectFailure::to_repr(Self) -> @debug.Repr
+
+pub struct WsDoc {
+  incoming : @schema.Schema?
+  outgoing : @schema.Schema?
+  subprotocols : Array[String]
+}
+
+pub struct WsEndpoint[S, I, In, Out] {
+  // private fields
+}
+pub fn[S, I, In, Out] WsEndpoint::client_session(Self[S, I, In, Out], &@ws.Session) -> TypedSession[Out, In] raise DefinitionError
+pub async fn[S, I, In, Out] WsEndpoint::connect(Self[S, I, In, Out], async (@mttp_core.Request, Array[String]) -> &@ws.Session raise @ws.WsError, S, I) -> Result[TypedSession[Out, In], WsConnectFailure]
+pub fn[S, I, In, Out] WsEndpoint::doc(Self[S, I, In, Out]) -> EndpointDoc
+pub fn[S, I, In, Out] WsEndpoint::get(Self[S, I, In, Out], String) -> Self[S, I, In, Out]
+pub fn[S, I2, In, Out] WsEndpoint::input(Self[S, Unit, In, Out], Input[I2]) -> Self[S, I2, In, Out]
+pub fn[S, I, A, B, In, Out] WsEndpoint::messages(Self[S, I, A, B], incoming~ : WsCodec[In], outgoing~ : WsCodec[Out]) -> Self[S, I, In, Out]
+pub fn[S, I, In, Out] WsEndpoint::operation_id(Self[S, I, In, Out], String) -> Self[S, I, In, Out]
+pub fn[S, I, In, Out] WsEndpoint::origins(Self[S, I, In, Out], @handshake.OriginPolicy) -> Self[S, I, In, Out]
+pub fn[S2, I, In, Out] WsEndpoint::security(Self[Unit, I, In, Out], Input[S2]) -> Self[S2, I, In, Out]
+pub fn[S, I, In, Out, P] WsEndpoint::serve(Self[S, I, In, Out], async (S) -> Result[P, @mttp_core.Response], async (P, I, TypedSession[In, Out]) -> Unit) -> ServerEndpoint
+pub fn[I, In, Out] WsEndpoint::serve_public(Self[Unit, I, In, Out], async (I, TypedSession[In, Out]) -> Unit) -> ServerEndpoint
+pub fn[S, I, In, Out] WsEndpoint::subprotocols(Self[S, I, In, Out], Array[String]) -> Self[S, I, In, Out]
+pub fn[S, I, In, Out] WsEndpoint::summary(Self[S, I, In, Out], String) -> Self[S, I, In, Out]
+pub fn[S, I, In, Out] WsEndpoint::tag(Self[S, I, In, Out], String) -> Self[S, I, In, Out]
+
 // Type aliases
+pub type WsConnector = async (@mttp_core.Request, Array[String]) -> &@ws.Session raise @ws.WsError
 
 // Traits

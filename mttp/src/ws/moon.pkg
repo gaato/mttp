@@ -1,5 +1,8 @@
 import {
   "gaato/mttp_core",
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/rt",
+  "moonbitlang/core/env",
   "gaato/mttp_core/ws" @core_ws,
   "gaato/mttp_core/ws/handshake",
 }
@@ -11,7 +14,6 @@ import {
 
 #cfg(not(target="js"))
 import {
-  "gaato/mttp_core/rt",
   "gaato/mttp/runtime",
 }
 
@@ -19,13 +21,19 @@ supported_targets = "native+wasm+js"
 
 import {
   "gaato/mttp_core/ws/handshake",
+  "gaato/mttp_core/schema",
+  "gaato/mttp_core/router",
+  "gaato/mttp_core/endpoint/testkit",
+  "gaato/mttp_core/openapi",
+  "gaato/mttp_core/apispec",
+  "gaato/mttp_core/driver",
+  "gaato/mttp_core/sim",
 } for "test"
 
 #cfg(not(target="js"))
 import {
   "gaato/mttp_core/client",
   "gaato/mttp/backend",
-  "moonbitlang/core/env",
 }
 
 import {
@@ -37,13 +45,14 @@ import {
   "moonbitlang/core/async/socket",
   "moonbitlang/core/encoding/utf8",
   "gaato/mttp_core/h1client",
-  "gaato/mttp_core/sim",
+  "gaato/mttp/server",
 } for "test"
 
 options(
   "allow-experimental-packages": [
     "moonbitlang/core/async",
     "moonbitlang/core/async/socket",
+    "gaato/mttp_core/driver",
   ],
   targets: {
     "socket_test.mbt": [ "native", "wasm" ],

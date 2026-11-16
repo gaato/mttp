@@ -1,5 +1,25 @@
 # gaato/mttp/ws
 
+`connector(base_url~, backend?)` adapts `connect` for a portable typed
+`WsEndpoint`. Pass a Router backend for in-process calls; its real byte codec
+runs on all targets, including JS. A supplied backend remains caller-owned.
+Socket and fetch servers accept `WsEndpoint.serve(...)` in the usual Router;
+their adapters supply the Session after the handshake succeeds.
+
+```mbt check
+///|
+test "typed connector definition" {
+  let chat = @endpoint.ws_endpoint()
+    .get("/chat")
+    .messages(incoming=@endpoint.ws_text(), outgoing=@endpoint.ws_text())
+  let connect = @ws.connector(base_url="ws://example.test")
+  let _ : async () -> Result[
+    @endpoint.TypedSession[String, String],
+    @endpoint.WsConnectFailure,
+  ] = () => chat.connect(connect, (), ())
+}
+```
+
 `upgrade` checks a handler's WebSocket handshake and returns its 400/403/426
 refusal or a 101 carrying `@rt.upgrade`. The handler receives a server-role
 session after the HTTP reader is joined. SameOrigin is the default; the first

@@ -36,6 +36,7 @@ gaato/mttp_core/endpoint	Location
 gaato/mttp_core/endpoint	BodyValue
 gaato/mttp_core/endpoint	Seg
 gaato/mttp_core/endpoint	FailureStage
+gaato/mttp_core/endpoint	WsConnectFailure
 gaato/mttp_core/ws/frame	FrameErrorKind
 gaato/mttp_core/ws	CloseCode
 gaato/mttp_core/ws	WsErrorKind

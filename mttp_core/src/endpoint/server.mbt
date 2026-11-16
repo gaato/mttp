@@ -84,6 +84,10 @@ pub fn ServerEndpoint::doc(self : ServerEndpoint) -> EndpointDoc {
     outputs: self.doc.outputs.copy(),
     errors: self.doc.errors.copy(),
     info: { ..self.doc.info, tags: self.doc.info.tags.copy(), },
+    websocket: self.doc.websocket.map(ws => {
+      ..ws,
+      subprotocols: ws.subprotocols.copy(),
+    }),
   }
 }
 
@@ -187,8 +191,8 @@ fn[S, I, E, O, P, M] Endpoint::pipeline(
     @mttp_core.Response,
   ],
   logic : async (@mttp_core.Request, DispatchContext, P, I) -> @mttp_core.Response,
+  doc~ : EndpointDoc = self.doc(),
 ) -> ServerEndpoint {
-  let doc = self.doc()
   let streamed = self.input.atoms
     .iter()
     .any(a => a.location is Body(streamed=true, ..))

@@ -243,6 +243,10 @@ pub fn to_openapi(
       // Explicit [] on public operations overrides any document-level
       // security subsequently added by the application. None would inherit.
       security~,
+      extensions=match doc.websocket {
+        Some(ws) => { "x-websocket": { "subprotocols": Json(ws.subprotocols) } }
+        None => Map([])
+      },
     )
     let meth = doc.meth.unwrap_or(Get).to_string().to_lower()
     if !["get", "put", "post", "delete", "options", "head", "patch", "trace"].contains(

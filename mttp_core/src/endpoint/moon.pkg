@@ -4,6 +4,8 @@ import {
   "gaato/mttp_core/client",
   "gaato/mttp_core/rt",
   "gaato/mttp_core/sse",
+  "gaato/mttp_core/ws",
+  "gaato/mttp_core/ws/handshake",
   "moonbitlang/core/debug",
   "moonbitlang/core/queue",
   "moonbitlang/core/encoding/base64",

@@ -232,6 +232,12 @@ async fn Session::respond(
     has_token(response.headers, "connection", "close") ||
     response.attributes.get(@mttp_core.abandon_request_body) == Some(true) ||
     source.expect
+  let response = @ws.prepare_upgrade(
+    response,
+    clock=self.clock,
+    timer=self.wire.timer,
+    coordination=self.coordination,
+  )
   let sent = Ref(false)
   if response.status == 101 &&
     version == Http11 &&

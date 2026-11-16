@@ -2,6 +2,53 @@
 
 Typed endpoints: one definition gives a client call, a server handler and documentation.
 
+`WsEndpoint[S, I, In, Out]` uses the same handshake inputs and security as
+HTTP endpoints. Message directions are relative to the server; a client gets
+`TypedSession[Out, In]`. `ws_json` uses Text messages, `ws_text` plain Text,
+and `ws_binary` Binary. `recv` raises `WsReceiveError`, retaining a transport
+error or a codec failure after sending Close 1007 (contents) or 1003 (type).
+The underlying Session supplies byte limits, send/close deadlines and abort.
+
+```mbt check
+///|
+test "typed WebSocket definition" {
+  let chat = @endpoint.ws_endpoint()
+    .get("/chat/{room}")
+    .input(@endpoint.path("room", @schema.string))
+    .security(@endpoint.bearer())
+    .messages(
+      incoming=@endpoint.ws_json(@schema.jstring),
+      outgoing=@endpoint.ws_json(@schema.jstring),
+    )
+    .subprotocols(["chat.v1"])
+    .operation_id("chat")
+  let server = chat.serve(
+    token => {
+      if token == "ok" {
+        Ok(token)
+      } else {
+        Err(@mttp_core.Response::new(401))
+      }
+    },
+    (_, room, session) => session.send(room + ": " + session.recv()),
+  )
+  assert_eq(server.doc().outputs[0].status, 101)
+  assert_eq(
+    chat.doc().websocket.unwrap().incoming,
+    Some(@schema.jstring.schema()),
+  )
+}
+```
+
+`serve_public` omits authentication. Security and handshake inputs are decoded
+before upgrading. Origins default to SameOrigin; `origins` overrides the
+policy. Missing codecs and conflicts with HTTP GET are definition errors.
+`doc().websocket` keeps message schemas for future AsyncAPI; OpenAPI emits
+only GET, 101 and `x-websocket.subprotocols`, plus inputs and security.
+`connect(connector, credentials, input)` returns a typed session or
+`WsConnectFailure`. Apps supply `gaato/mttp/ws.connector(base_url~, backend?)`;
+core remains free of runtime dependencies. Connect does not retry or redirect.
+
 An endpoint describes its request inputs, its response representations and
 the errors it declares:
 

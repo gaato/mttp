@@ -31,6 +31,21 @@ let host_upgrade : @mttp_core.AttributeKey[Upgrade] = @mttp_core.AttributeKey::n
 )
 
 ///|
+fn host_websocket_upgrade(response : @mttp_core.Response) -> Upgrade? {
+  match response.attributes.get(host_upgrade) {
+    Some(upgrade) => Some(upgrade)
+    None =>
+      response.attributes
+      .get(@ws.server_handler)
+      .map(handler => Upgrade::{
+        limits: @ws.WsLimits::default(),
+        protocol: response.headers.get("sec-websocket-protocol"),
+        handler,
+      })
+  }
+}
+
+///|
 fn Upgrade::respond(
   self : Upgrade,
   request : HostRequest,

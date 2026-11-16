@@ -5,6 +5,13 @@ one, including Router's in-process transport. The caller closes or aborts it.
 `serve_session` runs a server handler on injected Clock/Coordination ports,
 polls a stopping probe every 250 ms and sends Close 1001 during shutdown.
 
+Typed endpoints put their validated handler in `server_handler` on a 101.
+`prepare_upgrade` converts it to `rt.upgrade` using the server's injected
+Clock, Timer and Coordination; an existing explicit byte hand-over wins.
+The h1server and Router adapters do this automatically. JS fetch servers
+instead invoke the same handler with a host Session. Endpoint definitions
+therefore retain no runtime and need no runtime arguments when served.
+
 `gaato/mttp_core/ws` owns complete `Message::Text(String)` and
 `Message::Binary(Bytes)` messages, `Session`, `CloseCode`, `CloseFrame`,
 `WsError`, `WsLimits` and the per-message `Extension` port. HTTP upgrade

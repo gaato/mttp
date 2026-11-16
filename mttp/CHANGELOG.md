@@ -69,6 +69,10 @@ never does.
   take the offered dictionary, `accept_encoding(dictionary=true)` lists
   them, and `ContentEncoder::new(coding, dictionary=)` writes them with a
   `ServerDictionary`.
+- `ws.connector(base_url~, backend?)` adapts the existing native/wasm/JS
+  connect path for typed WebSocket endpoints. JS also accepts a backend
+  carrying a ready session, including Router. The socket and fetch server
+  adapters execute typed endpoints' portable WebSocket handlers.
 
 - The server compresses with zstd too: `compress` and `negotiate_encoding`
   accept `zstd`, and `ContentEncoder::new(Zstd)` encodes at level 3 (a 2 MiB

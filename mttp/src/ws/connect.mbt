@@ -108,11 +108,49 @@ pub async fn connect(
   headers? : @mttp_core.Headers,
   limits~ : @core_ws.WsLimits = @core_ws.WsLimits::default(),
 ) -> &@core_ws.Session raise @core_ws.WsError {
-  if backend is Some(_) || !extensions.is_empty() {
+  if !extensions.is_empty() {
     raise @core_ws.WsError(
       kind=Handshake(status=0),
-      detail="JS host sessions do not support a backend or extensions",
+      detail="JS host sessions do not support extensions",
     )
+  }
+  if backend is Some(backend) {
+    let key = @handshake.new_key(@env.rand)
+    let request = @handshake.client_request(
+      url,
+      key~,
+      subprotocols~,
+      origin?,
+      headers?,
+    )
+    let response = backend.send(request, {
+      timeout_ms: Some(limits.send_timeout_ms),
+      body: Stream(idle_ms=None),
+    }) catch {
+      error =>
+        raise @core_ws.WsError(kind=Transport(error), detail=error.message())
+    }
+    defer response.close()
+    // JS backends (Router or a host adapter) must provide a ready Session.
+    // A byte hand-over cannot be driven by this host path and is reclaimed.
+    defer @rt.close_unclaimed(response.attributes)
+    let session = response.attributes.get(@core_ws.ws_session)
+    errdefer (if session is Some(session) { session.abort() })
+    ignore(
+      @handshake.check_server_response(
+        response,
+        key~,
+        offered_subprotocols=subprotocols,
+        offered_extensions=[],
+      ),
+    )
+    guard session is Some(session) else {
+      raise @core_ws.WsError(
+        kind=Handshake(status=response.status),
+        detail="101 without a WebSocket session",
+      )
+    }
+    return session
   }
   // Reuse the portable request validator before entering a host API.
   let request = @handshake.client_request(

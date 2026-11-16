@@ -2,6 +2,30 @@
 
 Typed endpoint stubs for client tests, and a check of endpoint definitions.
 
+`websocket_pair` pairs an endpoint's typed client with a raw scripted peer,
+using `sim.WebSocketStub`. This runs the message codecs, including Close
+1007/1003 on bad payloads/types. The raw peer can inject malformed messages;
+Router-as-Backend additionally runs HTTP handshakes and the real byte codec.
+
+```mbt check
+///|
+test "scripted typed WebSocket" {
+  let ep = @endpoint.ws_endpoint()
+    .get("/chat")
+    .messages(incoming=@endpoint.ws_text(), outgoing=@endpoint.ws_text())
+  let driver = @driver.Driver::new()
+  let coordination = @sim.SimCoordination::new(driver)
+  let (client, peer) = @testkit.websocket_pair(ep, coordination~)
+  driver.run(() => {
+    client.send("hello")
+    assert_eq(peer.recv(), Text("hello"))
+    peer.send(Text("welcome"))
+    assert_eq(client.recv(), "welcome")
+    client.abort()
+  })
+}
+```
+
 `when_endpoint` adds a typed route to BackendStub. It uses a one-endpoint Router
 to perform actual input decoding and output encoding. Security inputs are
 decoded, but authentication itself is intentionally bypassed. A callback

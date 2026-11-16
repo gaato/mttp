@@ -9,6 +9,8 @@ import {
 // Values
 pub async fn connect(String, backend? : &@mttp_core.Backend, subprotocols? : Array[String], extensions? : Array[String], origin? : String, headers? : @mttp_core.Headers, limits? : @gaato/mttp_core/ws.WsLimits) -> &@gaato/mttp_core/ws.Session raise @gaato/mttp_core/ws.WsError
 
+pub fn connector(base_url~ : String, backend? : &@mttp_core.Backend, limits? : @gaato/mttp_core/ws.WsLimits) -> async (@mttp_core.Request, Array[String]) -> &@gaato/mttp_core/ws.Session raise @gaato/mttp_core/ws.WsError
+
 pub fn upgrade(@mttp_core.Request, origins? : @handshake.OriginPolicy, subprotocols? : Array[String], limits? : @gaato/mttp_core/ws.WsLimits, handler~ : async (&@gaato/mttp_core/ws.Session) -> Unit) -> @mttp_core.Response
 
 // Errors

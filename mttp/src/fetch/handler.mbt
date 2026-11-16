@@ -111,8 +111,7 @@ pub fn fetch_handler(
           _ => return empty_response(400, request)
         }
         let reply = handler(model)
-        if reply.status == 101 &&
-          reply.attributes.get(host_upgrade) is Some(upgrade) {
+        if reply.status == 101 && host_websocket_upgrade(reply) is Some(upgrade) {
           defer reply.close()
           input.close()
           let result = upgrade.respond(

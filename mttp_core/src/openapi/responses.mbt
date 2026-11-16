@@ -142,6 +142,10 @@ fn merge_wildcard_content(
 fn framework_statuses(doc : @endpoint.EndpointDoc) -> Array[Int32] {
   // URL/query validation can fail even on an endpoint without explicit inputs.
   let statuses = [400, 404, 405, 500]
+  if doc.websocket is Some(_) {
+    statuses.push(403)
+    statuses.push(426)
+  }
   let atoms = [..doc.security, ..doc.inputs]
   // Only security-stage authentication failures use 401. The same atom in
   // ordinary inputs fails in the head stage and uses the normal 400 policy.

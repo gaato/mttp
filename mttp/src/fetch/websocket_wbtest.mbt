@@ -89,6 +89,34 @@ async test "Workers Deno Bun and client abort paths request close without a stat
 }
 
 ///|
+async test "Workers Deno and Bun execute portable typed endpoint handlers" {
+  websocket_host_mock.acquire()
+  defer websocket_host_mock.release()
+  let endpoint = @endpoint.ws_endpoint()
+    .get("/ws")
+    .messages(incoming=@endpoint.ws_text(), outgoing=@endpoint.ws_text())
+  let server = endpoint.serve_public((_, session) => session.abort())
+  let adapter = fetch_handler(request => {
+    server.dispatch(request, {}, @endpoint.DispatchContext::new())
+  })
+  let result = abort_host_paths(adapter, () => {
+    @js_async.Promise::from_async(() => {
+      check_local_abort(
+        websocket_connect(
+          "ws://example.test/",
+          [],
+          @mttp_core.Headers::of([]),
+          @ws.WsLimits::default(),
+        ),
+      )
+    })
+  }).wait()
+  assert_eq(
+    result, "deno: no status|bun: no status|workers: no status|client: no status|bun-client: no status|workers-client: no status",
+  )
+}
+
+///|
 async test "Node fetch refuses a validated WebSocket upgrade with 501 without starting the handler" {
   websocket_host_mock.acquire()
   defer websocket_host_mock.release()

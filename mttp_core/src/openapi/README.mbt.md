@@ -1,5 +1,11 @@
 # gaato/mttp_core/openapi
 
+WebSocket endpoint docs project only the handshake GET: 101, declared
+parameters and security, plus `x-websocket: { "subprotocols": [...] }`.
+Message schemas remain in `EndpointDoc.websocket`, including in Router.docs(),
+and are not added to OpenAPI components or responses. This leaves the same
+definition ready for a separate AsyncAPI projection later.
+
 OpenAPI documents projected from endpoint definitions.
 
 `to_openapi` projects checked endpoint definitions onto

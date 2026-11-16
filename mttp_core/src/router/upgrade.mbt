@@ -98,6 +98,13 @@ fn Router::upgrade_response(
   request : @mttp_core.Request,
   response : @mttp_core.Response,
 ) -> @mttp_core.Response raise @mttp_core.TransportError {
+  let response = if self.clock is Some(clock) &&
+    self.timer is Some(timer) &&
+    self.coordination is Some(coordination) {
+    @ws.prepare_upgrade(response, clock~, timer~, coordination~)
+  } else {
+    response
+  }
   guard request.headers.get_all("upgrade").iter().any(v => !v.trim().is_empty()) &&
     request.headers
     .get_all("connection")
