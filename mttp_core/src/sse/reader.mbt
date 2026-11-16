@@ -101,3 +101,20 @@ pub fn SseReader::close(self : SseReader) -> Unit {
     self.source.close()
   }
 }
+
+///|
+/// The stream's last event ID as the parser has it (`SseParser::last_event_id`):
+/// what a reconnecting client sends as `Last-Event-ID`. It covers every event
+/// parsed so far, so it can run ahead of `next_event` when one chunk held
+/// several events; once the queue is drained, as after EOF or a failed
+/// read, it is exactly the id of the last event delivered or skipped.
+pub fn SseReader::last_event_id(self : SseReader) -> String? {
+  self.parser.last_event_id()
+}
+
+///|
+/// The reconnection delay the stream asked for so far
+/// (`SseParser::reconnection_ms`).
+pub fn SseReader::reconnection_ms(self : SseReader) -> Int32? {
+  self.parser.reconnection_ms()
+}

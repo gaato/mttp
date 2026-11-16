@@ -40,6 +40,11 @@ pub(all) enum Kind {
   /// the one the exchange reached, since request bytes may have been
   /// written before the refusal.
   Refused
+  /// A circuit breaker (`@client.CircuitBreaker`) refused the request
+  /// without sending it, because recent requests to its origin failed. It
+  /// comes in phase Pool, so it is unsent, and the retry rules never retry
+  /// it: retrying at once would meet the same open circuit.
+  CircuitOpen
 }
 
 ///|

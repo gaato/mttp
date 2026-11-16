@@ -161,6 +161,167 @@ wrapper:
 - `from_fn` and `from_handler` turn a function or an `@mttp_core.Handler` into a
   backend that validates what it is given.
 
+## Resilience
+
+Three opt-in pieces keep a long-running client working while servers come
+and go. None changes what a `Client` does unless it is used.
+
+### Reconnecting streams
+
+`ReconnectPolicy` says when to reconnect a stream that ended, as data:
+`decide(attempts~, lived_ms~, server_hint_ms?, random~)` returns `Wait(ms)`
+or `GiveUp`, and `next_attempts` gives the count for the next call.
+`ReconnectPolicy::default()` waits from 1 s doubling to 30 s, each wait
+spread over its upper half, never gives up, starts the count again after a
+connection that lived 60 s, and honours a server's requested wait within
+the cap.
+
+`Client::sse_reconnecting(request, receive, policy~, stop~)` runs the
+`EventSource` loop with it: it reads each event-stream connection with
+`@sse.SseReader`, and when one ends or fails it waits per the policy (the
+stream's `retry:` field, or a 408, 429 or 5xx response's `Retry-After`, is
+the server's hint) and sends the request again with `Last-Event-ID` set to
+the stream's last event ID. A 204 stops it, as does a status that sending
+again cannot fix or a 200 that is not `text/event-stream`; it returns how it
+ended as an `SseEnd`. A failure that would recur at once (`TooLarge` for an
+oversized event, `Invalid`, `Closed`), an error from `receive` and
+cancellation are raised.
+
+```mbt check
+///|
+test "an event stream that ends, resumes from its last id and is told to stop" {
+  let ids = []
+  let backend = @client.from_fn((request, _) => {
+    ids.push(request.headers.get("last-event-id"))
+    if ids.length() == 1 {
+      @mttp_core.Response::new(
+        200,
+        headers=@mttp_core.Headers::of([("content-type", "text/event-stream")]),
+        body=Bytes(b"retry: 250\nid: 7\ndata: hello\n\n"),
+      )
+    } else {
+      @mttp_core.Response::new(204)
+    }
+  })
+  let clock = @sim.FakeClock::new()
+  let client = @client.Client::new(backend, clock)
+  let received = []
+  let end = @driver.run_sync(() => {
+    client.sse_reconnecting(@mttp_core.Request::get("https://h.example/feed"), event => {
+      received.push(event.data)
+    })
+  })
+  assert_true(end is NoContent)
+  assert_eq(received, ["hello"])
+  assert_eq(ids, [None, Some("7")])
+  assert_eq(clock.slept(), [250])
+}
+```
+
+A WebSocket application owns its loop, because only it knows what to resend
+after reconnecting; the policy is the same. With `gaato/mttp`'s `@ws.connect`:
+
+```mbt nocheck
+///|
+async fn follow(url : String, clock : &@rt.Clock) -> Unit {
+  let policy = @client.ReconnectPolicy::default()
+  for attempts = 0 {
+    let mut opened : Int64? = None
+    try {
+      let session = @ws.connect(url)
+      opened = Some(clock.now_unix_ms())
+      for ;; {
+        handle(session.recv()) // the application's own work
+      }
+    } catch {
+      _ => () // failed or closed: decide whether to reconnect
+    }
+    let lived_ms = match opened {
+      Some(at) => clock.now_unix_ms() - at
+      None => 0L
+    }
+    match policy.decide(attempts~, lived_ms~, random=@rt.default_random()) {
+      Wait(ms) => clock.sleep(ms)
+      _ => return // GiveUp
+    }
+    continue policy.next_attempts(attempts~, lived_ms~)
+  }
+}
+```
+
+### Circuit breaker
+
+`CircuitBreaker::new(backend, clock~)` keeps one circuit per origin. When at
+least `failure_ratio` (10 %) of at least `min_requests` (100) requests in a
+`window_ms` (30 s) window failed (a transport failure other than `Invalid`,
+or a 502, 503 or 504; never a 4xx), the circuit opens: for `open_ms` (5 s)
+requests fail at once with `TransportError(kind=CircuitOpen, phase=Pool)`,
+unsent, which the retry rules never retry. Then `half_open_probes` (1)
+requests go through: a success closes the circuit, a failure opens it again.
+At most `max_origins` (1024) circuits are kept, the least recently used
+evicted first. Give it to `Client::new` as the backend, so each redirect hop
+and each retry is counted.
+
+```mbt check
+///|
+test "a failing origin is cut off and probed again" {
+  let mut calls = 0
+  let clock = @sim.FakeClock::new()
+  let breaker = @client.CircuitBreaker::new(
+    @client.from_fn((_, _) => {
+      calls += 1
+      @mttp_core.Response::new(if calls == 1 { 503 } else { 200 })
+    }),
+    clock~,
+    min_requests=1,
+  )
+  let client = @client.Client::new(breaker, clock)
+  let get = () => {
+    @driver.run_sync(() => client.send(@client.get("https://h.example/")).status) catch {
+      @mttp_core.TransportError(kind=CircuitOpen, ..) => 0
+      error => abort(error.to_string())
+    }
+  }
+  assert_eq(get(), 503)
+  assert_eq(get(), 0) // open: refused without sending
+  clock.advance(5000)
+  assert_eq(get(), 200) // the probe succeeded: closed again
+  assert_eq(calls, 2)
+}
+```
+
+### Refreshing credentials
+
+`AuthRefresh::new(backend, refresh~, apply~, coordination~)` puts the current
+credentials on every request with `apply`. When one gets a 401, it calls the
+async `refresh` once, shared by every 401 that arrives meanwhile (they wait on
+an `@rt.Signal` from `coordination`), and sends the request once more,
+marked with `auth_refreshed` so it is never refreshed again. A stream body
+that was already sent, or a refresh that raises, returns the original 401.
+
+```mbt check
+///|
+test "an expired token is refreshed once and the request resent" {
+  let token = Ref("old")
+  let seen = []
+  let d = @driver.Driver::new()
+  let backend = @client.AuthRefresh::new(
+    @client.from_fn((request, _) => {
+      let auth = request.headers.get("authorization").unwrap_or("")
+      seen.push(auth)
+      @mttp_core.Response::new(if auth == "Bearer new" { 200 } else { 401 })
+    }),
+    refresh=() => token.val = "new",
+    apply=request => request.bearer(token.val),
+    coordination=@sim.SimCoordination::new(d),
+  )
+  let client = @client.Client::new(backend, @sim.SimClock::new(d))
+  let reply = d.run(() => client.send(@client.get("https://api.example/me")))
+  assert_eq(reply.status, 200)
+  assert_eq(seen, ["Bearer old", "Bearer new"])
+}
+```
+
 ## Helpers
 
 `Paginator` walks cursor-paged APIs with failures as values; `parse_link_next`

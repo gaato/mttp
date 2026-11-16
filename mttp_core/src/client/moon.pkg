@@ -5,6 +5,7 @@ import {
   "gaato/mttp_core/client/retry",
   "gaato/mttp_core/cookie",
   "gaato/mttp_core/sse",
+  "gaato/mttp_core/internal/control",
   "moonbitlang/core/debug",
   "moonbitlang/core/json",
   "moonbitlang/core/encoding/utf8",

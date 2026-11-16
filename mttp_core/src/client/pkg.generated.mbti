@@ -30,6 +30,8 @@ pub fn[T] as_stream(async (@mttp_core.ResponseHead, &@mttp_core.BodyStream) -> T
 
 pub fn as_string() -> ResponsePlan[Result[String, ResponseFailure], Buffered]
 
+pub let auth_refreshed : @mttp_core.AttributeKey[Bool]
+
 pub let final_url : @mttp_core.AttributeKey[String]
 
 pub fn from_fn(async (@mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError, on_close? : () -> Unit) -> &@mttp_core.Backend
@@ -103,6 +105,14 @@ pub(all) enum AttemptResult[T] {
 }
 pub fn[T] AttemptResult::http_outcome(Self[T]) -> @retry.AttemptOutcome
 
+pub struct AuthRefresh {
+  // private fields
+}
+pub fn AuthRefresh::close(Self) -> Unit
+pub fn AuthRefresh::new(&@mttp_core.Backend, refresh~ : async () -> Unit, apply~ : (@mttp_core.Request) -> @mttp_core.Request, coordination~ : &@rt.Coordination) -> Self
+pub async fn AuthRefresh::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
+pub impl @mttp_core.Backend for AuthRefresh
+
 pub(all) struct Buffered {
 }
 #deprecated
@@ -111,12 +121,21 @@ pub fn Buffered::fresh() -> Self
 pub fn Buffered::may_stream(Self) -> Bool
 pub impl ResponseMode for Buffered
 
+pub struct CircuitBreaker {
+  // private fields
+}
+pub fn CircuitBreaker::close(Self) -> Unit
+pub fn CircuitBreaker::new(&@mttp_core.Backend, clock~ : &@rt.Clock, failure_ratio? : Double, min_requests? : Int32, window_ms? : Int32, open_ms? : Int32, half_open_probes? : Int32, max_origins? : Int32) -> Self
+pub async fn CircuitBreaker::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
+pub impl @mttp_core.Backend for CircuitBreaker
+
 pub struct Client {
   // private fields
 }
 pub fn Client::close(Self) -> Unit
 pub fn Client::new(&@mttp_core.Backend, &@rt.Clock, base_url? : String, headers? : @mttp_core.Headers, timeout_ms? : Int32, max_body_bytes? : Int32, read_idle_ms? : Int32, timer? : &@rt.Timer, retry? : RetryPolicy, retry_budget? : RetryBudget, limiter? : &RateLimiter, redirect? : RedirectConfig, cookies? : @cookie.CookieJar, total_ms? : Int32, observer? : (Attempt) -> Unit, random? : () -> Double) -> Self
 pub async fn[T, M : ResponseMode] Client::send(Self, RequestPlan[T, M], decide_retry? : (AttemptResult[T], RetryContext) -> @retry.Decision) -> Reply[T]
+pub async fn Client::sse_reconnecting(Self, @mttp_core.Request, async (@sse.SseEvent) -> Unit, policy? : ReconnectPolicy, stop? : (@sse.SseEvent) -> Bool, max_event_bytes? : Int32) -> SseEnd
 
 pub struct FollowRedirects {
   // private fields
@@ -147,6 +166,30 @@ pub async fn[T, E] Paginator::each(Self[T, E], async (T) -> Result[Unit, E]) -> 
 pub fn[T, E] Paginator::new(async () -> Result[Array[T]?, E]) -> Self[T, E]
 pub async fn[T, E] Paginator::next_page(Self[T, E]) -> Result[Array[T]?, E]
 pub fn[T, E] Paginator::with_cursor(async (String?) -> Result[Page[T], E]) -> Self[T, E]
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum ReconnectDecision {
+  Wait(Int32)
+  GiveUp
+}
+pub fn ReconnectDecision::equal(Self, Self) -> Bool
+pub fn ReconnectDecision::not_equal(Self, Self) -> Bool
+pub fn ReconnectDecision::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct ReconnectPolicy {
+  backoff : @retry.Backoff
+  max_attempts : Int32?
+  reset_after_ms : Int32
+  honour_server_retry : Bool
+}
+pub fn ReconnectPolicy::decide(Self, attempts~ : Int32, lived_ms~ : Int64, server_hint_ms? : Int32, random~ : Double) -> ReconnectDecision
+pub fn ReconnectPolicy::default() -> Self
+pub fn ReconnectPolicy::equal(Self, Self) -> Bool
+pub fn ReconnectPolicy::next_attempts(Self, attempts~ : Int32, lived_ms~ : Int64) -> Int32
+pub fn ReconnectPolicy::not_equal(Self, Self) -> Bool
+pub fn ReconnectPolicy::to_repr(Self) -> @debug.Repr
 
 #derive(Eq, @debug.Debug)
 pub(all) struct RedirectConfig {
@@ -259,6 +302,25 @@ pub fn RetryPolicy::none() -> Self
 pub fn RetryPolicy::not_equal(Self, Self) -> Bool
 pub fn RetryPolicy::to_repr(Self) -> @debug.Repr
 pub fn RetryPolicy::with_max_retries(Self, Int32) -> Self
+
+#non_exhaustive
+#derive(@debug.Debug)
+pub(all) enum SseDisconnect {
+  Ended
+  Status(ResponseFailure)
+  Failed(@mttp_core.TransportError)
+}
+pub fn SseDisconnect::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(@debug.Debug)
+pub(all) enum SseEnd {
+  Stopped(@sse.SseEvent)
+  NoContent
+  Rejected(ResponseFailure)
+  GaveUp(SseDisconnect)
+}
+pub fn SseEnd::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Streaming {
 }

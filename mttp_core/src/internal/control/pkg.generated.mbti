@@ -12,6 +12,57 @@ import {
 // Errors
 
 // Types and methods
+pub(all) struct BreakerConfig {
+  failure_ratio : Double
+  min_requests : Int32
+  window_ms : Int32
+  open_ms : Int32
+  half_open_probes : Int32
+}
+pub fn BreakerConfig::new(failure_ratio~ : Double, min_requests~ : Int32, window_ms~ : Int32, open_ms~ : Int32, half_open_probes~ : Int32) -> Self
+
+#derive(Eq, @debug.Debug)
+pub(all) enum BreakerOutcome {
+  Success
+  Failure
+  Neutral
+}
+pub fn BreakerOutcome::equal(Self, Self) -> Bool
+pub fn BreakerOutcome::not_equal(Self, Self) -> Bool
+pub fn BreakerOutcome::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum BreakerPhase {
+  Closed(window_start_ms~ : Int64, requests~ : Int32, failures~ : Int32)
+  Open(opened_at_ms~ : Int64)
+  HalfOpen(probes~ : Int32)
+}
+pub fn BreakerPhase::equal(Self, Self) -> Bool
+pub fn BreakerPhase::not_equal(Self, Self) -> Bool
+pub fn BreakerPhase::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct BreakerState {
+  phase : BreakerPhase
+  generation : Int64
+}
+pub fn BreakerState::admit(Self, BreakerConfig, now~ : Int64) -> (Self, BreakerTicket)
+pub fn BreakerState::equal(Self, Self) -> Bool
+pub fn BreakerState::new(now~ : Int64) -> Self
+pub fn BreakerState::not_equal(Self, Self) -> Bool
+pub fn BreakerState::record(Self, BreakerConfig, BreakerTicket, BreakerOutcome, now~ : Int64) -> Self
+pub fn BreakerState::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum BreakerTicket {
+  Pass(generation~ : Int64)
+  Probe(generation~ : Int64)
+  Reject
+}
+pub fn BreakerTicket::equal(Self, Self) -> Bool
+pub fn BreakerTicket::not_equal(Self, Self) -> Bool
+pub fn BreakerTicket::to_repr(Self) -> @debug.Repr
+
 pub(all) struct Idle {
   id : Int64
   user_agent : String?

@@ -38,8 +38,10 @@ pub struct SseReader {
 }
 pub fn SseReader::close(Self) -> Unit
 pub async fn SseReader::each(Self, async (SseEvent) -> Unit, stop? : (SseEvent) -> Bool) -> Unit
+pub fn SseReader::last_event_id(Self) -> String?
 pub fn SseReader::new(&@mttp_core.BodyStream, max_event_bytes? : Int32) -> Self
 pub async fn SseReader::next_event(Self) -> SseEvent? raise @mttp_core.TransportError
+pub fn SseReader::reconnection_ms(Self) -> Int32?
 
 // Type aliases
 

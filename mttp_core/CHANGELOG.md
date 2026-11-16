@@ -11,6 +11,24 @@ never does.
 
 ### Added
 
+- `client.ReconnectPolicy` and `ReconnectDecision`: when to reconnect a
+  long-lived stream, as data (`decide`, `next_attempts`; default 1 s to 30 s
+  with jitter, unlimited, count reset after a connection that lived 60 s,
+  server `retry:` honoured within the cap), for event streams and an
+  application's own WebSocket loop.
+- `Client::sse_reconnecting`: the `EventSource` loop over `@sse.SseReader`,
+  resending with `Last-Event-ID`, waiting per the policy and the stream's
+  `retry:` (or `Retry-After`), stopping on 204 and on statuses other than
+  408, 429 and 5xx; it returns an `SseEnd` (`SseDisconnect` for the last end
+  when it gives up). `SseReader::last_event_id` and `reconnection_ms` expose
+  the reader's stream state.
+- `client.CircuitBreaker`: a per-origin circuit breaker Backend wrapper
+  (failure ratio over a window, open time, half-open probes; at most
+  `max_origins` circuits, least recently used evicted), refusing with the
+  new `Kind::CircuitOpen` in phase Pool, which the retry rules never retry.
+- `client.AuthRefresh`: a Backend wrapper that refreshes credentials once on
+  401, shared by concurrent 401s through an `rt.Signal`, and resends a
+  replayable request once, marked with the `auth_refreshed` attribute.
 - `connection_scheme`, a request attribute: the scheme the connection was
   accepted under (`http` or `https`), never the request target's. h1server
   sets it from its `scheme`, Router-as-Backend from the in-process

@@ -41,6 +41,8 @@ delivering a matching sentinel. An intentional stop discards any queued
 events and pending overflow. Pull consumers stopping early must call `close`;
 later pulls return EOF without reading the source. As with a body stream,
 use one consumer without concurrent pulls.
+`SseReader::last_event_id` and `reconnection_ms` report the stream state
+for a reconnect; `client.Client::sse_reconnecting` runs that loop.
 
 ```mbt check
 ///|

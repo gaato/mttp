@@ -155,6 +155,7 @@ pub(all) enum Kind {
   Closed
   IncompleteClose
   Refused
+  CircuitOpen
 }
 pub fn Kind::equal(Self, Self) -> Bool
 pub fn Kind::not_equal(Self, Self) -> Bool

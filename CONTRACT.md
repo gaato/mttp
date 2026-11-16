@@ -347,6 +347,12 @@ all four targets. Its cancellation semantics match core/async's:
    consumer. It does not interrupt an already running `Clock.sleep`; no wake
    or cancellation port is required. Later sends fail with `Closed` in phase
    Pool before admission. The completed attempt still releases its Admission.
+10. A circuit breaker refuses with `Kind::CircuitOpen` in phase Pool, so the
+    refusal is unsent, and `RetryRule` never retries it: an immediate retry
+    would meet the same open circuit. `AuthRefresh` sends a request at most
+    twice per `send` and never refreshes one marked `auth_refreshed`.
+    `Client::sse_reconnecting` checks closure before and after each reconnect
+    wait, as rule 9 does for a retry, and returns the last end as `GaveUp`.
 
 ## Incremental parsers
 

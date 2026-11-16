@@ -13,8 +13,10 @@
 ///    case and surrounding whitespace) skips step 4; `false` stops with
 ///    `ServerSaidNo`; any other value is ignored.
 /// 4. The outcome must be retryable for the request's method: a response
-///    through the first `StatusRule` containing its status; `Protocol`
-///    never; `Proxy` when `unsent_failures` is set and its status matches a
+///    through the first `StatusRule` containing its status; never a
+///    failure that would recur at once (`Invalid`, `Protocol`, `TooLarge`,
+///    `Unreplayable`, `Closed`, `TooManyRedirects`, `RedirectRefused`,
+///    `CircuitOpen`); `Proxy` when `unsent_failures` is set and its status matches a
 ///    `StatusRule`; another unsent failure when `unsent_failures` is set;
 ///    any other failure through `sent_failures`. `Idempotent` methods are
 ///    those of a request for which `idempotent` is true.
@@ -225,7 +227,8 @@ fn never_retried(kind : @mttp_core.Kind) -> Bool {
     | Unreplayable
     | Closed
     | TooManyRedirects(..)
-    | RedirectRefused => true
+    | RedirectRefused
+    | CircuitOpen => true
     _ => false
   }
 }
