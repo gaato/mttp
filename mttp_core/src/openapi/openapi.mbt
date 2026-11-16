@@ -17,6 +17,15 @@ pub fn to_openapi(
   for (_, doc) in webhooks {
     problems.append(@endpoint.check_definitions([doc]).filter(p => p.fatal))
   }
+  let tag_names : Map[String, Bool] = Map([])
+  for tag in tags {
+    if tag_names.contains(tag.name) {
+      problems.push(
+        @endpoint.DefinitionProblem::new("", "duplicate tag name " + tag.name),
+      )
+    }
+    tag_names[tag.name] = true
+  }
   if !problems.is_empty() {
     raise @endpoint.DefinitionError(problems)
   }

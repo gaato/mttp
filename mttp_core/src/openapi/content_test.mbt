@@ -287,6 +287,36 @@ test "OpenAPI 3.2 content annotations golden" {
 }
 
 ///|
+test "duplicate supplied tag names are refused before projection" {
+  let info = @apispec.Info::new("Test", "1")
+  let doc = @endpoint.endpoint.get("/").tag("counts").doc()
+  for version in [@openapi.V3_1, @openapi.V3_2] {
+    for docs in [[], [doc]] {
+      for description in ["First", "Different"] {
+        try
+          ignore(
+            @openapi.to_openapi(docs, info, version~, tags=[
+              @apispec.Tag::new("counts", description="First"),
+              @apispec.Tag::new("counts", description~),
+            ]),
+          )
+        catch {
+          @endpoint.DefinitionError(problems) =>
+            assert_eq(problems, [
+              @endpoint.DefinitionProblem::new("", "duplicate tag name counts"),
+            ])
+        } noraise {
+          _ => fail("duplicate supplied tag names accepted")
+        }
+      }
+    }
+    let tags = [@apispec.Tag::new("counts"), @apispec.Tag::new("Counts")]
+    let spec = @openapi.to_openapi([doc], info, version~, tags~)
+    assert_eq(spec.tags, tags)
+  }
+}
+
+///|
 fn refused(
   docs : Array[@endpoint.EndpointDoc],
   webhooks~ : Array[(String, @endpoint.EndpointDoc)] = [],
