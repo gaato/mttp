@@ -60,6 +60,7 @@ fn kind_name(kind : @mttp_core.Kind) -> String {
     Closed => "closed"
     IncompleteClose => "incomplete_close"
     Refused => "refused"
+    CircuitOpen => "circuit_open"
     @mttp_core.Kind::.. => "transport"
   }
 }

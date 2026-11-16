@@ -14,6 +14,7 @@ test "a retry's reason is the status, or the failure kind's low-cardinality name
     (Closed, "closed"),
     (IncompleteClose, "incomplete_close"),
     (Refused, "refused"),
+    (CircuitOpen, "circuit_open"),
   ]
   for row in kinds {
     let (kind, name) = row

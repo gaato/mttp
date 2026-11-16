@@ -31,6 +31,7 @@ pub fn[T] as_stream(async (@mttp_core.ResponseHead, &@mttp_core.BodyStream) -> T
 pub fn as_string() -> ResponsePlan[Result[String, ResponseFailure], Buffered]
 
 pub let auth_refreshed : @mttp_core.AttributeKey[Bool]
+
 pub let default_sensitive_headers : ReadOnlyArray[String]
 
 pub let final_url : @mttp_core.AttributeKey[String]
