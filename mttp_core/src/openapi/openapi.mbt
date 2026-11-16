@@ -7,15 +7,62 @@ pub fn to_openapi(
   info : @apispec.Info,
   servers~ : Array[@apispec.Server] = [],
   version~ : OpenApiVersion = V3_1,
+  tags~ : Array[@apispec.Tag] = [],
+  security? : Array[Map[String, Array[String]]],
+  webhooks~ : Array[(String, @endpoint.EndpointDoc)] = [],
 ) -> @apispec.OpenApi raise @endpoint.DefinitionError {
   let problems = @endpoint.check_definitions(docs).filter(p => p.fatal)
+  // A webhook's route belongs to its own receiver, so equal paths in two
+  // webhooks (or in paths) are valid. Check each independently.
+  for (_, doc) in webhooks {
+    problems.append(@endpoint.check_definitions([doc]).filter(p => p.fatal))
+  }
   if !problems.is_empty() {
     raise @endpoint.DefinitionError(problems)
   }
   let schemas : Map[String, Json] = Map([])
   let schemes : Map[String, @apispec.SecurityScheme] = Map([])
   let paths : Map[String, @apispec.PathItem] = Map([])
-  for doc in docs {
+  let webhook_items : Map[String, @apispec.PathItem] = Map([])
+  let document_tags = tags.copy()
+  let operations = docs.map(d => (None, d))
+  operations.append(webhooks.map(w => (Some(w.0), w.1)))
+  let operation_ids : Map[String, Bool] = Map([])
+  for (webhook_name, doc) in operations {
+    if doc.info.operation_id is Some(id) {
+      if operation_ids.contains(id) {
+        problems.push(
+          @endpoint.DefinitionProblem::new(
+            doc.template,
+            "duplicate operation_id " + id,
+          ),
+        )
+      }
+      operation_ids[id] = true
+    }
+    for tag in doc.info.tags {
+      if !document_tags.iter().any(t => t.name == tag) {
+        document_tags.push(@apispec.Tag::new(tag))
+      }
+    }
+    // Definitions from webhooks and paths share one component namespace.
+    let schema_problems = []
+    for atom in [..doc.security, ..doc.inputs] {
+      ignore(atom.schema.reference(schemas, problems=schema_problems))
+    }
+    for variant in [..doc.outputs, ..doc.errors] {
+      for schema in [variant.schema, variant.item_schema] {
+        if schema is Some(schema) {
+          ignore(schema.reference(schemas, problems=schema_problems))
+        }
+      }
+      for _, schema in variant.header_schemas {
+        ignore(schema.reference(schemas, problems=schema_problems))
+      }
+    }
+    for message in schema_problems {
+      problems.push(@endpoint.DefinitionProblem::new(doc.template, message))
+    }
     let parameters : Array[@apispec.Parameter] = []
     let seen_parameters : Map[String, Bool] = Map([])
     let mut request_body : @apispec.RequestBody? = None
@@ -130,6 +177,9 @@ pub fn to_openapi(
         },
       )
     }
+    if request_body is Some(body) {
+      add_examples(body.content, doc.request_examples)
+    }
     let security : Array[Map[String, Array[String]]] = []
     if !requirement.is_empty() {
       security.push(requirement.copy())
@@ -143,6 +193,11 @@ pub fn to_openapi(
     let variants = [..doc.outputs, ..doc.errors]
     let framework = framework_statuses(doc)
     let explicit_statuses = framework.copy()
+    for (status, _, _, _) in doc.response_examples {
+      if !explicit_statuses.contains(status) {
+        explicit_statuses.push(status)
+      }
+    }
     for variant in variants {
       if !variant.dynamic_status && !explicit_statuses.contains(variant.status) {
         explicit_statuses.push(variant.status)
@@ -234,6 +289,11 @@ pub fn to_openapi(
       )
     }
     merge_wildcard_content(responses)
+    for (status, name, value, summary) in doc.response_examples {
+      if responses.get(status.to_string()) is Some(response) {
+        add_examples(response.content, [(name, value, summary)])
+      }
+    }
     // Merge under the 3.1 extension first so wildcard unions use the same
     // rules in both versions, then move it to the typed 3.2 member.
     if version is V3_2 {
@@ -287,8 +347,19 @@ pub fn to_openapi(
         ),
       )
     }
-    let template = @endpoint.encoded_path_template(doc.template)
-    let item = paths.get(template).unwrap_or(@apispec.PathItem::new())
+    let target = if webhook_name is Some(_) { webhook_items } else { paths }
+    let template = webhook_name.unwrap_or(
+      @endpoint.encoded_path_template(doc.template),
+    )
+    let item = target.get(template).unwrap_or(@apispec.PathItem::new())
+    if webhook_name is Some(_) && target.contains(template) {
+      problems.push(
+        @endpoint.DefinitionProblem::new(
+          doc.template,
+          "duplicate webhook name " + template,
+        ),
+      )
+    }
     if item.operations.contains(meth) {
       problems.push(
         @endpoint.DefinitionProblem::new(
@@ -298,7 +369,21 @@ pub fn to_openapi(
       )
     }
     item.operations[meth] = operation
-    paths[template] = item
+    target[template] = item
+  }
+  if security is Some(requirements) {
+    for requirement in requirements {
+      for name, _ in requirement {
+        if !schemes.contains(name) {
+          problems.push(
+            @endpoint.DefinitionProblem::new(
+              "",
+              "undefined document security scheme " + name,
+            ),
+          )
+        }
+      }
+    }
   }
   if schemas.get("Problem") is Some(existing) && existing != problem_schema {
     problems.push(
@@ -344,6 +429,9 @@ pub fn to_openapi(
     },
     paths~,
     servers=servers.copy(),
+    tags=document_tags,
+    security?=security.map(rs => rs.map(r => r.map((_, v) => v.copy()))),
+    webhooks=webhook_items,
     components=@apispec.Components::new(schemas~, security_schemes=schemes),
   )
   for message in check_references(spec) {

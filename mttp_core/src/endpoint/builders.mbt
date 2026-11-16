@@ -81,3 +81,37 @@ pub fn html_variant(status : Int32, description? : String) -> Variant[String] {
 pub fn bytes_out(status~ : Int32 = 200) -> Out[Bytes, @client.Buffered] {
   json_out(@schema.raw_bytes, status~)
 }
+
+///|
+/// Adds a named example to every request media representation. Names must be
+/// unique per request; definition checking refuses examples without a body.
+pub fn[S, I, E, O, M] Endpoint::request_example(
+  self : Endpoint[S, I, E, O, M],
+  name : String,
+  value : Json,
+  summary? : String,
+) -> Endpoint[S, I, E, O, M] {
+  {
+    ..self,
+    request_examples: [..self.request_examples, (name, value, summary)],
+  }
+}
+
+///|
+/// Adds a named example to every media representation at a declared response
+/// status. Names must be unique within that status, including declared errors.
+pub fn[S, I, E, O, M] Endpoint::response_example(
+  self : Endpoint[S, I, E, O, M],
+  status : Int32,
+  name : String,
+  value : Json,
+  summary? : String,
+) -> Endpoint[S, I, E, O, M] {
+  {
+    ..self,
+    response_examples: [
+      ..self.response_examples,
+      (status, name, value, summary),
+    ],
+  }
+}

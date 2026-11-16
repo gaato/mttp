@@ -179,6 +179,8 @@ pub fn[T] JsonCodec::new((@json.Json) -> T raise DecodeFailure, (T) -> @json.Jso
 pub fn[T] JsonCodec::schema(Self[T]) -> Schema
 pub fn[T] JsonCodec::to_json(Self[T], T) -> @json.Json
 pub fn[T] JsonCodec::validate(Self[T], Validator[T]) -> Self[T]
+pub fn[T] JsonCodec::with_default(Self[T], T) -> Self[T]
+pub fn[T] JsonCodec::with_examples(Self[T], Array[@json.Json]) -> Self[T]
 
 #derive(Eq, @debug.Debug)
 pub(all) struct Schema {
@@ -204,6 +206,8 @@ pub fn[T, U] TextCodec::map(Self[T], (T) -> U raise DecodeFailure, (U) -> T) -> 
 pub fn[T] TextCodec::new((String) -> T raise DecodeFailure, (T) -> String, Schema) -> Self[T]
 pub fn[T] TextCodec::schema(Self[T]) -> Schema
 pub fn[T] TextCodec::validate(Self[T], Validator[T]) -> Self[T]
+pub fn[T] TextCodec::with_default(Self[T], T) -> Self[T]
+pub fn[T] TextCodec::with_examples(Self[T], Array[@json.Json]) -> Self[T]
 
 pub struct Validator[T] {
   // private fields

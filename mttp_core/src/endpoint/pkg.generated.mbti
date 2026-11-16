@@ -10,6 +10,7 @@ import {
   "gaato/mttp_core/ws",
   "gaato/mttp_core/ws/handshake",
   "moonbitlang/core/debug",
+  "moonbitlang/core/json",
 }
 
 // Values
@@ -207,6 +208,8 @@ pub fn[S, I, E, O, M] Endpoint::post(Self[S, I, E, O, M], String) -> Self[S, I, 
 pub fn[S, I, E, O, M] Endpoint::put(Self[S, I, E, O, M], String) -> Self[S, I, E, O, M]
 pub fn[S, I, E, O, M] Endpoint::rate_limit_bucket(Self[S, I, E, O, M], (@mttp_core.Request) -> String) -> Self[S, I, E, O, M]
 pub fn[S, I, E, O] Endpoint::request(Self[S, I, E, O, @client.Buffered], S, I) -> @client.RequestPlan[Result[Result[O, E], @client.ResponseFailure], @client.Buffered] raise @client.InvalidRequest
+pub fn[S, I, E, O, M] Endpoint::request_example(Self[S, I, E, O, M], String, @json.Json, summary? : String) -> Self[S, I, E, O, M]
+pub fn[S, I, E, O, M] Endpoint::response_example(Self[S, I, E, O, M], Int32, String, @json.Json, summary? : String) -> Self[S, I, E, O, M]
 pub fn[I, E, O, S2, M] Endpoint::security(Self[Unit, I, E, O, M], Input[S2]) -> Self[S2, I, E, O, M]
 pub fn[S, I, E, O, P, M] Endpoint::serve(Self[S, I, E, O, M], async (S) -> Result[P, E], async (P, I) -> Result[O, E]) -> ServerEndpoint
 pub fn[I, E, O, M] Endpoint::serve_public(Self[Unit, I, E, O, M], async (I) -> Result[O, E]) -> ServerEndpoint
@@ -218,6 +221,8 @@ pub fn[S, I, E, O, M] Endpoint::tag(Self[S, I, E, O, M], String) -> Self[S, I, E
 pub fn[S, I, E, O, M] Endpoint::with_method(Self[S, I, E, O, M], @mttp_core.Method, String) -> Self[S, I, E, O, M]
 
 pub struct EndpointDoc {
+  request_examples : Array[(String, @json.Json, String?)]
+  response_examples : Array[(Int32, String, @json.Json, String?)]
   meth : @mttp_core.Method?
   template : String
   segments : Array[Seg]

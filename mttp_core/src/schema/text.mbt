@@ -38,6 +38,31 @@ pub fn[T] TextCodec::schema(self : TextCodec[T]) -> Schema {
 }
 
 ///|
+/// Adds JSON Schema examples without changing text decoding.
+pub fn[T] TextCodec::with_examples(
+  self : TextCodec[T],
+  examples : Array[Json],
+) -> TextCodec[T] {
+  {
+    ..self,
+    schema_: self.schema_.patch({ "examples": Json(examples.copy()) }),
+  }
+}
+
+///|
+/// Documents the encoded text as a JSON string, including for numeric codecs.
+/// A TextCodec has no generic JSON encoder; this preserves custom wire mappings.
+pub fn[T] TextCodec::with_default(
+  self : TextCodec[T],
+  value : T,
+) -> TextCodec[T] {
+  {
+    ..self,
+    schema_: self.schema_.patch({ "default": Json(self.encode(value)) }),
+  }
+}
+
+///|
 /// Checked signed 32-bit decimal text.
 pub let int : TextCodec[Int32] = TextCodec::new(
   s => {

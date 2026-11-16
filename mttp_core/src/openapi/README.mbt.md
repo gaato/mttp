@@ -53,7 +53,56 @@ Optional credentials are grouped with AND; mixed required and optional inputs
 also have an alternative containing just the required credentials. Every
 projected operation has explicit security, including `[]` for public routes,
 so adding document-level security later cannot accidentally protect a public
-endpoint. The projection itself leaves root security absent.
+endpoint. Root security is absent by default; `security=` supplies a document
+requirement. Each named scheme must be defined by an endpoint authentication
+atom (including webhook endpoints); signatures are header parameters, not schemes.
+
+`tags=` supplies tag descriptions. Used tags missing from that list are appended
+without descriptions, and unused listed tags are retained. `webhooks=` accepts
+named endpoint docs: the request is what this server sends, and the responses
+are what the receiving server returns. Webhooks share schema and security
+components with paths. Duplicate webhook names, conflicting component definitions
+and duplicate operation IDs across paths and webhooks are definition errors.
+
+```mbt check
+///|
+test "examples tags security and webhooks" {
+  let codec = @schema.jint.with_examples([1, 2]).with_default(1)
+  let ep = @endpoint.endpoint
+    .post("/counts")
+    .security(@endpoint.bearer())
+    .input(@endpoint.body(codec.body()))
+    .output(@endpoint.json_out(codec.body()))
+    .request_example("one", 1, summary="One count")
+    .response_example(200, "two", 2)
+    .tag("counts")
+  let spec = @openapi.to_openapi(
+    [ep.doc()],
+    @apispec.Info::new("Counts", "1"),
+    tags=[@apispec.Tag::new("counts", description="Count operations")],
+    security=[{ "bearer": [] }],
+    webhooks=[("countChanged", ep.doc())],
+  )
+  assert_eq(spec.tags[0].description, Some("Count operations"))
+  assert_true(spec.webhooks.contains("countChanged"))
+  assert_eq(@openapi.check_references(spec), [])
+}
+```
+
+Schema `with_examples` and `with_default` add JSON Schema annotations via
+`Schema::patch`; they do not supply missing input or alter decoding. JSON
+defaults use the codec's JSON encoder. Text defaults use its text encoder and
+are JSON strings, even for numeric text codecs. Existing keywords retain the
+conjunctive `patch` behavior when annotations are composed repeatedly.
+
+Endpoint examples become Example Objects (`summary`, `value`) in each media
+type's `examples` map, after response media merging. They are held in the
+released apispec model's `unmodeled` field. Request names are unique per endpoint;
+response names are unique per status. Requests require a body, and response
+statuses must be declared (a dynamic-status variant covers 200–599). Examples
+at dynamic statuses create explicit responses; bodyless statuses have no media
+object in which to place an example. Examples apply to every representation
+at the selected status, so use values appropriate for those representations.
 
 Path literals use the endpoint client's shared encoding, so the source
 template `/files/a%2Fb/{id}` is documented as `/files/a%252Fb/{id}`. Capture

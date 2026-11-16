@@ -16,7 +16,7 @@ pub fn docs_endpoint(@apispec.OpenApi, path? : String) -> @endpoint.ServerEndpoi
 
 pub fn docs_ui_endpoint(spec_url~ : String, path? : String, ui? : DocsUi) -> @endpoint.ServerEndpoint
 
-pub fn to_openapi(Array[@endpoint.EndpointDoc], @apispec.Info, servers? : Array[@apispec.Server], version? : OpenApiVersion) -> @apispec.OpenApi raise @endpoint.DefinitionError
+pub fn to_openapi(Array[@endpoint.EndpointDoc], @apispec.Info, servers? : Array[@apispec.Server], version? : OpenApiVersion, tags? : Array[@apispec.Tag], security? : Array[Map[String, Array[String]]], webhooks? : Array[(String, @endpoint.EndpointDoc)]) -> @apispec.OpenApi raise @endpoint.DefinitionError
 
 // Errors
 

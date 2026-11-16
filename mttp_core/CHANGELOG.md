@@ -56,6 +56,15 @@ never does.
   JSON output, separate request/response reports and Client/Server severities,
   local reference traversal and cycle protection. Raw OpenAPI 3.0 schema
   keywords remain JSON differences without 3.0 interpretation.
+- Schema annotations: `JsonCodec` and `TextCodec` gain `with_examples` and
+  `with_default`, using the codec's own encoder (text defaults are JSON strings).
+- Endpoint request and response media examples, with fatal definition findings
+  for duplicate names, bodyless requests and undeclared response statuses.
+- `openapi.to_openapi` accepts tag descriptions, document security requirements
+  and named webhooks in both 3.1 and 3.2. Webhooks share components with paths;
+  undefined security names, duplicate webhook names and cross-document schema,
+  security-scheme and operation-ID conflicts are refused. Public operations
+  retain explicit empty security requirements.
 
 ## [0.2.0] - 2026-11-17
 

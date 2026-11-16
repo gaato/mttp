@@ -140,6 +140,15 @@ body suppression and stream closure, dynamic empty/wildcard representations,
 specific-media precedence, ordinary Auth input failures and invalid statuses.
 These additions require no new uncovered-line exemptions.
 
+The content annotation tests exercise codec-encoded defaults and examples,
+builder and doc list ownership, duplicate names and undeclared statuses,
+dynamic-status boundaries (200/599 accepted, 199/600 refused), and merged
+response media examples. OpenAPI 3.1 and 3.2 golden outputs include webhook
+content, shared schemas, tag descriptions and root security; JSON round trips
+and reference checks cover these documents and treat example `$ref` values as
+data. Cross-document checks cover duplicate webhook names and operation IDs,
+conflicting named schemas and unresolved webhook schema references.
+
 The Digest port (`mttp_digest/src/backend.mbt`, `digest.mbt`) and the private
 conformance harness (`conformance/src/harness/*.mbt`) are fully covered on
 native: 234/234 and 62/62 instrumented lines. Digest's black-box suites cover

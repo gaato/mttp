@@ -2,6 +2,29 @@
 
 Typed endpoints: one definition gives a client call, a server handler and documentation.
 
+`request_example(name, value, summary?)` and
+`response_example(status, name, value, summary?)` append documentation metadata
+without changing the endpoint's input or output types. OpenAPI puts these
+Example Objects on every media representation of the request or selected status.
+Names are unique within the request or within one response status; the shared
+definition checker refuses duplicates, a request example without a body, or a
+response example at an undeclared status. Dynamic-status outputs declare all
+final statuses (200–599). A bodyless response has no media examples map.
+
+```mbt check
+///|
+test "document request and response examples" {
+  let ep = @endpoint.endpoint
+    .post("/counts")
+    .request_example("one", 1, summary="One count")
+    .response_example(200, "two", 2)
+    .input(@endpoint.body(@schema.jint.with_default(1).body()))
+    .output(@endpoint.json_out(@schema.jint.with_examples([1, 2]).body()))
+  assert_eq(@endpoint.check_definitions([ep.doc()]), [])
+  assert_eq(ep.doc().request_examples, [("one", 1, Some("One count"))])
+}
+```
+
 `WsEndpoint[S, I, In, Out]` uses the same handshake inputs and security as
 HTTP endpoints. Message directions are relative to the server; a client gets
 `TypedSession[Out, In]`. `ws_json` uses Text messages, `ws_text` plain Text,

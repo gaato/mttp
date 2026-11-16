@@ -53,6 +53,8 @@ pub struct Endpoint[S, I, E, O, M] {
   priv max_body_bytes : Int32?
   priv bucket : ((@mttp_core.Request) -> String)?
   priv method_set_twice : Bool
+  priv request_examples : Array[(String, Json, String?)]
+  priv response_examples : Array[(Int32, String, Json, String?)]
 }
 
 ///|
@@ -74,6 +76,8 @@ pub let endpoint : Endpoint[Unit, Unit, NoError, Unit, @client.Buffered] = {
   max_body_bytes: None,
   bucket: None,
   method_set_twice: false,
+  request_examples: [],
+  response_examples: [],
 }
 
 ///|
@@ -146,6 +150,8 @@ pub fn[I, E, O, S2, M] Endpoint::security(
     meth: self.meth,
     template: self.template,
     security: s,
+    request_examples: self.request_examples.copy(),
+    response_examples: self.response_examples.copy(),
     input: self.input,
     errors: self.errors,
     output: self.output,
@@ -167,6 +173,8 @@ pub fn[S, E, O, I2, M] Endpoint::input(
     template: self.template,
     security: self.security,
     input: i,
+    request_examples: self.request_examples.copy(),
+    response_examples: self.response_examples.copy(),
     errors: self.errors,
     output: self.output,
     info: self.info,
@@ -188,6 +196,8 @@ pub fn[S, I, O, E2, M] Endpoint::errors(
     security: self.security,
     input: self.input,
     errors: e,
+    request_examples: self.request_examples.copy(),
+    response_examples: self.response_examples.copy(),
     output: self.output,
     info: self.info,
     max_body_bytes: self.max_body_bytes,
@@ -209,6 +219,8 @@ pub fn[S, I, E, O2, M, N] Endpoint::output(
     input: self.input,
     errors: self.errors,
     output: o,
+    request_examples: self.request_examples.copy(),
+    response_examples: self.response_examples.copy(),
     info: self.info,
     max_body_bytes: self.max_body_bytes,
     bucket: self.bucket,
@@ -255,6 +267,8 @@ pub fn[S, I, E, O, M] Endpoint::max_body_bytes(
 ///|
 /// Interpreter-independent endpoint metadata for routing, checking and API docs.
 pub struct EndpointDoc {
+  request_examples : Array[(String, Json, String?)]
+  response_examples : Array[(Int32, String, Json, String?)]
   meth : @mttp_core.Method?
   template : String
   segments : Array[Seg]
@@ -277,6 +291,8 @@ pub fn[S, I, E, O, M] Endpoint::doc(
     meth: self.meth,
     template: self.template,
     segments: parse_template(self.template),
+    request_examples: self.request_examples.copy(),
+    response_examples: self.response_examples.copy(),
     security: self.security.atoms.copy(),
     inputs: self.input.atoms.copy(),
     outputs: self.output.docs(),
@@ -292,6 +308,34 @@ pub fn[S, I, E, O, M] Endpoint::doc(
 /// Per-endpoint problems; check_definitions adds cross-endpoint ones.
 pub fn EndpointDoc::problems(self : EndpointDoc) -> Array[String] {
   let out = []
+  let request_names : Map[String, Bool] = Map([])
+  for (name, _, _) in self.request_examples {
+    if request_names.contains(name) {
+      out.push("duplicate request example " + name)
+    }
+    request_names[name] = true
+  }
+  if !self.request_examples.is_empty() &&
+    ![..self.inputs, ..self.security]
+    .iter()
+    .any(a => a.location is (Body(..) | RawBody)) {
+    out.push("request example without a body")
+  }
+  let response_names : Map[String, Bool] = Map([])
+  for (status, name, _, _) in self.response_examples {
+    let key = status.to_string() + ":" + name
+    if response_names.contains(key) {
+      out.push("duplicate response example " + key)
+    }
+    response_names[key] = true
+    if status < 200 ||
+      status > 599 ||
+      ![..self.outputs, ..self.errors]
+      .iter()
+      .any(v => v.status == status || v.dynamic_status) {
+      out.push("response example for undeclared status " + status.to_string())
+    }
+  }
   if self.websocket is Some(ws) {
     if ws.incoming is None || ws.outgoing is None {
       out.push("WebSocket endpoint requires incoming and outgoing codecs")

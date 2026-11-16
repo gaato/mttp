@@ -41,6 +41,27 @@ pub fn[T] JsonCodec::schema(self : JsonCodec[T]) -> Schema {
 }
 
 ///|
+/// Adds JSON Schema examples without changing decoding or missing values.
+pub fn[T] JsonCodec::with_examples(
+  self : JsonCodec[T],
+  examples : Array[Json],
+) -> JsonCodec[T] {
+  {
+    ..self,
+    schema_: self.schema_.patch({ "examples": Json(examples.copy()) }),
+  }
+}
+
+///|
+/// Documents a default encoded by this codec; decoding still requires input.
+pub fn[T] JsonCodec::with_default(
+  self : JsonCodec[T],
+  value : T,
+) -> JsonCodec[T] {
+  { ..self, schema_: self.schema_.patch({ "default": self.to_json(value) }), }
+}
+
+///|
 /// Decodes a JSON value, reporting issues as JSON-pointer paths.
 ///
 /// Every application of a codec to a value is one step. At most `max_steps`
