@@ -29,6 +29,22 @@ never does.
 - `client.AuthRefresh`: a Backend wrapper that refreshes credentials once on
   401, shared by concurrent 401s through an `rt.Signal`, and resends a
   replayable request once, marked with the `auth_refreshed` attribute.
+- Observability, opt-in: `client.Client::new(events?)` receives every
+  `client.ClientEvent` (`AttemptStart`, `Phase`, `AttemptEnd`, `Retry`,
+  `Redirect`) in order, beside the unchanged `observer`; nothing about an
+  attempt follows its `AttemptEnd`, cancellation included. Backends report
+  `PhaseEvent`s (`Dialed`, `TlsDone`, `Pooled`, `Written`, `FirstByte`) to
+  the new `on_phase` request attribute, in order and once each
+  (CONTRACT.md, Backend rule 13); `SendOptions` is unchanged. h1client
+  reports all five. The client README maps the fields onto OpenTelemetry's
+  HTTP semantic conventions.
+- `client.trace_context(backend, generate~)` adds a W3C `traceparent` to
+  requests that have none and records the trace id under `client.trace_id`.
+- `client.redact_headers(headers, names~)` hides credential values for
+  logging, by default those in `client.default_sensitive_headers`, the list
+  `to_curl` now uses too; it adds `set-cookie` to the five names `to_curl`
+  hid before.
+
 - `connection_scheme`, a request attribute: the scheme the connection was
   accepted under (`http` or `https`), never the request target's. h1server
   sets it from its `scheme`, Router-as-Backend from the in-process

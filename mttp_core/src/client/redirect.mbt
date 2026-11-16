@@ -68,6 +68,14 @@ pub let redirect_history : @mttp_core.AttributeKey[Array[RedirectHop]] = @mttp_c
 )
 
 ///|
+/// Set by a `Client` with `events` on each attempt's request: every
+/// `FollowRedirects` the request passes through reports its hops here too,
+/// as `Redirect` events of that attempt.
+let redirect_events : @mttp_core.AttributeKey[(RedirectHop) -> Unit] = @mttp_core.AttributeKey::new(
+  "client.redirect_events",
+)
+
+///|
 /// How a `Client` (its `redirect` argument) or a `FollowRedirects` wrapper
 /// follows redirects. Build it from `RedirectConfig::default()` with a record
 /// update, or take `RedirectConfig::none()`; the field set is frozen.
@@ -198,6 +206,7 @@ pub async fn FollowRedirects::send(
   let max = request.attributes
     .get(redirect_limit)
     .unwrap_or(self.config.max_redirects)
+  let observe = request.attributes.get(redirect_events)
   let mut request = request
   let history = []
   for followed = 0; ; followed = followed + 1 {
@@ -245,6 +254,9 @@ pub async fn FollowRedirects::send(
     }
     history.push(hop)
     if self.on_redirect is Some(callback) {
+      callback(hop)
+    }
+    if observe is Some(callback) {
       callback(hop)
     }
     request = next

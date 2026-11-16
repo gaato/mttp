@@ -31,6 +31,7 @@ pub struct Client {
   priv limiter : &RateLimiter
   priv total_ms : Int32?
   priv observer : (Attempt) -> Unit
+  priv events : ((ClientEvent) -> Unit)?
   priv random : () -> Double
   priv mut closed : Bool
   priv upgrades : @rt.Upgrades
@@ -54,6 +55,11 @@ pub struct Client {
 ///   `total_ms`, which requires it.
 /// - `retry` (default: none), `limiter` (default: admits at once),
 ///   `observer` (gets one `Attempt` per attempt) and `random` (for jitter).
+/// - `events` (default: none) gets every `ClientEvent` of every send:
+///   attempt starts and ends, the backend's `PhaseEvent`s (through the
+///   `@mttp_core.on_phase` request attribute), redirects and retries, in
+///   order (`ClientEvent` says which). It runs inline, so keep it quick; the
+///   `observer` keeps working beside it.
 /// - `retry_budget` caps the retries of all sends at a share of recent
 ///   requests (default: `RetryBudget::new()`, 20 % plus 10 per second over
 ///   10 s). It is checked when a retry is decided, and a retry it refuses
@@ -90,6 +96,7 @@ pub fn Client::new(
   cookies? : @cookie.CookieJar,
   total_ms? : Int32,
   observer~ : (Attempt) -> Unit = _ => (),
+  events? : (ClientEvent) -> Unit,
   random~ : () -> Double = @rt.default_random,
 ) -> Client {
   // The jar sits inside the redirects, so each hop sends the cookies for its
@@ -115,6 +122,7 @@ pub fn Client::new(
     limiter,
     total_ms,
     observer,
+    events,
     random,
     closed: false,
     upgrades: @rt.Upgrades::new(),
@@ -342,6 +350,10 @@ async fn[T, M : ResponseMode] Client::send_loop(
     }
     self.check_total(started)
     let admission = self.limiter.acquire(bucket, global_exempt=exempt)
+    let events = AttemptEvents::new(self.events, attempt)
+    if self.events is Some(sink) {
+      sink(AttemptStart(request=raw.head(), attempt~, bucket~))
+    }
     let received = Ref(None)
     let attempt_started = self.clock.now_unix_ms()
     let mut releasing = false
@@ -350,7 +362,8 @@ async fn[T, M : ResponseMode] Client::send_loop(
     let mut held : ReadResult[T]? = None
     errdefer {
       defer (if !settled {
-        (self.observer)(
+        self.settle(
+          events,
           attempt_info(
             sent,
             bucket,
@@ -385,7 +398,7 @@ async fn[T, M : ResponseMode] Client::send_loop(
         None => raw
       }
       self.exchange_timed(
-        sent,
+        events.attach(sent),
         request.response_as,
         options,
         limits.max_body_bytes,
@@ -410,7 +423,8 @@ async fn[T, M : ResponseMode] Client::send_loop(
       error =>
         if outcome is Ok(_) {
           settled = true
-          (self.observer)(
+          self.settle(
+            events,
             attempt_info(
               sent,
               bucket,
@@ -430,7 +444,8 @@ async fn[T, M : ResponseMode] Client::send_loop(
       Err(@mttp_core.TransportError(..) as error) => TransportFailure(error)
       Err(error) => {
         settled = true
-        (self.observer)(
+        self.settle(
+          events,
           attempt_info(
             sent,
             bucket,
@@ -478,7 +493,8 @@ async fn[T, M : ResponseMode] Client::send_loop(
       None
     }
     settled = true
-    (self.observer)(
+    self.settle(
+      events,
       attempt_info(
         sent,
         bucket,
@@ -502,6 +518,11 @@ async fn[T, M : ResponseMode] Client::send_loop(
             discard(value)
           }
           held = None
+          if self.events is Some(sink) {
+            sink(
+              Retry(attempt=attempt + 1, wait_ms=ms, reason=retry_reason(event)),
+            )
+          }
           continue
         }
       }
@@ -528,6 +549,18 @@ async fn[T, M : ResponseMode] Client::send_loop(
       }
     }
   }
+}
+
+///|
+/// Reports a settled attempt to the observer, then as its `AttemptEnd`,
+/// which closes the attempt to further events.
+fn Client::settle(
+  self : Client,
+  events : AttemptEvents,
+  info : Attempt,
+) -> Unit {
+  (self.observer)(info)
+  events.end(info)
 }
 
 ///|

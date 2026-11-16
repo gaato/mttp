@@ -31,6 +31,7 @@ pub fn[T] as_stream(async (@mttp_core.ResponseHead, &@mttp_core.BodyStream) -> T
 pub fn as_string() -> ResponsePlan[Result[String, ResponseFailure], Buffered]
 
 pub let auth_refreshed : @mttp_core.AttributeKey[Bool]
+pub let default_sensitive_headers : ReadOnlyArray[String]
 
 pub let final_url : @mttp_core.AttributeKey[String]
 
@@ -58,6 +59,8 @@ pub fn post(String) -> RequestPlan[Result[String, ResponseFailure], Buffered]
 
 pub let rate_limit_bucket : @mttp_core.AttributeKey[String]
 
+pub fn redact_headers(@mttp_core.Headers, names? : ArrayView[String]) -> @mttp_core.Headers
+
 pub let redirect_history : @mttp_core.AttributeKey[Array[RedirectHop]]
 
 pub let redirect_limit : @mttp_core.AttributeKey[Int32]
@@ -67,6 +70,10 @@ pub fn request(@mttp_core.Request) -> RequestPlan[Result[String, ResponseFailure
 pub fn retry_after_ms(@mttp_core.Headers, now_unix_ms? : Int64) -> Int32?
 
 pub fn status_of(ResponseFailure) -> Int32?
+
+pub fn trace_context(&@mttp_core.Backend, generate? : () -> Double) -> &@mttp_core.Backend
+
+pub let trace_id : @mttp_core.AttributeKey[String]
 
 // Errors
 #derive(@debug.Debug)
@@ -133,9 +140,18 @@ pub struct Client {
   // private fields
 }
 pub fn Client::close(Self) -> Unit
-pub fn Client::new(&@mttp_core.Backend, &@rt.Clock, base_url? : String, headers? : @mttp_core.Headers, timeout_ms? : Int32, max_body_bytes? : Int32, read_idle_ms? : Int32, timer? : &@rt.Timer, retry? : RetryPolicy, retry_budget? : RetryBudget, limiter? : &RateLimiter, redirect? : RedirectConfig, cookies? : @cookie.CookieJar, total_ms? : Int32, observer? : (Attempt) -> Unit, random? : () -> Double) -> Self
+pub fn Client::new(&@mttp_core.Backend, &@rt.Clock, base_url? : String, headers? : @mttp_core.Headers, timeout_ms? : Int32, max_body_bytes? : Int32, read_idle_ms? : Int32, timer? : &@rt.Timer, retry? : RetryPolicy, retry_budget? : RetryBudget, limiter? : &RateLimiter, redirect? : RedirectConfig, cookies? : @cookie.CookieJar, total_ms? : Int32, observer? : (Attempt) -> Unit, events? : (ClientEvent) -> Unit, random? : () -> Double) -> Self
 pub async fn[T, M : ResponseMode] Client::send(Self, RequestPlan[T, M], decide_retry? : (AttemptResult[T], RetryContext) -> @retry.Decision) -> Reply[T]
 pub async fn Client::sse_reconnecting(Self, @mttp_core.Request, async (@sse.SseEvent) -> Unit, policy? : ReconnectPolicy, stop? : (@sse.SseEvent) -> Bool, max_event_bytes? : Int32) -> SseEnd
+
+#non_exhaustive
+pub(all) enum ClientEvent {
+  AttemptStart(request~ : @mttp_core.RequestHead, attempt~ : Int32, bucket~ : String)
+  Phase(attempt~ : Int32, phase~ : @mttp_core.PhaseEvent)
+  AttemptEnd(Attempt)
+  Retry(attempt~ : Int32, wait_ms~ : Int32, reason~ : String)
+  Redirect(from~ : String, to~ : String, status~ : Int32)
+}
 
 pub struct FollowRedirects {
   // private fields

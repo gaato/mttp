@@ -45,6 +45,9 @@ pub fn run(main : async () -> Unit) -> Unit {
 /// `base_url` is joined to each relative request target, `headers` are sent
 /// with every request, `limiter` admits requests (no limit by default),
 /// `trust` chooses the TLS roots and `config` tunes the connection pool.
+/// `observer` gets one `Attempt` per attempt and `events` every
+/// `ClientEvent` (attempts, connection phases, redirects, retries), as
+/// `Client::new` describes; `random` is the source of retry jitter.
 /// Close the Client when done; that closes its connections.
 ///
 /// `backend`, `clock` and `timer` replace the real network, the system
@@ -72,6 +75,9 @@ pub fn client(
   backend? : &@mttp_core.Backend,
   clock? : &@rt.Clock,
   timer? : &@rt.Timer,
+  observer? : (@client.Attempt) -> Unit,
+  events? : (@client.ClientEvent) -> Unit,
+  random? : () -> Double,
 ) -> @client.Client {
   let clock = clock.unwrap_or_else(system_clock)
   let timer = timer.unwrap_or_else(() => @runtime.ClockTimer::new(clock~))
@@ -89,6 +95,9 @@ pub fn client(
     cookies?,
     limiter?,
     total_ms~,
+    observer?,
+    events?,
+    random?,
   )
 }
 

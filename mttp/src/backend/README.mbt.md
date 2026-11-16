@@ -54,6 +54,12 @@ For controlled tests, pass `clock=virtual_clock`, optionally with
 `timer=@runtime.ClockTimer::new(clock=virtual_clock)`. Passing just the clock
 also puts the default timer on virtual time.
 
+On native and wasm the engine reports `@mttp_core.PhaseEvent`s (`Dialed`,
+`TlsDone`, `Pooled`, `Written`, `FirstByte`) to a request's
+`@mttp_core.on_phase` attribute, which a `Client` built with `events` sets;
+`Dialed` names the host and port dialled, not the resolved address. On js
+fetch shows no connections, TLS or write progress, so it reports none.
+
 On js the backend uses the host's `fetch`. Only `ClientConfig.max_body_bytes`
 applies. Its proxy, connection, phase timeout and header settings, and the
 separate `trust` argument, are ignored; fetch uses the host's proxy

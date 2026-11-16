@@ -64,12 +64,14 @@ async fn exchange(
       )
     Bytes(bytes) if head.length() + bytes.length() <= io_bytes => {
       timer.run(Write, () => wire.write(head + bytes))
+      wire.phases.emit(Written)
       { head: timer.run(Head, () => final_head(wire, limits)), uploaded: true, }
     }
     Stream(_, None) => {
       // An empty stream: the head, and the last chunk when chunked.
       let last = if framing is Chunked { @h1.encode_chunk(b"") } else { b"" }
       timer.run(Write, () => wire.write(head + last))
+      wire.phases.emit(Written)
       { head: timer.run(Head, () => final_head(wire, limits)), uploaded: true, }
     }
     _ =>
@@ -144,6 +146,7 @@ async fn upload(
       wire.send(prefix + last, timer)
     }
   }
+  wire.phases.emit(Written)
 }
 
 ///|
@@ -155,7 +158,7 @@ async fn final_head(
   on_continue? : () -> Unit,
 ) -> @h1.ParsedResponse raise @mttp_core.TransportError {
   for _ in 0..<17 {
-    let head = wire.head(limits)
+    let head = wire.head(limits, response=true)
     if head.status >= 200 || head.status == 101 {
       return head
     }

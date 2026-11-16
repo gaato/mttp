@@ -62,3 +62,47 @@ test "curl diagnostics never invoke factories or consume streams" {
     assert_eq(@mttp_core.read_bounded(source, 7), b"payload")
   })
 }
+
+///|
+test "redact_headers hides the same credentials as to_curl, and set-cookie" {
+  let headers = @mttp_core.Headers::of([
+    ("Authorization", "Bearer a"),
+    ("proxy-authorization", "Basic b"),
+    ("COOKIE", "c=1"),
+    ("x-api-key", "k"),
+    ("Api-Key", "k2"),
+    ("set-cookie", "s=1"),
+    ("accept", "text/plain"),
+    ("authorization", "second"),
+  ])
+  assert_eq(
+    @client.redact_headers(headers),
+    @mttp_core.Headers::of([
+      ("Authorization", "<redacted>"),
+      ("proxy-authorization", "<redacted>"),
+      ("COOKIE", "<redacted>"),
+      ("x-api-key", "<redacted>"),
+      ("Api-Key", "<redacted>"),
+      ("set-cookie", "<redacted>"),
+      ("accept", "text/plain"),
+      ("authorization", "<redacted>"),
+    ]),
+  )
+  // Every name to_curl hides by default is in the shared list.
+  let request = @client.request(
+    @mttp_core.Request::get("https://example.test/")
+    .header("x-api-key", "k")
+    .header("api-key", "k2"),
+  )
+  assert_false(request.to_curl().contains("k2"))
+  assert_true(@client.default_sensitive_headers.contains("authorization"))
+  // A caller's own list replaces the default, ignoring case.
+  assert_eq(
+    @client.redact_headers(headers, names=["ACCEPT"]).get("accept"),
+    Some("<redacted>"),
+  )
+  assert_eq(
+    @client.redact_headers(headers, names=["ACCEPT"]).get("authorization"),
+    Some("Bearer a"),
+  )
+}

@@ -99,6 +99,7 @@ pub async fn print_user(id : Int32) -> Unit {
 | Body size | Buffered bodies up to 64 MiB after decoding | `max_body_bytes=` |
 | TLS | The system's roots | `trust=PemFile(..)` |
 | Network, clock and timers | The real ones | `backend=`, `clock=`, `timer=`, for tests (see [Tests](#tests)) |
+| Observation | None | `observer=` (one `Attempt` per attempt), `events=` (every `ClientEvent`: attempts, connection phases, redirects, retries), `random=` (retry jitter) |
 
 ## Cookies
 

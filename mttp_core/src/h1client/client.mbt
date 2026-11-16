@@ -213,6 +213,7 @@ async fn Client::send_request(
     .iter()
     .any(value => value.trim().to_lower() == "100-continue")
   let mut fresh = false
+  let phases = PhaseLog::of(request)
   for ;; {
     if self.pool.control.closed {
       raise closed()
@@ -238,6 +239,7 @@ async fn Client::send_request(
     let wire = match cached {
       Some(wire) => {
         wire.reuse()
+        wire.phases = phases
         wire
       }
       None =>
@@ -249,6 +251,7 @@ async fn Client::send_request(
             route,
             agent,
             self.config.head_limits,
+            phases,
           )
           wire.opened_at = opened_at
           wire
@@ -265,6 +268,7 @@ async fn Client::send_request(
       wire.peer_gone(self.timer) {
       continue
     }
+    phases.emit(Pooled(reused~))
     let exchanged = exchange(
       wire,
       head,
@@ -313,6 +317,7 @@ async fn Client::send_request(
       }
       let pending = wire.pending
       wire.pending = b""
+      wire.phases = PhaseLog::none()
       let upgrade : &@rt.Upgraded = Upgrade::{
         conn: { wire, slots: self.slots, key, closed: false, },
         pending: Some(pending),
@@ -419,6 +424,7 @@ fn Client::release(
   wire : Wire,
   reusable : Bool,
 ) -> Unit {
+  wire.phases = PhaseLog::none()
   if reusable && wire.pending.is_empty() && !wire.closed {
     let now = self.clock.now_unix_ms()
     wire.parked_at = now

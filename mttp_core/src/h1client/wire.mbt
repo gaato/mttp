@@ -23,6 +23,9 @@ priv struct Wire {
   /// When the connection was last parked, on the client's clock.
   mut parked_at : Int64
   mut opened_at : Int64
+  /// The phase log of the exchange the connection serves; silent while it
+  /// is parked.
+  mut phases : PhaseLog
 }
 
 ///|
@@ -36,6 +39,7 @@ fn Wire::new(conn : &@rt.Conn) -> Wire {
     closed: false,
     parked_at: 0L,
     opened_at: 0L,
+    phases: PhaseLog::none(),
   }
 }
 
@@ -85,18 +89,27 @@ async fn Wire::peer_gone(self : Wire, timer : &@rt.Timer) -> Bool noraise {
 }
 
 ///|
-/// Connects to `host:port`, upgrading to TLS when `secure`. A failed
-/// upgrade closes the connection.
+/// Connects to `host:port`, upgrading to TLS when `secure`, and reports
+/// `Dialed` and, when `report_tls`, `TlsDone` to `phases`. A failed upgrade
+/// closes the connection.
 async fn Wire::dial(
   dialer : &@rt.Dialer,
   host : String,
   port : Int32,
   secure : Bool,
+  phases : PhaseLog,
+  report_tls~ : Bool = true,
 ) -> Wire raise @mttp_core.TransportError {
   let wire = Wire::new(dialer.connect(host~, port~))
   errdefer wire.close()
+  wire.phases = phases
+  let name = if host.contains(":") { "[" + host + "]" } else { host }
+  phases.emit(Dialed(addr=name + ":" + port.to_string()))
   if secure {
     wire.conn = dialer.start_tls(wire.conn, host~)
+    if report_tls {
+      phases.emit(TlsDone)
+    }
   }
   wire
 }
@@ -183,11 +196,13 @@ fn Wire::unread(self : Wire, bytes : BytesView) -> Unit {
 /// Reads one response head within `limits`, leaving the bytes after it
 /// pending. Every failure is one of `phase`: the end of the connection
 /// first, clean or not, is `Network`, a read failure without a phase takes
-/// `phase`, a codec error is `Protocol`.
+/// `phase`, a codec error is `Protocol`. A response head (not a proxy's
+/// answer) reports `FirstByte` when its first bytes arrive.
 async fn Wire::head(
   self : Wire,
   limits : @h1.Limits,
   phase~ : @mttp_core.Phase = Head,
+  response~ : Bool = false,
 ) -> @h1.ParsedResponse raise @mttp_core.TransportError {
   let decoder = @h1.HeadDecoder::new(max=limits.max_head_bytes)
   for ;; {
@@ -209,6 +224,9 @@ async fn Wire::head(
             "EOF before the response head, without TLS close_notify"
           },
         )
+    }
+    if response {
+      self.phases.emit(FirstByte)
     }
     let result = decoder.feed(bytes) catch {
       error => raise failure(phase, error)

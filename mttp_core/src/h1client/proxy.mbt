@@ -317,12 +317,24 @@ async fn dial_route(
   route : Route,
   agent : String?,
   limits : @h1.Limits,
+  phases : PhaseLog,
 ) -> Wire raise @mttp_core.TransportError {
   match route {
-    Direct => Wire::dial(dialer, target.host, target.port, target.secure)
-    Forward(proxy) => Wire::dial(dialer, proxy.host, proxy.port, proxy.secure)
+    Direct =>
+      Wire::dial(dialer, target.host, target.port, target.secure, phases)
+    Forward(proxy) =>
+      Wire::dial(dialer, proxy.host, proxy.port, proxy.secure, phases)
     Tunnel(proxy) => {
-      let wire = Wire::dial(dialer, proxy.host, proxy.port, proxy.secure)
+      // TlsDone reports the session the request is written in: the
+      // origin's when the target is https, otherwise the proxy's.
+      let wire = Wire::dial(
+        dialer,
+        proxy.host,
+        proxy.port,
+        proxy.secure,
+        phases,
+        report_tls=!target.secure,
+      )
       errdefer wire.close()
       if proxy.socks {
         open_socks_tunnel(wire, target, proxy.socks_auth)
@@ -331,6 +343,7 @@ async fn dial_route(
       }
       if target.secure {
         wire.conn = dialer.start_tls(wire.conn, host=target.host)
+        phases.emit(TlsDone)
       }
       wire
     }

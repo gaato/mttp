@@ -205,6 +205,15 @@ message buffered before it is delivered before that failure is reported.
     only unclaimed hand-overs: take or discard unregisters immediately, close
     reclaims the remainder, and late arrivals after close are reclaimed too.
     Connections already claimed belong to the caller and survive Client close.
+13. **Phase events.** A backend may report the points an exchange reaches
+    (`@mttp_core.PhaseEvent`: `Dialed(addr)`, `TlsDone`, `Pooled(reused)`,
+    `Written`, `FirstByte`) to the request's `@mttp_core.on_phase` attribute,
+    for observation only. It reports them in that order, each at most once
+    per send, and never after the send returned or raised; a point it cannot
+    see, or reached out of order (as `Written` after an early response's
+    `FirstByte`), is not reported. Reporting nothing is valid: JS fetch sees
+    no connections and reports none. A wrapper passes request attributes on,
+    so the callback reaches the engine beneath it.
 
 A backend written outside this repository, for example over another HTTP
 engine, passes `@sim.check_backend_contract(make_backend)` from
@@ -353,6 +362,12 @@ all four targets. Its cancellation semantics match core/async's:
     twice per `send` and never refreshes one marked `auth_refreshed`.
     `Client::sse_reconnecting` checks closure before and after each reconnect
     wait, as rule 9 does for a retry, and returns the last end as `GaveUp`.
+10. With `events`, each attempt reports `AttemptStart` after admission,
+    then its backend's phase events and its redirect hops, then `AttemptEnd`
+    wherever the observer is called, cancellation included. Nothing about an
+    attempt is reported after its `AttemptEnd`: the Client drops later phase
+    and redirect reports. A `Retry` is reported when the retry is sent, after
+    its wait, between the two attempts.
 
 ## Incremental parsers
 

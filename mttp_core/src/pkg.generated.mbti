@@ -35,6 +35,8 @@ pub fn is_success(Int32) -> Bool
 
 pub fn join_url(String, String) -> String
 
+pub let on_phase : AttributeKey[(PhaseEvent) -> Unit]
+
 pub fn parse_http_date(String, now_unix_ms~ : Int64) -> Int64?
 
 pub fn percent_decode(String) -> String raise UrlError
@@ -199,6 +201,19 @@ pub(all) enum Phase {
 pub fn Phase::equal(Self, Self) -> Bool
 pub fn Phase::not_equal(Self, Self) -> Bool
 pub fn Phase::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum PhaseEvent {
+  Dialed(addr~ : String)
+  TlsDone
+  Pooled(reused~ : Bool)
+  Written
+  FirstByte
+}
+pub fn PhaseEvent::equal(Self, Self) -> Bool
+pub fn PhaseEvent::not_equal(Self, Self) -> Bool
+pub fn PhaseEvent::to_repr(Self) -> @debug.Repr
 
 pub(all) struct Request {
   meth : Method

@@ -122,6 +122,16 @@ on the connection to the proxy.
   `Proxy-Authorization` is never sent; a proxy's credentials (from its
   URL) go to that proxy only. Connections through different proxies, or
   none, are pooled apart.
+- **Phase events.** A request whose `@mttp_core.on_phase` attribute is set
+  (a `Client` with `events` sets it) hears `Dialed(addr)` when a connection
+  opens (`addr` is `host:port`, the proxy's with a proxy), `TlsDone` when the
+  TLS session the request is written in is up, `Pooled(reused)` when the
+  request has its connection (`reused=true`: from the pool, with no
+  `Dialed` or `TlsDone`), `Written` when the whole request was written and
+  `FirstByte` when the response began, in that order, once each, and none
+  after the send returned. A stale connection's replacement does not repeat
+  them, and a response that begins before the upload ends leaves `Written`
+  out.
 - **Ownership.** A response body owns its connection and slot until it is
   read to its end or closed. Cancelling a send or a read closes what it
   owns and propagates unchanged.

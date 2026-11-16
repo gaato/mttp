@@ -17,9 +17,59 @@ fn printf_bytes(bytes : Bytes) -> String {
 }
 
 ///|
+/// The header names whose values `to_curl` and `redact_headers` hide by
+/// default, in lowercase: request credentials (`authorization`,
+/// `proxy-authorization`, `cookie`, `x-api-key`, `api-key`) and the
+/// response's `set-cookie`.
+pub let default_sensitive_headers : ReadOnlyArray[String] = [
+  "authorization", "proxy-authorization", "cookie", "x-api-key", "api-key", "set-cookie",
+]
+
+///|
+/// `headers` for a log line: the value of every field named in `names`
+/// (ASCII case ignored) becomes `<redacted>`, as in `to_curl`; the other
+/// fields, the names and the order stay. Use it on `Attempt.request.headers`
+/// and `Attempt.headers` before they leave the process.
+///
+/// ```mbt check
+/// test {
+///   let headers = @mttp_core.Headers::of([
+///     ("Authorization", "Bearer secret"),
+///     ("accept", "application/json"),
+///   ])
+///   assert_eq(
+///     @client.redact_headers(headers),
+///     @mttp_core.Headers::of([
+///       ("Authorization", "<redacted>"),
+///       ("accept", "application/json"),
+///     ]),
+///   )
+/// }
+/// ```
+pub fn redact_headers(
+  headers : @mttp_core.Headers,
+  names~ : ArrayView[String] = default_sensitive_headers[:],
+) -> @mttp_core.Headers {
+  let sensitive = names.map(String::to_lower)
+  headers
+  .iter()
+  .fold(init=@mttp_core.Headers::empty(), (out, field) => {
+    let (name, value) = field
+    out.add(
+      name,
+      if sensitive.contains(name.to_lower()) {
+        "<redacted>"
+      } else {
+        value
+      },
+    )
+  })
+}
+
+///|
 /// Renders a POSIX-shell curl diagnostic for the raw request, before Client
-/// defaults, cookies, retries or redirects. Sensitive header names are matched
-/// case-insensitively. URL userinfo is redacted; query strings and byte bodies
+/// defaults, cookies, retries or redirects. Sensitive header names
+/// (default: `default_sensitive_headers`) are matched case-insensitively. URL userinfo is redacted; query strings and byte bodies
 /// are not. Set include_body=false to omit byte bodies as well.
 ///
 /// Byte bodies use a quoted printf pipeline so NUL, quotes, newlines and an
@@ -28,9 +78,9 @@ fn printf_bytes(bytes : Bytes) -> String {
 /// omission. This function does not execute the command or validate the URL.
 pub fn[T] ClientRequest::to_curl(
   self : ClientRequest[T],
-  sensitive_headers~ : Array[String] = [
-    "authorization", "proxy-authorization", "cookie", "x-api-key", "api-key",
-  ],
+  sensitive_headers~ : Array[String] = Array::from_iter(
+    default_sensitive_headers.iter(),
+  ),
   include_body~ : Bool = true,
 ) -> String {
   let request = self.raw

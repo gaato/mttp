@@ -147,6 +147,90 @@ test "a login that answers with a redirect and a cookie" {
 }
 ```
 
+## Observability
+
+`events=` (opt-in, beside the `observer`) receives every `ClientEvent` of every
+send, inline and in order. For each attempt it gets `AttemptStart`, then the
+backend's `Phase` events and a `Redirect` for each hop followed inside the
+attempt, then `AttemptEnd` with the `Attempt` the observer gets. A `Retry`
+comes between one attempt's end and the next one's start, when the retry is
+sent; a retry that closing or the retry budget cancels during its wait
+reports none. Nothing about an attempt follows its `AttemptEnd`, a cancelled
+one included: a late phase report from the backend is dropped.
+
+`Phase` events come from the backend through the `@mttp_core.on_phase`
+request attribute, which the Client sets on each attempt. A backend reports
+what it can see, in this order and at most once per exchange: `Dialed(addr)`,
+`TlsDone`, `Pooled(reused)`, `Written`, `FirstByte`. The HTTP/1.1 engine
+(`gaato/mttp_core/h1client`) reports them all; a connection taken from the
+pool reports `Pooled(reused=true)` without `Dialed` or `TlsDone`. JS fetch
+cannot see connections or TLS and reports none. Each redirect hop is its own
+exchange, so the phases start again after each `Redirect`.
+
+The fields are named so that an OpenTelemetry exporter, built in a module of
+its own, maps them onto the HTTP client semantic conventions directly:
+
+| Event field | OpenTelemetry attribute |
+|---|---|
+| `AttemptStart.request.meth` | `http.request.method` |
+| `AttemptStart.request.url` | `url.full` (redact it first if it carries secrets) |
+| `AttemptStart.attempt`, `Retry.attempt` | `http.request.resend_count` |
+| `AttemptStart.request.headers`, `Attempt.headers` | `http.request.header.<name>`, `http.response.header.<name>` (pass them through `redact_headers`) |
+| `Attempt.status`, `Redirect.status` | `http.response.status_code` (0: no response) |
+| `Attempt.duration_ms` | the `http.client.request.duration` histogram, in seconds |
+| `Attempt.error`, `Retry.reason` | `error.type`: the status code, or the transport failure's kind (`timeout`, `connect`, ...) |
+| `Phase(Dialed(addr))` | `server.address` and `server.port` of the connection (the proxy when one is used) |
+| `Phase(Pooled(reused))` | connection reuse; span events `Dialed` to `FirstByte` give the connect, TLS and time-to-first-byte timings |
+| `trace_id` (with `trace_context`) | the span's trace id |
+
+`trace_context(backend, generate=random)` is a Backend wrapper that gives each
+request without one a W3C `traceparent` (version 00, random trace and span ids
+from the injected source, sampled) and records the trace id on the response
+under `trace_id`; a request that has its own `traceparent` keeps it.
+
+`redact_headers(headers)` replaces the values of credential fields with
+`<redacted>` for logging; its default list, `default_sensitive_headers`, is
+the one `to_curl` uses, plus `set-cookie`.
+
+```mbt check
+///|
+test "log each attempt with its phases, credentials hidden" {
+  let backend = @client.from_fn((request, _) => {
+    if request.attributes.get(@mttp_core.on_phase) is Some(report) {
+      report(Written)
+      report(FirstByte)
+    }
+    @mttp_core.Response::new(200)
+  })
+  let log = []
+  let client = @client.Client::new(
+    @client.trace_context(backend, generate=() => 0.5),
+    @sim.FakeClock::new(),
+    headers=@mttp_core.Headers::of([("authorization", "Bearer secret")]),
+    events=event => {
+      match event {
+        AttemptStart(request~, ..) => {
+          let headers = @client.redact_headers(request.headers)
+          log.push("start \{headers.get("authorization").unwrap_or("")}")
+        }
+        Phase(phase=Written, ..) => log.push("written")
+        Phase(phase=FirstByte, ..) => log.push("first byte")
+        AttemptEnd(attempt) => log.push("end \{attempt.status}")
+        _ => ()
+      }
+    },
+  )
+  let reply = @driver.run_sync(() => {
+    client.send(@client.get("https://api.example/"))
+  })
+  assert_eq(log, ["start <redacted>", "written", "first byte", "end 200"])
+  assert_eq(
+    reply.attributes.get(@client.trace_id),
+    Some("80000000800000008000000080000000"),
+  )
+}
+```
+
 ## Wrappers
 
 A policy that needs only the request and the response head is a Backend
@@ -160,6 +244,8 @@ wrapper:
   per-request limit then reaches the stack's own `FollowRedirects`.
 - `from_fn` and `from_handler` turn a function or an `@mttp_core.Handler` into a
   backend that validates what it is given.
+- `trace_context` adds a W3C `traceparent` to each request that has none
+  (see Observability).
 
 ## Resilience
 
@@ -327,7 +413,8 @@ test "an expired token is refreshed once and the request resent" {
 `Paginator` walks cursor-paged APIs with failures as values; `parse_link_next`
 reads an RFC 8288 `Link: <…>; rel="next"`; `parse_retry_after` and
 `retry_after_ms` read server-requested delays; `RequestPlan::to_curl` renders
-a request for diagnostics with credentials redacted.
+a request for diagnostics with credentials redacted, and `redact_headers`
+does the same to a header list for logging.
 
 `ResponsePlan::prepared_stream(decode, use_)` joins the two modes: `decode`
 bounds and decodes the body inside the attempt, so its `Err` reaches the retry

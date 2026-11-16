@@ -241,3 +241,47 @@ async test "coordination() lets an EventStream channel wait on the event loop" {
     assert_eq(stream.next(), None)
   })
 }
+
+///|
+async test "client() passes observer, events and random to the Client it builds" {
+  with_local_server(_ => @mttp_core.Response::new(200, body=Bytes(b"ok")), address => {
+    let observed = []
+    let events = []
+    let draws = Ref(0)
+    let api = @mttp.client(
+      base_url="http://\{address}",
+      observer=attempt => observed.push(attempt.status),
+      events=event => {
+        match event {
+          Phase(phase~, ..) => events.push(phase)
+          _ => ()
+        }
+      },
+      random=() => {
+        draws.val += 1
+        0.5
+      },
+    )
+    defer api.close()
+    for _ in 0..<2 {
+      assert_eq(api.send(@mttp.get("/")).body, Ok("ok"))
+    }
+    assert_eq(observed, [200, 200])
+    assert_eq(draws.val, 2)
+    // The socket backend reports its phases; the second send reuses the
+    // connection the first one parked.
+    let (host, port) = match address.rev_find(":") {
+      Some(i) => (address[:i].to_owned(), address[i + 1:].to_owned())
+      None => fail("no port in \{address}")
+    }
+    assert_eq(events, [
+      Dialed(addr="\{host}:\{port}"),
+      Pooled(reused=false),
+      Written,
+      FirstByte,
+      Pooled(reused=true),
+      Written,
+      FirstByte,
+    ])
+  })
+}

@@ -14,6 +14,7 @@ gaato/mttp_core	BodyTiming
 gaato/mttp_core	Kind
 gaato/mttp_core	Method
 gaato/mttp_core	Phase
+gaato/mttp_core	PhaseEvent
 gaato/mttp_core/driver	DriverErrorKind
 gaato/mttp_core/h1	Framing
 gaato/mttp_core/h1	ParseKind
@@ -28,6 +29,7 @@ gaato/mttp_core/client/retry	RetryAfterSource
 gaato/mttp_core/client/retry	StopReason
 gaato/mttp_core/client/ratelimit	LimitScope
 gaato/mttp_core/cookie	SameSite
+gaato/mttp_core/client	ClientEvent
 gaato/mttp_core/client	ResponseFailure
 gaato/mttp_core/client	ReconnectDecision
 gaato/mttp_core/client	SseDisconnect

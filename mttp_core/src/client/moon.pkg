@@ -13,6 +13,7 @@ import {
 
 import {
   "gaato/mttp_core/driver",
+  "gaato/mttp_core/h1client",
   "gaato/mttp_core/sim",
 } for "test"
 

@@ -52,6 +52,13 @@ test "request attributes and their keys are reachable through gaato/mttp" {
     @mttp.replay_safe, true,
   )
   assert_eq(request.attributes.get(@mttp_core.replay_safe), Some(true))
+  // The phase callback and its events are the core's too.
+  let phases : Array[@mttp.PhaseEvent] = []
+  let request = request.attribute(@mttp.on_phase, phase => phases.push(phase))
+  if request.attributes.get(@mttp_core.on_phase) is Some(report) {
+    report(@mttp_core.Written)
+  }
+  assert_eq(phases, [Written])
 }
 
 ///|

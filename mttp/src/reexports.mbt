@@ -23,6 +23,8 @@ pub using @mttp_core {
   protocol,
   replay_safe,
   read_bounded,
+  type PhaseEvent,
+  on_phase,
 }
 
 ///|
@@ -35,6 +37,8 @@ pub using @client {
   type RetryPolicy,
   type RetryBudget,
   type RedirectConfig,
+  type Attempt,
+  type ClientEvent,
   get,
   post,
   request,
