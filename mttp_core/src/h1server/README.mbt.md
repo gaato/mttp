@@ -98,8 +98,9 @@ test "serve a request" {
 - **Deadlines.** `header_timeout_ms` from the end of one exchange to the end
   of the next head (408 once a byte arrived, a silent close before),
   `body_timeout_ms` for a whole request body (408) and for each write and
-  each read of a streamed response, `handler_timeout_ms` for the handler
-  (504). A timeout before the response head is 408 only when a request-body
+  each read of a streamed response, and, when set, `handler_timeout_ms` for
+  the handler (504; off by default, as in Go, Node, hyper and Kestrel, since a
+  handler's running time depends on the application). A timeout before the response head is 408 only when a request-body
   pull was in progress or already failed; an independent response producer
   timing out becomes 500 and reaches `on_error`, even with an unread body.
   A response stream that pauses longer than `body_timeout_ms` ends its

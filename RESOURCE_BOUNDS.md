@@ -209,9 +209,18 @@ Growth that follows what the caller asks for, not what the network sends.
 
 ## Known gaps
 
-Growth the library does not bound yet, with what limits it in practice and how
-it could be fixed.
-
-| Structure | Grows with | What limits it | Suggested fix |
-|---|---|---|---|
-| `mttp_core/h1server` handler lifetime with `handler_timeout_ms = None` (the design's explicit default) | Time an application spends without returning or pulling its body; peer failure cannot be detected once raw read-ahead reaches 64 KiB | Configuring a finite handler deadline; request-body deadlines start only on a pull. `disconnect_test.mbt`: "a full unread body read ahead stops at 64 KiB and the handler deadline cancels it" | Propose a finite default handler deadline in the design before changing `ServerLimits::default()`; keep `None` as explicit opt-out for long-running handlers |
+None. The handler's own running time is bounded by the application, not by
+default: `h1server`'s `handler_timeout_ms` is `None` unless set. This was
+decided on 2026-11-16 after comparing other servers: Go's net/http, Node's
+http, hyper, ASP.NET Core's Kestrel, uvicorn, aiohttp and Bun put no default
+deadline on a handler; they bound the I/O around it (receiving the head, idle
+connections, data rates) and offer a handler deadline to opt into (Go's
+TimeoutHandler, tower-http's TimeoutLayer, ASP.NET Core's request timeouts,
+whose documentation says processing times vary too much by scenario for a
+default). `h1server` does the same: its head, body and write deadlines are
+finite by default (rows above), and `handler_timeout_ms` (504 when it passes)
+is the opt-in. A handler that never returns and never pulls its body holds
+its connection, up to `max_connections`; with the request body unread, the
+engine reads ahead at most 64 KiB, and `disconnect_test.mbt`: "a full unread
+body read ahead stops at 64 KiB and the handler deadline cancels it" pins
+what a configured deadline then does.
