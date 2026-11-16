@@ -53,3 +53,26 @@ test "set replaces all values in place and remove removes all values" {
   empty = empty.set("NEW", "value")
   assert_eq(empty.get("new"), Some("value"))
 }
+
+///|
+test "header iterators retain snapshots across derived collections and reentrant visits" {
+  let input = [("X-A", "one"), ("X-A", "two"), ("X-B", "three")]
+  let original = @mttp_core.Headers::of(input)
+  let snapshot = original.iter()
+  assert_eq(snapshot.next(), Some(("x-a", "one")))
+  input[1] = ("changed", "input")
+  let mut current = original
+  let visited = []
+  original.each((name, value) => {
+    visited.push((name, value))
+    current = current.set(name, "replacement").add("new", value).remove("x-b")
+    let values = original.get_all(name)
+    values.clear()
+    let pairs = original.iter().to_array()
+    pairs.clear()
+  })
+  assert_eq(visited, [("x-a", "one"), ("x-a", "two"), ("x-b", "three")])
+  assert_eq(snapshot.to_array(), [("x-a", "two"), ("x-b", "three")])
+  assert_eq(original.get_all("x-a"), ["one", "two"])
+  assert_eq(current.get_all("new"), ["one", "two", "three"])
+}

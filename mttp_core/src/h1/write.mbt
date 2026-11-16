@@ -8,30 +8,41 @@ fn wire_fields(
   framing : Framing,
   v : Version,
   empty_length~ : Bool,
-) -> @mttp_core.Headers raise ParseError {
+) -> Array[(String, String)] raise ParseError {
   // Fields replaced below are validated too: a framing override must not
   // hide a malformed value the caller supplied.
   headers.validate() catch {
     @mttp_core.TransportError(detail~, ..) => raise malformed(detail)
   }
-  let headers = headers.remove("content-length").remove("transfer-encoding")
+  let headers = if framing is UntilClose {
+    headers.set("connection", "close")
+  } else {
+    headers
+  }
+  // Build one privately owned array, then append canonical framing in place.
+  // The caller's immutable Headers and any of its iterators stay untouched.
+  let fields = headers
+    .iter()
+    .filter(pair => pair.0 != "content-length" && pair.0 != "transfer-encoding")
+    .to_array()
   match framing {
-    NoBody if empty_length => headers.add("content-length", "0")
-    NoBody => headers
+    NoBody if empty_length => fields.push(("content-length", "0"))
+    NoBody => ()
     Length(n) => {
       if n < 0L {
         raise malformed("negative body length")
       }
-      headers.add("content-length", n.to_string())
+      fields.push(("content-length", n.to_string()))
     }
     Chunked => {
       if v == Http10 {
         raise ParseError(kind=Unsupported, detail="HTTP/1.0 cannot be chunked")
       }
-      headers.add("transfer-encoding", "chunked")
+      fields.push(("transfer-encoding", "chunked"))
     }
-    UntilClose => headers.set("connection", "close")
+    UntilClose => ()
   }
+  fields
 }
 
 ///|
@@ -45,10 +56,10 @@ fn version_text(v : Version) -> String {
 ///|
 /// Writes the start line and the fields; values are written as Latin-1
 /// octets, the inverse of the parser's decoding.
-fn head_bytes(start : String, headers : @mttp_core.Headers) -> Bytes {
+fn head_bytes(start : String, headers : ArrayView[(String, String)]) -> Bytes {
   let buffer = Buffer()
   buffer.write_bytes(@mttp_core.encode_utf8(start + "\r\n"))
-  for (name, value) in headers.iter() {
+  for (name, value) in headers {
     buffer.write_bytes(@mttp_core.encode_utf8(name + ": "))
     for c in value {
       buffer.write_byte(c.to_int().to_byte())

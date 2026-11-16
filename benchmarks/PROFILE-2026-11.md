@@ -663,3 +663,200 @@ There are no remaining correctness gate failures. The disposable profiler
 containers, executable copies, writable toolchain and config/cache copies
 are removed after verification; raw JSON, profiles, annotations and gate
 logs remain in `/var/tmp/mttp-plan/scratch/v15b/`.
+
+## V15c: fewer directional tasks and header copies
+
+Starting from `b1ca92b`, implement the remaining task-count and header-copy
+candidates without changing public interfaces, deadlines or framing policy.
+
+### Structured owners
+
+`SocketConn` now performs the read or bounded write loop in the task group's
+own callback, already a cancellable child. The former additional `spawn`
+and `Task::wait` disappear from every normal I/O. Close first marks the
+connection closed, then schedules at most one cancellation child for each
+active direction. That child calls `return_immediately` on its direction's
+group, waking the I/O owner even if core's handle close detached the pending
+operation. The caller still joins the owner and all cleanup before returning.
+The queued-owner closed check and checks between write slices prevent a
+write from starting after close. A cancelled read waiter still leaves consumed
+bytes committed in independently owned pending storage.
+
+`RuntimeCoordination.supervise` similarly runs primary in the existing group
+callback and spawns only the monitor. A monitor failure records the first
+error and ends the group; a normal monitor completion leaves primary running.
+Primary completion is recorded before monitor cleanup, and its delivered
+result cannot be replaced by a late monitor failure. Caller cancellation
+that races a synchronously completed owner is explicitly delivered after
+joining, for sockets and supervision alike.
+
+These are structural counts on the pinned core/async implementation:
+
+| Scope | Before | After |
+|---|---:|---:|
+| Normal socket read or write | 2 tasks | 1 task |
+| Supervision | 3 tasks | 2 tasks |
+| Additional work on explicit close | cancel existing I/O child | at most 1 cancellation child per active direction |
+
+There is still a task group per operation. The timer/virtual-clock scopes,
+64 KiB directional bounds, partial-write error classification and TCP/TLS
+failure translation remain in place. These counts do not establish a
+throughput improvement. The Callgrind comparison below measures the
+instruction reduction on the 15 B / 32-connection case; other body sizes
+and wall-clock throughput were not measured in V15c.
+
+### Header construction
+
+`Headers::of` maps the caller's view directly into one owned array instead
+of copying and then mapping. `iter` retains the existing array: every
+constructor owns its array, no header method mutates it, and no method
+exposes it. It therefore remains an immutable snapshot without an extra
+array copy. `get_all` and materialized iteration results remain independently
+mutable by their caller.
+
+The HTTP/1 writer validates all original fields, filters CL/TE into one
+private array and appends canonical framing in place. Previously, two
+`remove` operations and a framing `add` each constructed a new collection,
+followed by an iteration snapshot copy. UntilClose still replaces Connection
+at its first original position and removes duplicates. Validation of replaced
+fields, Latin-1 serialization, field order and duplicate field values remain
+unchanged. The engine's earlier response validation is retained so invalid
+headers are refused before a stream producer is pulled. Attribute construction
+and lifecycle transitions are unchanged.
+
+### Callgrind measurement — 2026-11-17
+
+Measure the existing `benchmarks/transport/main.mbt` server unchanged, using
+the method from V15a: native release, `MOON_CC=cc`, moon 0.1.20261104 / moonc
+0.10.20+65efd5b93. Extract `b1ca92b` with `git archive` into
+`/var/tmp/mttp-plan/scratch/v15c/before` and build it there; build the combined
+after executable in `/var/tmp/mttp-plan/wt-v15c`, without replacing that
+worktree's sources. The two other scratch copies start from the same archive:
+
+* `tasks-only` replaces only `mttp/src/internal/socketconn/socket.mbt` and
+  `mttp/src/runtime/coordination.mbt` with the worktree versions.
+* `headers-only` replaces only `mttp_core/src/headers.mbt` and
+  `mttp_core/src/h1/write.mbt` with the worktree versions.
+
+Build each with `moon run benchmarks/transport --target native --release --
+build`; all four builds pass. Run the resulting executables separately in a
+disposable container based on the same pinned Python image as earlier rounds,
+with Valgrind **1:3.19.0-1** and libc6 **2.36-9+deb12u14**. Install nothing on
+the host. All builds finish before profiling begins.
+
+For each interval, start a fresh server on `127.0.0.1:39165` under
+`valgrind --tool=callgrind`, pass its executable's exact-body
+`check http://127.0.0.1:39165/small small`, reset with
+`callgrind_control --zero PID`, then run the pinned oha image from the method
+section with `-n 2000 -c 32 --http-version 1.1 --no-tui --output-format json
+--wait-ongoing-requests-after-deadline`. Request a dump with
+`callgrind_control --dump PID` after oha exits, before sending SIGTERM.
+Use the reset interval's `.callgrind.1` PROGRAM TOTALS from
+`callgrind_annotate`; startup and the exact-body check are excluded, while
+the load's connection establishment/cleanup is included, as in V15a.
+
+Run in order **before, tasks-only, headers-only, after**, then repeat with
+fresh server processes in reverse order **after, headers-only, tasks-only,
+before**. Retain both runs rather than selecting the lower count. Every
+exact-body check passes (15 bytes); all eight loads report exactly 2,000 HTTP
+200 responses, `successRate: 1.0`, and an empty error distribution.
+
+| Variant | Run 1 total Ir / 2,000 | Run 2 total Ir / 2,000 | Mean Ir / response | Change vs before mean |
+|---|---:|---:|---:|---:|
+| Before (`b1ca92b`) | 714,323,143 | 715,376,042 | 357,424.8 | — |
+| Task reduction only | 627,227,532 | 627,237,967 | 313,616.4 | -12.26% |
+| Header copies only | 704,206,798 | 703,385,719 | 351,898.1 | -1.55% |
+| After (both) | 616,929,891 | 618,118,082 | 308,762.0 | **-13.61%** |
+
+Keep **both** changes: each standalone variant reduces instructions in both
+passes, and its two-run range is below the baseline range. Adding header
+changes to task reduction lowers mean instructions a further **1.55%**.
+No change needs a code-simplification exception to the retention rule.
+These are user-space instruction counts, not CPU cycles or a throughput
+claim. Skip duration-based/wall-clock benchmarks as requested.
+
+Raw evidence remains under `/var/tmp/mttp-plan/scratch/v15c/`: the prefixes
+`before`, `tasks-only`, `headers-only`, `after` and their `-repeat` variants
+each have `.callgrind.1`, `-callgrind-annotated.txt`, `-oha.json`, `-check.log`,
+`-zero.log`, `-dump.log` and `-valgrind.log`. Build logs,
+`executable-sha256.txt` and `profile-environment.txt` identify the four builds
+and tool versions. The disposable source copies, toolchain/config copies,
+executable copies and profiler container were removed after measurement;
+the raw profiles and logs remain readable by the workspace owner.
+
+### Regression coverage and handoff
+
+Five socket regressions cover close of both blocked directions, close after
+the first 64 KiB write slice, caller cancellation at the final write and close
+before a directional owner starts, plus cancellation whose I/O cleanup raises
+an ordinary error. Existing cancelled-read handoff, storage
+reuse, EOF, error mapping, TLS and bridge tests also run. Two runtime tests
+cover synchronous primary outcomes versus a late monitor failure and caller
+cancellation racing primary completion; the shared coordination contract
+continues to cover nested cancellation, protection and joined cleanup.
+Header tests retain a partially consumed iterator while mutating input and
+derived results and making reentrant visits; writer tests pin original-header
+isolation, Connection ordering and validation of all replaced fields.
+
+Logical change groups for review are the socket adapter plus runtime
+coordination and their tests (`mttp`), and Headers plus HTTP/1 serialization
+and their tests (`mttp_core`). Their changelog, resource/coverage-ledger and
+manifest hunks follow those groups. No commits are made in this worktree.
+
+The first socket implementation exposed a real cancellation regression:
+
+```text
+[gaato/mttp] test internal/socketconn/socket_wbtest.mbt:89 ("cancelled read waiter retains bytes committed by its completed child") failed: src/internal/socketconn/socket_wbtest.mbt:99:7-99:38@gaato/mttp FAILED: cancelled read returned
+```
+
+The owner had committed the bytes, but completing the group before its
+cancelled caller resumed left the signal pending. The post-join cancellation
+checkpoint fixes this; the final read/write race regressions explicitly pin
+both the signal and cleanup. The error path also delivers pending caller
+cancellation before translating an error raised by I/O cleanup.
+
+Final focused checks use moon 0.1.20261104 / moonc 0.10.20+65efd5b93,
+`MOON_CC=cc`, a writable toolchain and XDG config under
+`/var/tmp/mttp-plan/scratch/v15c/`. `moon check --deny-warn` and `moon info`
+pass; generated `.mbti` files are unchanged. The four changed packages have
+83 tests in the vocabulary package, 53 in h1, 28 in runtime and 17 in
+socketconn. All pass on their supported targets: the first two on all four,
+runtime on native/wasm/js and socketconn on native/wasm. The focused native
+instrumented run passes 181/181 tests. The changed Headers and writer sources
+are fully covered; socket's two unexecuted TLS IncompleteClose lines and
+coordination's five defensive error-mapping lines are explicitly ledgered.
+The socket ledger budget shrinks from three to two.
+
+Repeated development coverage runs initially mixed stale counters and failed
+with this tooling diagnostic:
+
+```text
+error: counter length mismatch for 'gaato/mttp/runtime$coordination': expected 31, got 29; remove stale coverage outputs
+```
+
+The final report uses the fresh `_build/v15c-coverage` run's trace maps and
+counter files explicitly; its four `coverage-*-final.txt` reports succeed.
+Focused check/test, formatting, info, coverage and manifest logs remain in
+the scratch directory. No quick/static/full, interop or workerd run is made
+here, per the shared-host task rules; the coordinator owns those stacked
+checks. The subsequent Callgrind-only measurement above leaves implementation
+and test sources unchanged, so those correctness results still apply.
+
+`scripts/gates.sh manifest --update` passes with `gates: OK` and
+`scripts/test_manifest.tsv: OK (211 rows)`. It preserves row order and changes
+only the thirteen rows for the four changed packages:
+
+| Package | Before | After | Targets tested |
+|---|---:|---:|---|
+| `gaato/mttp_core` | 82 | 83 | wasm-gc, wasm, js, native |
+| `gaato/mttp_core/h1` | 52 | 53 | wasm-gc, wasm, js, native |
+| `gaato/mttp/runtime` | 26 | 28 | wasm, js, native |
+| `gaato/mttp/internal/socketconn` | 12 | 17 | wasm, native |
+
+The changed packages total 136 tests on wasm-gc, 181 on wasm, 164 on js and
+181 on native. Unsupported targets are not advertised for the runtime or
+socket adapter. The manifest run also verifies final-code native conn
+(11 tests), server (28), backend (25) and portable h1server (103 per target);
+there are no remaining failing test lines. The writable toolchain and config
+copies are removed after verification; logs and coverage reports remain in
+`/var/tmp/mttp-plan/scratch/v15c/`.

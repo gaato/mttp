@@ -30,7 +30,7 @@ pub fn Headers::empty() -> Headers {
 ///|
 /// Copies pairs in their original order and normalizes their names.
 pub fn Headers::of(pairs : ArrayView[(String, String)]) -> Headers {
-  { pairs: pairs.to_owned().map(pair => (pair.0.to_lower(), pair.1)), }
+  { pairs: pairs.map(pair => (pair.0.to_lower(), pair.1)), }
 }
 
 ///|
@@ -96,7 +96,9 @@ pub fn Headers::contains(self : Headers, name : String) -> Bool {
 ///|
 /// Iterates over a snapshot of normalized pairs in insertion order.
 pub fn Headers::iter(self : Headers) -> Iter[(String, String)] {
-  self.pairs.copy().iter()
+  // Every constructor owns its array, no method mutates it, and no method
+  // exposes it. Retaining that array is already an immutable snapshot.
+  self.pairs.iter()
 }
 
 ///|

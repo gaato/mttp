@@ -7,6 +7,7 @@ test "wire writers retain duplicate fields and replace framing consistently" {
     ("content-length", "99"),
     ("transfer-encoding", "gzip"),
   ])
+  let snapshot = fields.iter()
   for framing in [@h1.Framing::NoBody, Length(3), Chunked, UntilClose] {
     let head = @h1.write_response_head(200, fields, framing, Http11)
     let response = @h1.parse_response_head(head)
@@ -32,6 +33,14 @@ test "wire writers retain duplicate fields and replace framing consistently" {
       assert_eq(parsed.get("connection"), Some("close"))
     }
   }
+  assert_eq(snapshot.to_array(), [
+    ("set-cookie", "a=1"),
+    ("set-cookie", "b=2"),
+    ("x", "ÿ"),
+    ("content-length", "99"),
+    ("transfer-encoding", "gzip"),
+  ])
+  assert_eq(fields.get("content-length"), Some("99"))
   assert_eq(
     @h1.parse_response_head(
       @h1.write_response_head(204, @mttp_core.Headers::empty(), NoBody, Http10),
@@ -52,6 +61,37 @@ test "wire writers retain duplicate fields and replace framing consistently" {
   let decoder = @h1.ChunkedDecoder::new(@h1.Limits::default())
   assert_eq(decoder.feed(@h1.encode_chunk(b"data")).chunks, [b"data"])
   assert_true(decoder.feed(@h1.encode_chunk(b"")).done)
+}
+
+///|
+test "close framing preserves connection replacement position and validates replaced fields" {
+  let fields = @mttp_core.Headers::of([
+    ("x-before", "1"),
+    ("connection", "keep-alive"),
+    ("content-length", "3"),
+    ("x-after", "2"),
+    ("connection", "upgrade"),
+    ("transfer-encoding", "gzip"),
+  ])
+  assert_eq(
+    @h1.write_response_head(200, fields, UntilClose, Http11),
+    b"HTTP/1.1 200 OK\r\nx-before: 1\r\nconnection: close\r\nx-after: 2\r\n\r\n",
+  )
+  for name in ["connection", "content-length", "transfer-encoding"] {
+    try
+      @h1.write_response_head(
+        200,
+        fields.add(name, "bad\r\nvalue"),
+        UntilClose,
+        Http11,
+      )
+    catch {
+      @h1.ParseError(kind=Malformed, ..) => ()
+      _ => fail("wrong validation error")
+    } noraise {
+      _ => fail("framing hid an invalid field")
+    }
+  }
 }
 
 ///|

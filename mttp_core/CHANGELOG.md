@@ -65,6 +65,11 @@ never does.
   undefined security names, duplicate webhook names and cross-document schema,
   security-scheme and operation-ID conflicts are refused. Public operations
   retain explicit empty security requirements.
+### Changed
+
+- Reduce header copies in construction, snapshot iteration and HTTP/1 head
+  serialization. Input arrays remain isolated, derived headers retain their
+  snapshots, and replaced framing fields are still validated.
 
 ## [0.2.0] - 2026-11-17
 
