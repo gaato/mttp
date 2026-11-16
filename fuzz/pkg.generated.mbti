@@ -1,0 +1,24 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-fuzz"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn fuzz_h1(Bytes) -> Int32
+
+pub fn fuzz_ws(Bytes) -> Int32
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+type Message
+
+#derive(Eq, @debug.Debug)
+type Trace
+
+// Type aliases
+
+// Traits

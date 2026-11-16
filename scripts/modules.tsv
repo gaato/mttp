@@ -68,3 +68,4 @@ examples/tour	gaato/mttp-example-tour	example	native	gaato/mttp_core,gaato/mttp	
 examples/retries	gaato/mttp-example-retries	example	native	gaato/mttp	*	*	no
 interop	gaato/mttp-interop	example	native,js	gaato/mttp_core,gaato/mttp,moonbitlang/x	*	*	no
 benchmarks/transport	gaato/mttp-transport-bench	benchmark	native	gaato/mttp_core,gaato/mttp	*	*	no
+fuzz	gaato/mttp-fuzz	benchmark	native	gaato/mttp_core	*	*	no

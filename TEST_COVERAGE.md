@@ -161,6 +161,51 @@ the exact `7fffffffffffffff` boundary test now kills it. Final result: 49
 killed, zero survived, one equivalent, zero timeout. Run with
 `scripts/gates.sh mutate`.
 
+## Coverage-guided fuzzing (2026-11-16)
+
+`fuzz/` holds two libFuzzer targets over mttp_core's parsers, compiled
+from the C that moonc generates: `fuzz_h1` reads arbitrary bytes as a
+request or a response (to GET, HEAD, POST, CONNECT or OPTIONS; default or
+small limits) through the reader that `h1/reader_test.mbt` builds on the
+codec, and `fuzz_ws` feeds them to `ws/frame` `Parser` as either role. The
+first input byte picks the mode and the next two a cut. Each input runs
+whole, cut in two there and (up to 2 KiB) one byte at a time; the targets
+abort, and libFuzzer keeps the input, when an outcome is neither a value nor
+a `ParseKind`/`FrameErrorKind`, when the cuts disagree, when `next` stops
+making progress, or when a message the reader accepts does not read back the
+same after the writer writes it (as `h1/property_test.mbt` checks).
+
+`scripts/gates.sh fuzz [SECONDS]` (default 60 per target; daily in canary
+at 300) builds them with ASan in a disposable copy. It works around two
+toolchain facts on 0.10.20: moonc writes machine code for native unless a
+package sets `cc-flags`, so the copy sets them to get C; and the C is
+linked against the runtime's sources built with the system allocator, so
+ASan sees every MoonBit allocation and libFuzzer supplies `main`. Seeds are
+the byte literals of the h1 and ws/frame tests and the conformance vectors,
+under each mode. A failure prints the abort message and the input (escaped
+and in base64) and leaves the input in `_build/fuzz/`: the first three bytes
+are the mode and the cut, the rest is the wire for a corpus row.
+
+First runs (MoonBit 0.10.20, clang 23, a shared host under load; the same
+gate also passed on Ubuntu 24.04's stock clang 18): 20 minutes each, about
+1,500 exec/s for h1 (1.57M inputs, 2,197 → 2,634 edges) and 1,000 exec/s
+for ws (1.21M inputs, 319 → 329 edges; the frame parser is small and the
+seeds already reach nearly all of it). Neither found a crash, an ASan
+report, a hang or a cut-dependent outcome in the codec. Both findings were
+in the rewrite property that `h1/property_test.mbt` shares, which its
+generators never reach:
+
+- The seeds' own `status above 599` row: readers keep 600–999 and writers
+  refuse them (h1 README), so the property now skips them.
+- A POST without framing and exactly 100 fields: the writer adds
+  `content-length: 0`, field 101, which default limits refuse on reading
+  back. The writer may also add a byte per field (`a:b` → `a: b`), so the
+  property now reads back with room above the limits.
+
+Each has a regression test in `h1/property_test.mbt`. After both fixes a
+further 10 minutes each (1.30M h1 inputs at 2,200 exec/s, 0.70M ws at
+1,200) found nothing.
+
 ## Accepted uncovered
 
 | File | Budget | Reason |

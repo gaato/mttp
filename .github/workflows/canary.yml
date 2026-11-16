@@ -72,6 +72,46 @@ jobs:
           MOON_CC: cc
         run: scripts/gates.sh sanitize
 
+  # Coverage-guided fuzzing of the HTTP/1.1 reader and the WebSocket frame
+  # parser (fuzz/, TEST_COVERAGE.md). A short daily run on the pinned moon;
+  # a failure leaves the crashing input in _build/fuzz, uploaded below.
+  fuzz:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned moon from the gate image
+        run: |
+          image="ghcr.io/gaato/moonbit:$(tr + - < moonbit-version)"
+          id=$(docker create "$image")
+          docker cp "$id:/opt/moon" "$RUNNER_TEMP/moon"
+          docker rm "$id"
+          echo "MOON_HOME=$RUNNER_TEMP/moon" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/moon/bin" >> "$GITHUB_PATH"
+      # The runner's clang links libFuzzer only with Ubuntu's compiler-rt
+      # package; install it when the image lacks it.
+      - name: Ensure clang can link libFuzzer
+        run: |
+          printf 'int LLVMFuzzerTestOneInput(const char *d, unsigned long n) { return 0; }\n' > "$RUNNER_TEMP/probe.c"
+          if ! clang -fsanitize=fuzzer,address "$RUNNER_TEMP/probe.c" -o "$RUNNER_TEMP/probe"; then
+            sudo apt-get update
+            sudo apt-get install -y "libclang-rt-$(clang -dumpversion | cut -d. -f1)-dev"
+          fi
+      - name: Fuzz each target for five minutes
+        env:
+          MOON_CC: cc
+        run: scripts/gates.sh fuzz 300
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-artifacts-${{ github.run_id }}
+          path: _build/fuzz
+          if-no-files-found: ignore
+          retention-days: 30
+
   # The interoperability suite (interop/README.md). It runs on the runner
   # itself, not in the gate image: the third-party programs run in
   # containers of their own, and the runner's docker starts them. moon comes

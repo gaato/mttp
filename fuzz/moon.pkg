@@ -1,0 +1,17 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1",
+  "gaato/mttp_core/ws/frame",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "native"
+
+// Stable C names for harness.c's LLVMFuzzerTestOneInput.
+
+options(
+  link: {
+    "native": { "exports": [ "fuzz_h1:mttp_fuzz_h1", "fuzz_ws:mttp_fuzz_ws" ] },
+  },
+)

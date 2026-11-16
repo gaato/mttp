@@ -41,6 +41,12 @@
 #                                           and mttp under ASan, using a
 #                                           disposable source/toolchain copy.
 #                                           Daily in canary, outside full
+#   scripts/gates.sh fuzz [SECONDS]         Linux libFuzzer+ASan runs of the
+#                                           fuzz/ targets (HTTP/1.1 reader,
+#                                           WebSocket frame parser), SECONDS
+#                                           each (default 60); needs clang
+#                                           with libFuzzer (FUZZ_CC). Daily
+#                                           in canary, outside full
 #   scripts/gates.sh mutate [SITE]...       the hand-run HTTP/1 mutation
 #                                           sample; not part of full or CI
 #   scripts/gates.sh apispec-corpus DIR     round-trip external OpenAPI JSON
@@ -218,6 +224,11 @@ case "$mode" in
   sanitize)
     [ $# = 0 ] || usage
     step script scripts/sanitize.mbtx
+    finish
+    ;;
+  fuzz)
+    [ $# -le 1 ] || usage
+    step script scripts/fuzz.mbtx -- "$@"
     finish
     ;;
   mutate)

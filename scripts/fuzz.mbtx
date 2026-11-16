@@ -1,0 +1,399 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+}
+----
+
+// Coverage-guided fuzzing of the HTTP/1.1 reader and the WebSocket frame
+// parser (fuzz/), with libFuzzer and ASan, on Linux:
+//
+//   moon run scripts/fuzz.mbtx -- [SECONDS]    (scripts/gates.sh fuzz)
+//
+// moonc emits C for the native target only when a package sets cc-flags
+// (otherwise 0.10.20 writes machine code directly, which nothing can
+// instrument), so the script sets them in a disposable copy of mttp_core and
+// fuzz/, takes the generated C, and compiles it with clang
+// -fsanitize=fuzzer-no-link,address next to the runtime's C (ASan only) and
+// fuzz/harness.c. The runtime is built with the system allocator, so ASan
+// sees every MoonBit allocation. Each target then runs SECONDS (default 60)
+// seeded with the byte literals of the h1 and ws/frame tests and the
+// conformance vectors. A violated invariant aborts; the input is kept in
+// _build/fuzz/ and the script fails. FUZZ_CC names the compiler (default
+// clang; it needs libFuzzer).
+
+///|
+suberror FuzzError {
+  FuzzError(String)
+}
+
+///|
+/// What moon itself passes when it compiles generated C, plus ASan's.
+let c_flags : Array[String] = [
+  "-g", "-O1", "-fno-omit-frame-pointer", "-fwrapv", "-fno-strict-aliasing", "-ffp-contract=off",
+  "-DMOONBIT_ALLOW_STACKTRACE", "-DMOONBIT_ALLOCATOR=MOONBIT_ALLOCATOR_SYSTEM",
+]
+
+///|
+/// The targets: the entry harness.c calls, the test sources whose byte
+/// literals seed it, and the mode bytes each seed is tried under (the first
+/// input byte of fuzz/h1.mbt and fuzz/ws.mbt).
+let targets : Array[(String, Array[String], Array[Int32])] = [
+  (
+    "h1",
+    ["mttp_core/src/h1", "conformance/src/http1"],
+    // request; response to GET; response to HEAD; request, small limits
+    [0x00, 0x01, 0x03, 0x10],
+  ),
+  (
+    "ws",
+    ["mttp_core/src/ws/frame", "mttp_core/src/ws"],
+    // client, server, RSV1 allowed, at the largest frame limit; 125 bytes
+    [0x0c, 0x0d, 0x0e, 0x04],
+  ),
+]
+
+///|
+async fn command(
+  program : String,
+  args : Array[String],
+  cwd? : String,
+  env? : Map[String, String],
+) -> String {
+  let result = @shell.Cmd(program, args, cwd?, env?).output(timeout_ms=1200000)
+  if result.exit_code() != 0 {
+    println(result.stdout())
+    println(result.stderr())
+    raise FuzzError("\{program} exited with \{result.exit_code()}")
+  }
+  result.stdout().trim().to_owned()
+}
+
+///|
+fn hex(c : Char) -> Int32? {
+  match c {
+    '0'..<='9' => Some(c.to_int() - '0'.to_int())
+    'a'..<='f' => Some(c.to_int() - 'a'.to_int() + 10)
+    'A'..<='F' => Some(c.to_int() - 'A'.to_int() + 10)
+    _ => None
+  }
+}
+
+///|
+/// Decodes the escapes of a MoonBit byte literal or a vector's `wire`
+/// line, from `start` up to an unescaped `end` (or the end of `text`):
+/// the bytes and the index after them.
+fn unescape(text : String, start : Int32, end : Char?) -> (Bytes, Int32) {
+  let out = Buffer()
+  let chars = text.to_array()
+  for i = start; i < chars.length(); {
+    let c = chars[i]
+    if end is Some(e) && c == e {
+      return (out.to_bytes(), i + 1)
+    }
+    if c != '\\' || i + 1 >= chars.length() {
+      out.write_char_utf8(c)
+      continue i + 1
+    }
+    match chars[i + 1] {
+      'r' => out.write_byte(b'\r')
+      'n' => out.write_byte(b'\n')
+      't' => out.write_byte(b'\t')
+      'b' => out.write_byte(b'\x08')
+      '0' => out.write_byte(b'\x00')
+      'x' if i + 3 < chars.length() =>
+        if (hex(chars[i + 2]), hex(chars[i + 3])) is (Some(h), Some(l)) {
+          out.write_byte((h * 16 + l).to_byte())
+          continue i + 4
+        } else {
+          out.write_char_utf8('x')
+        }
+      other => out.write_char_utf8(other)
+    }
+    continue i + 2
+  } nobreak {
+    (out.to_bytes(), chars.length())
+  }
+}
+
+///|
+/// The `b"..."` literals and `#|wire ` lines of one test source.
+fn literals(text : String) -> Array[Bytes] {
+  let found = []
+  for line in text.split("\n") {
+    let line = line.to_owned()
+    match line.find("#|wire ") {
+      Some(at) => {
+        found.push(unescape(line, at + 7, None).0)
+        continue
+      }
+      None => ()
+    }
+    for i = 0; i + 1 < line.length(); {
+      let starts = line[i] == 'b' &&
+        line[i + 1] == '"' &&
+        (
+          i == 0 ||
+          !(line[i - 1] is ('a'..<='z' | 'A'..<='Z' | '0'..<='9' | '_'))
+        )
+      if !starts {
+        continue i + 1
+      }
+      let (bytes, next) = unescape(line, i + 2, Some('"'))
+      found.push(bytes)
+      continue next
+    }
+  }
+  found
+}
+
+///|
+/// Writes one seed per literal and mode under `dir`: the mode byte, a cut
+/// at the middle, then the literal.
+async fn write_seeds(
+  repo : String,
+  dirs : Array[String],
+  modes : Array[Int32],
+  dir : String,
+) -> Int32 {
+  @fs.mkdir(dir, recursive=true)
+  let seen : Map[Bytes, Unit] = Map([])
+  for source_dir in dirs {
+    for name in @fs.readdir(repo + "/" + source_dir, sort=true) {
+      guard name.has_suffix("_test.mbt") else { continue }
+      for bytes in literals(@fs.read_text(repo + "/" + source_dir + "/" + name)) {
+        seen[bytes] = ()
+      }
+    }
+  }
+  let mut count = 0
+  for bytes, _ in seen {
+    let cut = bytes.length() / 2
+    for mode in modes {
+      let seed = Buffer()
+      seed.write_byte(mode.to_byte())
+      seed.write_byte((cut >> 8).to_byte())
+      seed.write_byte(cut.to_byte())
+      seed.write_bytes(bytes)
+      @fs.write_binary("\{dir}/seed-\{count}", seed.to_bytes())
+      count += 1
+    }
+  }
+  count
+}
+
+///|
+/// The value after `key` on the last line of `log` that holds it.
+fn last_stat(log : String, key : String) -> String {
+  let mut value = "?"
+  for line in log.split("\n") {
+    guard line.find(key) is Some(at) else { continue }
+    let rest = line[at + key.length():].trim_start()
+    value = rest.split(" ").next().unwrap_or("?").to_owned()
+  }
+  value
+}
+
+///|
+async fn fuzz(root : String, seconds : Int32) -> Unit {
+  let repo = @fs.realpath(".")
+  let binary = @fs.realpath(command("which", ["moon"]))
+  let toolchain = binary[:binary.length() - "/bin/moon".length()].to_owned()
+  let compiler = @env.get_env_var("FUZZ_CC").unwrap_or("clang")
+  let source = root + "/source"
+  @fs.mkdir(source)
+  ignore(
+    command("tar", [
+      "--exclude=_build",
+      "--exclude=target",
+      "--exclude=.mooncakes",
+      "-cf",
+      root + "/source.tar",
+      "mttp_core",
+      "fuzz",
+    ]),
+  )
+  ignore(command("tar", ["-xf", root + "/source.tar", "-C", source]))
+  @fs.write_text(source + "/moon.work", "members = [\"mttp_core\", \"fuzz\"]\n")
+  let pkg = source + "/fuzz/moon.pkg"
+  let pkg_text = @fs.read_text(pkg)
+  let native = "\"native\": {"
+  guard pkg_text.contains(native) else {
+    raise FuzzError("fuzz/moon.pkg: no native link options to extend")
+  }
+  // Any cc-flags make moonc emit C; the flags that matter come below.
+  @fs.write_text(
+    pkg,
+    pkg_text.replace(old=native, new=native + " \"cc-flags\": \"-g\","),
+  )
+  let vars = {
+    "PATH": @env.get_env_var("PATH").unwrap_or("/usr/bin:/bin"),
+    "MOON_CC": @env.get_env_var("MOON_CC").unwrap_or("cc"),
+  }
+  if @env.get_env_var("MOON_HOME") is Some(home) {
+    vars["MOON_HOME"] = home
+  }
+  ignore(
+    command(
+      "moon",
+      ["build", "--deny-warn", "--release", "--target", "native", "fuzz"],
+      cwd=source,
+      env=vars,
+    ),
+  )
+  let generated = source +
+    "/_build/native/release/build/gaato/mttp-fuzz/mttp-fuzz.c"
+  guard @fs.exists(generated) else {
+    raise FuzzError("moon did not write \{generated}")
+  }
+  let obj = root + "/obj"
+  @fs.mkdir(obj)
+  let includes = "-I" + toolchain + "/include"
+  let runtime_objects = []
+  let runtime_dir = toolchain + "/lib/runtime"
+  for name in @fs.readdir(runtime_dir, sort=true) {
+    guard name.has_suffix(".c") else { continue }
+    let out = "\{obj}/rt-\{name}.o"
+    ignore(
+      command(
+        compiler,
+        [
+          ..c_flags,
+          includes,
+          "-fsanitize=address",
+          "-w",
+          "-c",
+          runtime_dir + "/" + name,
+          "-o",
+          out,
+        ],
+      ),
+    )
+    runtime_objects.push(out)
+  }
+  ignore(
+    command(
+      compiler,
+      [
+        ..c_flags,
+        includes,
+        "-fsanitize=fuzzer-no-link,address",
+        "-Dmain=mttp_fuzz_unused_main",
+        "-w",
+        "-c",
+        generated,
+        "-o",
+        obj + "/target.o",
+      ],
+    ),
+  )
+  let artifacts = repo + "/_build/fuzz"
+  @fs.mkdir(artifacts, recursive=true, allow_exist=true)
+  let failures = []
+  for target in targets {
+    let (name, seed_dirs, modes) = target
+    let program = "\{root}/fuzz_\{name}"
+    ignore(
+      command(
+        compiler,
+        [
+          ..c_flags,
+          includes,
+          "-fsanitize=address",
+          "-DMTTP_FUZZ_ENTRY=mttp_fuzz_\{name}",
+          "-c",
+          source + "/fuzz/harness.c",
+          "-o",
+          "\{obj}/harness_\{name}.o",
+        ],
+      ),
+    )
+    ignore(
+      command(
+        compiler,
+        [
+          "-fsanitize=fuzzer,address",
+          obj + "/target.o",
+          "\{obj}/harness_\{name}.o",
+          ..runtime_objects,
+          toolchain + "/lib/libbacktrace.a",
+          "-lm",
+          "-o",
+          program,
+        ],
+      ),
+    )
+    let seeds = "\{root}/seeds/\{name}"
+    let count = write_seeds(repo, seed_dirs, modes, seeds)
+    let corpus = "\{root}/corpus/\{name}"
+    @fs.mkdir(corpus, recursive=true)
+    println("+ fuzz \{name}: \{count} seeds, \{seconds}s")
+    let result = @shell.Cmd(
+      program,
+      [
+        "-max_total_time=\{seconds}",
+        "-timeout=10",
+        "-rss_limit_mb=4096",
+        "-print_final_stats=1",
+        "-artifact_prefix=\{artifacts}/\{name}-",
+        corpus,
+        seeds,
+      ],
+      // LSan would count MoonBit's reference cycles (see sanitize.mbtx);
+      // this run checks memory accesses and the targets' invariants.
+      env={
+        "ASAN_OPTIONS": "detect_leaks=0:malloc_context_size=5",
+        "PATH": vars["PATH"],
+      },
+    ).output(timeout_ms=(seconds + 300) * 1000)
+    let log = result.stderr()
+    let runs = last_stat(log, "stat::number_of_executed_units:")
+    let speed = last_stat(log, "stat::average_exec_per_sec:")
+    let start = last_stat(
+      log.split("\n").filter(l => l.contains("INITED")).collect().join("\n"),
+      "cov:",
+    )
+    let end = last_stat(log, "cov:")
+    let units = @fs.readdir(corpus).length()
+    let failed = result.exit_code() != 0
+    if failed {
+      let lines = log.split("\n").collect()
+      let from = if lines.length() > 80 { lines.length() - 80 } else { 0 }
+      println(lines[from:].iter().map(l => l.to_owned()).collect().join("\n"))
+      failures.push(name)
+    }
+    let status = if failed { "FAILED" } else { "ok" }
+    println(
+      "fuzz \{name}: \{status}, \{runs} runs, \{speed} exec/s, coverage \{start} -> \{end} edges, corpus +\{units}",
+    )
+  }
+  if !failures.is_empty() {
+    let message = "fuzz: failed targets: \{failures.join(", ")}; inputs in \{artifacts}"
+    println(message)
+    raise FuzzError(message)
+  }
+  println("fuzz: OK")
+}
+
+///|
+async fn main {
+  if command("uname", ["-s"]) != "Linux" {
+    println("fuzz: skipped; this gate uses Linux libFuzzer and ASan")
+    return
+  }
+  let args = @env.args()
+  let seconds = if args.length() > 1 {
+    @string.parse_int(args[args.length() - 1]) catch {
+      _ => raise FuzzError("usage: fuzz.mbtx [SECONDS]")
+    }
+  } else {
+    60
+  }
+  let root = @fs.tmpdir(prefix="mttp-fuzz-")
+  println("fuzz: disposable copy at " + root)
+  defer @fs.rmdir(root, recursive=true)
+  fuzz(root, seconds)
+}

@@ -333,6 +333,18 @@ fn without_framing(headers : @mttp_core.Headers) -> @mttp_core.Headers {
 }
 
 ///|
+/// Limits for reading back what the writer wrote. The writer may add a field
+/// (`Content-Length: 0`, `Connection: close`) and a byte per field (`a:b`
+/// becomes `a: b`), so a head at the default limits can come back over
+/// them; the property is about the language, not the bounds. fuzz/h1.mbt
+/// found a POST with exactly 100 fields that this used to refuse.
+let read_back_limits : @h1.Limits = {
+  ..@h1.Limits::default(),
+  max_head_bytes: 65536,
+  max_headers: 1000,
+}
+
+///|
 /// A request the reader accepts, written back by the writer, reads again
 /// with the same method, target, version, fields, framing and body.
 fn rewrite_request(wire : Bytes) -> Bool raise {
@@ -345,14 +357,14 @@ fn rewrite_request(wire : Bytes) -> Bool raise {
     message.framing,
     parsed.version,
   )
-  let again = read_request([
-    written,
-    encode_body(message.framing, message.body, message.trailers),
-  ])
+  let again = read_request(
+    [written, encode_body(message.framing, message.body, message.trailers)],
+    limits=read_back_limits,
+  )
   guard again is Ok(again) else {
     fail("written request refused: \{Repr(again)}")
   }
-  let reparsed = @h1.parse_request_head(again.head)
+  let reparsed = @h1.parse_request_head(again.head, limits=read_back_limits)
   assert_eq(reparsed.meth, parsed.meth)
   assert_eq(reparsed.target, parsed.target)
   assert_eq(reparsed.version, parsed.version)
@@ -376,6 +388,9 @@ fn rewrite_request(wire : Bytes) -> Bool raise {
 fn rewrite_response(wire : Bytes, meth : @mttp_core.Method) -> Bool raise {
   guard read_response([wire], meth~) is Ok(message) else { return false }
   let parsed = @h1.parse_response_head(message.head)
+  // Readers keep 600-999 as failures, writers refuse them (README.mbt.md);
+  // fuzz/h1.mbt found this property assuming otherwise.
+  guard parsed.status <= 599 else { return false }
   let written = @h1.write_response_head(
     parsed.status,
     parsed.headers,
@@ -386,11 +401,12 @@ fn rewrite_response(wire : Bytes, meth : @mttp_core.Method) -> Bool raise {
   let again = read_response(
     [written, encode_body(message.framing, message.body, message.trailers)],
     meth~,
+    limits=read_back_limits,
   )
   guard again is Ok(again) else {
     fail("written response refused: \{Repr(again)}")
   }
-  let reparsed = @h1.parse_response_head(again.head)
+  let reparsed = @h1.parse_response_head(again.head, limits=read_back_limits)
   assert_eq(reparsed.version, parsed.version)
   assert_eq(reparsed.status, parsed.status)
   // A close-delimited response is written with `Connection: close`.
@@ -430,4 +446,29 @@ test "what the reader accepts, the writer writes back and the reader reads again
     }
   })
   assert_true(accepted > 300, msg="only \{accepted} accepted")
+}
+
+///|
+test "the rewrite property skips 600-999, which readers keep and writers refuse" {
+  // fuzz/h1.mbt's first finding: corpus_test.mbt's "status above 599" row
+  // made rewrite_response raise instead of answering.
+  assert_false(
+    rewrite_response(b"HTTP/1.1 600 High\r\nContent-Length: 2\r\n\r\nno", Get),
+  )
+  assert_true(
+    rewrite_response(b"HTTP/1.1 599 Low\r\nContent-Length: 2\r\n\r\nno", Get),
+  )
+}
+
+///|
+test "the rewrite property reads back past limits the writer may cross" {
+  // fuzz/h1.mbt: a POST without framing and exactly 100 fields is written
+  // back with `content-length: 0`, field 101.
+  let wire = Buffer()
+  wire.write_bytes(b"POST / HTTP/1.1\r\nHost: h\r\n")
+  for i in 1..<100 {
+    write_latin1(wire, "x-\{i}:v\r\n")
+  }
+  wire.write_bytes(b"\r\n")
+  assert_true(rewrite_request(wire.to_bytes()))
 }
