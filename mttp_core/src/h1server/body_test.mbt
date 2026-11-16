@@ -278,6 +278,78 @@ impl @mttp_core.BodyStream for Recovering with fn close(self) {
 }
 
 ///|
+test "small Bytes responses coalesce only within the 4 KiB wire budget" {
+  let headers = @mttp_core.Headers::of([("connection", "close")])
+  let edge = 4096 -
+    @h1.write_response_head(200, headers, Length(4000L), Http11, meth=Get).length()
+  for n in [0, 15, edge, edge + 1, 4096, 65537] {
+    let h = Harness::new()
+    let conn = @sim.ScriptedConn::new([
+      Chunk(@mttp_core.encode_utf8(get("/", fields="Connection: close\r\n"))),
+    ])
+    let bytes = Bytes::make(n, b'x')
+    let head = @h1.write_response_head(
+      200,
+      headers,
+      Length(n.to_int64()),
+      Http11,
+      meth=Get,
+    )
+    let completed = Ref(0)
+    h.run(() => {
+      ignore(
+        h
+        .serve_on(
+          conn,
+          _ => @mttp_core.Response::new(200, body=Bytes(bytes)),
+          auto_date=false,
+          on_response_complete=() => completed.val += 1,
+        )
+        .wait(),
+      )
+    })
+    let writes = conn.written()
+    assert_eq(writes.fold(init=b"", (a, b) => a + b), head + bytes)
+    assert_eq(completed.val, 1)
+    assert_eq(h.errors.length(), 0)
+    if head.length() + n <= 4096 {
+      assert_eq(writes.length(), 1)
+    } else {
+      assert_eq(writes[0], head)
+      assert_eq(writes.length(), 1 + (n + 65535) / 65536)
+    }
+  }
+}
+
+///|
+test "an oversized head never coalesces even a small Bytes body" {
+  let h = Harness::new()
+  let conn = @sim.ScriptedConn::new([
+    Chunk(@mttp_core.encode_utf8(get("/", fields="Connection: close\r\n"))),
+  ])
+  h.run(() => {
+    ignore(
+      h
+      .serve_on(
+        conn,
+        _ => {
+          @mttp_core.Response::new(
+            200,
+            headers=@mttp_core.Headers::of([("x-pad", String::make(4096, 'x'))]),
+            body=Bytes(b"small"),
+          )
+        },
+        auto_date=false,
+      )
+      .wait(),
+    )
+  })
+  assert_eq(conn.written().length(), 2)
+  assert_eq(conn.written()[1], b"small")
+  assert_eq(h.errors.length(), 0)
+}
+
+///|
 test "closing an acquired request source still lets the engine drain it" {
   @sim.explore(schedule => {
     let h = Harness::new(schedule~)

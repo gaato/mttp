@@ -2,8 +2,9 @@
 
 Original investigation of `8e6715c`, native release, `MOON_CC=cc`. No production
 code, API, dependency, or test changes were made during that investigation.
-Its two experiments ran in a disposable source copy. The V15a implementation
-and measurements of the first candidate are recorded at the end.
+Its two experiments ran in a disposable source copy. The V15a direct-body
+implementation and V15b receive-storage/write-coalescing follow-ups are
+recorded below.
 
 ## Method and reproduction
 
@@ -410,3 +411,255 @@ The disposable writable toolchain, config/cache directories, profiler
 container and executable copies were removed after verification. Raw
 measurements, profiles, annotations and gate logs remain in the evidence
 directory above.
+
+## V15b: reusable receive storage
+
+Starting from `9c35897`, change the private socket adapter first. Its receive
+array is now lazy, starts at at most 4 KiB, and is retained on that connection.
+A full read at the current target doubles the next target, capped at 64 KiB;
+a caller's smaller max_len neither overreads nor triggers growth. Short
+reads retain the current capacity. This avoids repeatedly zeroing 64 KiB
+for a 129-byte request without imposing a permanent 4 KiB bulk-read cap.
+There is no global pool. Close releases the connection's retained reference;
+an in-flight child keeps its local array until joined cleanup. Each completed
+read still copies its initialized prefix into independently owned pending Bytes in the
+child, before waking its waiter, preserving cancellation handoff and preventing
+later reads from mutating returned bytes. RESOURCE_BOUNDS records retained
+capacity and the bounded old-plus-new allocation transient during growth.
+
+The two new socket white-box tests drive growth through 4/8/16/32/64 KiB,
+send more than the ceiling and check storage identity at the ceiling, release
+on close, small max_len values, and immutable results across reuse. The
+existing EOF/directional-bound test now expects the initial 4 KiB read;
+the existing cancelled-waiter test continues to pin committed-byte handoff.
+
+Measurement uses three complete `scripts/gates.sh bench` runs per stage,
+without changing its duration, concurrency, exact-body checks or load images.
+The receive-only stage is also the before measurement for write coalescing.
+Raw JSON and command logs are under `/var/tmp/mttp-plan/scratch/v15b/`,
+named `base{1,2,3}`, `receive{1,2,3}` and `coalesce{1,2,3}`. Each table uses
+the median of each field independently. No benchmark snapshot is replaced.
+The host is shared; `/proc/loadavg` read `10.46 8.46 7.12` at 14:15 JST.
+The first base attempt timed out in the 1 MiB / 1-connection oha command
+(`benchmark: TimeoutError`; `gates: FAILED (1)`), and is retained as
+`base-attempt1.log` but excluded from medians. Two further attempts timed out
+in Node's large/32 row and core's small/1 row, retained as
+`base-attempt2.log` and `base-attempt3.log`. A Docker event showed the latter
+oha container exit successfully after about 84 seconds, beyond the driver's
+40-second command guard. Subsequent runs temporarily allow 190 seconds for
+that command; oha still measures `-z 10s`, with the same completion-wait
+option and validation. The first successful base run used the original
+guard. Frozen, stage-specific executable copies let source checks proceed
+without changing a running benchmark's code; command logs identify their
+paths. These driver-only substitutions are restored before final gates.
+Profiler installation overlapped
+the first failed attempt. A focused baseline JS h1server test run overlapped the
+control/client portion of successful base run 1, after its mttp server rows.
+
+Callgrind uses the same native release executables, pinned Python container,
+Debian Valgrind 3.19.0 and glibc 2.36 as V15a. For each stage, start the server
+on port 39165, run the executable's exact-body check, reset counters with
+`callgrind_control --zero`, send exactly 2,000 pinned-oha requests with 32
+connections, then dump counters before terminating the server. Startup and
+the precheck are excluded. These are user-space instructions, not CPU cycles;
+unlike throughput they do not depend on host CPU scheduling. The baseline
+reset interval (`base.callgrind.1`) is **1,024,027,395 Ir**, or **512,014 Ir
+per response**. The baseline instruction load overlapped the failed bench
+attempt and the beginning of its replacement; there were no competing
+profiler loads.
+
+Receive-only Callgrind (`receive.callgrind.1`) records **853,982,531 Ir**
+for 2,000 HTTP 200s with no errors: **426,991 Ir/response**, **16.61% less**
+than the same-session baseline. Reuse removes allocation work as well as
+zeroing, so the saving exceeds the earlier memset-only estimate. Keep this
+change. Its focused native and wasm socket suites both pass **12/12** with
+`--deny-warn`.
+
+### Receive storage: server medians, three runs per side
+
+Rates are req/s, latency values are ms. `core` is core/async/http; `go` is
+Go net/http. Each of the six complete runs passed its exact-body checks,
+accepted only 200s and reported no request errors. The mttp small/32 median
+improves **2.97%**, while the independent instruction count falls **16.61%**.
+The Go control's small/32 median varies by -46.25%, reinforcing the shared
+host caveat rather than supporting an instruction-to-throughput equivalence.
+
+| implementation | body | connections | before req/s | after req/s | change % | before p50 | after p50 | before p99 | after p99 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| mttp | 15 B | 1 | 10025.1 | 10597.6 | 5.71 | 0.09 | 0.087 | 0.147 | 0.138 |
+| mttp | 15 B | 32 | 12097.3 | 12456.1 | 2.97 | 2.59 | 2.565 | 4.128 | 3.031 |
+| mttp | 1 MiB | 1 | 1891.4 | 1951.3 | 3.17 | 0.497 | 0.487 | 0.71 | 0.699 |
+| mttp | 1 MiB | 32 | 1781 | 1870.7 | 5.04 | 17.657 | 17.054 | 23.793 | 19.698 |
+| core | 15 B | 1 | 24071 | 26133.5 | 8.57 | 0.037 | 0.033 | 0.068 | 0.058 |
+| core | 15 B | 32 | 57879.9 | 57522.4 | -0.62 | 0.548 | 0.553 | 0.753 | 0.795 |
+| core | 1 MiB | 1 | 199.9 | 207.8 | 3.94 | 4.66 | 4.464 | 8.298 | 8.426 |
+| core | 1 MiB | 32 | 182 | 164.5 | -9.64 | 173.675 | 189.426 | 210.284 | 488.001 |
+| go | 15 B | 1 | 26043.7 | 24069.1 | -7.58 | 0.036 | 0.038 | 0.055 | 0.063 |
+| go | 15 B | 32 | 154953.4 | 83283.9 | -46.25 | 0.112 | 0.181 | 1.189 | 3.255 |
+| go | 1 MiB | 1 | 5713.3 | 4250.5 | -25.6 | 0.162 | 0.19 | 0.45 | 0.741 |
+| go | 1 MiB | 32 | 5397.1 | 5780.6 | 7.11 | 5.73 | 5.406 | 13.295 | 12.347 |
+| node | 15 B | 1 | 22766.4 | 21635.4 | -4.97 | 0.039 | 0.042 | 0.076 | 0.078 |
+| node | 15 B | 32 | 38411.2 | 34282.5 | -10.75 | 0.762 | 0.883 | 1.782 | 2.039 |
+| node | 1 MiB | 1 | 6523.9 | 6253 | -4.15 | 0.141 | 0.147 | 0.208 | 0.257 |
+| node | 1 MiB | 32 | 6965.2 | 6244.3 | -10.35 | 4.448 | 4.964 | 8.549 | 9.71 |
+
+## V15b: one bounded write for a small Bytes response
+
+Apply this second, on top of reusable receive storage. A nonempty Bytes
+body coalesces with its serialized head only if their combined size is at
+most **4 KiB**. This one-page copy budget includes unusually large heads,
+covers ordinary small replies, and never copies a large body to save a
+write. The limit check subtracts only after bounding the body, so it cannot
+overflow. Empty replies already need only one write and do not concatenate.
+The existing `Wire::write` still owns the per-write deadline and 64 KiB
+slicing; the combined write consumes one such budget. The sent marker is
+set before either branch. Completion, unread-request drain, HEAD/204/304,
+streaming first pulls and upgrades retain their existing owners. A marked
+response already cut by shutdown cannot enter the combined branch; a sent
+Bytes body keeps the existing post-write shutdown check.
+
+Three new portable tests cover exactly 4 KiB and the next byte, empty/15 B/
+4 KiB/64 KiB-plus bodies, a large head with a small body, and a blocked
+combined write's success, timeout and external cancellation. They assert
+one write for a bounded reply, separate bounded writes above it, exact
+wire bytes, no premature or repeated completion, and no fallback status
+line after a failed sent write. Existing bodiless completion tests also
+explicitly reject the hidden body. Before implementation, the new combined
+write and budget tests failed (`2 != 1`), while **100/102** h1server JS tests
+passed. With the optimization the suite passes **102/102**, and the native
+listener suite passes **28/28**, both with `--deny-warn`.
+
+### Instructions: each change in order
+
+| Stage | Ir / 2,000 responses | Ir / response | Change from preceding stage |
+|---|---:|---:|---:|
+| `9c35897` baseline | 1,024,027,395 | 512,014 | — |
+| Reusable adaptive receive storage | 853,982,531 | 426,991 | -16.61% |
+| Plus bounded write coalescing | 705,252,173 | 352,626 | -17.42% |
+
+The combined reduction is **31.13%**. All three Callgrind loads returned
+exactly 2,000 HTTP 200s with empty error distributions. Keep both changes:
+they reduce actual work independently of the host's wall-time variation.
+The second and third profiles are `receive.callgrind.1` and
+`coalesce.callgrind.1`; each has an annotated text file, Valgrind log and
+oha JSON beside it. `executables.sha256` identifies all three native release
+copies. The coalescing profile overlapped the control portion of receive
+bench run 1, after its mttp rows; the manifest refresh began after that
+profile's oha load completed. Source verification and release builds also
+overlapped the control/client portion of base run 3. Treat the comparison
+server timings as controls on a shared host, not isolated causal estimates.
+
+### Write coalescing: server medians, three runs per side
+
+Same units and per-field medians as above. All three coalescing runs passed
+their exact-body checks, accepted only 200s and reported no request errors.
+The small/32 median improves **27.56%**, with **17.42% fewer instructions**
+in the fixed-load profile. The 1 MiB/32 median decreases **8.80%**; this is
+a measured limitation, not an improvement. Large bodies are outside the
+coalescing branch, as the bounded-write regression confirms. Controls vary
+substantially and unevenly (for example Go small/32 +98.01% and core small/32
+-6.57%), so these timings alone cannot isolate that large-body change's cause.
+
+| implementation | body | connections | before req/s | after req/s | change % | before p50 | after p50 | before p99 | after p99 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| mttp | 15 B | 1 | 10597.6 | 13413.6 | 26.57 | 0.087 | 0.069 | 0.138 | 0.109 |
+| mttp | 15 B | 32 | 12456.1 | 15888.8 | 27.56 | 2.565 | 2.012 | 3.031 | 2.61 |
+| mttp | 1 MiB | 1 | 1951.3 | 2008.4 | 2.92 | 0.487 | 0.49 | 0.699 | 0.683 |
+| mttp | 1 MiB | 32 | 1870.7 | 1706.2 | -8.8 | 17.054 | 18.59 | 19.698 | 24.681 |
+| core | 15 B | 1 | 26133.5 | 27786.9 | 6.33 | 0.033 | 0.032 | 0.058 | 0.055 |
+| core | 15 B | 32 | 57522.4 | 53744.9 | -6.57 | 0.553 | 0.556 | 0.795 | 2.189 |
+| core | 1 MiB | 1 | 207.8 | 200.1 | -3.69 | 4.464 | 4.532 | 8.426 | 8.341 |
+| core | 1 MiB | 32 | 164.5 | 156.8 | -4.66 | 189.426 | 184.694 | 488.001 | 382.204 |
+| go | 15 B | 1 | 24069.1 | 27408.4 | 13.87 | 0.038 | 0.034 | 0.063 | 0.051 |
+| go | 15 B | 32 | 83283.9 | 164911.7 | 98.01 | 0.181 | 0.105 | 3.255 | 1.156 |
+| go | 1 MiB | 1 | 4250.5 | 6202.6 | 45.93 | 0.19 | 0.156 | 0.741 | 0.214 |
+| go | 1 MiB | 32 | 5780.6 | 6063.8 | 4.9 | 5.406 | 5.158 | 12.347 | 10.969 |
+| node | 15 B | 1 | 21635.4 | 25496.9 | 17.85 | 0.042 | 0.036 | 0.078 | 0.056 |
+| node | 15 B | 32 | 34282.5 | 39135.1 | 14.15 | 0.883 | 0.747 | 2.039 | 1.638 |
+| node | 1 MiB | 1 | 6253 | 6979 | 11.61 | 0.147 | 0.137 | 0.257 | 0.19 |
+| node | 1 MiB | 32 | 6244.3 | 6992.6 | 11.98 | 4.964 | 4.433 | 9.71 | 8.565 |
+
+### Supplement: investigate the large/32 timing decrease
+
+After the nine timing runs, profile the frozen receive-only and coalescing
+executables for **200 requests each, 1 MiB, 32 connections**, under the same
+Callgrind/container/libc setup. Check the exact large body, zero counters,
+use pinned oha `-n 200 -c 32` with the same HTTP/completion options, and dump
+before termination. Both loads return 200 HTTP 200s and no errors. Full
+gate tests run concurrently; timing from these instrumented loads is not
+treated as a throughput result.
+
+| Large/32 stage | Ir / 200 responses | Ir / response |
+|---|---:|---:|
+| Receive-only | 759,332,103 | 3,796,661 |
+| Plus write coalescing | 759,375,830 | 3,796,879 |
+
+The difference is **+0.00576%**: no instruction increase commensurate with
+the observed -8.80% timing median. This does not establish the cause of the
+timing drop: Callgrind does not measure CPU cycles, kernel cost or scheduling.
+Retain the negative timing observation as a limitation and keep the change
+for its demonstrated small-response gains. Raw dumps and annotations are
+`receive-large.callgrind.1`, `coalesce-large.callgrind.1` and the corresponding
+`*-large-callgrind-annotated.txt`; their oha JSON and Valgrind logs remain
+beside them. No production change followed this supplemental measurement.
+
+### Logical change groups for handoff
+
+* Receive storage: `mttp/src/internal/socketconn/socket.mbt`,
+  `socket_wbtest.mbt` in that directory, and `mttp/CHANGELOG.md`.
+* Write coalescing: `mttp_core/src/h1server/response.mbt`, `body_test.mbt`,
+  `deadlines_test.mbt`, `ownership_test.mbt`, and `mttp_core/CHANGELOG.md`.
+* Shared files have independent hunks: RESOURCE_BOUNDS' receive-storage row
+  and directional-test reference belong to the first change, and its
+  coalesced-storage row to the second;
+  `scripts/test_manifest.tsv`'s socketconn counts belong to the first and
+  h1server counts to the second. This profile's receive section and first
+  comparison describe the first change; its coalescing section and second
+  comparison describe the second. No public interfaces or package manifests
+  change, and no commits are made in this worktree.
+
+The excluded benchmark attempts report these failure lines (the two later
+attempts both targeted `base2.json`):
+
+```text
+benchmark: TimeoutError
+FAIL: script benchmarks/run.mbtx -- --output /var/tmp/mttp-plan/scratch/v15b/base1.json
+gates: FAILED (1)
+benchmark: TimeoutError
+FAIL: script benchmarks/run.mbtx -- --output /var/tmp/mttp-plan/scratch/v15b/base2.json
+gates: FAILED (1)
+```
+
+During receive run 2, at 14:47 JST, `/proc/loadavg` was `10.43 8.80 7.93`.
+The all-target manifest refresh overlapped that run, including its mttp
+rows. Those observations remain in the median; no favorable runs are
+selected or substituted on account of host load.
+
+`moon info` and `scripts/gates.sh manifest --update` pass. The manifest
+retains all 186 rows in their original order, changing only socketconn's
+10→12 (native/wasm) and h1server's 99→102 (all four targets).
+`scripts/gates.sh quick` passes on all four targets with
+`test counts match scripts/test_manifest.tsv (186 package-target rows)`
+and `gates: OK`. Quick ran from approximately 14:51 to 15:01 JST,
+overlapping receive run 3's control/client rows and coalesce run 1, plus the
+beginning of coalesce run 2. No correctness failure occurred in these gates.
+
+After coalesce run 3 had started and its mttp rows had completed,
+`benchmarks/run.mbtx` was restored byte-for-byte to its original contents.
+Its diff is empty. Static verification then passes: `runtime interfaces: OK (60
+packages; no runtime types; every target agrees)`, **1,490/1,490**
+instrumented native tests, `ledger check: OK - every uncovered line is
+ledgered`, and `gates: OK`. Static and the subsequent full gate overlap
+only the control/client portion of the final benchmark run, whose already
+running script uses its frozen coalescing executable. Logs are `info.log`,
+`manifest.log`, `quick.log`, `static.log` and `full.log` in the evidence
+directory.
+
+`scripts/gates.sh full` also passes: the all-target tests, repeated static
+checks and coverage ledger, gate self-tests,
+`resolver gate: OK (4 modules; isolated registry; no workspace overrides)`,
+`workerd check: OK (wrangler 4.160.1, port 35603)`, and final `gates: OK`.
+There are no remaining correctness gate failures. The disposable profiler
+containers, executable copies, writable toolchain and config/cache copies
+are removed after verification; raw JSON, profiles, annotations and gate
+logs remain in `/var/tmp/mttp-plan/scratch/v15b/`.

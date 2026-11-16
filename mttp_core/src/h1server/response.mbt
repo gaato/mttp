@@ -8,6 +8,11 @@
 // pulled, and the response ends where the stream had reached.
 
 ///|
+/// Bound the extra copy to one 4 KiB page including the head. This covers
+/// small replies without copying bulk bodies or unusually large heads.
+let small_response_bytes : Int32 = 4096
+
+///|
 /// Writes `response` to a request of `meth` and closes its body; `true` when
 /// the connection may carry the next request. Sets `sent` once the head is
 /// on its way, so that a failure before it can still be answered.
@@ -98,10 +103,25 @@ async fn Session::write_response(
     @h1.ParseError(detail~, ..) => raise invalid_response(detail)
   }
   sent.val = true
-  self.wire.write(head, limit)
+  let coalesced = match response.body {
+    Bytes(bytes) if !bodiless &&
+      !stopped.val &&
+      !bytes.is_empty() &&
+      bytes.length() <= small_response_bytes &&
+      head.length() <= small_response_bytes - bytes.length() => {
+      self.wire.write(head + bytes, limit)
+      true
+    }
+    _ => {
+      self.wire.write(head, limit)
+      false
+    }
+  }
   match (response.body, reader) {
     (Bytes(bytes), _) if !bodiless && !stopped.val => {
-      self.wire.write(bytes, limit)
+      if !coalesced {
+        self.wire.write(bytes, limit)
+      }
       if cut && !bytes.is_empty() && (self.stopping)() {
         stopped.val = true
       }

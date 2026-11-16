@@ -50,10 +50,10 @@ gaato/mttp_core	gaato/mttp_core/h1client	js	110
 gaato/mttp_core	gaato/mttp_core/h1client	native	110
 gaato/mttp_core	gaato/mttp_core/h1client	wasm	110
 gaato/mttp_core	gaato/mttp_core/h1client	wasm-gc	110
-gaato/mttp_core	gaato/mttp_core/h1server	js	99
-gaato/mttp_core	gaato/mttp_core/h1server	native	99
-gaato/mttp_core	gaato/mttp_core/h1server	wasm	99
-gaato/mttp_core	gaato/mttp_core/h1server	wasm-gc	99
+gaato/mttp_core	gaato/mttp_core/h1server	js	102
+gaato/mttp_core	gaato/mttp_core/h1server	native	102
+gaato/mttp_core	gaato/mttp_core/h1server	wasm	102
+gaato/mttp_core	gaato/mttp_core/h1server	wasm-gc	102
 gaato/mttp_core	gaato/mttp_core/internal/control	js	12
 gaato/mttp_core	gaato/mttp_core/internal/control	native	12
 gaato/mttp_core	gaato/mttp_core/internal/control	wasm	12
@@ -159,8 +159,8 @@ gaato/mttp	gaato/mttp/files	native	17
 gaato/mttp	gaato/mttp/files	wasm	17
 gaato/mttp	gaato/mttp/internal/control	native	2
 gaato/mttp	gaato/mttp/internal/control	wasm	2
-gaato/mttp	gaato/mttp/internal/socketconn	native	10
-gaato/mttp	gaato/mttp/internal/socketconn	wasm	10
+gaato/mttp	gaato/mttp/internal/socketconn	native	12
+gaato/mttp	gaato/mttp/internal/socketconn	wasm	12
 gaato/mttp	gaato/mttp/internal/testtls	native	5
 gaato/mttp	gaato/mttp/internal/testtls	wasm	5
 gaato/mttp	gaato/mttp/runtime	js	26

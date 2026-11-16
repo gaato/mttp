@@ -79,6 +79,7 @@ test "response completion follows the final wire write including the last stream
         stuck: h.coordination.signal(),
         entered: h.coordination.signal(),
         sizes: [],
+        stop_after: 3,
         completed: Ref(0),
         premature: false,
         closed: false,
@@ -147,6 +148,7 @@ test "response completion covers bodiless replies and failures before the head o
     })
     assert_eq(completed.val, 1)
     assert_eq(conn.written().length(), 1)
+    assert_false(conn.written()[0].has_suffix(b"hidden"))
     assert_true(
       conn.written()[0].has_prefix(
         @mttp_core.encode_utf8(

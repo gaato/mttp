@@ -235,6 +235,7 @@ test "a large Bytes response keeps its write deadline after the head and first s
         stuck: h.coordination.signal(),
         entered: h.coordination.signal(),
         sizes: [],
+        stop_after: 3,
         completed: Ref(0),
         premature: false,
         closed: false,
@@ -284,6 +285,7 @@ priv struct BodyWriteStop {
   stuck : &@rt.Signal
   entered : &@rt.Signal
   sizes : Array[Int32]
+  stop_after : Int32
   completed : Ref[Int32]
   mut premature : Bool
   mut closed : Bool
@@ -298,10 +300,64 @@ impl @rt.Conn for BodyWriteStop with fn read(self, max_len~) {
 impl @rt.Conn for BodyWriteStop with fn write(self, bytes) {
   self.premature = self.premature || self.completed.val != 0
   self.sizes.push(bytes.length())
-  if self.sizes.length() == 3 {
+  if self.sizes.length() == self.stop_after {
     self.entered.notify()
     self.stuck.wait()
   }
+}
+
+///|
+test "coalesced writes keep deadlines cancellation and once only completion" {
+  @sim.explore(schedule => {
+    for outcome in [0, 1, 2] {
+      let h = Harness::new(schedule~)
+      let conn = BodyWriteStop::{
+        reads: @sim.ScriptedConn::new([
+          Chunk(
+            @mttp_core.encode_utf8(get("/", fields="Connection: close\r\n")),
+          ),
+        ]),
+        stuck: h.coordination.signal(),
+        entered: h.coordination.signal(),
+        sizes: [],
+        stop_after: 1,
+        completed: Ref(0),
+        premature: false,
+        closed: false,
+      }
+      h.run(() => {
+        let task = h.serve_on(
+          conn,
+          reply("ok"),
+          limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 25, },
+          on_response_complete=() => conn.completed.val += 1,
+        )
+        conn.entered.wait()
+        assert_eq(conn.completed.val, 0)
+        if outcome == 0 {
+          conn.stuck.notify()
+        }
+        if outcome == 2 {
+          task.cancel()
+        }
+        ignore(task.wait() catch { _ => false })
+        assert_eq(conn.completed.val, 1)
+        assert_eq(h.driver.now(), if outcome == 1 { 25L } else { 0L })
+      })
+      assert_true(conn.closed)
+      assert_false(conn.premature)
+      // A failed combined write is already sent: no fallback status line.
+      assert_eq(conn.sizes.length(), 1)
+      assert_eq(
+        h.errors.map(kind_phase),
+        if outcome == 1 {
+          [(Timeout(ms=25), Write)]
+        } else {
+          []
+        },
+      )
+    }
+  })
 }
 
 ///|

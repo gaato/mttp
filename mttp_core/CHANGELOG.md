@@ -131,6 +131,11 @@ never does.
 
 ### Changed
 
+- The HTTP/1 server writes a Bytes response's head and body together when
+  their total is at most 4 KiB, avoiding a second write and deadline scope.
+  Larger responses keep separate, bounded writes; bodiless and shutdown-cut
+  responses retain their framing and completion behavior.
+
 - HTTP/1 response readers accept three-digit statuses 600–999 as server
   failures while retaining the wire number in responses and failure values
   (RFC 9110, section 15). Retry status rules still match that number
