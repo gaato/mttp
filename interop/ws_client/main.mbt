@@ -18,7 +18,12 @@ async fn open(base : String, path : String) -> &@core_ws.Session {
     config=@h1client.ClientConfig::default(),
   )
   defer backend.close()
-  @ws.connect(base + path, limits~, backend~)
+  @ws.connect(
+    base + path,
+    limits~,
+    backend~,
+    compression=@ws.Compression::new(),
+  )
 }
 
 ///|
@@ -45,7 +50,8 @@ async fn main {
   let count = @string.parse_int(control(base, "/getCaseCount"))
   println("Autobahn: \{count} cases")
   for case in 1..<=count {
-    @async.with_timeout(180000, () => {
+    // Compression cases allow up to 480 s in Autobahn itself.
+    @async.with_timeout(600000, () => {
       let session = open(base, "/runCase?case=\{case}&agent=mttp-client")
       defer session.abort()
       for ;; {
@@ -54,7 +60,11 @@ async fn main {
           _ => break
         }
       }
-    })
+    }) catch {
+      // Some negotiation cases intentionally fail the opening handshake.
+      // Continue so Autobahn can report that exact verdict and later cases.
+      error => println("Autobahn case \{case} ended: \{error}")
+    }
     println("Autobahn case \{case}/\{count} completed")
   }
   ignore(control(base, "/updateReports?agent=mttp-client"))

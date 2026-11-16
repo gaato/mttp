@@ -169,7 +169,28 @@ async fn read_rows() -> Array[Row] {
     }
     let note = rest.join(" ")
     let exact = expect.strip_prefix("known:")
+    // These section-13 groups require our encoder to use window 9. The
+    // server declines offers; the client must fail unsupported responses
+    // (RFC 7692 section 7). Admit only the observed exact verdicts here;
+    // FAILED remains a failure for every other case and for missing fields.
+    let window_decline = (
+        side == "server" &&
+        where_ == "autobahn/direct" &&
+        (id == "ab-13.3.*" || id == "ab-13.5.*") &&
+        expect == "known:UNIMPLEMENTED/OK"
+      ) ||
+      (
+        side == "client" &&
+        where_ == "native/autobahn" &&
+        (
+          id == "autobahn-13.3.*" ||
+          id == "autobahn-13.5.*" ||
+          id == "autobahn-13.7.*"
+        ) &&
+        expect == "known:FAILED/FAILED"
+      )
     guard expect is ("pass" | "known" | "n/a") ||
+      window_decline ||
       (
         exact is Some(pair) &&
         pair.split("/").count() == 2 &&
@@ -533,9 +554,13 @@ fn Env::run_args(
 
 ///|
 /// Waits until something accepts TCP connections on `addr`.
-async fn wait_port(addr : String, what : String) -> Unit {
+async fn wait_port(
+  addr : String,
+  what : String,
+  attempts~ : Int32 = 150,
+) -> Unit {
   let parsed = @socket.Addr::parse(addr)
-  for _ in 0..<150 {
+  for _ in 0..<attempts {
     let up = try {
       @socket.Tcp::connect(parsed).close()
       true
@@ -1092,13 +1117,36 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
   let cases = plan(rows)
   port_free("127.0.0.1:39050")
   port_free("127.0.0.1:39051")
-  ignore(must("moon", ["build", "--target", "native", "interop/ws_client"]))
+  ignore(
+    must("moon", [
+      "build", "--release", "--target", "native", "interop/ws_client",
+    ]),
+  )
   make_dir("\{work}/autobahn-client/reports")
-  ignore(must(env.engine, ["pull", "--quiet", env.image("autobahn")]))
+  let config = @fs.read_text("interop/servers/autobahn-client.json")
+  let config = if compression_only() {
+    config.replace(
+      old="\"cases\": [\"*\"]",
+      new="\"cases\": [\"12.*\", \"13.*\"]",
+    )
+  } else {
+    config
+  }
+  let config_path = "\{work}/autobahn-client/config.json"
+  @fs.write_text(config_path, config)
+  let image = env.image("autobahn")
+  if capture(env.engine, ["image", "inspect", image]).0 != 0 {
+    ignore(must(env.engine, ["pull", "--quiet", image]))
+  }
   let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+  // A cancelled Docker CLI can finish creating its container later. Give each
+  // run a distinct name so an old cleanup cannot remove the next run's server.
+  let container = "mttp-interop-ws-client-" +
+    @env.rand(8).unwrap().to_array().map(b => b.to_int().to_string()).join("-")
+  @fs.write_text("\{work}/autobahn-client/container.txt", container)
   @async.with_task_group(group => {
     defer @async.protect_from_cancel(() => {
-      ignore(capture(env.engine, ["rm", "-f", "mttp-interop-ws-client"]))
+      ignore(capture(env.engine, ["rm", "-f", container]))
     })
     let server = @process.spawn(
       group,
@@ -1107,11 +1155,9 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
         "autobahn",
         [
           "--name",
-          "mttp-interop-ws-client",
+          container,
           ..env.user,
-          ..env.mount(
-            "interop/servers/autobahn-client.json", "/config/fuzzingserver.json",
-          ),
+          ..env.mount(config_path, "/config/fuzzingserver.json"),
           ..env.mount(
             "\{work}/autobahn-client/reports",
             "/reports",
@@ -1124,13 +1170,18 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
       stderr=ToFile("\{work}/autobahn-client/server.log"),
     )
     defer server.cancel()
-    wait_port("127.0.0.1:39050", "Autobahn fuzzingserver")
-    ignore(
-      must(
-        "_build/native/debug/build/\{interop_module}/ws_client/ws_client.exe",
-        [],
-      ),
+    // Container startup can outlast the ordinary 30 s port probe under load.
+    wait_port("127.0.0.1:39050", "Autobahn fuzzingserver", attempts=900)
+    // Sections 12/13 multiply the large-message matrix; the former ten-minute
+    // command ceiling expires before the compression cases can finish.
+    let (status, stdout, stderr) = capture(
+      "_build/native/release/build/\{interop_module}/ws_client/ws_client.exe",
+      [],
+      timeout_ms=3600000,
     )
+    if status != 0 {
+      raise RunError("Autobahn client exited \{status}\n\{stdout}\n\{stderr}")
+    }
     run_one(
       tally,
       "client",
@@ -1166,7 +1217,9 @@ async fn main_run(filters : Array[String]) -> Int32 {
   }
   let engine = find_engine()
   let images = read_images()
-  let rows = read_rows()
+  let rows = read_rows().filter(row => {
+    !compression_only() || compression_case(row.id)
+  })
   let root = @fs.realpath(".")
   let user = if engine.contains("docker") {
     let uid = must("id", ["-u"]).trim().to_owned()
@@ -1424,6 +1477,22 @@ async fn run_socks5h(
 }
 
 ///|
+// A focused run keeps the expensive uncompressed section 9 out of compression
+// development, while the default interop run still covers every section.
+fn compression_only() -> Bool {
+  @env.get_env_var("INTEROP_WS_COMPRESSION_ONLY") == Some("1")
+}
+
+///|
+fn compression_case(id : String) -> Bool {
+  id == "ab-run" ||
+  id.has_prefix("ab-12.") ||
+  id.has_prefix("ab-13.") ||
+  id.has_prefix("autobahn-12.") ||
+  id.has_prefix("autobahn-13.")
+}
+
+///|
 /// JS clients against W5's native server, then the same compiled fetch echo
 /// on Deno and Bun. Default execution uses images.tsv; /local is an explicit
 /// fallback for restricted hosts that cannot start containers.
@@ -1556,13 +1625,27 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
   make_dir(dir)
   let address = "127.0.0.1:39505"
   port_free(address)
-  ignore(must("moon", ["build", "--target", "native", "interop/mttp_server"]))
+  // Compression matrices exercise hundreds of MiB per case; use optimized
+  // binaries so the verdict measures interoperability within suite deadlines.
+  ignore(
+    must("moon", [
+      "build", "--release", "--target", "native", "interop/mttp_server",
+    ]),
+  )
   let image = env.image("autobahn")
   if capture(env.engine, ["image", "inspect", image]).0 != 0 {
     ignore(must(env.engine, ["pull", image]))
   }
   let config =
-    #|{"outdir":"/work/reports","servers":[{"agent":"mttp","url":"ws://127.0.0.1:39505"}],"cases":["1.*","2.*","3.*","4.*","5.*","6.*","7.*","9.*","10.*"],"exclude-cases":[],"exclude-agent-cases":{}}
+    #|{"outdir":"/work/reports","servers":[{"agent":"mttp","url":"ws://127.0.0.1:39505"}],"cases":["1.*","2.*","3.*","4.*","5.*","6.*","7.*","9.*","10.*","12.*","13.*"],"exclude-cases":[],"exclude-agent-cases":{}}
+  let config = if compression_only() {
+    config.replace(
+      old="\"1.*\",\"2.*\",\"3.*\",\"4.*\",\"5.*\",\"6.*\",\"7.*\",\"9.*\",\"10.*\",",
+      new="",
+    )
+  } else {
+    config
+  }
   @fs.write_text("\{dir}/config.json", config)
   let report = "\{dir}/reports/index.json"
   if @fs.exists(report) {
@@ -1571,20 +1654,29 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
   @async.with_task_group(group => {
     let server = @process.spawn(
       group,
-      native_server,
+      "_build/native/release/build/\{interop_module}/mttp_server/mttp_server.exe",
       ["websocket", address],
       stdout=ToFile("\{dir}/server.log"),
       stderr=ToFile("\{dir}/server.log"),
     )
     defer server.cancel()
     wait_port(address, "mttp WebSocket echo server")
+    defer @async.protect_from_cancel(() => {
+      ignore(capture(env.engine, ["rm", "-f", "mttp-interop-ws-server"]))
+    })
     let (status, stdout, stderr) = capture(
       env.engine,
       env.run_args(
         "autobahn",
-        [..env.user, ..env.mount(dir, "/work", writable=true)],
+        [
+          "--name",
+          "mttp-interop-ws-server",
+          ..env.user,
+          ..env.mount(dir, "/work", writable=true),
+        ],
         ["wstest", "-m", "fuzzingclient", "-s", "/work/config.json"],
       ),
+      timeout_ms=3600000,
     )
     @fs.write_text("\{dir}/console.log", "exit \{status}\n\{stdout}\n\{stderr}")
   })
@@ -1636,7 +1728,63 @@ async fn main {
 /// A known Autobahn case must never hide protocol failures or absent verdicts,
 /// on either side of the transport. Exercise the real reporting path.
 async fn self_test_autobahn() -> Unit {
+  for id in ["ab-run", "ab-12.*", "ab-13.1.1", "autobahn-12.*", "autobahn-13.1"] {
+    assert_true(compression_case(id))
+  }
+  for id in ["ab-1.*", "autobahn-9.*", "ab-120.1", "headers"] {
+    assert_false(compression_case(id))
+  }
   let all_rows = read_rows()
+  let window_rows = rows_of(all_rows, "server", "autobahn/direct")
+  for id in ["ab-13.3.1", "ab-13.5.18"] {
+    let row = decide(window_rows, id).unwrap()
+    for
+      (marker, fields, expected) in [
+        ("UNIMPLEMENTED/OK", "behavior=UNIMPLEMENTED close=OK", 1),
+        ("FAILED/OK", "behavior=FAILED close=OK", 0),
+        ("UNIMPLEMENTED/FAILED", "behavior=UNIMPLEMENTED close=FAILED", 0),
+        ("UNIMPLEMENTED/OK", "behavior=UNIMPLEMENTED", 0),
+        ("UNIMPLEMENTED/OK", "behavior=UNIMPLEMENTED close=OK close=FAILED", 0),
+      ] {
+      let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+      tally.report(
+        "server",
+        "autobahn",
+        [row],
+        [row],
+        "CASE \{id} \{marker} \{fields}",
+        "",
+        quiet=true,
+      )
+      assert_eq(tally.known, expected)
+      assert_eq(tally.fail, 1 - expected)
+    }
+  }
+  let window_rows = rows_of(all_rows, "client", "native/autobahn")
+  for id in ["autobahn-13.3.1", "autobahn-13.5.18", "autobahn-13.7.1"] {
+    let row = decide(window_rows, id).unwrap()
+    for
+      (marker, fields, expected) in [
+        ("FAILED/FAILED", "behavior=FAILED close=FAILED", 1),
+        ("FAILED/OK", "behavior=FAILED close=OK", 0),
+        ("ok", "behavior=OK close=OK", 0),
+        ("FAILED/FAILED", "behavior=FAILED", 0),
+        ("FAILED/FAILED", "behavior=FAILED close=FAILED close=OK", 0),
+      ] {
+      let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+      tally.report(
+        "client",
+        "autobahn",
+        [row],
+        [row],
+        "CASE \{id} \{marker} \{fields}",
+        "",
+        quiet=true,
+      )
+      assert_eq(tally.known, expected)
+      assert_eq(tally.fail, 1 - expected)
+    }
+  }
   for side in ["server", "client"] {
     for number in ["7.1.6", "7.13.1", "7.13.2"] {
       let id = if side == "server" {

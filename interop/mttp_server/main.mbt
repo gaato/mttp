@@ -273,6 +273,7 @@ fn main {
           @ws.upgrade(
             request,
             origins=Any,
+            compression=@ws.Compression::new(),
             subprotocols=["echo"],
             // Section 9 deliberately crosses the normal 16 MiB bound.
             limits={

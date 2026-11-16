@@ -7,15 +7,19 @@ import {
 }
 
 // Values
-pub async fn connect(String, backend? : &@mttp_core.Backend, subprotocols? : Array[String], extensions? : Array[String], origin? : String, headers? : @mttp_core.Headers, limits? : @gaato/mttp_core/ws.WsLimits) -> &@gaato/mttp_core/ws.Session raise @gaato/mttp_core/ws.WsError
+pub async fn connect(String, backend? : &@mttp_core.Backend, subprotocols? : Array[String], extensions? : Array[String], compression? : Compression, origin? : String, headers? : @mttp_core.Headers, limits? : @gaato/mttp_core/ws.WsLimits) -> &@gaato/mttp_core/ws.Session raise @gaato/mttp_core/ws.WsError
 
 pub fn connector(base_url~ : String, backend? : &@mttp_core.Backend, limits? : @gaato/mttp_core/ws.WsLimits) -> async (@mttp_core.Request, Array[String]) -> &@gaato/mttp_core/ws.Session raise @gaato/mttp_core/ws.WsError
 
-pub fn upgrade(@mttp_core.Request, origins? : @handshake.OriginPolicy, subprotocols? : Array[String], limits? : @gaato/mttp_core/ws.WsLimits, handler~ : async (&@gaato/mttp_core/ws.Session) -> Unit) -> @mttp_core.Response
+pub fn upgrade(@mttp_core.Request, origins? : @handshake.OriginPolicy, subprotocols? : Array[String], compression? : Compression, limits? : @gaato/mttp_core/ws.WsLimits, handler~ : async (&@gaato/mttp_core/ws.Session) -> Unit) -> @mttp_core.Response
 
 // Errors
 
 // Types and methods
+pub struct Compression {
+  // private fields
+}
+pub fn Compression::new(server_no_context_takeover? : Bool, client_no_context_takeover? : Bool) -> Self
 
 // Type aliases
 pub using @gaato/mttp_core/ws {type CloseCode}

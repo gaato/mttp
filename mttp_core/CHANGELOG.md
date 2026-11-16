@@ -33,6 +33,11 @@ never does.
   and RFC 1929 username/password negotiation, environment selection and
   NO_PROXY bypass, followed by TLS for HTTPS. `socks5://` remains refused
   with a clear remote-DNS alternative until a resolver port exists.
+- Router's in-process WebSocket backend hands over the byte connection when
+  an extension is negotiated, allowing the caller to install its extension
+  while keeping compression outside mttp_core.
+- WebSocket sessions abort after a transformed message is rejected or its
+  queued send is cancelled, so stateful extensions cannot reuse unsent history.
 
 - `h1server.serve_conn(on_response_complete~)` acknowledges each returned
   HTTP response after writing, body cleanup and unread-request draining,

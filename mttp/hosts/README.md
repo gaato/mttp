@@ -184,6 +184,27 @@ are refused by JS connect; redirects are disabled. Workers can use `headers`
 and `origin`; Bun uses its extended WebSocket constructor. Other hosts refuse
 these options instead of silently dropping them.
 
+`ws.connect(..., compression=...)` and `ws.upgrade(..., compression=...)`
+have **no effect on JS**. The host owns negotiation, inflation and the wire
+window; mttp neither adds its native extension nor compresses a second time.
+
+| Host | Compression behavior through these adapters |
+|---|---|
+| Node global WebSocket | Undici automatically offers permessage-deflate and handles negotiated receive compression; there is no server upgrade in this adapter. |
+| Deno | The built-in WebSocket client and Deno.upgradeWebSocket currently do not negotiate compression; mttp adds no extension header. |
+| Bun | The client uses Bun's default compression offer. The server adapter supplies no perMessageDeflate setting and sends without the compress argument; application Bun.serve configuration remains host-owned. |
+| Browsers | The user agent chooses its compression offer and performs compression/decompression; the standard constructor has no compression option. |
+| Cloudflare Workers | Runtime compression support is enabled by the web_socket_compression compatibility flag (default since 2023-08-15). mttp's fetch-based client supplies no extension header; its WebSocketPair server supplies no compression response header. The mttp option does not enable either. |
+| Fastly / Vercel / Lambda | Follow the supplied global WebSocket implementation on clients; no server upgrade in these adapters. |
+
+Sources: [Undici handshake](https://github.com/nodejs/undici/blob/main/lib/web/websocket/connection.js),
+[Deno client implementation](https://github.com/denoland/deno/blob/main/ext/websocket/lib.rs),
+[Deno server behavior](https://docs.deno.com/examples/websocket_context/),
+[Bun compression](https://bun.sh/docs/runtime/http/websockets), and
+[Workers compatibility flag](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#websocket-compression).
+Host behavior can change with host versions. mttp's queue bounds below apply
+to the host's already decompressed messages, after host allocation.
+
 JS hosts cannot pause incoming messages. Each session therefore retains at
 most `WsLimits.max_message_bytes` **total queued UTF-8/binary bytes** (also
 the per-message and outbound-message ceiling, default 16 MiB), and at most

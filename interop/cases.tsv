@@ -51,8 +51,10 @@ server	ab-7.13.1	autobahn/direct	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL
 server	ab-7.13.2	autobahn/direct	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: reserved Close code 65535 is rejected with 1002; suite declares outcome undefined
 server	ab-9.*	autobahn/direct	pass	128 MiB frame and message limits in echo mode for the large-message section
 server	ab-10.*	autobahn/direct	pass
-server	ab-12.*	autobahn/direct	n/a	permessage-deflate is not negotiated yet
-server	ab-13.*	autobahn/direct	n/a	permessage-deflate is not negotiated yet
+server	ab-12.*	autobahn/direct	pass
+server	ab-13.*	autobahn/direct	pass
+server	ab-13.3.*	autobahn/direct	known:UNIMPLEMENTED/OK	RFC 7692 section 7.1.2.1: server_max_window_bits=9 constrains our encoder below its fixed 15; decline this offer
+server	ab-13.5.*	autobahn/direct	known:UNIMPLEMENTED/OK	RFC 7692 section 7.1.2.1: server_max_window_bits=9 with server_no_context_takeover still constrains our fixed-15 encoder; decline this offer
 # Exact client expectations also constrain the W4 runner when integrated.
 
 # Client side: gaato/mttp's Client against nginx, Caddy and Apache.
@@ -188,8 +190,11 @@ client	autobahn-6.*	native/autobahn	pass
 client	autobahn-7.*	native/autobahn	pass
 client	autobahn-9.*	native/autobahn	pass
 client	autobahn-10.*	native/autobahn	pass
-client	autobahn-12.*	native/autobahn	n/a	permessage-deflate is not implemented at this stage
-client	autobahn-13.*	native/autobahn	n/a	permessage-deflate is not implemented at this stage
+client	autobahn-12.*	native/autobahn	pass
+client	autobahn-13.*	native/autobahn	pass
+client	autobahn-13.3.*	native/autobahn	known:FAILED/FAILED	RFC 7692 sections 7 and 7.1.2.2: response client_max_window_bits=9 cannot be honoured by our fixed-15 encoder; fail the handshake
+client	autobahn-13.5.*	native/autobahn	known:FAILED/FAILED	RFC 7692 sections 7 and 7.1.2.2: response client_max_window_bits=9 with client_no_context_takeover still cannot be honoured; fail the handshake
+client	autobahn-13.7.*	native/autobahn	known:FAILED/FAILED	RFC 7692 sections 7 and 7.1.2.2: despite the suite description listing fallbacks its response selects client_max_window_bits=9; fail the unsupported fixed-15 encoder configuration
 client	autobahn-2.10	native/autobahn	pass
 client	autobahn-7.1.6	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: 256 KiB message followed immediately by Close and Ping; ordering of the echo and Close is implementation defined
 client	autobahn-7.13.1	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: reserved close code 5000 is refused with 1002; the suite defines no strict expected behavior

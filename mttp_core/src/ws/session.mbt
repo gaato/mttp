@@ -281,6 +281,11 @@ impl Session for ConnSession with fn send(self, message) {
     Some(extension) => extension.encode(raw)
     None => (raw, false)
   }
+  // A stateful extension has committed its encoding history. If these bytes
+  // are rejected or their queued send is cancelled, a later message must
+  // not refer to history the peer never received.
+  let mut sent = false
+  defer (if !sent && self.extension is Some(_) { self.abort() })
   if payload.length() > self.limits.max_frame_bytes ||
     self.limits.max_frame_bytes < 0 {
     raise WsError(
@@ -295,6 +300,7 @@ impl Session for ConnSession with fn send(self, message) {
     )
   }
   self.emit(opcode, payload, rsv1~)
+  sent = true
 }
 
 ///|

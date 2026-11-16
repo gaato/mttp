@@ -184,9 +184,9 @@ gaato/mttp_core	gaato/mttp_core/ws/handshake	js	19
 gaato/mttp_core	gaato/mttp_core/ws/handshake	native	19
 gaato/mttp_core	gaato/mttp_core/ws/handshake	wasm	19
 gaato/mttp_core	gaato/mttp_core/ws/handshake	wasm-gc	19
-gaato/mttp	gaato/mttp/ws	js	6
-gaato/mttp	gaato/mttp/ws	native	14
-gaato/mttp	gaato/mttp/ws	wasm	14
+gaato/mttp	gaato/mttp/ws	js	8
+gaato/mttp	gaato/mttp/ws	native	29
+gaato/mttp	gaato/mttp/ws	wasm	29
 gaato/mttp-interop	gaato/mttp-interop/ws_client	native	0
 gaato/mttp-interop	gaato/mttp-interop/ws_client	js	0
 gaato/mttp-conformance	gaato/mttp-conformance/sf	js	1

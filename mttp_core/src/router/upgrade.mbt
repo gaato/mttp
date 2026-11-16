@@ -27,6 +27,21 @@ priv struct UpgradeConn {
 }
 
 ///|
+// A negotiated extension needs the client's extension implementation, which
+// belongs to its caller. Keep the hand-over generic rather than constructing
+// an unextended codec that would reject the negotiated RSV bits.
+priv struct ExtensionUpgrade {
+  mut conn : &@rt.Conn?
+}
+
+///|
+impl @rt.Upgraded for ExtensionUpgrade with fn take_conn(self) {
+  let conn = self.conn
+  self.conn = None
+  conn.map(conn => (conn, b""))
+}
+
+///|
 impl @rt.Conn for UpgradeConn with fn read(self, max_len~) {
   if max_len <= 0 {
     raise @mttp_core.TransportError(
@@ -131,6 +146,20 @@ fn Router::upgrade_response(
   let right = UpgradePipe::new(coordination)
   let client : &@rt.Conn = UpgradeConn::{ input: left, output: right, }
   let server : &@rt.Conn = UpgradeConn::{ input: right, output: left, }
+  if response.headers.contains("sec-websocket-extensions") {
+    background(() => {
+      defer server.close()
+      upgrade(server, b"", () => self.closed)
+    })
+    response.close()
+    return {
+      ..response,
+      body: Empty,
+      attributes: @mttp_core.Attributes::empty().put(@rt.upgraded, ExtensionUpgrade::{
+        conn: Some(client),
+      }),
+    }
+  }
   let session = @ws.session_over_conn(
     client,
     role=Client,

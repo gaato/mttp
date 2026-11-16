@@ -26,13 +26,44 @@ fuzzingclient mode: `scripts/gates.sh interop server/autobahn`. The runner
 starts `mttp_server websocket 127.0.0.1:39505`, writes its configuration and
 reports under `_build/interop/autobahn`, and adapts every result to CASE lines.
 Sections 1–7 and 10 run normally; section 9 raises the echo server's frame and
-message limits to 128 MiB. Sections 12–13 are n/a until permessage-deflate.
+message limits to 128 MiB. Sections 12–13 run with opt-in permessage-deflate
+in both directions (`client/native/autobahn` checks the mttp client). Only
+window 15 can be promised by our encoder; smaller peer encoding windows are
+accepted by our 32 KiB decoder. RFC 7692 §7.1.2.1 requires the server to
+decline offers constraining its encoder below 15; §7.1.2.2 responses that
+constrain the client encoder below 15 fail the client handshake.
+Set `INTEROP_WS_COMPRESSION_ONLY=1` for a focused run of sections 12 and 13
+in either direction; it retains exact verdict checking and leaves the default
+full suite unchanged. The Autobahn process ceiling is one hour because the
+compression matrix can outlast the ordinary ten-minute command ceiling.
+Both Autobahn directions use native release builds; the client permits
+600 seconds per case, beyond the suite's longest 480-second case deadline.
 Only exact documented INFORMATIONAL/NON-STRICT cases belong in known rows;
-all other non-OK results fail.
+all other non-OK results fail, except the fixed-window cases below.
 Autobahn rows use `known:INFORMATIONAL/INFORMATIONAL` to require both exact
 verdicts; FAILED, missing, duplicate or different verdicts fail the run on
 either side. `moon run interop/run.mbtx -- --self-test` exercises the adapters
 and these expectations without containers and also runs in static/full gates.
+
+The 2026-11-16 focused sections 12/13 run uses the Autobahn image digest in
+images.tsv, MoonBit 0.10.20+65efd5b93 and native release builds:
+
+| Direction | Section 12 | Section 13 | Exact known verdict |
+|---|---|---|---|
+| Autobahn client → mttp server | 90 OK/OK | 90 OK/OK, 36 known | 13.3.* and 13.5.*: UNIMPLEMENTED/OK |
+| mttp client → Autobahn server | 90 OK/OK | 72 OK/OK, 54 known | 13.3.*, 13.5.* and 13.7.*: FAILED/FAILED |
+
+Every known server case requests `server_max_window_bits=9`; every known
+client case responds with `client_max_window_bits=9`. All 90 raw handshake
+records were checked for those constraints. A fixed-window-15 encoder must
+decline the server offer or fail the unsupported client response under
+[RFC 7692 sections 7 and 7.1.2](https://www.rfc-editor.org/rfc/rfc7692.html#section-7.1.2).
+The client 13.7.* descriptions list fallback offers, but the actual server
+response still selects client window 9. These raw failures remain recorded
+as FAILED/FAILED; they are not converted to strict passes. The runner admits
+only these specific groups and exact verdict pairs, with self-tests rejecting
+different, missing or duplicate verdicts. Reports are under
+`_build/interop/autobahn/reports` and `_build/interop/autobahn-client/reports`.
 
 This uses the upstream
 [Autobahn fuzzingclient interface](https://github.com/crossbario/autobahn-testsuite)
@@ -243,7 +274,7 @@ The native `ws_client` asks for every case, echoes messages, and requests the
 JSON report; `clients/autobahn/adapter.mbtx` converts both behavior and close verdicts
 to CASE lines. Raw reports remain in `_build/interop/autobahn-client/reports`.
 The [upstream configuration](https://github.com/crossbario/autobahn-testsuite)
-selects sections 1–7, 9 and 10; 12–13 are excluded until permessage-deflate.
+selects sections 1–7, 9, 10, 12 and 13, including permessage-deflate.
 Section 9 uses explicit 64 MiB frame/message limits and a raised empty-frame
 work limit. The shared adapter requires strict OK for case 2.10: the session
 answers each Ping while its Pong writer is free. Only 7.1.6, 7.13.1 and

@@ -13,7 +13,7 @@ pub using @core_ws {
 ///|
 /// Opens one WebSocket without redirects or retries. The default backend
 /// uses system TLS trust and environment proxies; a supplied backend stays
-/// caller-owned. Extensions are reserved: none are implemented at this stage.
+/// caller-owned. Compression is opt-in; other extensions are unsupported.
 /// JS uses the host WebSocket API; see hosts/README.md for host restrictions.
 #cfg(not(target="js"))
 pub async fn connect(
@@ -21,6 +21,7 @@ pub async fn connect(
   backend? : &@mttp_core.Backend,
   subprotocols~ : Array[String] = [],
   extensions~ : Array[String] = [],
+  compression? : Compression,
   origin? : String,
   headers? : @mttp_core.Headers,
   limits~ : @core_ws.WsLimits = @core_ws.WsLimits::default(),
@@ -28,9 +29,10 @@ pub async fn connect(
   if !extensions.is_empty() {
     raise @core_ws.WsError(
       kind=Handshake(status=0),
-      detail="WebSocket extensions are not implemented yet",
+      detail="use compression for permessage-deflate; other extensions are unsupported",
     )
   }
+  let extensions = compression.map(c => [c.offer()]).unwrap_or([])
   let key = @handshake.new_key(@env.rand)
   let request = @handshake.client_request(
     url,
@@ -71,6 +73,10 @@ pub async fn connect(
     offered_subprotocols=subprotocols,
     offered_extensions=extensions,
   )
+  let extension = match compression {
+    Some(options) => options.validate(accepted.extensions)
+    None => None
+  }
   if ready is Some(session) {
     return session
   }
@@ -91,6 +97,7 @@ pub async fn connect(
     entropy=@env.rand,
     limits~,
     subprotocol?=accepted.subprotocol,
+    extension?,
   )
   transferred = true
   session
@@ -104,10 +111,13 @@ pub async fn connect(
   backend? : &@mttp_core.Backend,
   subprotocols~ : Array[String] = [],
   extensions~ : Array[String] = [],
+  compression? : Compression,
   origin? : String,
   headers? : @mttp_core.Headers,
   limits~ : @core_ws.WsLimits = @core_ws.WsLimits::default(),
 ) -> &@core_ws.Session raise @core_ws.WsError {
+  // The host owns the wire handshake and compression in JS.
+  ignore(compression)
   if !extensions.is_empty() {
     raise @core_ws.WsError(
       kind=Handshake(status=0),

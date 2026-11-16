@@ -54,7 +54,10 @@ A WebSocket 101 is the exception: supply `clock`, `timer`, `coordination` and
 `background` to the constructor. The background scheduler owns and joins the
 server callback. Router connects it to a client-role codec over a byte pair
 with 64 KiB per-direction backpressure, and returns the client session under
-`@ws.ws_session`. Ordinary attributes remain isolated. The caller must close
+`@ws.ws_session`. When an extension is negotiated, it instead returns the
+take-once byte connection under `@rt.upgraded`, so the client can install
+its negotiated Extension without teaching Router any compression algorithm.
+Ordinary attributes remain isolated. The caller must close
 or abort that session; the empty response body does not own it. Closing the
 Router makes the server callback's shutdown probe true.
 

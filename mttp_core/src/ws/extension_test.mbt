@@ -103,6 +103,13 @@ test "encoded output obeys frame and wire message bounds and carries RSV1" {
           )
         } else {
           assert_eq(conn.written(), [])
+          assert_eq(conn.closes(), 1)
+          try s.send(Binary(b"next")) catch {
+            @ws.WsError(kind=Closed(_), ..) => ()
+            _ => fail("extension history survived rejected send")
+          } noraise {
+            _ => fail("reused unsent extension history")
+          }
         }
         s.abort()
       })

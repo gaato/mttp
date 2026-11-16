@@ -9,9 +9,13 @@ never does.
 
 ### Changed
 
-- gaato/deflate 0.2.0, gaato/brotli 0.5.0 and gaato/zstd 0.5.0: decoding
+- gaato/deflate 0.3.0, gaato/brotli 0.5.0 and gaato/zstd 0.5.1: decoding
   errors read as those releases word them ("the input ends inside ...",
   "data after the last meta-block", "data after the last frame").
+- Upgrade gaato/deflate to 0.3.0 for block-boundary checks and dictionary-aware
+  reset, and gaato/zstd to 0.5.1, which reports TrailingData for 1–3 trailing
+  bytes after a frame.
+
 ### Added
 
 - `backend.AsyncBackend::new(max_connection_age_ms?)` forwards an optional
@@ -23,6 +27,10 @@ never does.
   `Invalid/Dial`, and connects the exact answer while keeping hostname SNI.
   Each redirect dial is checked. With a proxy only its address is checked;
   target restrictions belong at the proxy.
+- Opt-in WebSocket permessage-deflate through `compression=Compression::new()`
+  on connect and upgrade, with RFC 7692 negotiation, per-direction context
+  takeover, fixed window 15 encoding and bounded inflation (Close 1009).
+  JS hosts retain their own compression behavior and ignore this option.
 
 ### Fixed
 
@@ -35,6 +43,14 @@ never does.
   set (`AddrInfo::next`/`to_addr` are private) or per-candidate validation
   hook for `connect_to_host`; guarded dialing therefore has no fallback
   across addresses and still connects the single checked answer directly.
+- permessage-deflate reuses one Decoder's storage across BFINAL members and
+  bounds restarts at eight per message (Close 1009). Dictionary-aware reset
+  restores the exact last 32 KiB of LZ77 history.
+- permessage-deflate supplies only the RFC four-byte tail, separately with
+  output checked and `Decoder::at_block_boundary()` required afterwards;
+  tail-generated data and unfinished stored headers are Close 1002. The
+  RFC 7692 section 7.2.3.4 final-stream example is accepted in both roles
+  under every input split.
 
 - JS WebSocket abort requests host `close()` without a status instead of
   normal Close 1000, while retaining local Abnormal 1006. The Bun server

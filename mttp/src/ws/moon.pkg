@@ -14,6 +14,8 @@ import {
 
 #cfg(not(target="js"))
 import {
+  "gaato/deflate",
+  "gaato/codec_bytes",
   "gaato/mttp/runtime",
 }
 
@@ -46,6 +48,8 @@ import {
   "moonbitlang/core/encoding/utf8",
   "gaato/mttp_core/h1client",
   "gaato/mttp/server",
+  "gaato/mttp_core/ws/frame",
+  "gaato/deflate",
 } for "test"
 
 options(
@@ -55,6 +59,10 @@ options(
     "gaato/mttp_core/driver",
   ],
   targets: {
+    "compression.mbt": [ "native", "wasm" ],
+    "compression_wbtest.mbt": [ "native", "wasm" ],
+    "compression_corpus_wbtest.mbt": [ "native", "wasm" ],
+    "compression_corpus_test.mbt": [ "native", "wasm" ],
     "socket_test.mbt": [ "native", "wasm" ],
     "connect_test.mbt": [ "native", "wasm" ],
     "upgrade_cleanup_test.mbt": [ "native", "wasm" ],
