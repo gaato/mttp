@@ -6,6 +6,9 @@
     "check": "node check.mjs"
   },
   "devDependencies": {
-    "wrangler": "4.160.1"
+    "wrangler": "4.162.0"
+  },
+  "overrides": {
+    "workerd": "1.20261116.1"
   }
 }

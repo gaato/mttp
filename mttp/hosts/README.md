@@ -97,6 +97,9 @@ every request rejects with an Error that names the failure and keeps it as
 evaluating throws again.
 [examples/fetch/workers](https://github.com/gaato/mttp/tree/main/examples/fetch/workers)
 is a complete Workers app, which the repository's gates run on workerd.
+The check prints `KNOWN` with [workerd #7634](https://github.com/cloudflare/workerd/issues/7634)
+only for the matching connection reset while reading an expected 200 response to a partly read or unread upload; successful early responses print `PASS`, while full-body reads, other errors and background completion remain strict.
+The example pins workerd with an npm override because Wrangler's own dependency can lag behind the runtime selected for this check.
 
 The other hosts keep the static import. Fastly must call `waitUntil` and
 `respondWith` synchronously while it dispatches the event, so the app cannot
@@ -209,8 +212,11 @@ validation and automatic replies. Deno's automatic idle timeout is disabled.
 The workerd gate checks text/binary echo, subprotocol and Close reason on real
 Workers, including three concurrent server sessions and a Workers fetch-upgrade
 client with custom headers against the native echo server. Socket I/O runs
-through a request-scoped promise pump because the shared MoonBit scheduler can
-resume a coroutine from another request's event. `scripts/gates.sh interop websocket` checks JS mttp clients under the
+through a request-scoped pump that also registers completion callbacks there:
+the shared MoonBit scheduler can resume a coroutine from another request's
+event, and Workers drops Promise reactions owned by an ended request. The gate
+repeats the sessions and client request for 20 rounds in one isolate to cover
+that lifetime boundary. `scripts/gates.sh interop websocket` checks JS mttp clients under the
 Node/Deno/Bun images pinned in `interop/images.tsv` against the native echo
 server, then Deno and Bun fetch servers. `websocket/local` explicitly uses
 installed runtimes and prints their versions for environments without containers.

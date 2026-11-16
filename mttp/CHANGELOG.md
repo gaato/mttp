@@ -15,6 +15,11 @@ never does.
 
 ### Fixed
 
+- Workers WebSocket operations register their completion callbacks in the
+  socket's request context, so another request ending cannot drop them when
+  the shared MoonBit scheduler resumes a session there. Client handshakes
+  start and register their completion callbacks in the owning request too.
+
 - JS WebSocket abort requests host `close()` without a status instead of
   normal Close 1000, while retaining local Abnormal 1006. The Bun server
   bridge preserves omitted close arguments too.

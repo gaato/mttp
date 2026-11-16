@@ -77,6 +77,18 @@ real runtime. These JS-only sources are absent from native coverage.
 joining for handlers blocked outside recv, application cookies alongside Deno
 handshake fields, and repeated Bun list headers. Pinned interop checks these
 against real Deno/Bun upgrades and the native handshake server.
+The workerd gate repeats three concurrent WebSocket sessions followed by a
+Workers client request for 20 rounds in one isolate, covering completion
+callbacks that would otherwise be registered in another request's context
+when the shared scheduler resumes a session. Node does not enforce that
+request lifetime boundary; the "WebSocket operations and wait callbacks stay
+in the socket scope across scheduler callers" test uses AsyncLocalStorage to
+check operation, completion and cancellation callback ownership directly.
+Under CPU contention, early replies with unread uploads also reset connections
+in a pure JavaScript Worker, independently of MoonBit; see upstream
+[workerd #7634](https://github.com/cloudflare/workerd/issues/7634). Consuming the
+upload to EOF before replying avoids that host failure but would violate the
+adapter's tested contract to leave unused input to the host.
 The startup regression holds Deno/Bun/Workers sockets in CONNECTING, also
 delivers Bun's socket only after abandonment, and checks Close, idle completion
 and that the handler never starts. Workers' real accept is synchronous; the

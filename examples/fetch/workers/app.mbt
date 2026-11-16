@@ -64,7 +64,11 @@ async fn route(request : @mttp.Request) -> @mttp.Response noraise {
         headers=@mttp.Headers::of([("x-client", "workers")]),
         limits={ ..@ws.WsLimits::default(), send_timeout_ms: 5000, },
       ) catch {
-        _ => return json(500, { "error": "connect failed" })
+        error =>
+          return json(500, {
+            "error": "connect failed",
+            "detail": Json::string("\{Repr(error)}"),
+          })
       }
       defer session.abort()
       let stage = Ref("send text")

@@ -2,6 +2,59 @@
 extend HostSession with @ws.Session::{recv, send, subprotocol}
 
 ///|
+extern "js" fn check_socket_callback_scope(
+  make : (Socket) -> Handle,
+  send : (Handle) -> @js_async.Promise[String],
+  buffered : (Handle) -> @js_async.Promise[Int32],
+  wait : (Handle, @js_async.AbortSignal) -> @js_async.Promise[Unit],
+) -> @js_async.Promise[Unit] =
+  #| async (make, send, buffered, wait) => {
+  #|   const {AsyncLocalStorage} = await import('node:async_hooks');
+  #|   const scope = new AsyncLocalStorage();
+  #|   const owner = () => {
+  #|     if (scope.getStore() !== 'socket') throw new Error('callback escaped the socket scope');
+  #|   };
+  #|   const socket = Object.assign(new EventTarget(), {readyState: 1, protocol: '', send() { owner(); }});
+  #|   Object.defineProperty(socket, 'bufferedAmount', {get() { owner(); return 0; }});
+  #|   const handle = scope.run('socket', () => make(socket));
+  #|   // A scheduler turn from a different request subscribes to each operation.
+  #|   const observe = operation => scope.run('other request', () => new Promise((resolve, reject) => {
+  #|     operation().then(value => {
+  #|       try { owner(); resolve(value); } catch (error) { reject(error); }
+  #|     }, error => {
+  #|       try { owner(); reject(error); } catch (failure) { reject(failure); }
+  #|     });
+  #|   }));
+  #|   try {
+  #|     await observe(() => send(handle));
+  #|     await observe(() => buffered(handle));
+  #|     const controller = new AbortController();
+  #|     const pending = observe(() => wait(handle, controller.signal));
+  #|     await new Promise(resolve => setImmediate(resolve));
+  #|     scope.run('socket', () => socket.dispatchEvent(new MessageEvent('message', {data: 'ready'})));
+  #|     await pending;
+  #|     // The already-readable path must enter the owner too.
+  #|     await observe(() => wait(handle, controller.signal));
+  #|     handle.queue.length = 0; handle.bytes = 0;
+  #|     const cancelled = observe(() => wait(handle, controller.signal));
+  #|     await new Promise(resolve => setImmediate(resolve));
+  #|     scope.run('other request', () => controller.abort());
+  #|     try { await cancelled; throw new Error('wait did not reject'); }
+  #|     catch (error) { if (error.name !== 'AbortError') throw error; }
+  #|   } finally { handle.detach(); }
+  #| }
+
+///|
+async test "WebSocket operations and wait callbacks stay in the socket scope across scheduler callers" {
+  check_socket_callback_scope(
+    socket => attach(socket, 32, 4),
+    handle => handle.send("hello", b"", false),
+    handle => handle.buffered(),
+    (handle, signal) => handle.wait(signal),
+  ).wait()
+}
+
+///|
 extern "js" fn fake_socket() -> Socket =
   #| () => Object.assign(new EventTarget(), {readyState: 1, bufferedAmount: 0, protocol: 'echo',
   #|   send(data) { this.sent = data; }, close(code, reason) {
@@ -180,14 +233,34 @@ async test "cancelled receive retains queued messages and concurrent receive is 
 }
 
 ///|
+extern "js" fn observe_receive(
+  operation : @js_async.Promise[Unit],
+) -> @js_async.Promise[Unit] =
+  #| operation => new Promise((resolve, reject) => operation.then(resolve, reject))
+
+///|
+extern "js" fn observe_send(
+  operation : @js_async.Promise[String],
+) -> @js_async.Promise[String] =
+  #| operation => new Promise((resolve, reject) => operation.then(resolve, reject))
+
+///|
 async test "send and close waits are bounded and oversized sends do not write" {
-  let handle = attach(fake_socket(), 4, 2)
-  let sent = handle.send("ok", b"", false)
+  let socket = fake_socket()
+  let handle = attach(socket, 4, 2048)
+  let waiting = observe_receive(
+    handle.wait(@js_async.AbortController::new().signal()),
+  )
+  let sent = observe_send(handle.send("ok", b"", false))
+  for _ in 0..<1024 {
+    emit(socket, "", false)
+  }
   for _ in 0..<1024 {
     handle.close(1000, "")
     handle.abort()
   }
-  assert_eq(pending_operations(handle), 3)
+  assert_eq(pending_operations(handle), 10)
+  waiting.wait()
   ignore(sent.wait())
   let socket = fake_socket()
   let session = new_session(

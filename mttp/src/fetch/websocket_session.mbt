@@ -43,7 +43,11 @@ pub async fn websocket_connect(
     .map(pair => FixedArray::from_array([pair.0, pair.1]))
     .collect()
   let controller = @js_async.AbortController::new()
-  let handle = @async.with_timeout(limits.send_timeout_ms.max(1), () => {
+  errdefer controller.abort()
+  // Start host I/O before the timeout's task group can yield to another
+  // request's scheduler turn. Cancellation still owns the in-flight upgrade.
+  let scope = Scope::new()
+  let opening = scope.open(() => {
     open_socket(
       url,
       FixedArray::from_array(protocols),
@@ -56,7 +60,10 @@ pub async fn websocket_connect(
         )
       },
       controller.signal(),
-    ).wait(abort_controller=controller)
+    )
+  })
+  let handle = @async.with_timeout(limits.send_timeout_ms.max(1), () => {
+    opening.wait(abort_controller=controller)
   }) catch {
     error =>
       raise @ws.WsError(

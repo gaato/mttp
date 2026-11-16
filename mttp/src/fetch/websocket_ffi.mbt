@@ -15,6 +15,34 @@ priv type HostRequest
 priv type HostResponse
 
 ///|
+#external
+priv type Scope
+
+///|
+// The shared MoonBit scheduler can resume a task in another request. Host
+// operations and their Promise::wait callbacks must run in their owner's
+// context: Workers drops reactions owned by an ended request.
+extern "js" fn Scope::new() -> Scope =
+  #| () => {
+  #|   const operations = []; let dispatch;
+  #|   const pump = async () => {
+  #|     for (;;) {
+  #|       await new Promise(resolve => { dispatch = resolve; });
+  #|       while (operations.length) operations.shift()();
+  #|     }
+  #|   };
+  #|   pump();
+  #|   const enqueue = run => { operations.push(run); dispatch(); };
+  #|   return {operations, run(start) {
+  #|     let result;
+  #|     enqueue(() => { result = Promise.resolve().then(start); result.catch(() => {}); });
+  #|     // Returning a native Promise would register the observer in the
+  #|     // scheduler caller's context. Subscribe inside the owner instead.
+  #|     return {then(resolve, reject) { enqueue(() => result.then(resolve, reject)); }};
+  #|   }};
+  #| }
+
+///|
 priv struct Event {
   kind : Int32
   text : String
@@ -27,7 +55,7 @@ priv struct Event {
 // Events only notify the receiver. Taking a message happens in MoonBit after
 // the cancellable wait, so cancellation never consumes a committed message.
 fn attach(socket : Socket, bytes : Int32, count : Int32) -> Handle {
-  attach_scoped(socket, bytes, count, turn)
+  attach_scoped(socket, bytes, count, Scope::new(), turn)
 }
 
 ///|
@@ -44,30 +72,27 @@ extern "js" fn attach_scoped(
   socket : Socket,
   bytes : Int32,
   count : Int32,
+  scope : Scope,
   turn : () -> Unit,
 ) -> Handle =
-  #| (socket, bytes, count, turn) => {
+  #| (socket, bytes, count, scope, turn) => {
   #|   socket.binaryType = 'arraybuffer';
   #|   const empty = new Uint8Array(0);
   #|   const h = {socket, queue: [], bytes: 0, terminal: null, wake: null, closing: false, state: socket.readyState, protocol: socket.protocol || ''};
-  #|   // Create the pump's promises in the socket's request scope: MoonBit's
-  #|   // global scheduler may later resume this task from a different request.
-  #|   const operations = h.operations = []; let dispatch;
-  #|   const pump = async () => {
-  #|     for (;;) {
-  #|       await new Promise(resolve => { dispatch = resolve; });
-  #|       while (operations.length) {
-  #|         const {run, resolve, reject} = operations.shift();
-  #|         try { resolve(run()); } catch (error) { reject(error); }
-  #|       }
+  #|   h.operations = scope.operations;
+  #|   h.run = run => scope.run(run);
+  #|   const event = (kind, code = 0, reason = '') => ({kind, text: '', data: empty, code, reason});
+  #|   // Cancellation joins can need another scheduler round after the last
+  #|   // socket event. Keep that round in the owner too, and coalesce bursts
+  #|   // so inbound events cannot grow the operation queue with empty ticks.
+  #|   let tickQueued = false;
+  #|   h.notify = () => {
+  #|     h.wake?.();
+  #|     if (!tickQueued) {
+  #|       tickQueued = true;
+  #|       h.run(() => { tickQueued = false; turn(); }).then(() => {}, () => {});
   #|     }
   #|   };
-  #|   pump();
-  #|   h.run = run => new Promise((resolve, reject) => { operations.push({run, resolve, reject}); dispatch(); });
-  #|   const event = (kind, code = 0, reason = '') => ({kind, text: '', data: empty, code, reason});
-  #|   // Finish scheduler cleanup before the closing request loses its I/O
-  #|   // scope. A runtime setTimeout round may belong to another invocation.
-  #|   h.notify = () => { h.wake?.(); queueMicrotask(turn); };
   #|   h.close = (code, reason) => {
   #|     if (h.closing || h.state === 3) return;
   #|     h.closing = true; h.state = 2;
@@ -78,7 +103,7 @@ extern "js" fn attach_scoped(
   #|         try { socket.close(code >= 1000 && code < 2000 ? code + 3000 : 4008, reason); }
   #|         catch (_) { try { socket.close(); } catch (_) {} }
   #|       }
-  #|     }).catch(() => {});
+  #|     }).then(() => {}, () => {});
   #|   };
   #|   h.fail = (kind, code, reason) => {
   #|     if (h.terminal) return;
@@ -167,17 +192,26 @@ extern "js" fn open_socket(
   #| }
 
 ///|
+// Start and observe the handshake inside its owner's request, even when
+// the timeout task group later subscribes from another scheduler turn.
+extern "js" fn Scope::open(
+  self : Scope,
+  start : () -> @js_async.Promise[Handle],
+) -> @js_async.Promise[Handle] =
+  #| (scope, start) => scope.run(start)
+
+///|
 extern "js" fn Handle::wait(
   self : Handle,
   signal : @js_async.AbortSignal,
 ) -> @js_async.Promise[Unit] =
-  #| (h, signal) => new Promise((resolve, reject) => {
+  #| (h, signal) => h.run(() => new Promise((resolve, reject) => {
   #|   if (h.queue.length || h.terminal) { resolve(); return; }
   #|   const cleanup = () => { h.wake = null; signal.removeEventListener('abort', abort); };
   #|   const abort = () => { cleanup(); reject(new DOMException('aborted', 'AbortError')); };
   #|   h.wake = () => { cleanup(); resolve(); };
   #|   signal.addEventListener('abort', abort, {once: true}); if (signal.aborted) abort();
-  #| })
+  #| }))
 
 ///|
 extern "js" fn Handle::take(self : Handle) -> Event =
@@ -219,4 +253,4 @@ extern "js" fn Handle::close(
 // 1005 selects close() without arguments; the local terminal stays 1006.
 extern "js" fn Handle::abort(self : Handle) -> Unit =
   #| h => { if (h.aborted) return; h.aborted = true; h.queue.length = 0; h.bytes = 0; h.terminal ??= {kind: 2, text: '', data: new Uint8Array(0), code: 1006, reason: ''};
-  #|   h.close(1005, ''); h.run(() => h.socket.terminate?.()).catch(() => {}); h.detach(); h.notify(); }
+  #|   h.close(1005, ''); h.run(() => h.socket.terminate?.()).then(() => {}, () => {}); h.detach(); h.notify(); }
