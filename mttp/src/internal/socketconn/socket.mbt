@@ -9,6 +9,10 @@ priv struct SocketConn[R, W] {
   /// every later read raises `IncompleteClose` again, as `rt.Conn` asks.
   mut incomplete : Bool
   mut pending : Bytes
+  /// Private scratch, never exposed as Bytes: reuse must not alias a read
+  /// already returned or committed by the child of a cancelled waiter.
+  mut read_buffer : FixedArray[Byte]
+  mut read_size : Int32
   mut cancel_read : (() -> Unit)?
   mut cancel_write : (() -> Unit)?
   /// For a TLS session, how many writes it has started on the connection
@@ -41,20 +45,29 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
   if self.incomplete {
     raise incomplete_close_error()
   }
-  let buffer = FixedArray::make(max_len.min(65536), b'\x00')
+  let size = max_len.min(self.read_size)
+  if self.read_buffer.length() < size {
+    self.read_buffer = FixedArray::make(size, b'\x00')
+  }
+  let buffer = self.read_buffer
   // core's handle close can detach an outstanding read without waking it.
   // Keep a structured child per direction so close can request cancellation,
   // while this operation joins cleanup before another operation may start.
   @async.with_task_group(group => {
     let task = group.spawn(
       () => {
-        let n = self.reader.read_into(buffer)
+        let n = self.reader.read_into(buffer, max_len=size)
         // Commit consumed bytes in the child before waking its waiter. A
         // cancelled read-ahead waiter must not discard the next request.
         if n == 0 {
           self.eof = true
         } else {
           self.pending = Bytes::from_array(buffer[:n])
+          // A small caller limit is not evidence that bulk storage is
+          // useful. Only a full read at the current target grows it.
+          if n == self.read_size {
+            self.read_size = (self.read_size * 2).min(65536)
+          }
         }
       },
       allow_failure=true,
@@ -233,6 +246,7 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
   if !self.closed {
     self.closed = true
     self.pending = b""
+    self.read_buffer = []
     if self.cancel_read is Some(cancel) {
       cancel()
     }
@@ -267,6 +281,8 @@ pub fn from_tcp(tcp : @socket.Tcp) -> &@rt.Conn {
     eof: false,
     incomplete: false,
     pending: b"",
+    read_buffer: [],
+    read_size: 4096,
     cancel_read: None,
     cancel_write: None,
     lower_sends: None,
@@ -300,6 +316,8 @@ pub fn from_tls(
     eof: false,
     incomplete: false,
     pending: b"",
+    read_buffer: [],
+    read_size: 4096,
     cancel_read: None,
     cancel_write: None,
     lower_sends,

@@ -88,7 +88,7 @@ impl @io.BinaryReaderImpl for ProbeIo with fn raw_read_impl(
 ///|
 async test "cancelled read waiter retains bytes committed by its completed child" {
   let cancel : Ref[(() -> Unit)?] = Ref(None)
-  let io = probe(bytes=b"abc", yield_before_read=true, after_read=() => {
+  let io = probe(bytes=b"abcdef", yield_before_read=true, after_read=() => {
     cancel.val.unwrap()()
   })
   let conn : &@rt.Conn = wrap(io, Ref(0))
@@ -108,6 +108,7 @@ async test "cancelled read waiter retains bytes committed by its completed child
   assert_eq(conn.read(max_len=1), Some(b"a"))
   assert_eq(conn.read(max_len=1), Some(b"b"))
   assert_eq(conn.read(max_len=1), Some(b"c"))
+  assert_eq(conn.read(max_len=3), Some(b"def"))
 }
 
 ///|
@@ -159,6 +160,8 @@ fn wrap(
     eof: false,
     incomplete: false,
     pending: b"",
+    read_buffer: [],
+    read_size: 4096,
     cancel_read: None,
     cancel_write: None,
     lower_sends,
@@ -168,7 +171,7 @@ fn wrap(
 
 ///|
 async test "socket read and write bounds EOF halves and close errors" {
-  let io = probe(bytes=Bytes::make(65537, b'x'))
+  let io = probe(bytes=Bytes::make(4097, b'x'))
   let closes = Ref(0)
   let conn : &@rt.Conn = wrap(io, closes)
   for invalid in [0, -1] {
@@ -179,11 +182,11 @@ async test "socket read and write bounds EOF halves and close errors" {
       _ => fail("invalid read size accepted")
     }
   }
-  assert_eq(conn.read(max_len=2147483647).map(Bytes::length), Some(65536))
+  assert_eq(conn.read(max_len=2147483647).map(Bytes::length), Some(4096))
   assert_eq(conn.read(max_len=1).map(Bytes::length), Some(1))
   assert_eq(conn.read(max_len=100), None)
   assert_eq(conn.read(max_len=100), None)
-  assert_eq(io.limits, [65536, 1, 100])
+  assert_eq(io.limits, [4096, 1, 100])
   conn.write(Bytes::make(131073, b'y'))
   conn.write(b"")
   assert_eq(io.writes.map(Bytes::length), [65536, 65536, 1])
@@ -197,6 +200,49 @@ async test "socket read and write bounds EOF halves and close errors" {
   } noraise {
     _ => fail("closed write accepted")
   }
+}
+
+///|
+async test "receive storage grows to 64 KiB and reuses it past the bound" {
+  let bytes = Bytes::make(4096 + 8192 + 16384 + 32768 + 2 * 65536 + 1, b'x')
+  let io = probe(bytes~)
+  let socket = wrap(io, Ref(0))
+  let conn : &@rt.Conn = socket
+  defer conn.close()
+  assert_eq(socket.read_buffer.length(), 0)
+  let out = Buffer()
+  for size in [4096, 8192, 16384, 32768, 65536] {
+    let piece = conn.read(max_len=2147483647).unwrap()
+    assert_eq(piece.length(), size)
+    assert_eq(socket.read_buffer.length(), size)
+    out.write_bytes(piece)
+  }
+  let full = socket.read_buffer
+  out.write_bytes(conn.read(max_len=65537).unwrap())
+  assert_true(physical_equal(full, socket.read_buffer))
+  assert_eq(socket.read_buffer.length(), 65536)
+  out.write_bytes(conn.read(max_len=65537).unwrap())
+  assert_eq(conn.read(max_len=65537), None)
+  assert_eq(io.limits, [4096, 8192, 16384, 32768, 65536, 65536, 65536, 65536])
+  assert_eq(out.to_bytes(), bytes)
+  conn.close()
+  assert_eq(socket.read_buffer.length(), 0)
+}
+
+///|
+async test "reused receive storage respects small reads and never aliases returned bytes" {
+  let io = probe(bytes=b"abcdef")
+  let socket = wrap(io, Ref(0))
+  let conn : &@rt.Conn = socket
+  defer conn.close()
+  let first = conn.read(max_len=2).unwrap()
+  let buffer = socket.read_buffer
+  assert_eq(buffer.length(), 2)
+  assert_eq(conn.read(max_len=2), Some(b"cd"))
+  assert_true(physical_equal(buffer, socket.read_buffer))
+  assert_eq(conn.read(max_len=2147483647), Some(b"ef"))
+  assert_eq(first, b"ab")
+  assert_eq(io.limits, [2, 2, 4096])
 }
 
 ///|

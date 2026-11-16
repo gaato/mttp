@@ -30,6 +30,10 @@ never does.
 
 ### Changed
 
+- Socket connections reuse receive storage instead of zeroing 64 KiB on
+  every read. Storage starts at up to 4 KiB and doubles only after full
+  reads, retaining the 64 KiB ceiling and cancellation-safe committed bytes.
+
 - `ContentEncoder::new` no longer raises: every coding has an encoder.
   Callers that caught its Invalid can drop the handler.
 - JS `ws.connect` supplies a bounded host-message Session on Node, Deno, Bun,
