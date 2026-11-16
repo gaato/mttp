@@ -41,3 +41,5 @@ gaato/mttp_core/ws/frame	FrameErrorKind
 gaato/mttp_core/ws	CloseCode
 gaato/mttp_core/ws	WsErrorKind
 gaato/mttp_core/ws/handshake	OriginPolicy
+gaato/mttp_core/openapi	DocsUi
+gaato/mttp_core/openapi	OpenApiVersion

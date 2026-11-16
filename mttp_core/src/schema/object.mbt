@@ -362,3 +362,732 @@ pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7] object8(
     ]),
   }
 }
+
+///|
+/// Builds a named object codec with 9 typed fields, collecting every
+/// field issue.
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8] object9(
+  name : String,
+  f0 : Field[T, A0],
+  f1 : Field[T, A1],
+  f2 : Field[T, A2],
+  f3 : Field[T, A3],
+  f4 : Field[T, A4],
+  f5 : Field[T, A5],
+  f6 : Field[T, A6],
+  f7 : Field[T, A7],
+  f8 : Field[T, A8],
+  make : (A0, A1, A2, A3, A4, A5, A6, A7, A8) -> T,
+) -> JsonCodec[T] {
+  {
+    missing_: None,
+    omit_: never_omit,
+    from_: (j, path, d) => {
+      let obj = expect_object(j, path)
+      let issues = []
+      let v0 = f0.decode(obj, path, issues, d)
+      let v1 = f1.decode(obj, path, issues, d)
+      let v2 = f2.decode(obj, path, issues, d)
+      let v3 = f3.decode(obj, path, issues, d)
+      let v4 = f4.decode(obj, path, issues, d)
+      let v5 = f5.decode(obj, path, issues, d)
+      let v6 = f6.decode(obj, path, issues, d)
+      let v7 = f7.decode(obj, path, issues, d)
+      let v8 = f8.decode(obj, path, issues, d)
+      match (v0, v1, v2, v3, v4, v5, v6, v7, v8) {
+        (
+          Some(a0),
+          Some(a1),
+          Some(a2),
+          Some(a3),
+          Some(a4),
+          Some(a5),
+          Some(a6),
+          Some(a7),
+          Some(a8),
+        ) => make(a0, a1, a2, a3, a4, a5, a6, a7, a8)
+        _ => raise invalid(issues)
+      }
+    },
+    to_: value => {
+      let obj : Map[String, Json] = Map([])
+      f0.encode_field(obj, value)
+      f1.encode_field(obj, value)
+      f2.encode_field(obj, value)
+      f3.encode_field(obj, value)
+      f4.encode_field(obj, value)
+      f5.encode_field(obj, value)
+      f6.encode_field(obj, value)
+      f7.encode_field(obj, value)
+      f8.encode_field(obj, value)
+      Json::object(obj)
+    },
+    schema_: object_schema(name, [
+      f0.describe(),
+      f1.describe(),
+      f2.describe(),
+      f3.describe(),
+      f4.describe(),
+      f5.describe(),
+      f6.describe(),
+      f7.describe(),
+      f8.describe(),
+    ]),
+  }
+}
+
+///|
+/// Builds a named object codec with 10 typed fields, collecting every
+/// field issue.
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9] object10(
+  name : String,
+  f0 : Field[T, A0],
+  f1 : Field[T, A1],
+  f2 : Field[T, A2],
+  f3 : Field[T, A3],
+  f4 : Field[T, A4],
+  f5 : Field[T, A5],
+  f6 : Field[T, A6],
+  f7 : Field[T, A7],
+  f8 : Field[T, A8],
+  f9 : Field[T, A9],
+  make : (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9) -> T,
+) -> JsonCodec[T] {
+  {
+    missing_: None,
+    omit_: never_omit,
+    from_: (j, path, d) => {
+      let obj = expect_object(j, path)
+      let issues = []
+      let v0 = f0.decode(obj, path, issues, d)
+      let v1 = f1.decode(obj, path, issues, d)
+      let v2 = f2.decode(obj, path, issues, d)
+      let v3 = f3.decode(obj, path, issues, d)
+      let v4 = f4.decode(obj, path, issues, d)
+      let v5 = f5.decode(obj, path, issues, d)
+      let v6 = f6.decode(obj, path, issues, d)
+      let v7 = f7.decode(obj, path, issues, d)
+      let v8 = f8.decode(obj, path, issues, d)
+      let v9 = f9.decode(obj, path, issues, d)
+      match (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) {
+        (
+          Some(a0),
+          Some(a1),
+          Some(a2),
+          Some(a3),
+          Some(a4),
+          Some(a5),
+          Some(a6),
+          Some(a7),
+          Some(a8),
+          Some(a9),
+        ) => make(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9)
+        _ => raise invalid(issues)
+      }
+    },
+    to_: value => {
+      let obj : Map[String, Json] = Map([])
+      f0.encode_field(obj, value)
+      f1.encode_field(obj, value)
+      f2.encode_field(obj, value)
+      f3.encode_field(obj, value)
+      f4.encode_field(obj, value)
+      f5.encode_field(obj, value)
+      f6.encode_field(obj, value)
+      f7.encode_field(obj, value)
+      f8.encode_field(obj, value)
+      f9.encode_field(obj, value)
+      Json::object(obj)
+    },
+    schema_: object_schema(name, [
+      f0.describe(),
+      f1.describe(),
+      f2.describe(),
+      f3.describe(),
+      f4.describe(),
+      f5.describe(),
+      f6.describe(),
+      f7.describe(),
+      f8.describe(),
+      f9.describe(),
+    ]),
+  }
+}
+
+///|
+/// Builds a named object codec with 11 typed fields, collecting every
+/// field issue.
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10] object11(
+  name : String,
+  f0 : Field[T, A0],
+  f1 : Field[T, A1],
+  f2 : Field[T, A2],
+  f3 : Field[T, A3],
+  f4 : Field[T, A4],
+  f5 : Field[T, A5],
+  f6 : Field[T, A6],
+  f7 : Field[T, A7],
+  f8 : Field[T, A8],
+  f9 : Field[T, A9],
+  f10 : Field[T, A10],
+  make : (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10) -> T,
+) -> JsonCodec[T] {
+  {
+    missing_: None,
+    omit_: never_omit,
+    from_: (j, path, d) => {
+      let obj = expect_object(j, path)
+      let issues = []
+      let v0 = f0.decode(obj, path, issues, d)
+      let v1 = f1.decode(obj, path, issues, d)
+      let v2 = f2.decode(obj, path, issues, d)
+      let v3 = f3.decode(obj, path, issues, d)
+      let v4 = f4.decode(obj, path, issues, d)
+      let v5 = f5.decode(obj, path, issues, d)
+      let v6 = f6.decode(obj, path, issues, d)
+      let v7 = f7.decode(obj, path, issues, d)
+      let v8 = f8.decode(obj, path, issues, d)
+      let v9 = f9.decode(obj, path, issues, d)
+      let v10 = f10.decode(obj, path, issues, d)
+      match (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10) {
+        (
+          Some(a0),
+          Some(a1),
+          Some(a2),
+          Some(a3),
+          Some(a4),
+          Some(a5),
+          Some(a6),
+          Some(a7),
+          Some(a8),
+          Some(a9),
+          Some(a10),
+        ) => make(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10)
+        _ => raise invalid(issues)
+      }
+    },
+    to_: value => {
+      let obj : Map[String, Json] = Map([])
+      f0.encode_field(obj, value)
+      f1.encode_field(obj, value)
+      f2.encode_field(obj, value)
+      f3.encode_field(obj, value)
+      f4.encode_field(obj, value)
+      f5.encode_field(obj, value)
+      f6.encode_field(obj, value)
+      f7.encode_field(obj, value)
+      f8.encode_field(obj, value)
+      f9.encode_field(obj, value)
+      f10.encode_field(obj, value)
+      Json::object(obj)
+    },
+    schema_: object_schema(name, [
+      f0.describe(),
+      f1.describe(),
+      f2.describe(),
+      f3.describe(),
+      f4.describe(),
+      f5.describe(),
+      f6.describe(),
+      f7.describe(),
+      f8.describe(),
+      f9.describe(),
+      f10.describe(),
+    ]),
+  }
+}
+
+///|
+/// Builds a named object codec with 12 typed fields, collecting every
+/// field issue.
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11] object12(
+  name : String,
+  f0 : Field[T, A0],
+  f1 : Field[T, A1],
+  f2 : Field[T, A2],
+  f3 : Field[T, A3],
+  f4 : Field[T, A4],
+  f5 : Field[T, A5],
+  f6 : Field[T, A6],
+  f7 : Field[T, A7],
+  f8 : Field[T, A8],
+  f9 : Field[T, A9],
+  f10 : Field[T, A10],
+  f11 : Field[T, A11],
+  make : (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11) -> T,
+) -> JsonCodec[T] {
+  {
+    missing_: None,
+    omit_: never_omit,
+    from_: (j, path, d) => {
+      let obj = expect_object(j, path)
+      let issues = []
+      let v0 = f0.decode(obj, path, issues, d)
+      let v1 = f1.decode(obj, path, issues, d)
+      let v2 = f2.decode(obj, path, issues, d)
+      let v3 = f3.decode(obj, path, issues, d)
+      let v4 = f4.decode(obj, path, issues, d)
+      let v5 = f5.decode(obj, path, issues, d)
+      let v6 = f6.decode(obj, path, issues, d)
+      let v7 = f7.decode(obj, path, issues, d)
+      let v8 = f8.decode(obj, path, issues, d)
+      let v9 = f9.decode(obj, path, issues, d)
+      let v10 = f10.decode(obj, path, issues, d)
+      let v11 = f11.decode(obj, path, issues, d)
+      match (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11) {
+        (
+          Some(a0),
+          Some(a1),
+          Some(a2),
+          Some(a3),
+          Some(a4),
+          Some(a5),
+          Some(a6),
+          Some(a7),
+          Some(a8),
+          Some(a9),
+          Some(a10),
+          Some(a11),
+        ) => make(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11)
+        _ => raise invalid(issues)
+      }
+    },
+    to_: value => {
+      let obj : Map[String, Json] = Map([])
+      f0.encode_field(obj, value)
+      f1.encode_field(obj, value)
+      f2.encode_field(obj, value)
+      f3.encode_field(obj, value)
+      f4.encode_field(obj, value)
+      f5.encode_field(obj, value)
+      f6.encode_field(obj, value)
+      f7.encode_field(obj, value)
+      f8.encode_field(obj, value)
+      f9.encode_field(obj, value)
+      f10.encode_field(obj, value)
+      f11.encode_field(obj, value)
+      Json::object(obj)
+    },
+    schema_: object_schema(name, [
+      f0.describe(),
+      f1.describe(),
+      f2.describe(),
+      f3.describe(),
+      f4.describe(),
+      f5.describe(),
+      f6.describe(),
+      f7.describe(),
+      f8.describe(),
+      f9.describe(),
+      f10.describe(),
+      f11.describe(),
+    ]),
+  }
+}
+
+///|
+/// Builds a named object codec with 13 typed fields, collecting every
+/// field issue.
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12] object13(
+  name : String,
+  f0 : Field[T, A0],
+  f1 : Field[T, A1],
+  f2 : Field[T, A2],
+  f3 : Field[T, A3],
+  f4 : Field[T, A4],
+  f5 : Field[T, A5],
+  f6 : Field[T, A6],
+  f7 : Field[T, A7],
+  f8 : Field[T, A8],
+  f9 : Field[T, A9],
+  f10 : Field[T, A10],
+  f11 : Field[T, A11],
+  f12 : Field[T, A12],
+  make : (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12) -> T,
+) -> JsonCodec[T] {
+  {
+    missing_: None,
+    omit_: never_omit,
+    from_: (j, path, d) => {
+      let obj = expect_object(j, path)
+      let issues = []
+      let v0 = f0.decode(obj, path, issues, d)
+      let v1 = f1.decode(obj, path, issues, d)
+      let v2 = f2.decode(obj, path, issues, d)
+      let v3 = f3.decode(obj, path, issues, d)
+      let v4 = f4.decode(obj, path, issues, d)
+      let v5 = f5.decode(obj, path, issues, d)
+      let v6 = f6.decode(obj, path, issues, d)
+      let v7 = f7.decode(obj, path, issues, d)
+      let v8 = f8.decode(obj, path, issues, d)
+      let v9 = f9.decode(obj, path, issues, d)
+      let v10 = f10.decode(obj, path, issues, d)
+      let v11 = f11.decode(obj, path, issues, d)
+      let v12 = f12.decode(obj, path, issues, d)
+      match (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12) {
+        (
+          Some(a0),
+          Some(a1),
+          Some(a2),
+          Some(a3),
+          Some(a4),
+          Some(a5),
+          Some(a6),
+          Some(a7),
+          Some(a8),
+          Some(a9),
+          Some(a10),
+          Some(a11),
+          Some(a12),
+        ) => make(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12)
+        _ => raise invalid(issues)
+      }
+    },
+    to_: value => {
+      let obj : Map[String, Json] = Map([])
+      f0.encode_field(obj, value)
+      f1.encode_field(obj, value)
+      f2.encode_field(obj, value)
+      f3.encode_field(obj, value)
+      f4.encode_field(obj, value)
+      f5.encode_field(obj, value)
+      f6.encode_field(obj, value)
+      f7.encode_field(obj, value)
+      f8.encode_field(obj, value)
+      f9.encode_field(obj, value)
+      f10.encode_field(obj, value)
+      f11.encode_field(obj, value)
+      f12.encode_field(obj, value)
+      Json::object(obj)
+    },
+    schema_: object_schema(name, [
+      f0.describe(),
+      f1.describe(),
+      f2.describe(),
+      f3.describe(),
+      f4.describe(),
+      f5.describe(),
+      f6.describe(),
+      f7.describe(),
+      f8.describe(),
+      f9.describe(),
+      f10.describe(),
+      f11.describe(),
+      f12.describe(),
+    ]),
+  }
+}
+
+///|
+/// Builds a named object codec with 14 typed fields, collecting every
+/// field issue.
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13] object14(
+  name : String,
+  f0 : Field[T, A0],
+  f1 : Field[T, A1],
+  f2 : Field[T, A2],
+  f3 : Field[T, A3],
+  f4 : Field[T, A4],
+  f5 : Field[T, A5],
+  f6 : Field[T, A6],
+  f7 : Field[T, A7],
+  f8 : Field[T, A8],
+  f9 : Field[T, A9],
+  f10 : Field[T, A10],
+  f11 : Field[T, A11],
+  f12 : Field[T, A12],
+  f13 : Field[T, A13],
+  make : (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13) -> T,
+) -> JsonCodec[T] {
+  {
+    missing_: None,
+    omit_: never_omit,
+    from_: (j, path, d) => {
+      let obj = expect_object(j, path)
+      let issues = []
+      let v0 = f0.decode(obj, path, issues, d)
+      let v1 = f1.decode(obj, path, issues, d)
+      let v2 = f2.decode(obj, path, issues, d)
+      let v3 = f3.decode(obj, path, issues, d)
+      let v4 = f4.decode(obj, path, issues, d)
+      let v5 = f5.decode(obj, path, issues, d)
+      let v6 = f6.decode(obj, path, issues, d)
+      let v7 = f7.decode(obj, path, issues, d)
+      let v8 = f8.decode(obj, path, issues, d)
+      let v9 = f9.decode(obj, path, issues, d)
+      let v10 = f10.decode(obj, path, issues, d)
+      let v11 = f11.decode(obj, path, issues, d)
+      let v12 = f12.decode(obj, path, issues, d)
+      let v13 = f13.decode(obj, path, issues, d)
+      match (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13) {
+        (
+          Some(a0),
+          Some(a1),
+          Some(a2),
+          Some(a3),
+          Some(a4),
+          Some(a5),
+          Some(a6),
+          Some(a7),
+          Some(a8),
+          Some(a9),
+          Some(a10),
+          Some(a11),
+          Some(a12),
+          Some(a13),
+        ) => make(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13)
+        _ => raise invalid(issues)
+      }
+    },
+    to_: value => {
+      let obj : Map[String, Json] = Map([])
+      f0.encode_field(obj, value)
+      f1.encode_field(obj, value)
+      f2.encode_field(obj, value)
+      f3.encode_field(obj, value)
+      f4.encode_field(obj, value)
+      f5.encode_field(obj, value)
+      f6.encode_field(obj, value)
+      f7.encode_field(obj, value)
+      f8.encode_field(obj, value)
+      f9.encode_field(obj, value)
+      f10.encode_field(obj, value)
+      f11.encode_field(obj, value)
+      f12.encode_field(obj, value)
+      f13.encode_field(obj, value)
+      Json::object(obj)
+    },
+    schema_: object_schema(name, [
+      f0.describe(),
+      f1.describe(),
+      f2.describe(),
+      f3.describe(),
+      f4.describe(),
+      f5.describe(),
+      f6.describe(),
+      f7.describe(),
+      f8.describe(),
+      f9.describe(),
+      f10.describe(),
+      f11.describe(),
+      f12.describe(),
+      f13.describe(),
+    ]),
+  }
+}
+
+///|
+/// Builds a named object codec with 15 typed fields, collecting every
+/// field issue.
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14] object15(
+  name : String,
+  f0 : Field[T, A0],
+  f1 : Field[T, A1],
+  f2 : Field[T, A2],
+  f3 : Field[T, A3],
+  f4 : Field[T, A4],
+  f5 : Field[T, A5],
+  f6 : Field[T, A6],
+  f7 : Field[T, A7],
+  f8 : Field[T, A8],
+  f9 : Field[T, A9],
+  f10 : Field[T, A10],
+  f11 : Field[T, A11],
+  f12 : Field[T, A12],
+  f13 : Field[T, A13],
+  f14 : Field[T, A14],
+  make : (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14) -> T,
+) -> JsonCodec[T] {
+  {
+    missing_: None,
+    omit_: never_omit,
+    from_: (j, path, d) => {
+      let obj = expect_object(j, path)
+      let issues = []
+      let v0 = f0.decode(obj, path, issues, d)
+      let v1 = f1.decode(obj, path, issues, d)
+      let v2 = f2.decode(obj, path, issues, d)
+      let v3 = f3.decode(obj, path, issues, d)
+      let v4 = f4.decode(obj, path, issues, d)
+      let v5 = f5.decode(obj, path, issues, d)
+      let v6 = f6.decode(obj, path, issues, d)
+      let v7 = f7.decode(obj, path, issues, d)
+      let v8 = f8.decode(obj, path, issues, d)
+      let v9 = f9.decode(obj, path, issues, d)
+      let v10 = f10.decode(obj, path, issues, d)
+      let v11 = f11.decode(obj, path, issues, d)
+      let v12 = f12.decode(obj, path, issues, d)
+      let v13 = f13.decode(obj, path, issues, d)
+      let v14 = f14.decode(obj, path, issues, d)
+      match (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14) {
+        (
+          Some(a0),
+          Some(a1),
+          Some(a2),
+          Some(a3),
+          Some(a4),
+          Some(a5),
+          Some(a6),
+          Some(a7),
+          Some(a8),
+          Some(a9),
+          Some(a10),
+          Some(a11),
+          Some(a12),
+          Some(a13),
+          Some(a14),
+        ) =>
+          make(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14)
+        _ => raise invalid(issues)
+      }
+    },
+    to_: value => {
+      let obj : Map[String, Json] = Map([])
+      f0.encode_field(obj, value)
+      f1.encode_field(obj, value)
+      f2.encode_field(obj, value)
+      f3.encode_field(obj, value)
+      f4.encode_field(obj, value)
+      f5.encode_field(obj, value)
+      f6.encode_field(obj, value)
+      f7.encode_field(obj, value)
+      f8.encode_field(obj, value)
+      f9.encode_field(obj, value)
+      f10.encode_field(obj, value)
+      f11.encode_field(obj, value)
+      f12.encode_field(obj, value)
+      f13.encode_field(obj, value)
+      f14.encode_field(obj, value)
+      Json::object(obj)
+    },
+    schema_: object_schema(name, [
+      f0.describe(),
+      f1.describe(),
+      f2.describe(),
+      f3.describe(),
+      f4.describe(),
+      f5.describe(),
+      f6.describe(),
+      f7.describe(),
+      f8.describe(),
+      f9.describe(),
+      f10.describe(),
+      f11.describe(),
+      f12.describe(),
+      f13.describe(),
+      f14.describe(),
+    ]),
+  }
+}
+
+///|
+/// Builds a named object codec with 16 typed fields, collecting every
+/// field issue.
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15] object16(
+  name : String,
+  f0 : Field[T, A0],
+  f1 : Field[T, A1],
+  f2 : Field[T, A2],
+  f3 : Field[T, A3],
+  f4 : Field[T, A4],
+  f5 : Field[T, A5],
+  f6 : Field[T, A6],
+  f7 : Field[T, A7],
+  f8 : Field[T, A8],
+  f9 : Field[T, A9],
+  f10 : Field[T, A10],
+  f11 : Field[T, A11],
+  f12 : Field[T, A12],
+  f13 : Field[T, A13],
+  f14 : Field[T, A14],
+  f15 : Field[T, A15],
+  make : (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15) -> T,
+) -> JsonCodec[T] {
+  {
+    missing_: None,
+    omit_: never_omit,
+    from_: (j, path, d) => {
+      let obj = expect_object(j, path)
+      let issues = []
+      let v0 = f0.decode(obj, path, issues, d)
+      let v1 = f1.decode(obj, path, issues, d)
+      let v2 = f2.decode(obj, path, issues, d)
+      let v3 = f3.decode(obj, path, issues, d)
+      let v4 = f4.decode(obj, path, issues, d)
+      let v5 = f5.decode(obj, path, issues, d)
+      let v6 = f6.decode(obj, path, issues, d)
+      let v7 = f7.decode(obj, path, issues, d)
+      let v8 = f8.decode(obj, path, issues, d)
+      let v9 = f9.decode(obj, path, issues, d)
+      let v10 = f10.decode(obj, path, issues, d)
+      let v11 = f11.decode(obj, path, issues, d)
+      let v12 = f12.decode(obj, path, issues, d)
+      let v13 = f13.decode(obj, path, issues, d)
+      let v14 = f14.decode(obj, path, issues, d)
+      let v15 = f15.decode(obj, path, issues, d)
+      match
+        (v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15) {
+        (
+          Some(a0),
+          Some(a1),
+          Some(a2),
+          Some(a3),
+          Some(a4),
+          Some(a5),
+          Some(a6),
+          Some(a7),
+          Some(a8),
+          Some(a9),
+          Some(a10),
+          Some(a11),
+          Some(a12),
+          Some(a13),
+          Some(a14),
+          Some(a15),
+        ) =>
+          make(
+            a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15,
+          )
+        _ => raise invalid(issues)
+      }
+    },
+    to_: value => {
+      let obj : Map[String, Json] = Map([])
+      f0.encode_field(obj, value)
+      f1.encode_field(obj, value)
+      f2.encode_field(obj, value)
+      f3.encode_field(obj, value)
+      f4.encode_field(obj, value)
+      f5.encode_field(obj, value)
+      f6.encode_field(obj, value)
+      f7.encode_field(obj, value)
+      f8.encode_field(obj, value)
+      f9.encode_field(obj, value)
+      f10.encode_field(obj, value)
+      f11.encode_field(obj, value)
+      f12.encode_field(obj, value)
+      f13.encode_field(obj, value)
+      f14.encode_field(obj, value)
+      f15.encode_field(obj, value)
+      Json::object(obj)
+    },
+    schema_: object_schema(name, [
+      f0.describe(),
+      f1.describe(),
+      f2.describe(),
+      f3.describe(),
+      f4.describe(),
+      f5.describe(),
+      f6.describe(),
+      f7.describe(),
+      f8.describe(),
+      f9.describe(),
+      f10.describe(),
+      f11.describe(),
+      f12.describe(),
+      f13.describe(),
+      f14.describe(),
+      f15.describe(),
+    ]),
+  }
+}

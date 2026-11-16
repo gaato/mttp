@@ -1,10 +1,12 @@
 ///|
-/// Projects checked endpoint metadata into OpenAPI 3.1. Optional fields are
-/// omitted by apispec's serializer and all local schema references are checked.
+/// Projects checked endpoint metadata into OpenAPI 3.1 (default) or 3.2.
+/// Optional fields are omitted by apispec's serializer and all local schema
+/// references are checked.
 pub fn to_openapi(
   docs : Array[@endpoint.EndpointDoc],
   info : @apispec.Info,
   servers~ : Array[@apispec.Server] = [],
+  version~ : OpenApiVersion = V3_1,
 ) -> @apispec.OpenApi raise @endpoint.DefinitionError {
   let problems = @endpoint.check_definitions(docs).filter(p => p.fatal)
   if !problems.is_empty() {
@@ -231,6 +233,18 @@ pub fn to_openapi(
       )
     }
     merge_wildcard_content(responses)
+    // Merge under the 3.1 extension first so wildcard unions use the same
+    // rules in both versions, then move it to the typed 3.2 member.
+    if version is V3_2 {
+      for _, response in responses {
+        for name, media in response.content.copy() {
+          let extensions = media.extensions.copy()
+          let item_schema = extensions.get(item_schema_extension)
+          extensions.remove(item_schema_extension)
+          response.content[name] = { ..media, item_schema, extensions, }
+        }
+      }
+    }
     let operation = @apispec.Operation::new(
       responses~,
       operation_id?=doc.info.operation_id,
@@ -310,6 +324,10 @@ pub fn to_openapi(
   }
   let spec = @apispec.OpenApi::new(
     info,
+    openapi=match version {
+      V3_1 => "3.1.0"
+      V3_2 => "3.2.0"
+    },
     paths~,
     servers=servers.copy(),
     components=@apispec.Components::new(schemas~, security_schemes=schemes),
@@ -321,6 +339,14 @@ pub fn to_openapi(
     raise @endpoint.DefinitionError(problems)
   }
   spec
+}
+
+///|
+/// Projection versions; 3.1 remains the default for client-generator support.
+#non_exhaustive
+pub(all) enum OpenApiVersion {
+  V3_1
+  V3_2
 }
 
 ///|

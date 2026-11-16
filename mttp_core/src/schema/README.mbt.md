@@ -21,7 +21,7 @@ The codecs:
 |---|---|
 | Text (paths, queries, headers) | `string`, `int`, `int64`, `double`, `bool`, `enum_of` |
 | JSON scalars | `jstring`, `jint`, `jint64`, `jdouble`, `jbool`, `jvalue`, `string_enum`, `open_string` |
-| JSON structures | `array`, `map_of`, `object1` to `object8` with `field`, `recursive`, `json()` for a type that implements `JsonSchema` |
+| JSON structures | `array`, `map_of`, `object1` to `object16` with `field`, `recursive`, `json()` for a type that implements `JsonSchema` |
 | Unions | `tagged` (by a tag field) and `any_of` (the first case that decodes), with `case_` |
 | Optional fields | `option`, `presence`, `omittable` |
 | Bodies | `JsonCodec::body()`, `text_body`, `html_body`, `raw_bytes`, `form_body`, `form_codec` |
@@ -36,7 +36,9 @@ nullable. `omittable` is for a field that may be left out but not set to
 null: absent is `None`, null is refused with the child codec's usual issue at
 the field's path, and the schema is the child's, not nullable. Object
 encoders omit absent values, and none of the three fields is `required`.
-`object1` through `object8` use typed getters and constructors.
+`object1` through `object16` use typed getters and constructors. Sixteen supports
+larger records while keeping the generated source modest (about 1,100 lines);
+fixed arities avoid runtime casts for heterogeneous fields.
 
 Decoding untrusted JSON is bounded:
 

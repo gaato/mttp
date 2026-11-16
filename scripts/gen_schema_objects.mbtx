@@ -6,7 +6,7 @@ import {
 }
 ----
 
-// Generates mttp_core/src/schema/object.mbt: object1 to object8, one named object
+// Generates mttp_core/src/schema/object.mbt: object1 to object16, one named object
 // codec per arity. Fixed arities avoid a heterogeneous field container that
 // would need runtime casts; the generated functions are ordinary MoonBit that
 // a consumer could write by hand for a larger arity.
@@ -25,7 +25,9 @@ let output : String = "mttp_core/src/schema/object.mbt"
 
 ///|
 /// The largest arity generated.
-let max_arity : Int32 = 8
+// Sixteen covers larger records while keeping the quadratic generated surface
+// modest; further arities can be generated when callers need them.
+let max_arity : Int32 = 16
 
 ///|
 /// The source of `object<size>`.
@@ -69,7 +71,12 @@ fn object_fn(out : StringBuilder, size : Int32) -> Unit {
   } else {
     ("(\{values})", "(\{somes})")
   }
-  out.write_string("      match \{values} {\n")
+  let match_line = "      match \{values} {"
+  if match_line.length() <= 80 {
+    out.write_string(match_line + "\n")
+  } else {
+    out.write_string("      match\n        \{values} {\n")
+  }
   // As moon fmt does: an arm wider than 80 columns breaks after the arrow,
   // and a pattern wider than that puts one element per line.
   let arm = "        \{somes} => make(\{args})"
@@ -82,7 +89,15 @@ fn object_fn(out : StringBuilder, size : Int32) -> Unit {
     for i in 0..<size {
       out.write_string("          Some(a\{i}),\n")
     }
-    out.write_string("        ) => make(\{args})\n")
+    if "        ) => make(\{args})".length() <= 80 {
+      out.write_string("        ) => make(\{args})\n")
+    } else if "          make(\{args})".length() <= 80 {
+      out.write_string("        ) =>\n          make(\{args})\n")
+    } else {
+      out.write_string(
+        "        ) =>\n          make(\n            \{args},\n          )\n",
+      )
+    }
   }
   out.write_string(
     (

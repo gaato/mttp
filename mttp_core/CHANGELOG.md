@@ -19,6 +19,11 @@ never does.
   Router docs retain message schemas; OpenAPI projects the GET handshake,
   101 response, inputs, security and `x-websocket.subprotocols`.
   Portable `ws.server_handler` upgrades use each server adapter's ports.
+- `openapi.docs_ui_endpoint(spec_url~, path~, ui~)` serves Scalar or Swagger UI
+  with pinned CDN assets, SHA-384 integrity and a restrictive CSP.
+- `openapi.to_openapi(version=V3_2)` emits OpenAPI 3.2.0 with SSE `itemSchema`;
+  the default remains 3.1.0 with `x-oai-itemSchema`.
+- `schema.object9` through `object16` support larger typed object codecs.
 
 - `h1server.serve_conn(on_response_complete~)` acknowledges each returned
   HTTP response after writing, body cleanup and unread-request draining,

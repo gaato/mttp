@@ -14,11 +14,24 @@ pub fn check_references(@apispec.OpenApi) -> Array[String]
 
 pub fn docs_endpoint(@apispec.OpenApi, path? : String) -> @endpoint.ServerEndpoint
 
-pub fn to_openapi(Array[@endpoint.EndpointDoc], @apispec.Info, servers? : Array[@apispec.Server]) -> @apispec.OpenApi raise @endpoint.DefinitionError
+pub fn docs_ui_endpoint(spec_url~ : String, path? : String, ui? : DocsUi) -> @endpoint.ServerEndpoint
+
+pub fn to_openapi(Array[@endpoint.EndpointDoc], @apispec.Info, servers? : Array[@apispec.Server], version? : OpenApiVersion) -> @apispec.OpenApi raise @endpoint.DefinitionError
 
 // Errors
 
 // Types and methods
+#non_exhaustive
+pub(all) enum DocsUi {
+  Scalar
+  SwaggerUi
+}
+
+#non_exhaustive
+pub(all) enum OpenApiVersion {
+  V3_1
+  V3_2
+}
 
 // Type aliases
 

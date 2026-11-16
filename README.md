@@ -94,6 +94,13 @@ fn main {
 }
 ```
 
+Serve documentation with `@openapi.docs_endpoint(spec)` and
+`@openapi.docs_ui_endpoint(spec_url="/openapi.json")` in the router's endpoints.
+Scalar is the default at `/docs`; pass `ui=SwaggerUi` for Swagger UI.
+The specification must be same-origin under the page's CSP. To emit OpenAPI
+3.2.0 with SSE `itemSchema`, pass `version=V3_2` to `to_openapi`; the default
+remains 3.1.0 for client-generator compatibility.
+
 `moon run examples/tour` in a clone prints the greeting and the document,
 which describes the path parameter, the text reply and the problem responses
 the router sends for bad requests:

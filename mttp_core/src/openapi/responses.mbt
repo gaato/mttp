@@ -13,7 +13,8 @@ let problem_schema : Json = {
 /// The Media Type Object member that holds the schema of each item of a
 /// sequential media type. OpenAPI 3.2 names it `itemSchema`; the OpenAPI
 /// Initiative registers this extension for documents of earlier versions.
-/// Moving the documents to 3.2 renames this member.
+/// The 3.2 projection moves this member to the typed `item_schema` field
+/// after response unions have been computed.
 let item_schema_extension = "x-oai-itemSchema"
 
 ///|

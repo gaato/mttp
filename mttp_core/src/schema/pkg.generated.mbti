@@ -60,6 +60,20 @@ pub fn minimum(Int32) -> Validator[Int32]
 
 pub fn[T, A0] object1(String, Field[T, A0], (A0) -> T) -> JsonCodec[T]
 
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9] object10(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], Field[T, A8], Field[T, A9], (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10] object11(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], Field[T, A8], Field[T, A9], Field[T, A10], (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11] object12(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], Field[T, A8], Field[T, A9], Field[T, A10], Field[T, A11], (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12] object13(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], Field[T, A8], Field[T, A9], Field[T, A10], Field[T, A11], Field[T, A12], (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13] object14(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], Field[T, A8], Field[T, A9], Field[T, A10], Field[T, A11], Field[T, A12], Field[T, A13], (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14] object15(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], Field[T, A8], Field[T, A9], Field[T, A10], Field[T, A11], Field[T, A12], Field[T, A13], Field[T, A14], (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15] object16(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], Field[T, A8], Field[T, A9], Field[T, A10], Field[T, A11], Field[T, A12], Field[T, A13], Field[T, A14], Field[T, A15], (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15) -> T) -> JsonCodec[T]
+
 pub fn[T, A0, A1] object2(String, Field[T, A0], Field[T, A1], (A0, A1) -> T) -> JsonCodec[T]
 
 pub fn[T, A0, A1, A2] object3(String, Field[T, A0], Field[T, A1], Field[T, A2], (A0, A1, A2) -> T) -> JsonCodec[T]
@@ -73,6 +87,8 @@ pub fn[T, A0, A1, A2, A3, A4, A5] object6(String, Field[T, A0], Field[T, A1], Fi
 pub fn[T, A0, A1, A2, A3, A4, A5, A6] object7(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], (A0, A1, A2, A3, A4, A5, A6) -> T) -> JsonCodec[T]
 
 pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7] object8(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], (A0, A1, A2, A3, A4, A5, A6, A7) -> T) -> JsonCodec[T]
+
+pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8] object9(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], Field[T, A8], (A0, A1, A2, A3, A4, A5, A6, A7, A8) -> T) -> JsonCodec[T]
 
 pub fn[T] omittable(JsonCodec[T]) -> JsonCodec[T?]
 

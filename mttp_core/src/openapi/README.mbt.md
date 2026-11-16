@@ -8,6 +8,40 @@ definition ready for a separate AsyncAPI projection later.
 
 OpenAPI documents projected from endpoint definitions.
 
+`to_openapi(..., version=V3_2)` opts into OpenAPI 3.2.0 and its typed
+`itemSchema` member for SSE. The default remains 3.1.0 with
+`x-oai-itemSchema` for client-generator compatibility.
+
+`docs_ui_endpoint(spec_url="/openapi.json")` serves Scalar at `/docs`;
+`ui=SwaggerUi` selects Swagger UI, and `path` changes the route. Serve the
+specification on the same origin: CSP blocks other connection origins. Assets
+are pinned to Scalar 1.78.1 and Swagger UI 5.33.0 on jsDelivr, with SHA-384
+SRI, anonymous CORS and no referrer. Initialization uses a fixed script hash;
+the URL is HTML attribute data, never executable JavaScript. Inline styles
+are allowed because both renderers generate styles. Fonts, external validators
+and proxies are disabled; external specification references are blocked.
+
+```mbt check
+///|
+test "serve documentation and opt into OpenAPI 3.2" {
+  let spec = @openapi.to_openapi(
+    [@endpoint.endpoint.get("/hello").output(@endpoint.text_out()).doc()],
+    @apispec.Info::new("Example", "1"),
+    version=V3_2,
+  )
+  let _ : Array[@endpoint.ServerEndpoint] = [
+    @openapi.docs_endpoint(spec),
+    @openapi.docs_ui_endpoint(spec_url="/openapi.json"),
+    @openapi.docs_ui_endpoint(
+      spec_url="/openapi.json",
+      path="/swagger",
+      ui=SwaggerUi,
+    ),
+  ]
+  assert_eq(spec.openapi, "3.2.0")
+}
+```
+
 `to_openapi` projects checked endpoint definitions onto
 [OpenAPI 3.1](https://spec.openapis.org/oas/v3.1.1.html). It merges response
 representations by status and media type, includes framework problem responses,
