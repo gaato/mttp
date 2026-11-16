@@ -24,12 +24,15 @@ never does.
   (failure ratio over a window, open time, half-open probes; at most
   `max_origins` circuits, least recently used evicted), refusing with the
   new `Kind::CircuitOpen` in phase Pool, which the retry rules never retry.
-- `client.AuthRefresh`: a Backend wrapper that refreshes credentials once on
-  401, shared by concurrent 401s through an `rt.Signal`, and resends a
-  replayable request once, marked with the `auth_refreshed` attribute.
+- `client.AuthRefresh`: a Backend wrapper bound to one origin that refreshes
+  credentials once on 401, shared by concurrent 401s through an `rt.Signal`,
+  and resends a replayable request once, marked with the `auth_refreshed`
+  attribute. Requests to other origins, such as a cross-origin redirect, pass
+  through without credentials.
 - Observability, opt-in: `client.Client::new(events?)` receives every
   `client.ClientEvent` (`AttemptStart`, `Phase`, `AttemptEnd`, `Retry`,
-  `Redirect`) in order, beside the unchanged `observer`; nothing about an
+  `Redirect`) in order, each with a `send_id` that tells concurrent sends
+  apart, beside the unchanged `observer`; nothing about an
   attempt follows its `AttemptEnd`, cancellation included. Backends report
   `PhaseEvent`s (`Dialed`, `TlsDone`, `Pooled`, `Written`, `FirstByte`) to
   the new `on_phase` request attribute, in order and once each
