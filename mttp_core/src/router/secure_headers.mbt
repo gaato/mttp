@@ -1,4 +1,6 @@
 ///|
+/// The X-Frame-Options value `secure_headers` sends: whether other pages may
+/// frame this response.
 #non_exhaustive
 #derive(Eq, Debug)
 pub(all) enum FrameOptions {
@@ -7,9 +9,11 @@ pub(all) enum FrameOptions {
 }
 
 ///|
+/// Compares frame options.
 pub extend FrameOptions with Eq::{equal, not_equal}
 
 ///|
+/// Formats frame options.
 pub extend FrameOptions with Debug::{to_repr}
 
 ///|

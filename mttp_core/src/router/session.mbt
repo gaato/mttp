@@ -1,4 +1,5 @@
 ///|
+/// The session cookie's SameSite attribute (from `gaato/mttp_core/cookie`).
 pub using @cookie {type SameSite}
 
 ///|
@@ -11,11 +12,13 @@ pub struct Session {
 }
 
 ///|
+/// The request attribute holding the current `Session`, set by `sessions`.
 pub let session : @mttp_core.AttributeKey[Session] = @mttp_core.AttributeKey::new(
   "mttp.router.session",
 )
 
 ///|
+/// The value stored under `key`, if any.
 pub fn Session::get(self : Session, key : String) -> String? {
   self.values.get(key)
 }
@@ -42,6 +45,7 @@ pub fn Session::set(self : Session, key : String, value : String) -> Unit {
 }
 
 ///|
+/// Removes `key`; removing an absent key is not a change.
 pub fn Session::remove(self : Session, key : String) -> Unit {
   if self.values.contains(key) {
     self.values.remove(key)
@@ -50,6 +54,7 @@ pub fn Session::remove(self : Session, key : String) -> Unit {
 }
 
 ///|
+/// Removes every value; clearing an empty session is not a change.
 pub fn Session::clear(self : Session) -> Unit {
   if !self.values.is_empty() {
     self.values.clear()
@@ -58,6 +63,7 @@ pub fn Session::clear(self : Session) -> Unit {
 }
 
 ///|
+/// Whether this request changed the session, so its cookie will be rewritten.
 pub fn Session::changed(self : Session) -> Bool {
   self.dirty
 }
