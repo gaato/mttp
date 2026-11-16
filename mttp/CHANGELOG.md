@@ -30,6 +30,11 @@ never does.
   socket's request context, so another request ending cannot drop them when
   the shared MoonBit scheduler resumes a session there. Client handshakes
   start and register their completion callbacks in the owning request too.
+- Document the TCP dialer limitation: with refuse_internal, only the first
+  resolved address is tried. core/async exposes no complete DNS candidate
+  set (`AddrInfo::next`/`to_addr` are private) or per-candidate validation
+  hook for `connect_to_host`; guarded dialing therefore has no fallback
+  across addresses and still connects the single checked answer directly.
 
 - JS WebSocket abort requests host `close()` without a status instead of
   normal Close 1000, while retaining local Abnormal 1006. The Bun server

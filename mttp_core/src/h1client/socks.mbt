@@ -52,14 +52,28 @@ fn SocksHandshake::new(
   port : Int32,
   auth : Bytes?,
 ) -> SocksHandshake raise @mttp_core.TransportError {
-  let host = @mttp_core.encode_utf8(host)
-  guard host.length() >= 1 && host.length() <= 255 else {
-    raise socks_error(Invalid, "target name must contain 1..255 UTF-8 bytes")
-  }
   let request = Buffer()
-  request.write_bytes(b"\x05\x01\x00\x03")
-  request.write_byte(host.length().to_byte())
-  request.write_bytes(host)
+  request.write_bytes(b"\x05\x01\x00")
+  // Literals need no resolver port: RFC 1928 carries their network bytes.
+  if ipv4_bytes(host) is Some(address) {
+    request.write_byte(1)
+    for byte in address {
+      request.write_byte(byte.to_byte())
+    }
+  } else if ipv6_bytes(host) is Some(address) {
+    request.write_byte(4)
+    for byte in address {
+      request.write_byte(byte.to_byte())
+    }
+  } else {
+    let host = @mttp_core.encode_utf8(host)
+    guard host.length() >= 1 && host.length() <= 255 else {
+      raise socks_error(Invalid, "target name must contain 1..255 UTF-8 bytes")
+    }
+    request.write_byte(3)
+    request.write_byte(host.length().to_byte())
+    request.write_bytes(host)
+  }
   request.write_byte((port >> 8).to_byte())
   request.write_byte((port & 255).to_byte())
   {

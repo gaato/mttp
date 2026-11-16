@@ -63,7 +63,8 @@ exchanges continue; zero or less prevents reuse. Build `ClientConfig` from
 
 `ProxyConfig::fixed("socks5h://user:password@proxy.test:1080")` selects
 SOCKS5 CONNECT (RFC 1928) and optional username/password authentication
-(RFC 1929). The target name is sent as ATYP 3 and resolved by the proxy;
+(RFC 1929). Names use ATYP 3 and are resolved by the proxy; numeric IPv4
+and IPv6 literals use ATYP 1 and 4 respectively, with no DNS lookup;
 HTTPS then starts TLS inside the tunnel with the original hostname.
 `from_env` and `NO_PROXY` work as for HTTP proxies. `socks5://` is refused
 with a message naming `socks5h://`: local DNS awaits a resolver port.

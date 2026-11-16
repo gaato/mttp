@@ -1,4 +1,30 @@
 ///|
+test "SOCKS CONNECT encodes numeric IPv4 IPv6 and mapped literals without domain DNS" {
+  for
+    (host, expected) in [
+      ("127.0.0.1", b"\x05\x01\x00\x01\x7f\x00\x00\x01\x1f\x90"),
+      ("::1", b"\x05\x01\x00\x04" + Bytes::make(15, 0) + b"\x01\x1f\x90"),
+      (
+        "2001:db8::abcd",
+        b"\x05\x01\x00\x04\x20\x01\x0d\xb8" +
+        Bytes::make(10, 0) +
+        b"\xab\xcd\x1f\x90",
+      ),
+      (
+        "::ffff:127.0.0.1",
+        b"\x05\x01\x00\x04" +
+        Bytes::make(10, 0) +
+        b"\xff\xff\x7f\x00\x00\x01\x1f\x90",
+      ),
+      ("origin.test", b"\x05\x01\x00\x03\x0borigin.test\x1f\x90"),
+    ] {
+    let state = SocksHandshake::new(host, 8080, None)
+    state.feed(b"\x05\x00")
+    assert_eq(state.take_output(), expected, msg=host)
+  }
+}
+
+///|
 /// Feeds arbitrary transport pieces while observing each protocol read bound.
 fn socks_feed(state : SocksHandshake, bytes : BytesView) -> Unit raise {
   for offset = 0; offset < bytes.length(); {

@@ -149,6 +149,9 @@ never does.
 - OpenAPI 3.2 SSE responses omit the complete-body wire-string `schema`,
   retaining per-event `itemSchema` validation. Complete sequential content
   maps to an array in 3.2; the 3.1 projection remains unchanged.
+- SOCKS5h CONNECT sends numeric IPv4 literals as ATYP 1 and IPv6 literals
+  (including mapped forms) as ATYP 4 in network byte order. Only hostnames
+  use ATYP 3 and proxy DNS; parsing a literal performs no DNS resolution.
 
 - Protected WebSocket control writes use the smaller send/close deadline
   (5 s by default), bounding cancelled receiver joins when a peer stops reading.

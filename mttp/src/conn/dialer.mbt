@@ -13,6 +13,10 @@ pub struct TcpDialer {
 /// exact answer. TLS still receives the original host. Every redirect dial
 /// is checked. With a proxy only the proxy address is checked: the target
 /// is resolved/connected by the proxy and needs a policy at that proxy.
+/// Limitation: with refuse_internal, only the first resolved address is tried.
+/// core/async exposes neither a complete resolved candidate set nor a
+/// per-candidate validation hook for connect_to_host, so guarded dialing
+/// cannot use its cross-address fallback without resolving again.
 pub fn TcpDialer::new(
   trust~ : @trust.Trust = System,
   refuse_internal~ : Bool = false,

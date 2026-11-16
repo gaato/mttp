@@ -22,6 +22,10 @@ rejects internal and selected special-purpose destinations with
 `TransportError(Invalid, Dial)` and a `refuse_internal: resolved address`
 detail, then connects to that exact `Addr`. There is no second resolution;
 TLS still uses the original hostname for SNI and certificate verification.
+With refuse_internal, only the first resolved address is tried. The public
+core/async API returns one `Addr`; the complete candidate set and a
+per-candidate validation hook for `connect_to_host` are not exposed. Thus
+guarded dialing has no cross-address fallback, unlike the default mode.
 Using this dialer in an h1 client checks every new dial, including redirect
 hops. Existing pooled connections were checked when opened.
 

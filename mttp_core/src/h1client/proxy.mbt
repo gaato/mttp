@@ -11,11 +11,12 @@
 /// TLS end to end inside it. A setting that cannot be used fails the
 /// requests it would carry with `Protocol` in phase Pool, rather than
 /// sending them direct.
-/// `socks5h://` uses SOCKS5 CONNECT with proxy DNS (ATYP domain name), on
+/// `socks5h://` uses SOCKS5 CONNECT with proxy DNS for names (ATYP 3), on
 /// port 1080 by default, and optional RFC 1929 username/password auth. TLS
 /// for HTTPS starts inside the tunnel with the origin hostname. SOCKS
 /// credentials travel in cleartext to the proxy; use a trusted path.
 /// `socks5://` is refused: local DNS needs a future resolver port.
+/// Numeric IPv4 and IPv6 literals use ATYP 1 and 4 without DNS.
 ///
 /// ```mbt check
 /// test {

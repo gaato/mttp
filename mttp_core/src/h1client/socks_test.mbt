@@ -1,4 +1,29 @@
 ///|
+test "SOCKS routes IPv6 and IPv4 URL literal targets with numeric address types" {
+  for
+    (host, packet) in [
+      ("[::1]", b"\x05\x01\x00\x04" + Bytes::make(15, 0) + b"\x01\x1f\x90"),
+      ("127.0.0.1", b"\x05\x01\x00\x01\x7f\x00\x00\x01\x1f\x90"),
+    ] {
+    let h = Harness::new(
+      config=proxied(@h1client.ProxyConfig::fixed("socks5h://proxy.test")),
+    )
+    let conn = h.scripted([
+      Chunk(b"\x05\x00\x05\x00\x00\x01\x00\x00\x00\x00\x00\x00" + ok("numeric")),
+    ])
+    h.run(() => {
+      assert_eq(
+        fetch(h.client, @mttp_core.Request::get("http://\{host}:8080/")),
+        "numeric",
+      )
+      h.finish()
+    })
+    assert_eq(h.dialer.dialed, [("proxy.test", 1080)])
+    assert_eq(conn.written()[1], packet, msg=host)
+  }
+}
+
+///|
 test "socks5h uses proxy DNS origin form credentials and TLS at every transport split" {
   let transcript = b"\x05\x02\x01\x00\x05\x00\x00\x01\x7f\x00\x00\x01\x00\x50"
   for secure in [false, true] {
