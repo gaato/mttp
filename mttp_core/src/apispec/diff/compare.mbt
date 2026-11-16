@@ -52,6 +52,7 @@ priv struct Work {
   path : String
   side : Side
   context : String
+  uncertain : Bool
 }
 
 ///|
@@ -62,6 +63,7 @@ priv struct State {
   max : Int32
   mut used : Int32
   mut stopped : Bool
+  mut uncertain : Bool
 }
 
 ///|
@@ -92,7 +94,21 @@ fn State::emit(
     return
   }
   s.used += 1
-  let change = { side, path, kind, client, server, }
+  let change = {
+    side,
+    path,
+    kind,
+    client: if s.uncertain {
+      Warning
+    } else {
+      client
+    },
+    server: if s.uncertain {
+      Warning
+    } else {
+      server
+    },
+  }
   match side {
     Request => s.report.request.push(change)
     Response => s.report.response.push(change)
@@ -107,6 +123,7 @@ fn State::push(
   path : String,
   side : Side,
   context : String,
+  uncertain? : Bool,
 ) -> Unit {
   if s.stopped {
     return
@@ -115,7 +132,14 @@ fn State::push(
     s.emit(side, path, LimitReached(max_nodes=s.max), Warning, Warning)
   } else {
     s.used += 1
-    s.queue.push({ old, new, path, side, context, })
+    s.queue.push({
+      old,
+      new,
+      path,
+      side,
+      context,
+      uncertain: uncertain.unwrap_or(s.uncertain),
+    })
   }
 }
 
@@ -170,6 +194,24 @@ fn resolve(root : Json, reference : String) -> Json? {
           Some(v) => j = v
           None => return None
         }
+      Array(a) => {
+        if k.is_empty() || (k.length() > 1 && k.has_prefix("0")) {
+          return None
+        }
+        let mut index = 0
+        for digit in k.iter() {
+          if digit < '0' || digit > '9' {
+            return None
+          }
+          let n = digit.to_int() - '0'.to_int()
+          if index > (a.length() - n) / 10 {
+            return None
+          }
+          index = index * 10 + n
+        }
+        guard a.get(index) is Some(value) else { return None }
+        j = value
+      }
       _ => return None
     }
   }
@@ -192,7 +234,20 @@ fn State::expand(s : State, root : Json, value : Json, path : String) -> Json {
     }
     s.used += 1
     seen[reference] = true
-    guard resolve(root, reference) is Some(target) else { break }
+    guard resolve(root, reference) is Some(target) else {
+      s.emit(
+        Request,
+        path,
+        KeywordChanged(
+          keyword="unresolved-ref",
+          old=Some(value),
+          new=Some(value),
+        ),
+        Warning,
+        Warning,
+      )
+      break
+    }
     value = target
   }
   value
@@ -200,7 +255,8 @@ fn State::expand(s : State, root : Json, value : Json, path : String) -> Json {
 
 ///|
 /// Compare decoded documents. Local JSON Pointer references are followed without
-/// I/O, once per (side, old reference, new reference). External or missing targets
+/// I/O, once per (side, old reference, new reference, conservative context).
+/// External or missing targets
 /// produce a warning. `max_nodes` bounds visited work and emitted changes;
 /// exhaustion yields one LimitReached and an explicitly incomplete report.
 pub fn compare(
@@ -215,6 +271,7 @@ pub fn compare(
     max: max_nodes.max(0),
     used: 0,
     stopped: false,
+    uncertain: false,
   }
   let ar = old.to_json()
   let br = new.to_json()
@@ -263,6 +320,20 @@ pub fn compare(
         s.operation(a, b, ai, bi, ar, br, pp, at, bt)
       }
     }
+    let ax = field(ai, "additionalOperations")
+    let bx = field(bi, "additionalOperations")
+    for meth in keys(ax, bx) {
+      let a = field(ax, meth)
+      let b = field(bx, meth)
+      let pp = pointer(pointer(p, "additionalOperations"), meth)
+      if a == Json::null() {
+        s.emit(Request, pp, OperationAdded(meth~), Info, Info)
+      } else if b == Json::null() {
+        s.emit(Request, pp, OperationRemoved(meth~), Breaking, Breaking)
+      } else {
+        s.operation(a, b, ai, bi, ar, br, pp, at, bt)
+      }
+    }
   }
   for bt in obj(bp).keys() {
     if !matched.contains(bt) {
@@ -272,6 +343,7 @@ pub fn compare(
   let mut i = 0
   while i < s.queue.length() && !s.stopped {
     let w = s.queue[i]
+    s.uncertain = w.uncertain
     i += 1
     let xref = text(field(w.old, "$ref"))
     let yref = text(field(w.new, "$ref"))
@@ -286,6 +358,7 @@ pub fn compare(
     }
     if xref != None || yref != None {
       let key = w.side.to_json().stringify() +
+        w.uncertain.to_string() +
         Json::array([optional_string(xref), optional_string(yref)]).stringify() +
         (if xref == None || yref == None { w.path } else { "" })
       if !s.refs.contains(key) {
@@ -299,7 +372,18 @@ pub fn compare(
           None => Some(w.new)
         }
         match (a, b) {
-          (Some(a), Some(b)) =>
+          (Some(a), Some(b)) => {
+            let one_ref = xref == None || yref == None
+            let (a, ac) = if one_ref && xref != None && w.context == "schema" {
+              reference_schema(a, w.old)
+            } else {
+              (a, false)
+            }
+            let (b, bc) = if one_ref && yref != None && w.context == "schema" {
+              reference_schema(b, w.new)
+            } else {
+              (b, false)
+            }
             s.push(
               a,
               b,
@@ -309,7 +393,9 @@ pub fn compare(
               },
               w.side,
               w.context,
+              uncertain=w.uncertain || ac || bc,
             )
+          }
           _ =>
             s.emit(
               w.side,
@@ -323,6 +409,11 @@ pub fn compare(
               Warning,
             )
         }
+      }
+      // The resolved pair owns inline-vs-reference comparisons. Comparing the
+      // wrapper again would manufacture missing type/enum/bound constraints.
+      if xref == None || yref == None {
+        continue
       }
     }
     if w.context == "schema" {

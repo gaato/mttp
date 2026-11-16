@@ -119,7 +119,8 @@ fn State::schema(s : State, w : Work) -> Unit {
           )
         }
       }
-      "items" | "not" | "contains" | "propertyNames" | "if" | "then" | "else" =>
+      "not" => s.push(x, y, p, w.side, "schema", uncertain=true)
+      "items" | "contains" | "propertyNames" | "if" | "then" | "else" =>
         s.push(x, y, p, w.side, "schema")
       "oneOf" | "anyOf" | "allOf" => {
         let xx = arr(x)
@@ -205,4 +206,29 @@ fn State::schema(s : State, w : Work) -> Unit {
       )
     }
   }
+}
+
+///|
+// Siblings are conjunctive constraints. Disjoint keys can be combined exactly;
+// overlapping unequal constraints retain their conjunction and warn rather than
+// pretending that one constraint overwrites the other.
+fn reference_schema(target : Json, wrapper : Json) -> (Json, Bool) {
+  let siblings = obj(wrapper).filter((k, _) => k != "$ref")
+  if siblings.is_empty() {
+    return (target, false)
+  }
+  let mut conflict = !(target is Object(_))
+  for k, v in siblings {
+    if obj(target).get(k) is Some(old) && old != v {
+      conflict = true
+    }
+  }
+  if conflict {
+    return ({ "allOf": [target, Json::object(siblings)] }, true)
+  }
+  let merged = obj(target).copy()
+  for k, v in siblings {
+    merged[k] = v
+  }
+  (Json::object(merged), false)
 }

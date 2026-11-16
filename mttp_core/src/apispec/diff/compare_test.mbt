@@ -2,9 +2,10 @@
 fn doc(
   paths : Json,
   components~ : Json = Json::object(Map([])),
+  openapi~ : String = "3.1.0",
 ) -> @apispec.OpenApi raise {
   @json.from_json({
-    "openapi": "3.1.0",
+    "openapi": Json::string(openapi),
     "info": { "title": "test", "version": "1" },
     "paths": paths,
     "components": components,

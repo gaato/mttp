@@ -31,6 +31,10 @@ restrictions break existing callers in both views. Unknown keyword changes,
 formats, unresolved references and schema composition changes are warnings;
 type replacements are conservatively breaking for clients. This is a
 structural comparison, not a JSON Schema implication prover.
+Changes below `not`, including through nested schemas and references, are
+always warnings in both views: negation reverses ordinary variance, so
+positive-position classifications cannot safely be reused. Reference cache
+entries distinguish ordinary and conservative traversal contexts.
 
 Operations, paths, parameters (including inherited overrides and renamed path
 variables matched by position), request bodies, media types, response codes,
@@ -40,13 +44,26 @@ sets, additionalProperties, numeric/length/item/property bounds, compositions,
 and local `$ref` targets with cycle protection. OpenAPI 3.0's raw keywords
 such as `nullable` and boolean `exclusiveMinimum` are compared as JSON,
 without 3.0 semantics. External references never trigger I/O.
+Template normalization preserves literal prefixes/suffixes around each capture.
+Operation matching includes 3.2 `additionalOperations` and keeps method casing.
+OAuth scopes are matched as sets. Schema-based parameter `style`, `explode`
+and `allowReserved` changes use effective defaults and report breaking
+`KeywordChanged` entries at the setting's pointer. The defaults follow the
+[OpenAPI parameter specification](https://spec.openapis.org/oas/v3.2.0.html#fixed-fields-for-use-with-schema).
+Local reference resolution accepts object members and canonical zero-based
+array indices as specified in [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901.html#section-4).
+Unresolved path-item targets warn at the path's pointer instead of hiding
+the skipped operations. Ref/inline schema pairs compare the resolved value
+with sibling constraints; conflicting overlapping siblings remain a
+conjunction and warn rather than arbitrarily overwriting a constraint.
 
 `max_nodes` defaults to 100000; visited paths, copied parameters, metadata
 reference steps, queued work and emitted changes consume the same budget.
 Exhaustion emits one `LimitReached` and `complete()` returns false.
 Nonpositive budgets permit no work. The queue, matching and reference-pair
 maps, and output entry counts are bounded by this budget. Individual JSON
-payloads, strings, type/enum sets and linear member scans are bounded by the
+payloads, strings, type/enum/scope sets, temporary reference conjunctions and
+linear member scans are bounded by the
 already decoded input's size, rather than by its number of work entries.
 The walk is iterative
 so deep schemas do not grow the comparator call stack. Document conversion
@@ -60,6 +77,10 @@ Server variable definitions, response header requiredness, callbacks/webhooks,
 and JSON Schema implication beyond the listed rules are not interpreted.
 
 ## Cross-check recorded 2026-11-17
+
+The figures below record comparator baseline `db2260a`. The subsequent review
+fixes were verified with package regression tests; this external corpus was
+not rerun as part of those fixes.
 
 The external provider documents stayed in scratch and were deleted after the
 run; none are redistributed here. The source repository was

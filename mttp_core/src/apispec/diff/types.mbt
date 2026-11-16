@@ -98,9 +98,10 @@ pub(all) enum ChangeKind {
   /// A schema's `$ref` names another target, or a reference replaced an
   /// inline schema (`None`) or the reverse. The targets are compared too.
   RefTargetChanged(old~ : String?, new~ : String?)
-  /// Any other schema keyword whose value differs, compared as JSON. OpenAPI
-  /// 3.0 keywords (`nullable`, boolean `exclusiveMinimum`) land here: they
-  /// are compared as JSON, not given their 3.0 meaning.
+  /// A keyword outside the specialized kinds. Schema values, including 3.0
+  /// `nullable` and boolean `exclusiveMinimum`, are compared as JSON without
+  /// 3.0 interpretation. Parameter serialization settings carry effective
+  /// defaults. `unresolved-ref` is a warning diagnostic for a skipped target.
   KeywordChanged(keyword~ : String, old~ : Json?, new~ : Json?)
   /// The comparison spent its node budget and stopped here; the report is
   /// incomplete.
@@ -112,8 +113,8 @@ pub(all) enum ChangeKind {
 ///
 /// `path` is a JSON Pointer (RFC 6901) into the new document, or into the
 /// old one for something only the old document has. A change inside a schema
-/// reached through `$ref` is reported once per side, at the referenced
-/// schema's own location.
+/// reached through `$ref` is reported once per side and conservative context,
+/// at the referenced schema's own location.
 #derive(Eq, Debug)
 pub struct Change {
   side : Side

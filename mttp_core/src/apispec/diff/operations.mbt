@@ -1,15 +1,14 @@
 ///|
 fn path_shape(path : String) -> String {
-  path
-  .split("/")
-  .map(segment => {
-    if segment.has_prefix("{") {
-      "{}"
-    } else {
-      segment.to_owned()
+  let parts = path.split("{").collect()
+  let result = [parts[0].to_owned()]
+  for part in parts[1:] {
+    match part.find("}") {
+      Some(end) => result.push("{}" + part[end + 1:].to_owned())
+      None => result.push("{" + part.to_owned())
     }
-  })
-  .join("/")
+  }
+  result.join("")
 }
 
 ///|
@@ -17,8 +16,8 @@ fn parameter_key(p : Json, template : String) -> String {
   let name = str(field(p, "name"))
   let location = str(field(p, "in"))
   if location == "path" {
-    for segment in template.split("/"); index = 0 {
-      if segment == "{" + name + "}" {
+    for expression in template.split("{").drop(1); index = 0 {
+      if expression.has_prefix(name + "}") {
         return "path:\{index}"
       }
       continue index + 1
@@ -69,6 +68,22 @@ fn State::parameters(
     matched[found] = true
     let y = b[found]
     let p = pointer(w.path, found.to_string())
+    if field(x, "content") == Json::null() &&
+      field(y, "content") == Json::null() {
+      for k in ["style", "explode", "allowReserved"] {
+        let old = serialization(x, k)
+        let new = serialization(y, k)
+        if old != new {
+          s.emit(
+            Request,
+            pointer(p, k),
+            KeywordChanged(keyword=k, old=Some(old), new=Some(new)),
+            Breaking,
+            Breaking,
+          )
+        }
+      }
+    }
     if field(x, "in") != field(y, "in") {
       s.emit(
         Request,
@@ -130,7 +145,37 @@ fn requirements(j : Json) -> Array[Json] {
   if arr(j).is_empty() {
     [Json::object(Map([]))]
   } else {
-    arr(j)
+    arr(j).map(v => {
+      Json::object(obj(v).map((_, scopes) => strings_json(types(scopes))))
+    })
+  }
+}
+
+///|
+fn serialization(parameter : Json, keyword : String) -> Json {
+  let location = str(field(parameter, "in"))
+  let style = obj(parameter)
+    .get("style")
+    .unwrap_or(
+      Json::string(
+        if location == "query" || location == "cookie" {
+          "form"
+        } else {
+          "simple"
+        },
+      ),
+    )
+  match keyword {
+    "style" => style
+    "explode" =>
+      obj(parameter)
+      .get(keyword)
+      .unwrap_or(
+        Json::boolean(
+          style == Json::string("form") || style == Json::string("cookie"),
+        ),
+      )
+    _ => obj(parameter).get(keyword).unwrap_or(Json::boolean(false))
   }
 }
 
@@ -204,6 +249,7 @@ fn State::operation(
       path: pointer(p, "parameters"),
       side: Request,
       context: "parameters",
+      uncertain: false,
     },
     at,
     bt,
