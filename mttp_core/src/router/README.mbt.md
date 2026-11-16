@@ -50,6 +50,14 @@ server-side remote address as `in-process`. Streaming bodies pass through
 without buffering. Closing a router refuses new requests while already returned
 response streams remain usable.
 
+A WebSocket 101 is the exception: supply `clock`, `timer`, `coordination` and
+`background` to the constructor. The background scheduler owns and joins the
+server callback. Router connects it to a client-role codec over a byte pair
+with 64 KiB per-direction backpressure, and returns the client session under
+`@ws.ws_session`. Ordinary attributes remain isolated. The caller must close
+or abort that session; the empty response body does not own it. Closing the
+Router makes the server callback's shutdown probe true.
+
 The in-process Backend validates `SendOptions`, preflights a streamed upload's
 first chunk, and enforces `Exchange(max_bytes)` without buffering streamed
 responses. Supply `clock` and `timer` ports to `Router::new` for positive

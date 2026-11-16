@@ -1,5 +1,16 @@
 # Interoperability suite
 
+WebSocket servers are checked with the digest-pinned Autobahn TestSuite in
+fuzzingclient mode: `scripts/gates.sh interop server/autobahn`. The runner
+starts `mttp_server websocket 127.0.0.1:39505`, writes its configuration and
+reports under `_build/interop/autobahn`, and adapts every result to CASE lines.
+Sections 1–7 and 10 run normally; section 9 raises the echo server's frame and
+message limits to 128 MiB. Sections 12–13 are n/a until permessage-deflate.
+Only exact documented INFORMATIONAL/NON-STRICT cases belong in known rows;
+all other non-OK results fail. This uses the upstream
+[Autobahn fuzzingclient interface](https://github.com/crossbario/autobahn-testsuite)
+and the [RFC 6455 closing rules](https://www.rfc-editor.org/rfc/rfc6455.html).
+
 Most of mttp's tests are self-consistent: the mttp client against the mttp
 server, or against recorded bytes. Two implementations that share a
 misunderstanding pass those. This suite runs mttp against widely used

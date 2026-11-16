@@ -331,7 +331,8 @@ are non-2xx for buffered and streamed readers and undeclared endpoint
 outputs. Retry status rules still match the original number explicitly;
 matching 500–599 does not include 600–999. Codes below 100, two or four
 digits, and nondigits are refused. Writers still refuse statuses above
-599; the server engine replaces handler statuses outside 200–599 with 500.
+599; the server engine replaces handler statuses outside 200–599 with 500,
+except the explicit server hand-over below.
 
 `HeadDecoder` scans incrementally in linear time. `scan_head` is the stateless
 alternative for an already available buffer. Head and chunk decoder errors
@@ -357,3 +358,31 @@ is preserved. `serve_conn(auto_date=false)` disables the automatic field;
 the injected Clock, cached per connection and second. The interim
 100 Continue carries no automatic Date. An invalid handler header value
 becomes 500 before its response is written and is reported to `on_error`.
+
+## Server connection hand-over
+
+`rt.upgrade` is a server-side response attribute holding an async callback
+`(&rt.Conn, Bytes, () -> Bool) -> Unit noraise`. An HTTP/1.1 engine writes
+101 only when that callback is present and the request contains Upgrade and
+Connection: upgrade. A 101 without both conditions becomes 500. An Upgrade
+request with a nonzero Content-Length or transfer coding is refused with 400
+before invoking the handler, including with Expect: 100-continue.
+
+The engine writes only the 101 head, joins its HTTP peer reader and passes
+the connection and every unread byte, in order, to the callback. No HTTP
+header, body or handler deadline covers the callback. The listener retains
+the max_connections slot until callback completion; its stopping probe turns
+true on shutdown and drain_ms remains the outer bound, after which the
+connection is closed and the callback cancelled and joined. The ws helper
+polls that probe at most every 250 ms and sends Close 1001, with the session's
+close_timeout_ms bounding its wait. A shorter drain_ms takes precedence.
+
+Router-as-Backend isolates ordinary local attributes as before. For a 101 it
+runs the server callback over a byte pair and returns only `ws.ws_session`,
+holding the client-role codec. This requires injected clock, timer,
+coordination and background scheduling ports; without them the send fails
+with Invalid in Head. The supplied scheduler must own and join its tasks.
+Each byte-pair direction retains at most 64 KiB and backpressures its writer.
+The caller owns the returned session; close or abort it independently of the
+empty response body. Closing the Router turns the callback's stopping probe
+true. Neither the server callback nor other server-local attributes escape.

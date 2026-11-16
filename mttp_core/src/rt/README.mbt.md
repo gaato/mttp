@@ -18,6 +18,12 @@ against it imports no event loop and builds on every target.
 `default_random` returns a sample in [0, 1) for jitter and boundaries; it is
 not for secrets.
 
+`upgrade` is the server-side attribute carrying a 101 connection hand-over.
+Its callback receives the connection, bytes read past the request head and
+a shutdown probe, after the HTTP reader is joined. It retains admission until
+return and runs without HTTP deadlines; the listener's drain deadline still
+applies. The application helper is `gaato/mttp/ws.upgrade`.
+
 The implementations live elsewhere:
 
 - [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) implements

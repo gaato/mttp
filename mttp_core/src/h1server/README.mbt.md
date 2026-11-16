@@ -1,5 +1,11 @@
 # gaato/mttp_core/h1server
 
+A response with status 101 and `@rt.upgrade` hands the connection to its
+callback only for an HTTP/1.1 request with Upgrade and Connection: upgrade.
+The peer reader is cancelled and joined first; every pending byte is passed
+unchanged. The callback runs without HTTP deadlines and keeps admission until
+return. Upgrade requests carrying bodies are refused with 400 before handling.
+
 An HTTP/1.1 server connection engine over the `gaato/mttp_core/rt` ports.
 `serve_conn` serves the requests of one accepted connection with an
 `@mttp_core.Handler`. Every head, chunk-size line and trailer section is read

@@ -6,6 +6,8 @@ pub struct Router {
   priv context : @endpoint.DispatchContext
   priv clock : &@rt.Clock?
   priv timer : &@rt.Timer?
+  priv coordination : &@rt.Coordination?
+  priv background : ((async () -> Unit) -> Unit)?
   priv mut closed : Bool
 }
 
@@ -20,8 +22,18 @@ pub fn Router::must(
   adapter_max_body_bytes? : Int32,
   clock? : &@rt.Clock,
   timer? : &@rt.Timer,
+  coordination? : &@rt.Coordination,
+  background? : (async () -> Unit) -> Unit,
 ) -> Router {
-  Router::new(endpoints, options~, adapter_max_body_bytes?, clock?, timer?) catch {
+  Router::new(
+    endpoints,
+    options~,
+    adapter_max_body_bytes?,
+    clock?,
+    timer?,
+    coordination?,
+    background?,
+  ) catch {
     error => abort("\{error}")
   }
 }
@@ -35,6 +47,8 @@ pub fn Router::new(
   adapter_max_body_bytes? : Int32,
   clock? : &@rt.Clock,
   timer? : &@rt.Timer,
+  coordination? : &@rt.Coordination,
+  background? : (async () -> Unit) -> Unit,
 ) -> Router raise @endpoint.DefinitionError {
   let problems = @endpoint.check_definitions(
     endpoints.map(e => e.doc()),
@@ -65,6 +79,8 @@ pub fn Router::new(
     context,
     clock,
     timer,
+    coordination,
+    background,
     closed: false,
   }
 }

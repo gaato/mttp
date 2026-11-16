@@ -1,0 +1,18 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp/ws"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/ws/handshake",
+}
+
+// Values
+pub fn upgrade(@mttp_core.Request, origins? : @handshake.OriginPolicy, subprotocols? : Array[String], limits? : @gaato/mttp_core/ws.WsLimits, handler~ : async (&@gaato/mttp_core/ws.Session) -> Unit) -> @mttp_core.Response
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

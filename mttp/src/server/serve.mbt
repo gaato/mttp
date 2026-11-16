@@ -19,6 +19,8 @@ pub extend ListenError with @debug.Debug::{to_repr}
 /// background jobs finish for `limits.drain_ms`, then cancels and joins them.
 /// The listener sets `SO_REUSEADDR`, so a restart can bind the port while the
 /// previous process's connections are in TIME-WAIT.
+/// Upgraded connections retain their admission slots until their callback
+/// ends; the stopping probe and drain deadline apply to them too.
 /// `auto_date` adds Date to responses without one; set it to false when an
 /// upstream server owns that field. It is passed to `h1server.serve_conn`.
 pub async fn serve(

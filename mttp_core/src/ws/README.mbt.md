@@ -1,5 +1,10 @@
 # WebSocket sessions over portable ports
 
+`ws_session` carries a client-role session from a backend that already owns
+one, including Router's in-process transport. The caller closes or aborts it.
+`serve_session` runs a server handler on injected Clock/Coordination ports,
+polls a stopping probe every 250 ms and sends Close 1001 during shutdown.
+
 `gaato/mttp_core/ws` owns complete `Message::Text(String)` and
 `Message::Binary(Bytes)` messages, `Session`, `CloseCode`, `CloseFrame`,
 `WsError`, `WsLimits` and the per-message `Extension` port. HTTP upgrade

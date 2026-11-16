@@ -1,0 +1,13 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "gaato/mttp_core/ws" @core_ws,
+  "gaato/mttp_core/ws/handshake",
+  "gaato/mttp/runtime",
+}
+
+supported_targets = "native+wasm+js"
+
+import {
+  "gaato/mttp_core/ws/handshake",
+} for "test"

@@ -19,6 +19,7 @@ priv struct Session {
   stopping : () -> Bool
   background : ((async () -> Unit) -> Unit)?
   mut control : @control.SessionState
+  mut upgrade : (async (&@rt.Conn, Bytes, () -> Bool) -> Unit noraise)?
 }
 
 ///|
@@ -74,6 +75,12 @@ async fn Session::exchange(
   if meth == Connect {
     self.report(protocol("CONNECT is not served"))
     self.reject(501)
+    return false
+  }
+  if headers.contains("upgrade") &&
+    !(framing is NoBody || framing is Length(0L)) {
+    self.report(protocol("an upgrade request must not carry a body"))
+    self.reject(400)
     return false
   }
   if framing is Length(n) && n > self.limits.max_body_bytes.to_int64() {
@@ -153,6 +160,15 @@ async fn Session::exchange(
       return false
     }
   }
+  // supervise has joined the peer monitor, including its cancelled read.
+  // No HTTP reader or timer survives the hand-over.
+  if self.upgrade is Some(upgrade) {
+    self.upgrade = None
+    let pending = self.wire.pending
+    self.wire.pending = b""
+    upgrade(self.wire.conn, pending, self.stopping)
+    return false
+  }
   keep
 }
 
@@ -208,6 +224,24 @@ async fn Session::respond(
     response.attributes.get(@mttp_core.abandon_request_body) == Some(true) ||
     source.expect
   let sent = Ref(false)
+  if response.status == 101 &&
+    version == Http11 &&
+    has_token(request.headers, "connection", "upgrade") &&
+    request.headers.get_all("upgrade").iter().any(v => !v.trim().is_empty()) &&
+    response.attributes.get(@rt.upgrade) is Some(upgrade) {
+    defer response.close()
+    self.write_upgrade(response, sent) catch {
+      error => {
+        self.report(error)
+        if !sent.val {
+          self.reject(500)
+        }
+        return false
+      }
+    }
+    self.upgrade = Some(upgrade)
+    return false
+  }
   let reused = self.write_response(
     response,
     source,

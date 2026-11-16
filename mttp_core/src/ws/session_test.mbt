@@ -77,7 +77,7 @@ test "session pair exchanges text binary and closes from either side without lea
 }
 
 ///|
-test "fragmented text validates across frames and interleaved Ping replies with latest Pong" {
+test "fragmented text validates across frames and interleaved Pings get prompt Pongs" {
   let d = @driver.Driver::new()
   let conn = @sim.ScriptedConn::new([
     Chunk(b"\x01\x02\xf0\x9f\x89\x01a\x89\x01b\x80\x02\x99\x82"),
@@ -87,7 +87,7 @@ test "fragmented text validates across frames and interleaved Ping replies with 
     assert_eq(s.recv(), @ws.Message::Text("🙂"))
     s.abort()
   })
-  assert_eq(conn.written(), [b"\x8a\x81abcd\x03"])
+  assert_eq(conn.written(), [b"\x8a\x81abcd\x00", b"\x8a\x81abcd\x03"])
   assert_eq((conn.closes(), d.live_tasks()), (1, 0))
 }
 

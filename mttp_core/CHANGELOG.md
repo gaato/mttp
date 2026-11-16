@@ -9,6 +9,11 @@ never does.
 
 ### Added
 
+- `rt.upgrade` and `ws.ws_session`: HTTP/1 server 101 connection hand-over,
+  preserving read-ahead and admission until callback completion, with HTTP
+  deadlines ending at the head. Router's in-process WebSocket path uses the
+  real codec over a bounded byte pair and explicit scheduling ports.
+
 - Sans-I/O `ws/handshake`: injected 16-byte client keys, RFC accept values,
   client request and server response validation, 400/403/426 server refusals,
   same-origin policy, bounded generic extension syntax, and value-only 101
@@ -73,6 +78,9 @@ never does.
   (CONTRACT.md, Connections and coordination).
 
 ### Fixed
+
+- Answer every Ping promptly when the send direction is free (Autobahn 2.10),
+  retaining latest-Pong coalescing behind a blocked sender.
 
 - OpenAPI framework Problem responses now give their `errors` array an
   unconstrained item schema, producing valid JSON Schema for external tooling.

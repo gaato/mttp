@@ -80,6 +80,12 @@ async fn ConnSession::on_end(self : ConnSession) -> Unit raise WsError {
       if self.closing.data_allowed() {
         self.pending_pong = Some(payload)
         self.notify()
+        // Answer promptly when the send direction is free. Only a blocked
+        // sender needs coalescing; draining an entire input batch first lost
+        // all but its last Ping even on an uncongested connection (Autobahn 2.10).
+        if self.lock.queue.is_empty() {
+          self.flush_pong()
+        }
       }
     Pong => ()
     _ =>

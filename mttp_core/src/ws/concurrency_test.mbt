@@ -1,4 +1,28 @@
 ///|
+test "an uncongested receiver answers every Ping in a single input batch" {
+  let d = @driver.Driver::new()
+  let c = @sim.SimCoordination::new(d)
+  let (conn, peer) = @sim.pair(c)
+  let s = session(d, conn)
+  d.run(() => {
+    let wire = Buffer()
+    for i in 0..<10 {
+      wire.write_bytes(packet(Ping, Bytes::make(1, i.to_byte())))
+    }
+    wire.write_bytes(packet(Text, b"end"))
+    peer.write(wire.to_bytes())
+    assert_eq(s.recv(), @ws.Message::Text("end"))
+    for i in 0..<10 {
+      let (head, payload) = read_packet(peer)
+      assert_true(head.opcode is Pong)
+      assert_eq(payload, Bytes::make(1, i.to_byte()))
+    }
+    s.abort()
+    peer.close()
+  })
+}
+
+///|
 test "senders queue FIFO queued cancellation removes its ticket and later senders progress" {
   @sim.explore(schedule => {
     let d = @driver.Driver::new(schedule~)

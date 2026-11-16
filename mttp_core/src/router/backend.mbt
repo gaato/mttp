@@ -52,6 +52,9 @@ pub impl @mttp_core.Backend for Router with fn send(self, request, options) {
   })
   transferred = true
   errdefer response.close()
+  if response.status == 101 {
+    return self.upgrade_response(request, response)
+  }
   let (cap, timeout) = match options.body {
     Exchange(max_bytes~) => (Some(max_bytes), options.timeout_ms)
     _ => (None, None)

@@ -29,6 +29,12 @@
 /// With `auto_date` (the default), every final response, including an error,
 /// gets an IMF-fixdate from `clock` unless it already has a Date field.
 /// Formatting is cached per connection and second. `100 Continue` is unchanged.
+/// A 101 is the exception to that status range: an HTTP/1.1 request must
+/// ask for Upgrade and its response must carry `@rt.upgrade`. The engine
+/// writes its head, joins the peer reader and invokes that callback with
+/// all pending bytes and the stopping probe. HTTP deadlines then end, and
+/// this call retains the connection until the callback returns. Upgrade
+/// requests carrying a body are refused with 400 before the handler.
 ///
 /// `100 Continue` is sent when the handler first reads the body, never
 /// before, so a handler that refuses the request does not invite the body.
@@ -126,6 +132,7 @@ pub async fn serve_conn(
     stopping,
     background,
     control: @control.SessionState::new(),
+    upgrade: None,
   }
   session.run()
 }

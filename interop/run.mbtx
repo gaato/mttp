@@ -1017,6 +1017,9 @@ async fn main_run(filters : Array[String]) -> Int32 {
     []
   }
   let env = { engine, images, root, user, }
+  if !filters.is_empty() && filters.all(f => f.has_prefix("server/autobahn")) {
+    return run_autobahn(env, rows)
+  }
   println("interop: \{engine}, images pinned in interop/images.tsv")
   for
     addr in [
@@ -1116,6 +1119,73 @@ async fn main_run(filters : Array[String]) -> Int32 {
   for name in tally.failures {
     println("  FAIL \{name}")
   }
+  let autobahn = if selected(filters, "server/autobahn/direct") {
+    run_autobahn(env, rows)
+  } else {
+    0
+  }
+  if tally.fail > 0 || autobahn != 0 {
+    1
+  } else {
+    0
+  }
+}
+
+///|
+/// Autobahn's report decides individual cases; a missing report never passes.
+async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
+  let dir = "\{work}/autobahn"
+  make_dir(dir)
+  let address = "127.0.0.1:39505"
+  port_free(address)
+  ignore(must("moon", ["build", "--target", "native", "interop/mttp_server"]))
+  let image = env.image("autobahn")
+  if capture(env.engine, ["image", "inspect", image]).0 != 0 {
+    ignore(must(env.engine, ["pull", image]))
+  }
+  let config =
+    #|{"outdir":"/work/reports","servers":[{"agent":"mttp","url":"ws://127.0.0.1:39505"}],"cases":["1.*","2.*","3.*","4.*","5.*","6.*","7.*","9.*","10.*"],"exclude-cases":[],"exclude-agent-cases":{}}
+  @fs.write_text("\{dir}/config.json", config)
+  let report = "\{dir}/reports/index.json"
+  if @fs.exists(report) {
+    @fs.remove(report)
+  }
+  @async.with_task_group(group => {
+    let server = @process.spawn(
+      group,
+      native_server,
+      ["websocket", address],
+      stdout=ToFile("\{dir}/server.log"),
+      stderr=ToFile("\{dir}/server.log"),
+    )
+    defer server.cancel()
+    wait_port(address, "mttp WebSocket echo server")
+    let (status, stdout, stderr) = capture(
+      env.engine,
+      env.run_args(
+        "autobahn",
+        [..env.user, ..env.mount(dir, "/work", writable=true)],
+        ["wstest", "-m", "fuzzingclient", "-s", "/work/config.json"],
+      ),
+    )
+    @fs.write_text("\{dir}/console.log", "exit \{status}\n\{stdout}\n\{stderr}")
+  })
+  let (status, output, problem) = capture("moon", [
+    "run", "interop/clients/autobahn/adapter.mbtx", "--", report,
+  ])
+  let rows = rows_of(all_rows, "server", "autobahn/direct")
+  let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+  tally.report(
+    "server",
+    "autobahn/direct",
+    rows,
+    plan(rows),
+    output,
+    "adapter exit \{status}: \{problem}",
+  )
+  println(
+    "autobahn: \{tally.pass} passed, \{tally.known} known, \{tally.fail} failed",
+  )
   if tally.fail > 0 {
     1
   } else {

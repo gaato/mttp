@@ -9,7 +9,11 @@ import {
 }
 
 // Values
+pub async fn serve_session(&Session, async (&Session) -> Unit, stopping~ : () -> Bool, clock~ : &@rt.Clock, coordination~ : &@rt.Coordination) -> Unit noraise
+
 pub fn session_over_conn(&@rt.Conn, role~ : @frame.Role, pending~ : Bytes, clock~ : &@rt.Clock, timer~ : &@rt.Timer, coordination~ : &@rt.Coordination, entropy~ : (Int32) -> Bytes?, limits? : WsLimits, extension? : &Extension, subprotocol? : String) -> &Session
+
+pub let ws_session : @mttp_core.AttributeKey[&Session]
 
 // Errors
 #derive(@debug.Debug)

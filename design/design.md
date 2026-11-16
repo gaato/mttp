@@ -956,7 +956,7 @@ The pipeline. Credentials are checked first, a deliberate deviation from tapir (
 
 **Request URL on the server (new).** Adapters put an absolute URL into `Request.url`, built from `serve_conn`'s `scheme~` and the `Host` header (h1server) or taken from `JsRequest.url` (fetch); Router-as-Backend already uses `http://in-process/...`. The router matches only the path.
 
-**Router as a Backend.** The server side gets a fresh request whose attributes hold only `remote_addr = "in-process"`; the client never sees server-side response attributes (I-09, as over a socket). Bodies pass through unbuffered because both directions are pull: an SSE stream of 50 events goes through untouched, while a buffered reader with `max_body_bytes(100)` refuses with `TooLarge(limit=100)` (verified).
+**Router as a Backend.** The server side gets a fresh request whose attributes hold only `remote_addr = "in-process"`; the client never sees server-side response attributes (I-09, as over a socket). A WebSocket 101 runs its server callback over a bounded byte pair and returns a client-role codec under `ws.ws_session`; clock, timer, coordination and a task-owning background scheduler must be supplied to the Router. Bodies pass through unbuffered because both directions are pull: an SSE stream of 50 events goes through untouched, while a buffered reader with `max_body_bytes(100)` refuses with `TooLarge(limit=100)` (verified).
 
 ### 4.9 apispec and openapi
 
@@ -1171,10 +1171,11 @@ pub fn accept_value(String) -> String                 // Sec-WebSocket-Accept, o
 pub fn client_request(String, key~ : String, subprotocols? : Array[String], headers? : @mttp_core.Headers) -> @mttp_core.Request raise WsError
 pub fn check_client_request(@mttp_core.Request, origins? : OriginPolicy) -> Offer raise Refusal   // 400, 403 or 426
 
-// gaato/mttp_core root: the hand-over, carried in attributes (§5.4)
-pub let upgrade : AttributeKey[...]                   // server: set on a 101 by the handler
-pub let upgraded : AttributeKey[...]                  // client: set by an engine on an accepted 101
-pub let ws_session : AttributeKey[&@ws.Session]       // a backend that has a session already (Router, JS hosts, HTTP/2 later)
+// gaato/mttp_core/rt: the hand-over, carried in attributes (§5.4)
+pub let upgrade : @mttp_core.AttributeKey[...]        // server: set on a 101 by the handler
+pub let upgraded : @mttp_core.AttributeKey[...]       // client: set by an engine on an accepted 101
+// gaato/mttp_core/ws
+pub let ws_session : @mttp_core.AttributeKey[&Session] // a backend that has a session already (Router, JS hosts, HTTP/2 later)
 
 // endpoint: one definition, four uses
 pub struct WsEndpoint[S, I, In, Out]                  // security, handshake inputs, client-to-server and server-to-client messages
@@ -1191,6 +1192,8 @@ pub struct WsEndpoint[S, I, In, Out]                  // security, handshake inp
 | empty frames in a row | 1024 | as the JS host's empty-chunk bound |
 | decompressed message | the message bound, its own ledger row | wire and decoded bytes are bounded apart (§5.2) |
 | permessage-deflate | off; window 15 required; no context takeover offered | gaato/deflate has a fixed 32 KiB window; constant memory per connection |
+
+The connection hand-over lives in `rt` because `rt` depends on the root; the session key lives in `ws` to avoid the same dependency cycle.
 
 `recv` retains parser/assembly state and committed messages across cancellation; its control writes use `rt.Coordination.protect` with their own send deadline, which closes the Conn on expiry, so a cancelled receiver never leaves a partial Pong or Close reply on a reusable connection (owner decision, 2026-11-15).
 The answer wait starts after the Ping write completes, since the peer cannot answer an incomplete frame; a byte received during that write already establishes life.
@@ -1269,7 +1272,7 @@ Every policy takes `&@rt.Clock`, and where needed `&@rt.Timer`, `&@rt.Gate` and 
 - **Server SSE.** A handler returns an `EventStream[T]` through `sse_out` (JSON data) or `sse_body_out` (any body codec's text, such as HTML for htmx); the endpoint encodes it as a stream; the adapter writes it with backpressure; Router-as-Backend passes it through unbuffered. The stream opens with an SSE comment, because every server (ours, the fetch adapter, a host's) pulls a stream's first piece before writing the head, so that a producer failing at once still gets a 500; without it an idle stream has no head, and a host cannot attach shutdown handling to it.
 - **No push bodies.** A producer-style handler bridges through a runtime queue in the application.
 - **Client SSE.** `as_sse` with a `stop` predicate for sentinels such as OpenAI's `data: [DONE]`.
-- **WebSockets** (§4.13): the HTTP/1.1 engines hand the connection over on a 101 through response attributes: the client accepts a 101 only to a request that asked for an upgrade, and passes the connection with the bytes read past the head; the server writes a 101 only for a response that carries an upgrade, then leaves its HTTP loop and keeps the connection's slot until the session ends, sending Close 1001 at shutdown. A `Session` is message-level, so it has an implementation over a byte connection and one over a JS host's WebSocket. Router-as-Backend passes the upgrade attributes and answers in process with a `WebSocketStub` pair.
+- **WebSockets** (§4.13): the HTTP/1.1 engines hand the connection over on a 101 through response attributes: the client accepts a 101 only to a request that asked for an upgrade, and passes the connection with the bytes read past the head; the server writes a 101 only for a response that carries an upgrade and a request that asked for one, then leaves its HTTP loop and keeps the connection's slot until the session ends, sending Close 1001 at shutdown. A `Session` is message-level, so it has an implementation over a byte connection and one over a JS host's WebSocket. Router-as-Backend runs the server callback over a byte pair with 64 KiB per-direction backpressure and returns a client-role `session_over_conn` under `ws.ws_session`, so the real codec runs end to end; other attributes remain isolated.
 
 ### 5.5 Target matrix
 

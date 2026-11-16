@@ -25,6 +25,7 @@
 //                              connection (`error ...`)
 //
 //   mttp_server <address>      serves on <address>
+//   mttp_server websocket <address>  WebSocket echo for Autobahn; 128 MiB limits
 //   mttp_server garden [address]  HTTP Garden JSON echo (default 0.0.0.0:80)
 //   mttp_server www <dir>      writes the static files the third-party
 //                              servers serve (interop/pattern) into <dir>
@@ -207,6 +208,34 @@ async fn handle(request : @mttp_core.Request) -> @mttp_core.Response noraise {
 ///|
 fn main {
   let args = @env.args()
+  if args is [_, "websocket", addr] {
+    @mttp.run(async fn() {
+      @server.serve(
+        request => {
+          @ws.upgrade(
+            request,
+            origins=Any,
+            // Section 9 deliberately crosses the normal 16 MiB bound.
+            limits={
+              ..@core_ws.WsLimits::default(),
+              max_frame_bytes: 128 << 20,
+              max_message_bytes: 128 << 20,
+              ping_interval_ms: None,
+              pong_timeout_ms: None,
+            },
+            handler=session => {
+              while true {
+                session.send(session.recv())
+              }
+            },
+          )
+        },
+        addr~,
+        on_listen=addr => println("listening on \{addr}"),
+      )
+    })
+    return
+  }
   if args is [_, "garden", .. rest] {
     guard rest.length() <= 1 else {
       println("usage: mttp_server garden [address]")

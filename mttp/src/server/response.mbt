@@ -58,6 +58,11 @@ fn lease(
   meth : @mttp_core.Method,
   done : () -> Unit,
 ) -> @mttp_core.Response {
+  // A successful hand-over owns admission until its callback ends. Closing
+  // the empty HTTP body must not mark the connection idle during shutdown.
+  if response.status == 101 && response.attributes.get(@rt.upgrade) is Some(_) {
+    return response
+  }
   {
     ..response,
     body: Stream(

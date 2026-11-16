@@ -11,6 +11,7 @@ import {
   "gaato/mttp_core/endpoint",
   "gaato/mttp_core/schema",
   "gaato/mttp_core/sim",
+  "gaato/mttp_core/ws",
   "moonbitlang/core/encoding/utf8",
 } for "test"
 

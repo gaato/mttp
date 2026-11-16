@@ -1,0 +1,46 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+----
+
+///|
+async fn main {
+  let args = @env.args().filter(a => a != "--")
+  guard args.length() == 2 else { fail("expected Autobahn index.json") }
+  let report = @json.parse(@fs.read_text(args[1]))
+  guard report is { "mttp": Object(cases), .. } else {
+    fail("missing mttp report")
+  }
+  println("CASE ab-run ok Autobahn report present")
+  let sections : Map[String, (Int32, Int32)] = Map([])
+  for id, result in cases {
+    let behavior = match result {
+      { "behavior": String(s), .. } => s
+      _ => "missing"
+    }
+    let close = match result {
+      { "behaviorClose": String(s), .. } => s
+      _ => "missing"
+    }
+    let ok = behavior == "OK" && close == "OK"
+    let section = id.split(".").take(1).collect().join("")
+    let (passed, other) = sections.get(section).unwrap_or((0, 0))
+    sections[section] = if ok {
+      (passed + 1, other)
+    } else {
+      (passed, other + 1)
+    }
+    println(
+      "CASE ab-\{id} \{if ok { "ok" } else { "fail" }} behavior=\{behavior} close=\{close}",
+    )
+  }
+  for section, (passed, other) in sections {
+    println(
+      "SECTION \{section}: \{passed} strict pass, \{other} non-OK (see CASE lines)",
+    )
+  }
+}

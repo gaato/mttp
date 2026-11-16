@@ -9,6 +9,12 @@ never does.
 
 ### Added
 
+- `ws.upgrade` validates server handshakes, selects subprotocols and hands a
+  bounded Session to a handler. Shutdown sends GoingAway and retains the
+  connection's admission slot until completion or the listener drain deadline.
+
+### Added
+
 - `RuntimeCoordination.protect(work~)` implements the new mttp_core
   cancellation-protection port with core/async's `protect_from_cancel`, so
   bounded WebSocket control replies can finish before a receiver is cancelled.

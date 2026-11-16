@@ -26,6 +26,21 @@
 # For one case and run the last matching row decides, so a general row comes
 # first and its exceptions after it. A case with no matching row is not run.
 side	case	where	expect	note
+server	ab-run	autobahn/direct	pass
+server	ab-1.*	autobahn/direct	pass
+server	ab-2.*	autobahn/direct	pass
+server	ab-3.*	autobahn/direct	pass
+server	ab-4.*	autobahn/direct	pass
+server	ab-5.*	autobahn/direct	pass
+server	ab-6.*	autobahn/direct	pass
+server	ab-7.*	autobahn/direct	pass
+server	ab-7.1.6	autobahn/direct	known	INFORMATIONAL: echo versus Close processing order after a 256 KiB message is implementation defined
+server	ab-7.13.1	autobahn/direct	known	INFORMATIONAL: reserved Close code 5000 is rejected with 1002; suite declares outcome undefined
+server	ab-7.13.2	autobahn/direct	known	INFORMATIONAL: reserved Close code 65535 is rejected with 1002; suite declares outcome undefined
+server	ab-9.*	autobahn/direct	pass	128 MiB frame and message limits in echo mode for the large-message section
+server	ab-10.*	autobahn/direct	pass
+server	ab-12.*	autobahn/direct	n/a	permessage-deflate is not negotiated yet
+server	ab-13.*	autobahn/direct	n/a	permessage-deflate is not negotiated yet
 
 # Client side: gaato/mttp's Client against nginx, Caddy and Apache.
 client	get	*/*/*	pass
