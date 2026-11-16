@@ -144,6 +144,101 @@ async test "shutdown cancels and joins handlers blocked outside recv after bound
 }
 
 ///|
+extern "js" fn shutdown_connecting_upgrade(
+  adapter : (JsRequest, JsBackground) -> JsPromise,
+  release : () -> Unit,
+) -> @js_async.Promise[String] =
+  #| async (adapter, release) => {
+  #|   const {resolve} = await import('node:path');
+  #|   const {pathToFileURL} = await import('node:url');
+  #|   const {existsSync} = await import('node:fs');
+  #|   const root = existsSync(resolve('hosts/adapters.mjs')) ? resolve('hosts') : resolve('mttp/hosts');
+  #|   const {tracked, bun} = await import(pathToFileURL(resolve(root, 'adapters.mjs')).href);
+  #|   const saved = new Map(['Deno', 'WebSocketPair', 'Response'].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  #|   const OriginalResponse = globalThis.Response;
+  #|   const results = [];
+  #|   try {
+  #|     for (const host of ['deno', 'bun-pending', 'bun-connecting', 'workers']) {
+  #|       let closes = 0, options;
+  #|       const errors = [];
+  #|       const socket = Object.assign(new EventTarget(), {readyState: 0, bufferedAmount: 0, protocol: '', send() {},
+  #|         // Deliberately never opens and never acknowledges Close.
+  #|         close() { closes++; }, accept() {}});
+  #|       Object.defineProperty(globalThis, 'Deno', {configurable: true, value: host === 'deno' ? {
+  #|         upgradeWebSocket() { return {socket, response: {status: 101, headers: new Headers()}}; }
+  #|       } : undefined});
+  #|       Object.defineProperty(globalThis, 'WebSocketPair', {configurable: true, value: host === 'workers' ?
+  #|         function() { return {0: {}, 1: socket}; } : undefined});
+  #|       // Workers' real accept() is synchronous. A delayed fake exercises
+  #|       // startup shutdown on the same host bridge without needing a browser.
+  #|       function Response(body, init) {
+  #|         return init?.status === 101 ? {status: 101, headers: new Headers(init.headers)} : new OriginalResponse(body, init);
+  #|       }
+  #|       Object.setPrototypeOf(Response, OriginalResponse); Response.prototype = OriginalResponse.prototype;
+  #|       Object.defineProperty(globalThis, 'Response', {configurable: true, value: Response});
+  #|       const app = host.startsWith('bun') ? bun(adapter, error => errors.push(String(error))) : tracked(adapter, error => errors.push(String(error)));
+  #|       const request = new Request('https://example.test/ws', {headers: {host: 'example.test', connection: 'Upgrade',
+  #|         upgrade: 'websocket', 'sec-websocket-version': '13', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ=='}});
+  #|       await app.fetch(request, {upgrade(_, value) { options = value; return true; }});
+  #|       const bunSocket = {data: options?.data, readyState: 0, bufferedAmount: 0, send() {},
+  #|         close() { closes++; }, terminate() { closes++; }};
+  #|       if (host === 'bun-connecting') app.websocket.open(bunSocket);
+  #|       await new Promise(resolve => setTimeout(resolve, 5));
+  #|       app.shutdown();
+  #|       let timer;
+  #|       const idle = app.whenIdle().then(() => 'joined');
+  #|       const result = await Promise.race([idle, new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), 150); })]);
+  #|       clearTimeout(timer);
+  #|       // A socket arriving after abandonment must be closed without starting
+  #|       // its handler or reviving the already settled background promise.
+  #|       if (host === 'bun-pending') app.websocket.open(bunSocket);
+  #|       await new Promise(resolve => setTimeout(resolve, 5));
+  #|       results.push(`${host}: ${result}${closes ? ' closed' : ' unclosed'}${errors.length ? ' error' : ''}`);
+  #|       // Make the red implementation finish too, leaving no test tasks.
+  #|       socket.readyState = 1; socket.dispatchEvent(new Event('open'));
+  #|       bunSocket.readyState = 1;
+  #|       if (host.startsWith('bun')) bunSocket.data.events.dispatchEvent(new Event('open'));
+  #|       release(); await new Promise(resolve => setTimeout(resolve, 10)); release(); await idle;
+  #|     }
+  #|   } finally {
+  #|     for (const [name, descriptor] of saved) {
+  #|       if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name];
+  #|     }
+  #|   }
+  #|   return results.join('|');
+  #| }
+
+///|
+async test "shutdown during startup abandons connecting sockets within the close bound on every host" {
+  websocket_host_mock.acquire()
+  defer websocket_host_mock.release()
+  let blocked = @cond_var.Cond()
+  let called = Ref(0)
+  let adapter = fetch_handler(request => {
+    @facade_ws.upgrade(
+      request,
+      limits={
+        ..@ws.WsLimits::default(),
+        send_timeout_ms: 3000,
+        close_timeout_ms: 15,
+      },
+      handler=_ => {
+        called.val += 1
+        blocked.wait()
+      },
+    )
+  })
+  let result = shutdown_connecting_upgrade(adapter, () => {
+    blocked.broadcast()
+    defer_turn(turn)
+  }).wait()
+  assert_eq(
+    result, "deno: joined closed|bun-pending: joined closed|bun-connecting: joined closed|workers: joined closed",
+  )
+  assert_eq(called.val, 0)
+}
+
+///|
 extern "js" fn deno_upgrade_headers(
   adapter : (JsRequest, JsBackground) -> JsPromise,
 ) -> @js_async.Promise[FixedArray[String]] =

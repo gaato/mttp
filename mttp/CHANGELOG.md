@@ -9,6 +9,10 @@ never does.
 
 ### Fixed
 
+- JS WebSocket shutdown also supervises startup: CONNECTING sockets use the
+  close deadline rather than the send/open deadline, pending Bun upgrades are
+  abandoned, and late sockets are closed without starting the handler.
+
 - JS WebSocket shutdown now closes within `close_timeout_ms`, then cancels
   and joins handlers waiting outside `recv`, so process `whenIdle()` settles.
 - Deno WebSocket upgrades retain application headers, including separate

@@ -45,6 +45,7 @@ fn Upgrade::respond(
   let changed = @cond_var.Cond()
   let live = Ref(true)
   let stopping = Ref(false)
+  let release : Ref[() -> Unit] = Ref(() => ())
   let response = upgrade_response(
     request,
     self.protocol.unwrap_or(""),
@@ -57,45 +58,51 @@ fn Upgrade::respond(
       ready.val = Some(session)
       changed.broadcast()
       defer_turn(turn)
-      () => {
-        stopping.val = true
-        changed.broadcast()
-        defer_turn(turn)
-      }
     },
+    () => {
+      stopping.val = true
+      changed.broadcast()
+      defer_turn(turn)
+    },
+    cleanup => if live.val { release.val = cleanup } else { cleanup() },
   )
   if response.upgraded() {
     schedule(() => {
       defer {
         live.val = false
+        (release.val)()
         if ready.val is Some(session) {
           session.abort()
         }
       }
-      @async.with_timeout(self.limits.send_timeout_ms.max(1), () => {
-        while ready.val is None {
-          changed.wait()
-        }
-        let session = ready.val.unwrap()
-        while session.handle.state() == 0 {
-          @async.sleep(1)
-        }
-      })
-      let session = ready.val.unwrap()
-      // Closing the socket cannot wake a handler waiting on unrelated work.
-      // Keep both children owned here and join cancellation after bounded Close.
+      // Startup is part of the supervised work: a socket need not ever open.
+      // The monitor can abandon a pending upgrade or close an existing socket
+      // within the Close bound, independently of the longer send/open deadline.
       @async.with_task_group(group => {
         let work = group.spawn(allow_failure=true, () => {
-          (self.handler)(session) catch {
-            @ws.WsError(kind=Closed(_), ..) => ()
-            error => raise error
+          @async.with_timeout(self.limits.send_timeout_ms.max(1), () => {
+            while ready.val is None {
+              changed.wait()
+            }
+            let session = ready.val.unwrap()
+            while session.handle.state() == 0 {
+              @async.sleep(1)
+            }
+          })
+          if !stopping.val {
+            (self.handler)(ready.val.unwrap()) catch {
+              @ws.WsError(kind=Closed(_), ..) => ()
+              error => raise error
+            }
           }
         })
         group.spawn_bg(no_wait=true, () => {
           while !stopping.val {
             changed.wait()
           }
-          session.close({ code: GoingAway, reason: "host shutdown", })
+          if ready.val is Some(session) {
+            session.close({ code: GoingAway, reason: "host shutdown", })
+          }
           work.cancel()
         })
         work.wait() catch {
@@ -117,15 +124,20 @@ extern "js" fn upgrade_response(
   request : HostRequest,
   protocol : String,
   headers : FixedArray[FixedArray[String]],
-  start : (Socket) -> () -> Unit,
+  start : (Socket) -> Unit,
+  stop : () -> Unit,
+  on_finish : (() -> Unit) -> Unit,
 ) -> HostResponse =
-  #| (request, protocol, pairs, start) => {
+  #| (request, protocol, pairs, start, stop, onFinish) => {
   #|   const headers = new Headers(pairs);
+  #|   let finished = false, detach = () => {};
+  #|   onFinish(() => { finished = true; detach(); });
   #|   const manage = socket => {
-  #|     const stop = start(socket);
+  #|     start(socket);
   #|     return signal => {
-  #|       if (socket.readyState >= 2) return;
+  #|       if (finished || socket.readyState >= 2) return;
   #|       const cleanup = () => { signal.removeEventListener('abort', shutdown); socket.removeEventListener('close', cleanup); };
+  #|       detach = cleanup;
   #|       const shutdown = () => { cleanup(); stop(); };
   #|       socket.addEventListener('close', cleanup, {once: true});
   #|       signal.addEventListener('abort', shutdown, {once: true});
@@ -138,8 +150,8 @@ extern "js" fn upgrade_response(
   #|   };
   #|   if (typeof WebSocketPair === 'function') {
   #|     const pair = new WebSocketPair();
-  #|     pair[1].accept(); start(pair[1]);
-  #|     return new Response(null, {status: 101, headers, webSocket: pair[0]});
+  #|     pair[1].accept();
+  #|     return mark(new Response(null, {status: 101, headers, webSocket: pair[0]}), manage(pair[1]));
   #|   }
   #|   if (typeof globalThis.Deno?.upgradeWebSocket === 'function') {
   #|     const {socket, response} = Deno.upgradeWebSocket(request, {protocol: protocol || undefined, idleTimeout: 0});
@@ -155,8 +167,21 @@ extern "js" fn upgrade_response(
   #|   if (server) {
   #|     // Bun's upgrade returns no Response. The shim unwraps this sentinel.
   #|     let signal, listen;
-  #|     const data = {start(socket) { listen = manage(socket); if (signal) listen(signal); }};
-  #|     return server.upgrade(request, {headers, data}) ? mark({[Symbol.for('gaato.mttp.bunUpgraded')]: true}, s => { signal = s; listen?.(s); }) : new Response(null, {status: 500});
+  #|     // Shutdown can precede Bun's open callback. Notify the monitor now;
+  #|     // start() will discard a socket delivered after its owner has ended.
+  #|     const beforeOpen = () => stop();
+  #|     const data = {start(socket) {
+  #|       signal?.removeEventListener('abort', beforeOpen);
+  #|       listen = manage(socket); if (signal) listen(signal);
+  #|     }};
+  #|     return server.upgrade(request, {headers, data}) ? mark({[Symbol.for('gaato.mttp.bunUpgraded')]: true}, s => {
+  #|       if (finished) return;
+  #|       signal = s;
+  #|       detach = () => s.removeEventListener('abort', beforeOpen);
+  #|       if (listen) listen(s);
+  #|       else if (s.aborted) stop();
+  #|       else s.addEventListener('abort', beforeOpen, {once: true});
+  #|     }) : new Response(null, {status: 500});
   #|   }
   #|   return new Response('WebSocket upgrade is unavailable in this fetch host', {status: 501});
   #| }

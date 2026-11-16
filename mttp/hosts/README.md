@@ -212,6 +212,10 @@ installed runtimes and prints their versions for environments without containers
 The Deno and Bun checks also exercise shutdown(), which sends GoingAway,
 waits at most close_timeout_ms, then cancels and joins the handler even when
 it is waiting outside recv. whenIdle() includes that cancellation cleanup.
+Startup is supervised too: a CONNECTING socket closes within the close bound,
+and a Bun upgrade still waiting for its socket is abandoned without waiting
+for send_timeout_ms. Any late socket is closed without starting the handler.
+Shutdown listeners are removed when their owner ends, including startup expiry.
 Deno upgrade responses append application header pairs without replacing the
 host's Connection, Upgrade or Sec-WebSocket handshake fields; Set-Cookie stays
 separate. Bun clients use a Headers object in the constructor's options

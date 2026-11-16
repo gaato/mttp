@@ -77,6 +77,10 @@ real runtime. These JS-only sources are absent from native coverage.
 joining for handlers blocked outside recv, application cookies alongside Deno
 handshake fields, and repeated Bun list headers. Pinned interop checks these
 against real Deno/Bun upgrades and the native handshake server.
+The startup regression holds Deno/Bun/Workers sockets in CONNECTING, also
+delivers Bun's socket only after abandonment, and checks Close, idle completion
+and that the handler never starts. Workers' real accept is synchronous; the
+delayed fake tests the common startup lifetime while workerd covers real accept.
 
 The consumer lifecycle regressions in `mttp_core/src/client/close_test.mbt` cover
 observer closure and closure during backoff, the last reply/error/selected
