@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-17
+
 ### Changed
 
 - gaato/deflate 0.3.0, gaato/brotli 0.5.0 and gaato/zstd 0.5.1: decoding

@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-17
+
 ### Added
 
 - `connection_scheme`, a request attribute: the scheme the connection was

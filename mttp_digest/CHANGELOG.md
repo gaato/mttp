@@ -7,6 +7,12 @@ never does.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-17
+
+### Changed
+
+- Requires `gaato/mttp_core` 0.2.0; see its changelog for what to rename.
+
 ## [0.3.0] - 2026-11-12
 
 ### Changed

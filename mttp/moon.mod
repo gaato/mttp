@@ -1,6 +1,6 @@
 name = "gaato/mttp"
 
-version = "0.3.0"
+version = "0.4.0"
 
 license = "Apache-2.0"
 
@@ -19,7 +19,7 @@ preferred_target = "native"
 supported_targets = "native+wasm+js"
 
 import {
-  "gaato/mttp_core@0.1.0",
+  "gaato/mttp_core@0.2.0",
   "gaato/codec_bytes@0.1.2",
   "gaato/deflate@0.3.0",
   "gaato/brotli@0.5.0",
