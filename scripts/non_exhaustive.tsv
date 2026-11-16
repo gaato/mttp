@@ -49,3 +49,4 @@ gaato/mttp_core/ws	WsErrorKind
 gaato/mttp_core/ws/handshake	OriginPolicy
 gaato/mttp_core/openapi	DocsUi
 gaato/mttp_core/openapi	OpenApiVersion
+gaato/mttp_core/apispec/diff	ChangeKind

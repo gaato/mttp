@@ -1,0 +1,128 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/apispec/diff"
+
+import {
+  "gaato/mttp_core/apispec",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub fn compare(@apispec.OpenApi, @apispec.OpenApi, max_nodes? : Int32) -> Report
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub struct Change {
+  side : Side
+  path : String
+  kind : ChangeKind
+  client : Severity
+  server : Severity
+}
+pub fn Change::equal(Self, Self) -> Bool
+pub fn Change::not_equal(Self, Self) -> Bool
+pub fn Change::severity(Self, View) -> Severity
+pub fn Change::to_json(Self) -> @json.Json
+pub fn Change::to_repr(Self) -> @debug.Repr
+pub impl @json.ToJson for Change
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum ChangeKind {
+  PathAdded
+  PathRemoved
+  OperationAdded(meth~ : String)
+  OperationRemoved(meth~ : String)
+  OperationIdChanged(old~ : String?, new~ : String?)
+  ParameterAdded(name~ : String, location~ : String, required~ : Bool)
+  ParameterRemoved(name~ : String, location~ : String)
+  ParameterRequiredChanged(name~ : String, location~ : String, required~ : Bool)
+  ParameterLocationChanged(name~ : String, old~ : String, new~ : String)
+  RequestBodyAdded(required~ : Bool)
+  RequestBodyRemoved
+  RequestBodyRequiredChanged(required~ : Bool)
+  MediaTypeAdded(media_type~ : String)
+  MediaTypeRemoved(media_type~ : String)
+  ResponseAdded(status~ : String)
+  ResponseRemoved(status~ : String)
+  SecurityRequirementAdded(requirement~ : Map[String, Array[String]])
+  SecurityRequirementRemoved(requirement~ : Map[String, Array[String]])
+  ServerAdded(url~ : String)
+  ServerRemoved(url~ : String)
+  TypeChanged(old~ : Array[String], new~ : Array[String])
+  NullableAdded
+  NullableRemoved
+  FormatChanged(old~ : String?, new~ : String?)
+  EnumValueAdded(value~ : @json.Json)
+  EnumValueRemoved(value~ : @json.Json)
+  EnumAdded
+  EnumRemoved
+  PropertyAdded(name~ : String)
+  PropertyRemoved(name~ : String)
+  RequiredPropertyAdded(name~ : String)
+  RequiredPropertyRemoved(name~ : String)
+  AdditionalPropertiesChanged(old~ : @json.Json?, new~ : @json.Json?)
+  BoundChanged(keyword~ : String, old~ : @json.Json?, new~ : @json.Json?)
+  SubschemaAdded(keyword~ : String, index~ : Int32)
+  SubschemaRemoved(keyword~ : String, index~ : Int32)
+  RefTargetChanged(old~ : String?, new~ : String?)
+  KeywordChanged(keyword~ : String, old~ : @json.Json?, new~ : @json.Json?)
+  LimitReached(max_nodes~ : Int32)
+}
+pub fn ChangeKind::equal(Self, Self) -> Bool
+pub fn ChangeKind::name(Self) -> String
+pub fn ChangeKind::not_equal(Self, Self) -> Bool
+pub fn ChangeKind::to_json(Self) -> @json.Json
+pub fn ChangeKind::to_repr(Self) -> @debug.Repr
+pub impl @json.ToJson for ChangeKind
+
+#derive(Eq, @debug.Debug)
+pub struct Report {
+  request : Array[Change]
+  response : Array[Change]
+}
+pub fn Report::breaking(Self, View) -> Array[Change]
+pub fn Report::complete(Self) -> Bool
+pub fn Report::equal(Self, Self) -> Bool
+pub fn Report::not_equal(Self, Self) -> Bool
+pub fn Report::to_json(Self) -> @json.Json
+pub fn Report::to_repr(Self) -> @debug.Repr
+pub impl @json.ToJson for Report
+
+#derive(Eq, @debug.Debug)
+pub(all) enum Severity {
+  Breaking
+  Warning
+  Info
+}
+pub fn Severity::equal(Self, Self) -> Bool
+pub fn Severity::not_equal(Self, Self) -> Bool
+pub fn Severity::to_json(Self) -> @json.Json
+pub fn Severity::to_repr(Self) -> @debug.Repr
+pub impl @json.ToJson for Severity
+
+#derive(Eq, @debug.Debug)
+pub(all) enum Side {
+  Request
+  Response
+}
+pub fn Side::equal(Self, Self) -> Bool
+pub fn Side::not_equal(Self, Self) -> Bool
+pub fn Side::to_json(Self) -> @json.Json
+pub fn Side::to_repr(Self) -> @debug.Repr
+pub impl @json.ToJson for Side
+
+#derive(Eq, @debug.Debug)
+pub(all) enum View {
+  Client
+  Server
+}
+pub fn View::equal(Self, Self) -> Bool
+pub fn View::not_equal(Self, Self) -> Bool
+pub fn View::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

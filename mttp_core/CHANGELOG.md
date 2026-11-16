@@ -52,6 +52,10 @@ never does.
   cookie `sessions`, with a typed mutable `session` attribute. Signing and
   verification are caller-supplied; no crypto dependency is added. Window
   arithmetic is shared internally with the unchanged client rate limiter.
+- `apispec/diff.compare`: bounded OpenAPI comparison with typed changes and
+  JSON output, separate request/response reports and Client/Server severities,
+  local reference traversal and cycle protection. Raw OpenAPI 3.0 schema
+  keywords remain JSON differences without 3.0 interpretation.
 - `connection_scheme`, a request attribute: the scheme the connection was
   accepted under (`http` or `https`), never the request target's. h1server
   sets it from its `scheme`, Router-as-Backend from the in-process

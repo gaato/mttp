@@ -56,6 +56,17 @@ peer failure/EOF distinction and input/producer timeout split add no exemptions.
 
 ## Policy
 
+The OpenAPI comparator's initial native measurement left the following small
+structural cases outside the handwritten change-kind tests. Later tests cover
+the JSON payloads and the requiredness relaxation branches; the remaining
+budgets are conservative until the coordinator's next combined measurement.
+
+| File | Budget | Reason |
+|---|---:|---|
+| mttp_core/src/apispec/diff/compare.mbt | 16 | Malformed schema string fallback, root/external/non-object JSON Pointer targets, metadata-reference cycles and budget stops, inline/reference direction alternatives and response-header-only differences. All change kinds and the public budget overflow are exercised; these are remaining traversal alternatives from the initial native measurement plus the new visit guards. |
+| mttp_core/src/apispec/diff/operations.mbt | 6 | Initial measurement missed requiredness relaxation and required-body addition branches (now tested); the later parameter-copy budget-stop guards are not individually driven. |
+| mttp_core/src/apispec/diff/schema.mbt | 6 | Absent or malformed type values, malformed nonnumeric bounds, primitive boolean schemas, and stopping between schema keywords. Structured schema changes and both request/response variance directions are covered. |
+
 The listener adapter is exercised over real loopback sockets on native and
 wasm, including shutdown, streaming responses, admission, deadlines and
 background cleanup. Its immutable internal lifecycle has the same snapshot
