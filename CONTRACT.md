@@ -118,6 +118,22 @@ protection. WebSocket control replies use this to finish a frame before a
 cancelled recv can be retried; the deadline also closes the Conn to wake a
 blocked write. Application data sends remain cancellable.
 
+The receiving parser never performs blocking Pong writes. Its independent
+monitor owns them; recv joins any started protected write before returning
+or unwinding. Dispatch/completion bookkeeping can be awaited, but an active
+or queued write cannot hold up peer input: two full pipes must keep draining.
+For an otherwise free writer, a Pong completion races one bounded 64 KiB
+read before parsing the rest of a Ping batch, since a writable socket may
+still suspend until its I/O completion. Available input resumes parsing
+immediately; blocked writes retain only the latest pending Pong. Read-ahead
+has one reader, survives cancellation and is drained before more transport
+input, so bytes cannot be lost or queued without bound.
+After a message becomes ready, a started peer control frame is drained too:
+our own Pong completing does not imply that the peer's partial Pong write
+has completed. The next data head is deferred rather than overwriting the
+committed message. This keeps byte-at-a-time backpressured peers live while
+retaining one message, one read-ahead chunk and one fixed header.
+
 ## Backend
 
 `send(Request, SendOptions) async -> Response raise TransportError`;

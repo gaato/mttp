@@ -79,6 +79,11 @@ never does.
 
 ### Fixed
 
+- Keep Pong writes in the independent receive monitor so two backpressured
+  peers continue reading while both reply to Ping. The parser waits only for
+  writer dispatch or completed-I/O cleanup, preserving prompt free-writer
+  replies and bounded latest-Pong coalescing while writes are blocked.
+
 - Answer every Ping promptly when the send direction is free (Autobahn 2.10),
   retaining latest-Pong coalescing behind a blocked sender.
 

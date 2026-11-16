@@ -20,6 +20,9 @@
 #           known: the case shows a documented third-party quirk; it is
 #           reported as KNOWN with the note, and fails the run if it passes,
 #           so that a pin update that fixes the quirk updates this row.
+#           known:<behavior>/<close>: accepts exactly that Autobahn pair;
+#           missing or FAILED verdicts fail, so informational cases cannot
+#           conceal a protocol regression. Applies to client and server rows.
 #           n/a: not run; the note says why.
 #   note    why, for known and n/a
 #
@@ -34,13 +37,18 @@ server	ab-4.*	autobahn/direct	pass
 server	ab-5.*	autobahn/direct	pass
 server	ab-6.*	autobahn/direct	pass
 server	ab-7.*	autobahn/direct	pass
-server	ab-7.1.6	autobahn/direct	known	INFORMATIONAL: echo versus Close processing order after a 256 KiB message is implementation defined
-server	ab-7.13.1	autobahn/direct	known	INFORMATIONAL: reserved Close code 5000 is rejected with 1002; suite declares outcome undefined
-server	ab-7.13.2	autobahn/direct	known	INFORMATIONAL: reserved Close code 65535 is rejected with 1002; suite declares outcome undefined
+server	ab-7.1.6	autobahn/direct	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: echo versus Close processing order after a 256 KiB message is implementation defined
+server	ab-7.13.1	autobahn/direct	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: reserved Close code 5000 is rejected with 1002; suite declares outcome undefined
+server	ab-7.13.2	autobahn/direct	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: reserved Close code 65535 is rejected with 1002; suite declares outcome undefined
 server	ab-9.*	autobahn/direct	pass	128 MiB frame and message limits in echo mode for the large-message section
 server	ab-10.*	autobahn/direct	pass
 server	ab-12.*	autobahn/direct	n/a	permessage-deflate is not negotiated yet
 server	ab-13.*	autobahn/direct	n/a	permessage-deflate is not negotiated yet
+# Exact client expectations also constrain the W4 runner when integrated.
+client	autobahn-2.10	native/autobahn	pass
+client	autobahn-7.1.6	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: echo and Close ordering is implementation defined
+client	autobahn-7.13.1	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: Close code 5000 is rejected with 1002
+client	autobahn-7.13.2	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: Close code 65535 is rejected with 1002
 
 # Client side: gaato/mttp's Client against nginx, Caddy and Apache.
 client	get	*/*/*	pass

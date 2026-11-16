@@ -1,4 +1,237 @@
 ///|
+/// One bounded transport chunk per direction. Partial reads keep the slot
+/// occupied, so a Pong must wait until the peer drains the preceding input.
+priv struct PressureSlot {
+  mut remaining : Int32
+  mut closed : Bool
+  mut changed : &@rt.Signal
+  coordination : &@rt.Coordination
+}
+
+///|
+fn PressureSlot::wake(self : PressureSlot) -> Unit {
+  let changed = self.changed
+  self.changed = self.coordination.signal()
+  changed.notify()
+}
+
+///|
+priv struct PressureConn {
+  inner : @sim.SimConn
+  input : PressureSlot
+  output : PressureSlot
+  piece_bytes : Int32
+}
+
+///|
+impl @rt.Conn for PressureConn with fn read(self, max_len~) {
+  let bytes = self.inner.read(max_len=max_len.min(1))
+  if bytes is Some(bytes) {
+    self.input.remaining -= bytes.length()
+    self.input.wake()
+  }
+  bytes
+}
+
+///|
+impl @rt.Conn for PressureConn with fn write(self, bytes) {
+  for offset = 0; offset < bytes.length(); {
+    while self.output.remaining > 0 && !self.output.closed {
+      self.output.changed.wait()
+    }
+    if self.output.closed {
+      raise @mttp_core.TransportError(
+        kind=Network,
+        phase=Write,
+        detail="closed pressure pipe",
+      )
+    }
+    let end = offset + (bytes.length() - offset).min(self.piece_bytes)
+    self.output.remaining = end - offset
+    self.inner.write(bytes[offset:end].to_owned())
+    continue end
+  }
+}
+
+///|
+impl @rt.Conn for PressureConn with fn close(self) {
+  self.input.closed = true
+  self.output.closed = true
+  self.input.wake()
+  self.output.wake()
+  self.inner.close()
+}
+
+///|
+test "two full backpressured pipes keep reading while both sessions reply to Ping" {
+  @sim.explore(schedule => {
+    let d = @driver.Driver::new(schedule~)
+    let c = @sim.SimCoordination::new(d)
+    let (a, b) = @sim.pair(c)
+    let ab = PressureSlot::{
+      remaining: 0,
+      closed: false,
+      changed: c.signal(),
+      coordination: c,
+    }
+    let ba = PressureSlot::{
+      remaining: 0,
+      closed: false,
+      changed: c.signal(),
+      coordination: c,
+    }
+    let left_conn = PressureConn::{
+      inner: a,
+      input: ba,
+      output: ab,
+      piece_bytes: 64,
+    }
+    let right_conn = PressureConn::{
+      inner: b,
+      input: ab,
+      output: ba,
+      piece_bytes: 64,
+    }
+    let bounds = { ..limits(), send_timeout_ms: 5, }
+    let left = session(d, left_conn, limits=bounds)
+    let right = session(d, right_conn, role=Server, limits=bounds)
+    d.run(() => {
+      @rt.Conn::write(
+        left_conn,
+        packet(Ping, b"left", masked=true) + packet(Pong, b"fill", masked=true),
+      )
+      @rt.Conn::write(
+        right_conn,
+        packet(Ping, b"right") + packet(Pong, b"fill"),
+      )
+      assert_true(ab.remaining > 0 && ba.remaining > 0)
+      let l = d.spawn(() => assert_eq(left.recv(), @ws.Message::Text("right")))
+      let r = d.spawn(() => assert_eq(right.recv(), @ws.Message::Text("left")))
+      // Let both control replies finish and their Pongs be read before
+      // supplying the application messages that end these recv calls.
+      d.sleep(6)
+      assert_eq((a.closes(), b.closes()), (0, 0))
+      assert_eq((ab.remaining, ba.remaining), (0, 0))
+      let ls = d.spawn(() => left.send(Text("left")))
+      let rs = d.spawn(() => right.send(Text("right")))
+      ignore(l.wait())
+      ignore(r.wait())
+      ignore(ls.wait())
+      ignore(rs.wait())
+      assert_eq((a.closes(), b.closes(), d.now()), (0, 0, 6L))
+      left.abort()
+      right.abort()
+    })
+    assert_eq(
+      (a.closes(), b.closes(), d.live_tasks(), d.pending_timers()),
+      (1, 1, 0, 0),
+    )
+  })
+  // Also keep reading once both application messages are ready: each
+  // control write below stalls after every byte, including a partial Pong.
+  @sim.explore(schedule => {
+    let d = @driver.Driver::new(schedule~)
+    let c = @sim.SimCoordination::new(d)
+    let (a, b) = @sim.pair(c)
+    let ab = PressureSlot::{
+      remaining: 0,
+      closed: false,
+      changed: c.signal(),
+      coordination: c,
+    }
+    let ba = PressureSlot::{
+      remaining: 0,
+      closed: false,
+      changed: c.signal(),
+      coordination: c,
+    }
+    let left_conn = PressureConn::{
+      inner: a,
+      input: ba,
+      output: ab,
+      piece_bytes: 1,
+    }
+    let right_conn = PressureConn::{
+      inner: b,
+      input: ab,
+      output: ba,
+      piece_bytes: 1,
+    }
+    let bounds = { ..limits(), send_timeout_ms: 5, }
+    let left = session(
+      d,
+      left_conn,
+      pending=packet(Ping, b"right"),
+      limits=bounds,
+    )
+    let right = session(
+      d,
+      right_conn,
+      role=Server,
+      pending=packet(Ping, b"left", masked=true),
+      limits=bounds,
+    )
+    d.run(() => {
+      let from_left = packet(Text, b"left", masked=true)
+      let from_right = packet(Text, b"right")
+      ab.remaining = from_left.length()
+      ba.remaining = from_right.length()
+      a.write(from_left)
+      b.write(from_right)
+      let l = d.spawn(() => assert_eq(left.recv(), @ws.Message::Text("right")))
+      let r = d.spawn(() => assert_eq(right.recv(), @ws.Message::Text("left")))
+      ignore(l.wait())
+      ignore(r.wait())
+      assert_eq((a.closes(), b.closes(), d.now()), (0, 0, 0L))
+      left.abort()
+      right.abort()
+    })
+    assert_eq(
+      (a.closes(), b.closes(), d.live_tasks(), d.pending_timers()),
+      (1, 1, 0, 0),
+    )
+  })
+}
+
+///|
+test "Pong read-ahead is bounded at 64 KiB and parsing resumes for the next byte" {
+  @sim.explore(schedule => {
+    // Four bytes of unmasked frame head: the first wire packet is exactly
+    // 64 KiB, the second one byte larger. A blocked Pong is released only
+    // by decoding the message, so unbounded read-ahead would deadlock.
+    for size in [65532, 65533, 65536] {
+      let d = @driver.Driver::new(schedule~)
+      let (conn, peer) = controlled(d)
+      let extension = TestExtension::{
+        encode_fn: b => (b, false),
+        decode_fn: (b, _, _) => {
+          conn.release.notify()
+          b
+        },
+      }
+      let s = session(d, conn, extension~, limits={
+        ..limits(),
+        send_timeout_ms: 5,
+      })
+      d.run(() => {
+        peer.write(packet(Ping, b"x"))
+        let receiver = d.spawn(() => {
+          assert_eq(s.recv(), @ws.Message::Binary(Bytes::make(size, b'x')))
+        })
+        conn.entered.wait()
+        peer.write(packet(Binary, Bytes::make(size, b'x')))
+        ignore(receiver.wait())
+        assert_eq(d.now(), 0L)
+        assert_eq(read_packet(peer).1, b"x")
+        s.abort()
+        peer.close()
+      })
+      assert_eq((d.live_tasks(), d.pending_timers()), (0, 0))
+    }
+  })
+}
+
+///|
 /// Suspends its first write after a real one-byte prefix. Close wakes the
 /// blocked write, so deadlines exercise transport cleanup as well as timers.
 priv struct ControlledConn {
@@ -7,6 +240,7 @@ priv struct ControlledConn {
   release : &@rt.Signal
   writes : Array[Bytes]
   mut stalled : Bool
+  mut on_read : (() -> Unit)?
 }
 
 ///|
@@ -20,6 +254,7 @@ fn controlled(d : @driver.Driver) -> (ControlledConn, @sim.SimConn) {
       release: c.signal(),
       writes: [],
       stalled: true,
+      on_read: None,
     },
     peer,
   )
@@ -27,7 +262,187 @@ fn controlled(d : @driver.Driver) -> (ControlledConn, @sim.SimConn) {
 
 ///|
 impl @rt.Conn for ControlledConn with fn read(self, max_len~) {
-  self.inner.read(max_len~)
+  let bytes = self.inner.read(max_len~)
+  if bytes is Some(_) && self.on_read is Some(hook) {
+    self.on_read = None
+    hook()
+  }
+  bytes
+}
+
+///|
+priv struct PongReadFault {
+  inner : ControlledConn
+  failure : @mttp_core.TransportError?
+  mut first : Bool
+}
+
+///|
+impl @rt.Conn for PongReadFault with fn read(self, max_len~) {
+  if self.first {
+    self.first = false
+    return @rt.Conn::read(self.inner, max_len~)
+  }
+  if self.failure is Some(failure) {
+    raise failure
+  }
+  None
+}
+
+///|
+impl @rt.Conn for PongReadFault with fn write(self, bytes) {
+  @rt.Conn::write(self.inner, bytes)
+}
+
+///|
+impl @rt.Conn for PongReadFault with fn close(self) {
+  @rt.Conn::close(self.inner)
+}
+
+///|
+test "Pong read-ahead joins EOF and preserves transport failures" {
+  @sim.explore(schedule => {
+    for
+      failure in [
+        None,
+        Some(
+          @mttp_core.TransportError(
+            kind=Network,
+            phase=Body,
+            detail="read-ahead injection",
+          ),
+        ),
+      ] {
+      let d = @driver.Driver::new(schedule~)
+      let (conn, peer) = controlled(d)
+      let s = session(
+        d,
+        PongReadFault::{ inner: conn, failure, first: true, },
+        limits={ ..limits(), send_timeout_ms: 5, },
+      )
+      d.run(() => {
+        peer.write(packet(Ping, b"x"))
+        let receiver = d.spawn(() => {
+          let seen = try {
+            ignore(s.recv())
+            false
+          } catch {
+            @ws.WsError(kind=Transport(cause), ..) =>
+              failure is Some(expected) && physical_equal(cause, expected)
+            @ws.WsError(kind=Closed({ code: Abnormal, .. }), ..) =>
+              failure is None
+            e => raise e
+          }
+          assert_true(seen)
+        })
+        conn.entered.wait()
+        let _ = d.add_timer(1L, () => conn.release.notify())
+        ignore(receiver.wait())
+        assert_eq(d.now(), 1L)
+        s.abort()
+        peer.close()
+      })
+      assert_eq(
+        (conn.inner.closes(), peer.closes(), d.live_tasks(), d.pending_timers()),
+        (1, 1, 0, 0),
+      )
+    }
+  })
+}
+
+///|
+test "Pong dispatch races a sender and retains prefetched bytes across another Ping" {
+  @sim.explore(schedule => {
+    for sender in [false, true] {
+      let d = @driver.Driver::new(schedule~)
+      let (conn, peer) = controlled(d)
+      let s = session(d, conn)
+      let sends : Array[@driver.Task] = []
+      d.run(() => {
+        if sender {
+          conn.on_read = Some(() => {
+            sends.push(d.spawn(() => s.send(Text("busy"))))
+          })
+        }
+        peer.write(packet(Ping, b"first") + packet(Ping, b"second"))
+        let receiver = d.spawn(() => {
+          assert_eq(s.recv(), @ws.Message::Binary(b"end"))
+        })
+        conn.entered.wait()
+        conn.on_read = Some(() => conn.release.notify())
+        peer.write(packet(Binary, b"end"))
+        ignore(receiver.wait())
+        for send in sends {
+          ignore(send.wait())
+        }
+        assert_eq(d.now(), 0L)
+        assert_true(conn.writes.length() >= 2)
+        s.abort()
+        peer.close()
+      })
+      assert_eq((d.live_tasks(), d.pending_timers()), (0, 0))
+    }
+  })
+  let d = @driver.Driver::new()
+  let (conn, peer) = controlled(d)
+  let s = session(d, conn)
+  d.run(() => {
+    peer.write(
+      packet(Ping, b"x") + packet(Text, b"first") + packet(Binary, b"second"),
+    )
+    let receiver = d.spawn(() => {
+      assert_eq(s.recv(), @ws.Message::Text("first"))
+      assert_eq(s.recv(), @ws.Message::Binary(b"second"))
+    })
+    conn.entered.wait()
+    conn.release.notify()
+    ignore(receiver.wait())
+    s.abort()
+    peer.close()
+  })
+  assert_eq((d.live_tasks(), d.pending_timers()), (0, 0))
+  for release in [false, true] {
+    let d = @driver.Driver::new()
+    let (conn, peer) = controlled(d)
+    let s = session(d, conn, limits={ ..limits(), send_timeout_ms: 5, })
+    d.run(() => {
+      peer.write(packet(Ping, b"x"))
+      let receiver = d.spawn(() => {
+        if release {
+          assert_eq(s.recv(), @ws.Message::Text("first"))
+          assert_eq(s.recv(), @ws.Message::Binary(b"second"))
+        } else {
+          let timed_out = try {
+            ignore(s.recv())
+            false
+          } catch {
+            @ws.WsError(kind=Timeout(ms=5), ..) => true
+            e => raise e
+          }
+          assert_true(timed_out)
+        }
+      })
+      conn.entered.wait()
+      peer.write(packet(Text, b"first") + packet(Binary, b"second"))
+      // The full chunk drives the post-message read-ahead to 64 KiB and
+      // one byte beyond. The short chunk leaves it waiting at expiry,
+      // checking that abort discards input retained by cancellation cleanup.
+      peer.write(
+        packet(Binary, Bytes::make(if release { 65533 } else { 4 }, b'x')),
+      )
+      if release {
+        let _ = d.add_timer(1L, () => conn.release.notify())
+      }
+      ignore(receiver.wait())
+      assert_eq(d.now(), if release { 1L } else { 5L })
+      s.abort()
+      peer.close()
+    })
+    assert_eq(
+      (conn.inner.closes(), peer.closes(), d.live_tasks(), d.pending_timers()),
+      (1, 1, 0, 0),
+    )
+  }
 }
 
 ///|

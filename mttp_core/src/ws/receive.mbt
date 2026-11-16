@@ -78,14 +78,8 @@ async fn ConnSession::on_end(self : ConnSession) -> Unit raise WsError {
     }
     Ping =>
       if self.closing.data_allowed() {
-        self.pending_pong = Some(payload)
-        self.notify()
-        // Answer promptly when the send direction is free. Only a blocked
-        // sender needs coalescing; draining an entire input batch first lost
-        // all but its last Ping even on an uncongested connection (Autobahn 2.10).
-        if self.lock.queue.is_empty() {
-          self.flush_pong()
-        }
+        self.pong_drain = true
+        self.offer_pong(payload)
       }
     Pong => ()
     _ =>
@@ -128,30 +122,112 @@ async fn ConnSession::on_end(self : ConnSession) -> Unit raise WsError {
 /// discards the waiter, not partial parser state or a completed message.
 async fn ConnSession::read_message(self : ConnSession) -> Unit raise WsError {
   while self.ready is None && !(self.closing.phase is Closed) {
-    let event = self.parser.next() catch {
-      @frame.FrameError(kind=TooLarge(limit~), ..) =>
-        raise WsError(kind=TooLarge(limit~), detail="frame limit")
-      _ => raise protocol("invalid WebSocket frame")
-    }
+    let event = self.next_event()
     match event {
       Some(Head(head)) => self.on_head(head)
       Some(Payload(bytes)) => self.on_payload(bytes)
       Some(End) => self.on_end()
+      None => self.pull_input()
+    }
+  }
+  // A small/one-byte transport may still be writing the Pong after the
+  // message became ready. Both peers must keep draining controls while the
+  // protected writes finish, rather than both joining blocked writers.
+  if self.ready is Some(_) && self.pong_drain {
+    self.drain_pongs()
+  }
+}
+
+///|
+async fn ConnSession::pull_input(self : ConnSession) -> Unit raise WsError {
+  let bytes = self.read_input() catch {
+    cause =>
+      raise WsError(kind=Transport(cause), detail="WebSocket read failed")
+  }
+  guard bytes is Some(bytes) else {
+    self.abort()
+    raise self.error()
+  }
+  if bytes.is_empty() {
+    raise protocol("empty connection read")
+  }
+  self.feed_input(bytes)
+  self.life = self.life.received(self.clock.now_unix_ms())
+  self.notify()
+}
+
+///|
+fn ConnSession::feed_input(self : ConnSession, bytes : Bytes) -> Unit {
+  self.buffered_wire += bytes.length()
+  self.parser.feed(bytes)
+}
+
+///|
+/// Count raw bytes not yet reported as complete headers/payloads. Partial
+/// headers remain counted, so finishing our Pong cannot abandon the peer's
+/// half-written control frame. A deferred data head is delivered only once.
+fn ConnSession::next_event(self : ConnSession) -> @frame.Event? raise WsError {
+  if self.deferred_head is Some(head) {
+    self.deferred_head = None
+    return Some(Head(head))
+  }
+  let event = self.parser.next() catch {
+    @frame.FrameError(kind=TooLarge(limit~), ..) =>
+      raise WsError(kind=TooLarge(limit~), detail="frame limit")
+    _ => raise protocol("invalid WebSocket frame")
+  }
+  match event {
+    Some(Head(head)) => {
+      let extended = if head.length < 126L {
+        0
+      } else if head.length <= 65535L {
+        2
+      } else {
+        8
+      }
+      self.buffered_wire -= 2 + extended + (if head.masked { 4 } else { 0 })
+    }
+    Some(Payload(bytes)) => self.buffered_wire -= bytes.length()
+    _ => ()
+  }
+  event
+}
+
+///|
+/// Keep input live while joining our protected Pong, and finish any peer
+/// control frame already started: its write may still be waiting on us even
+/// after our own write ended. Leave the next data/Close head for the next
+/// receive rather than overwrite the already committed application message.
+async fn ConnSession::drain_pongs(self : ConnSession) -> Unit raise WsError {
+  while !(self.closing.phase is Closed) &&
+        (
+          self.pending_pong is Some(_) ||
+          !(self.pong_progress is Idle) ||
+          self.head is Some(_) ||
+          self.buffered_wire > 0
+        ) {
+    match self.next_event() {
+      Some(Head(head)) => {
+        if !(head.opcode is (Ping | Pong)) {
+          self.deferred_head = Some(head)
+          if self.pending_pong is Some(_) || !(self.pong_progress is Idle) {
+            self.read_during_pong(finish=true)
+          }
+          return
+        }
+        self.on_head(head)
+      }
+      Some(Payload(bytes)) => self.on_payload(bytes)
+      Some(End) => self.on_end()
       None => {
-        let bytes = self.conn.read(max_len=65536) catch {
-          cause =>
-            raise WsError(kind=Transport(cause), detail="WebSocket read failed")
+        if self.pong_read_ahead.is_empty() &&
+          (self.pending_pong is Some(_) || !(self.pong_progress is Idle)) {
+          self.read_during_pong()
+          if self.pong_read_ahead.is_empty() {
+            continue
+          }
         }
-        guard bytes is Some(bytes) else {
-          self.abort()
-          raise self.error()
-        }
-        if bytes.is_empty() {
-          raise protocol("empty connection read")
-        }
-        self.parser.feed(bytes)
-        self.life = self.life.received(self.clock.now_unix_ms())
-        self.notify()
+        self.pull_input()
       }
     }
   }
@@ -200,6 +276,7 @@ impl Session for ConnSession with fn recv(self) {
   self.flush_pong()
   if self.ready is Some(message) {
     self.ready = None
+    self.pong_drain = false
     return message
   }
   raise self.error()

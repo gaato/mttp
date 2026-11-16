@@ -89,6 +89,10 @@ never does.
 
 ### Fixed
 
+- Autobahn server/client known cases now require the exact behavior and
+  closing verdicts. INFORMATIONAL expectations no longer hide FAILED or
+  missing verdicts; adapter/runner regressions run in static and full gates.
+
 - A POST over TLS a few seconds after the server closed the idle
   connection no longer fails in phase Write with `protocol is shutdown`
   (seen in the interop suite with nginx and Caddy). A TLS

@@ -2,6 +2,17 @@
 extend ConnSession with Session::{abort}
 
 ///|
+/// Starting/Settling involve scheduler bookkeeping only. Queued and Writing
+/// may need peer input, so the parser must never wait for their completion.
+priv enum PongProgress {
+  Idle
+  Starting
+  Queued
+  Writing
+  Settling
+}
+
+///|
 priv struct ConnSession {
   conn : &@rt.Conn
   role : @frame.Role
@@ -29,6 +40,11 @@ priv struct ConnSession {
   mut reading : Bool
   mut close_started : Bool
   mut pending_pong : Bytes?
+  mut pong_progress : PongProgress
+  mut pong_read_ahead : Bytes
+  mut buffered_wire : Int32
+  mut deferred_head : @frame.FrameHead?
+  mut pong_drain : Bool
   mut life : @control.WsLife
   mut changed : &@rt.Signal
   closed : &@rt.Signal
@@ -82,6 +98,11 @@ pub fn session_over_conn(
     reading: false,
     close_started: false,
     pending_pong: None,
+    pong_progress: Idle,
+    pong_read_ahead: b"",
+    buffered_wire: pending.length(),
+    deferred_head: None,
+    pong_drain: false,
     life: Alive(clock.now_unix_ms()),
     changed: coordination.signal(),
     closed: coordination.signal(),
@@ -99,6 +120,10 @@ fn ConnSession::notify(self : ConnSession) -> Unit {
 fn ConnSession::drop(self : ConnSession) -> Unit {
   self.closing = self.closing.finish()
   self.pending_pong = None
+  self.pong_read_ahead = b""
+  self.buffered_wire = 0
+  self.deferred_head = None
+  self.pong_drain = false
   self.ready = None
   self.buffer.clear()
   self.control_buffer.clear()
@@ -292,14 +317,20 @@ async fn ConnSession::write_pong(self : ConnSession) -> Unit raise WsError {
   }
   let ticket = self.lock.enqueue()
   defer self.lock.release(ticket)
+  self.pong_progress = if ticket.granted { Starting } else { Queued }
+  self.notify()
   let mut failure : WsError? = None
   let completed = self.timer.within(self.limits.send_timeout_ms, () => {
     ticket.signal.wait()
     if self.closing.data_allowed() && self.pending_pong is Some(payload) {
       self.pending_pong = None
+      self.pong_progress = Writing
+      self.notify()
       self.write_frame(Pong, payload) catch {
         error => failure = Some(error)
       }
+      self.pong_progress = Settling
+      self.notify()
     }
   })
   if !completed {
@@ -362,8 +393,131 @@ async fn ConnSession::control(
 ///|
 async fn ConnSession::flush_pong(self : ConnSession) -> Unit raise WsError {
   if self.pending_pong is Some(_) && self.closing.data_allowed() {
+    self.pong_progress = Starting
+    defer {
+      self.pong_progress = Idle
+      self.notify()
+    }
     self.control(Pong, b"")
   }
+}
+
+///|
+/// Give the independent writer a turn for an uncongested Ping. Never wait
+/// for a queued or blocked write: it may depend on this parser reading the
+/// peer's bytes. Once wire I/O has finished, join its bookkeeping before the
+/// next Ping, so a free writer answers every Ping rather than coalescing a
+/// whole batch just because its Timer/Coordination children have not unwound.
+async fn ConnSession::offer_pong(
+  self : ConnSession,
+  payload : Bytes,
+) -> Unit raise WsError {
+  let busy = self.pong_progress is (Queued | Writing) ||
+    !self.lock.queue.is_empty()
+  self.pending_pong = Some(payload)
+  self.notify()
+  if busy {
+    return
+  }
+  while self.closing.data_allowed() {
+    let changed = self.changed
+    match self.pong_progress {
+      Queued => return
+      Writing => {
+        self.read_during_pong()
+        return
+      }
+      Idle if self.pending_pong is None || !self.lock.queue.is_empty() => return
+      Idle | Starting | Settling => changed.wait()
+    }
+  }
+}
+
+///|
+/// Race a bounded read against the independent Pong finishing. A free
+/// socket writer may await its I/O completion even when it is writable: do
+/// not parse the rest of the current Ping batch before that completion.
+/// If input is available, read it and resume parsing immediately, so blocked
+/// peers drain each other's pipes and further Pings coalesce to the latest.
+/// After a message is ready, finish may drain up to the same 64 KiB bound
+/// past a deferred data head. Only one task ever owns the input direction.
+async fn ConnSession::read_during_pong(
+  self : ConnSession,
+  finish~ : Bool = false,
+) -> Unit raise WsError {
+  if !finish && !self.pong_read_ahead.is_empty() {
+    return
+  }
+  let ahead = Buffer()
+  ahead.write_bytes(self.pong_read_ahead)
+  self.pong_read_ahead = b""
+  defer {
+    self.pong_read_ahead = if self.closing.phase is Closed {
+      b""
+    } else {
+      ahead.to_bytes()
+    }
+  }
+  let completed = @mttp_core.TransportError(
+    kind=Closed,
+    phase=Body,
+    detail="Pong completed",
+  )
+  self.coordination.supervise(
+    primary=() => {
+      for ;; {
+        if ahead.length() >= 65536 {
+          return
+        }
+        match self.conn.read(max_len=65536 - ahead.length()) {
+          Some(bytes) => {
+            ahead.write_bytes(bytes)
+            self.life = self.life.received(self.clock.now_unix_ms())
+            self.notify()
+          }
+          None => {
+            // EOF is permanent: there is no input to unblock either writer.
+            // Let an already started control finish before parsing buffered data.
+            while (
+                    self.pending_pong is Some(_) ||
+                    !(self.pong_progress is Idle)
+                  ) &&
+                  self.closing.data_allowed() {
+              self.changed.wait()
+            }
+            return
+          }
+        }
+        if !finish {
+          return
+        }
+      }
+    },
+    monitor=() => {
+      while (self.pending_pong is Some(_) || !(self.pong_progress is Idle)) &&
+            self.closing.data_allowed() {
+        self.changed.wait()
+      }
+      raise completed
+    },
+  ) catch {
+    cause =>
+      if !physical_equal(cause, completed) {
+        raise WsError(kind=Transport(cause), detail="Pong read-ahead failed")
+      }
+  }
+}
+
+///|
+async fn ConnSession::read_input(
+  self : ConnSession,
+) -> Bytes? raise @mttp_core.TransportError {
+  if !self.pong_read_ahead.is_empty() {
+    let bytes = self.pong_read_ahead
+    self.pong_read_ahead = b""
+    return Some(bytes)
+  }
+  self.conn.read(max_len=65536)
 }
 
 ///|

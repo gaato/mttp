@@ -175,10 +175,10 @@ gaato/mttp_digest	gaato/mttp_digest	js	28
 gaato/mttp_digest	gaato/mttp_digest	native	28
 gaato/mttp_digest	gaato/mttp_digest	wasm	28
 gaato/mttp_digest	gaato/mttp_digest	wasm-gc	28
-gaato/mttp_core	gaato/mttp_core/ws	js	48
-gaato/mttp_core	gaato/mttp_core/ws	native	48
-gaato/mttp_core	gaato/mttp_core/ws	wasm	48
-gaato/mttp_core	gaato/mttp_core/ws	wasm-gc	48
+gaato/mttp_core	gaato/mttp_core/ws	js	52
+gaato/mttp_core	gaato/mttp_core/ws	native	52
+gaato/mttp_core	gaato/mttp_core/ws	wasm	52
+gaato/mttp_core	gaato/mttp_core/ws	wasm-gc	52
 gaato/mttp-interop	gaato/mttp-interop/openapi_server	native	0
 gaato/mttp_core	gaato/mttp_core/ws/handshake	js	19
 gaato/mttp_core	gaato/mttp_core/ws/handshake	native	19

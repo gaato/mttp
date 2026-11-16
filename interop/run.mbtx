@@ -151,7 +151,13 @@ async fn read_rows() -> Array[Row] {
       raise RunError("interop/cases.tsv: malformed row: \{line}")
     }
     let note = rest.join(" ")
-    guard expect is ("pass" | "known" | "n/a") else {
+    let exact = expect.strip_prefix("known:")
+    guard expect is ("pass" | "known" | "n/a") ||
+      (
+        exact is Some(pair) &&
+        pair.split("/").count() == 2 &&
+        pair.split("/").all(v => v is ("OK" | "INFORMATIONAL" | "NON-STRICT"))
+      ) else {
       raise RunError("interop/cases.tsv: unknown expectation: \{line}")
     }
     if expect != "pass" && note.is_empty() {
@@ -252,19 +258,29 @@ fn Tally::case(
   self : Tally,
   name : String,
   row : Row,
-  result : (Bool, String)?,
+  result : (String, String)?,
   problem : String,
+  quiet~ : Bool = false,
 ) -> Unit {
   let (verdict, detail) = match result {
     None => ("FAIL", "no result: \{problem}")
-    Some((true, detail)) if row.expect == "pass" => ("PASS", detail)
-    Some((false, detail)) if row.expect == "pass" => ("FAIL", detail)
-    Some((false, detail)) => ("KNOWN", "\{detail} [\{row.note}]")
-    Some((true, detail)) =>
+    Some(("ok", detail)) if row.expect == "pass" => ("PASS", detail)
+    Some((actual, detail)) if row.expect.has_prefix("known:") => {
+      let expected = row.expect["known:".length():].to_owned()
+      if actual == expected {
+        ("KNOWN", "\{detail} [\{row.note}]")
+      } else {
+        ("FAIL", "\{detail} [expected \{expected}, got \{actual}]")
+      }
+    }
+    Some(("fail", detail)) if row.expect == "known" && !autobahn_case(row.id) =>
+      ("KNOWN", "\{detail} [\{row.note}]")
+    Some(("ok", detail)) =>
       (
         "FAIL",
         "\{detail} [passes, though interop/cases.tsv records a known quirk: \{row.note}]",
       )
+    Some((_, detail)) => ("FAIL", detail)
   }
   match verdict {
     "PASS" => self.pass += 1
@@ -274,7 +290,9 @@ fn Tally::case(
       self.failures.push(name)
     }
   }
-  println("\{verdict} \{name}: \{detail}")
+  if !quiet {
+    println("\{verdict} \{name}: \{detail}")
+  }
 }
 
 ///|
@@ -291,8 +309,9 @@ fn Tally::report(
   cases : Array[Row],
   output : String,
   problem : String,
+  quiet~ : Bool = false,
 ) -> Unit {
-  let results : Map[String, (Bool, String)] = Map([])
+  let results : Map[String, (String, String)] = Map([])
   let order : Array[String] = []
   for line in output.split("\n") {
     guard line.has_prefix("CASE ") else { continue }
@@ -304,13 +323,22 @@ fn Tally::report(
     if !results.contains(id) {
       order.push(id)
     }
-    results[id] = (verdict == "ok", detail.join(" "))
+    results[id] = (
+      reported_verdict(id, verdict, detail.to_owned()),
+      detail.join(" "),
+    )
   }
   let asked : Map[String, Bool] = Map([])
   for row in cases {
     if !row.is_prefix() {
       asked[row.id] = true
-      self.case("\{side} \{run} \{row.id}", row, results.get(row.id), problem)
+      self.case(
+        "\{side} \{run} \{row.id}",
+        row,
+        results.get(row.id),
+        problem,
+        quiet~,
+      )
     }
   }
   let covered : Map[String, Bool] = Map([])
@@ -327,21 +355,56 @@ fn Tally::report(
             covered[c.id] = true
           }
         }
-        self.case(name, row, results.get(id), problem)
+        self.case(name, row, results.get(id), problem, quiet~)
       }
       _ => {
         self.fail += 1
         self.failures.push(name)
-        println(
-          "FAIL \{name}: reported, but interop/cases.tsv has no row for it",
-        )
+        if !quiet {
+          println(
+            "FAIL \{name}: reported, but interop/cases.tsv has no row for it",
+          )
+        }
       }
     }
   }
   for row in cases {
     if row.is_prefix() && !covered.contains(row.id) {
-      self.case("\{side} \{run} \{row.id}", row, None, problem)
+      self.case("\{side} \{run} \{row.id}", row, None, problem, quiet~)
     }
+  }
+}
+
+///|
+fn autobahn_case(id : String) -> Bool {
+  (id.has_prefix("ab-") && id != "ab-run") || id.has_prefix("autobahn-")
+}
+
+///|
+/// Preserve both verdicts, including from the client's legacy ok/fail adapter.
+/// Missing, duplicate or inconsistent fields are never a known result.
+fn reported_verdict(
+  id : String,
+  marker : String,
+  detail : Array[String],
+) -> String {
+  if !autobahn_case(id) {
+    return marker
+  }
+  let behavior = detail.filter(s => s.has_prefix("behavior="))
+  let close = detail.filter(s => s.has_prefix("close="))
+  guard behavior is [behavior] && close is [close] else {
+    return "invalid-verdict"
+  }
+  let pair = behavior["behavior=".length():].to_owned() +
+    "/" +
+    close["close=".length():].to_owned()
+  if pair == "OK/OK" && marker == "ok" {
+    "ok"
+  } else if pair != "OK/OK" && (marker == "fail" || marker == pair) {
+    pair
+  } else {
+    "invalid-verdict"
   }
 }
 
@@ -1197,6 +1260,10 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
 async fn main {
   let args = @env.args()
   let filters = args[1:].to_owned().filter(a => a != "--")
+  if filters == ["--self-test"] {
+    self_test_autobahn()
+    return
+  }
   let status = main_run(filters) catch {
     RunError(message) => {
       println("interop: \{message}")
@@ -1208,6 +1275,98 @@ async fn main {
     }
   }
   @env.exit(status)
+}
+
+///|
+/// A known Autobahn case must never hide protocol failures or absent verdicts,
+/// on either side of the transport. Exercise the real reporting path.
+async fn self_test_autobahn() -> Unit {
+  let all_rows = read_rows()
+  for side in ["server", "client"] {
+    for number in ["7.1.6", "7.13.1", "7.13.2"] {
+      let id = if side == "server" {
+        "ab-\{number}"
+      } else {
+        "autobahn-\{number}"
+      }
+      let rows = rows_of(
+        all_rows,
+        side,
+        if side == "server" {
+          "autobahn/direct"
+        } else {
+          "native/autobahn"
+        },
+      )
+      let row = decide(rows, id).unwrap()
+      for
+        verdicts in [
+          "behavior=FAILED close=INFORMATIONAL", "behavior=INFORMATIONAL close=FAILED",
+          "behavior=missing close=INFORMATIONAL", "behavior=INFORMATIONAL close=missing",
+          "behavior=NON-STRICT close=INFORMATIONAL", "behavior=INFORMATIONAL", "close=INFORMATIONAL",
+          "behavior=INFORMATIONAL close=INFORMATIONAL close=FAILED",
+        ] {
+        let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+        tally.report(
+          side,
+          "autobahn",
+          [row],
+          [row],
+          "CASE \{id} fail \{verdicts}",
+          "",
+          quiet=true,
+        )
+        assert_eq(tally.fail, 1, msg="\{side} accepted \{verdicts}")
+        assert_eq(tally.known, 0)
+      }
+      for marker in ["fail", "INFORMATIONAL/INFORMATIONAL"] {
+        let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+        tally.report(
+          side,
+          "autobahn",
+          [row],
+          [row],
+          "CASE \{id} \{marker} behavior=INFORMATIONAL close=INFORMATIONAL",
+          "",
+          quiet=true,
+        )
+        assert_eq((tally.known, tally.fail), (1, 0))
+      }
+    }
+  }
+  let scratch = @env.get_env_var("TMPDIR").unwrap_or(work)
+  make_dir(scratch)
+  let fixture = "\{scratch}/mttp-autobahn-verdict-fixture.json"
+  defer @fs.remove(fixture)
+  for agent in ["mttp", "mttp-client"] {
+    let prefix = if agent == "mttp" { "ab" } else { "autobahn" }
+    for
+      (fields, pair) in [
+        (
+          "\"behavior\":\"INFORMATIONAL\",\"behaviorClose\":\"INFORMATIONAL\"", "INFORMATIONAL/INFORMATIONAL",
+        ),
+        (
+          "\"behavior\":\"FAILED\",\"behaviorClose\":\"INFORMATIONAL\"", "FAILED/INFORMATIONAL",
+        ),
+        (
+          "\"behavior\":\"INFORMATIONAL\",\"behaviorClose\":\"FAILED\"", "INFORMATIONAL/FAILED",
+        ),
+        ("\"behavior\":\"INFORMATIONAL\"", "INFORMATIONAL/missing"),
+        ("\"behaviorClose\":\"INFORMATIONAL\"", "missing/INFORMATIONAL"),
+        ("", "missing/missing"),
+      ] {
+      @fs.write_text(fixture, "{\"\{agent}\":{\"7.1.6\":{\{fields}}}}")
+      let (status, output, problem) = capture("moon", [
+        "run", "interop/clients/autobahn/adapter.mbtx", "--", fixture, agent,
+      ])
+      assert_eq(status, 0, msg=problem)
+      assert_true(
+        output.contains("CASE \{prefix}-7.1.6 \{pair} behavior="),
+        msg=output,
+      )
+    }
+  }
+  println("Autobahn verdict self-tests: OK")
 }
 
 ///|

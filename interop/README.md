@@ -7,7 +7,13 @@ reports under `_build/interop/autobahn`, and adapts every result to CASE lines.
 Sections 1–7 and 10 run normally; section 9 raises the echo server's frame and
 message limits to 128 MiB. Sections 12–13 are n/a until permessage-deflate.
 Only exact documented INFORMATIONAL/NON-STRICT cases belong in known rows;
-all other non-OK results fail. This uses the upstream
+all other non-OK results fail.
+Autobahn rows use `known:INFORMATIONAL/INFORMATIONAL` to require both exact
+verdicts; FAILED, missing, duplicate or different verdicts fail the run on
+either side. `moon run interop/run.mbtx -- --self-test` exercises the adapters
+and these expectations without containers and also runs in static/full gates.
+
+This uses the upstream
 [Autobahn fuzzingclient interface](https://github.com/crossbario/autobahn-testsuite)
 and the [RFC 6455 closing rules](https://www.rfc-editor.org/rfc/rfc6455.html).
 
