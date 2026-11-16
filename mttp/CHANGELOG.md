@@ -32,6 +32,19 @@ never does.
 
 ### Added
 
+- RFC 9842 compression dictionaries on the server:
+  `dictionary_compress(handler, dictionaries, secure~)` codes a response
+  with the dictionary a request's Available-Dictionary names when it
+  weighs `dcz` or `dcb` at least as much as identity and every other
+  coding, it came over a secure context (`secure`, which the caller
+  supplies: a request's URL cannot tell, as a client may write an https
+  target over cleartext), and section 9.3.3's Sec-Fetch and CORS check
+  passes (`dictionary_allowed`). It adds `Vary: Accept-Encoding,
+  Available-Dictionary`, and the check's Sec-Fetch-Site, Sec-Fetch-Mode
+  and Origin when it decided, and compresses as `compress` otherwise.
+  `use_as_dictionary` marks a response as a dictionary; `encode_body` takes
+  a dictionary.
+
 - RFC 9842 compression dictionaries on the client: `Decompress::new` and
   `AsyncBackend::new` take a `@dictionary.DictionaryStore` (and a
   partition). Requests a stored dictionary matches advertise it and accept

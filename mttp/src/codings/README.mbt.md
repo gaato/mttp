@@ -67,10 +67,56 @@ keeps is not held. `partition` keeps the dictionaries of one user, site or
 profile apart, as section 10 asks. The store hashes with the SHA-256 it was
 given; `ServerDictionary::new` likewise.
 
-On the server side, `ContentEncoder::new(Dcb, dictionary=d)` and `Dcz`
-write RFC 9842's header, then a stream compressed with `d`, a
-`ServerDictionary` whose Brotli and Zstandard forms are built once and
-shared.
+On the server side, `dictionary_compress(handler, dictionaries, secure~)` is
+`compress` with RFC 9842's dictionaries: a request whose
+`Available-Dictionary` names one of `dictionaries` (`ServerDictionary`, whose
+Brotli and Zstandard forms are built once and shared) and whose
+`Accept-Encoding` takes `dcz` or `dcb` at least as much as identity and every
+other coding gets the response coded with it, `dcz` at equal weights. It
+must have come over a secure context, as section 8 requires, which
+`secure` tells: the request's URL cannot, since a client may write an
+`https` target on a cleartext connection. Pass `_ => true` for a server that
+listens only over TLS, or read a header a trusted TLS proxy sets. Section 9.3.3's check (`dictionary_allowed`: no Sec-Fetch-Site,
+same origin, a navigation, or a CORS response that allows the request's
+Origin) must pass as well. Every response it may code varies on
+`Accept-Encoding` and `Available-Dictionary`, as section 6.2 asks of a
+cacheable one, and one the check decided also on `Sec-Fetch-Site`,
+`Sec-Fetch-Mode` and `Origin`, so a cache cannot hand it to a request the
+check would refuse. Other requests are compressed as `compress` does. `use_as_dictionary(response,
+match_~, match_dest?, id?)` marks a response as a dictionary; give it a
+Cache-Control with a lifetime, since a client keeps one only while it is
+fresh or stale within its stale-while-revalidate window.
+`ContentEncoder::new(Dcb, dictionary=d)` and `Dcz`, and
+`encode_body(body, coding, dictionary=d)`, write the coded stream itself.
+
+```mbt check
+///|
+test "serve a dictionary, then responses coded with it" {
+  // A stand-in for SHA-256; use a real one, such as moonbitlang/x's.
+  let sha256 = (data : BytesView) => Bytes::make(32, data.length().to_byte())
+  let dictionary = @codings.ServerDictionary::new(
+    b"the shared bytes of every version",
+    sha256~,
+    id="v1",
+  )
+  let app : @mttp_core.Handler = _ => @mttp_core.Response::new(200)
+  // This server listens only over TLS.
+  let _served : @mttp_core.Handler = @codings.dictionary_compress(
+    app,
+    [dictionary],
+    secure=_ => true,
+  )
+  let marked = @codings.use_as_dictionary(
+    @mttp_core.Response::new(200),
+    match_="/app/*",
+    id="v1",
+  )
+  assert_eq(
+    marked.headers.get("use-as-dictionary"),
+    Some("match=\"/app/*\", id=\"v1\""),
+  )
+}
+```
 
 `compress(handler, min_bytes=1024)` negotiates gzip, deflate, Brotli or zstd
 and returns a Handler. At equal weights it prefers them in that order, so a

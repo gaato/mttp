@@ -44,8 +44,16 @@ impl @mttp_core.BodyStream for EncodedBody with fn close(self) {
 pub fn encode_body(
   body : @mttp_core.Body,
   coding : Coding,
+  dictionary? : ServerDictionary,
 ) -> @mttp_core.Body raise @mttp_core.TransportError {
-  let encoder = ContentEncoder::new(coding)
+  if coding is (Dcb | Dcz) && dictionary is None {
+    raise @mttp_core.TransportError(
+      kind=Invalid,
+      phase=Body,
+      detail="\{coding.name()} needs a dictionary",
+    )
+  }
+  let encoder = ContentEncoder::new(coding, dictionary?)
   let (read, close_) = body_source(body)
   @mttp_core.Body::Stream(
     @mttp_core.StreamBody::new(EncodedBody::{

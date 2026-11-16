@@ -2,6 +2,7 @@ import {
   "gaato/mttp_core",
   "gaato/mttp_core/rt",
   "gaato/mttp_core/dictionary",
+  "gaato/mttp_core/sf",
   "gaato/codec_bytes",
   "gaato/deflate",
   "gaato/deflate/gzip",

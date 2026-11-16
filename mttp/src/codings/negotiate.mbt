@@ -30,14 +30,15 @@ pub fn negotiate_encoding(
 }
 
 ///|
-/// Keep identity's acceptability alongside the preferred coding so a size
-/// threshold cannot select an explicitly forbidden identity representation.
-fn choose_encoding(
+/// The weight Accept-Encoding gives gzip, deflate, Brotli, identity, `*`
+/// and zstd, in that order, `None` for a name it does not list; `None` for
+/// no Accept-Encoding at all. Repeated names keep their lowest weight.
+fn encoding_weights(
   headers : @mttp_core.Headers,
-) -> (EncodingChoice, Bool) raise @mttp_core.TransportError {
+) -> FixedArray[Int32?]? raise @mttp_core.TransportError {
   let fields = headers.get_all("accept-encoding")
   if fields.is_empty() {
-    return (Identity, true)
+    return None
   }
   let weights : FixedArray[Int32?] = FixedArray::make(6, None)
   let mut remaining = 16384
@@ -85,6 +86,18 @@ fn choose_encoding(
         weights[index] = Some(weights[index].unwrap_or(weight).min(weight))
       }
     }
+  }
+  Some(weights)
+}
+
+///|
+/// Keep identity's acceptability alongside the preferred coding so a size
+/// threshold cannot select an explicitly forbidden identity representation.
+fn choose_encoding(
+  headers : @mttp_core.Headers,
+) -> (EncodingChoice, Bool) raise @mttp_core.TransportError {
+  guard encoding_weights(headers) is Some(weights) else {
+    return (Identity, true)
   }
   let wildcard = weights[4].unwrap_or(0)
   let identity_ok = weights[3] != Some(0) &&
