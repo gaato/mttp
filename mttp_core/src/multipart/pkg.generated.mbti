@@ -22,6 +22,10 @@ pub fn join_segments(Array[Bytes]) -> Bytes
 
 pub fn make_boundary(() -> Double) -> String
 
+pub fn parse(Bytes, String, max_parts? : Int32, max_header_bytes? : Int32, max_total_bytes? : Int32, max_part_bytes? : Int32, max_buffer_bytes? : Int32) -> Array[Part] raise @mttp_core.TransportError
+
+pub fn parse_boundary(String) -> String raise @mttp_core.TransportError
+
 // Errors
 #derive(@debug.Debug)
 pub(all) suberror MultipartError {
@@ -33,6 +37,13 @@ pub(all) suberror MultipartError {
 pub fn MultipartError::to_repr(Self) -> @debug.Repr
 
 // Types and methods
+pub struct MultipartReader {
+  // private fields
+}
+pub fn MultipartReader::close(Self) -> Unit
+pub fn MultipartReader::new(&@mttp_core.BodyStream, String, max_parts? : Int32, max_header_bytes? : Int32, max_total_bytes? : Int32, max_buffer_bytes? : Int32) -> Self raise @mttp_core.TransportError
+pub async fn MultipartReader::next_part(Self) -> ReadPart? raise @mttp_core.TransportError
+
 #derive(Eq, @debug.Debug)
 pub(all) struct Part {
   name : String
@@ -47,6 +58,20 @@ pub fn Part::json(String, @json.Json) -> Self
 pub fn Part::not_equal(Self, Self) -> Bool
 pub fn Part::text(String, String) -> Self
 pub fn Part::to_repr(Self) -> @debug.Repr
+
+#derive(@debug.Debug)
+pub(all) struct PartHead {
+  name : String
+  filename : String?
+  content_type : String?
+  headers : @mttp_core.Headers
+}
+pub fn PartHead::to_repr(Self) -> @debug.Repr
+
+pub(all) struct ReadPart {
+  head : PartHead
+  body : &@mttp_core.BodyStream
+}
 
 // Type aliases
 

@@ -401,3 +401,31 @@ independent.
 `query_list` embeds its item schema through `Schema.reference`, preserving
 named children, reachable definitions and definition problems for the shared
 definition checker.
+
+Multipart request inputs use `multipart_body(codec)`. Declare named typed
+fields with `multipart_field(name, BodyCodec)`, files with `multipart_file`,
+and combine codecs using `MultipartCodec::pair`; `optional` allows omitted
+fields and `map` builds application types. `MultipartCodec::new` supports
+custom forms. Its encoder must produce valid part metadata, as body codecs
+must encode every supplied value. Unknown names are ignored; duplicate
+declared names fail. Pair decoding collects both field failures.
+
+The Router buffers under its request ceiling before synchronous validation;
+file values expose the bounded bytes as a `ReadPart` with a `BodyStream`.
+For live uploads, use `stream_body(media_type="multipart/form-data")` and
+construct a `MultipartReader` over the handler's source. Typed client encoding
+uses a fresh random boundary and transfers file streams once. Framing and
+field failures use problem+json; bound overflows become 413. OpenAPI projects
+an object schema and each declared content type in media-type `encoding`.
+
+```mbt check
+///|
+test "declare a typed multipart input" {
+  let codec = @endpoint.MultipartCodec::pair(
+    @endpoint.multipart_field("title", @schema.text_body),
+    @endpoint.multipart_field("count", @schema.jint.body()),
+  )
+  let input = @endpoint.multipart_body(codec, max_parts=8, max_part_bytes=1024)
+  assert_eq(input.atoms()[0].name, "body")
+}
+```

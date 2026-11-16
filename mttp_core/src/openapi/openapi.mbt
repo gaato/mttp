@@ -100,6 +100,7 @@ pub fn to_openapi(
                   @endpoint.media_type_token(media_type),
                   @apispec.MediaTypeObject::new(
                     schema=atom.schema.reference(schemas),
+                    encoding?=multipart_encoding(media_type, atom.schema.json),
                   ),
                 ),
               ]),

@@ -44,3 +44,25 @@ fn add_parameter(
     ),
   )
 }
+
+///|
+// Content types are declared beside each multipart property's schema so
+// server validation and OpenAPI's per-part encoding share one definition.
+fn multipart_encoding(media_type : String, schema : Json) -> Map[String, Json]? {
+  if @endpoint.media_type_token(media_type) != "multipart/form-data" {
+    return None
+  }
+  let encoding : Map[String, Json] = Map([])
+  if schema is { "properties": Object(properties), .. } {
+    for name, property in properties {
+      if property is { "contentMediaType": String(content_type), .. } {
+        encoding[name] = { "contentType": content_type }
+      }
+    }
+  }
+  if encoding.is_empty() {
+    None
+  } else {
+    Some(encoding)
+  }
+}

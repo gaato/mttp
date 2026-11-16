@@ -224,6 +224,7 @@ fn records() -> Array[(String, Array[Field])] {
       "MediaTypeObject",
       [
         optional("schema", "Json"),
+        optional("encoding", "Map[String, Json]"),
         // 3.2: the schema of each item of a sequential media type such as
         // text/event-stream; a 3.1 document carries it as x-oai-itemSchema.
         optional("item_schema", "Json", wire="itemSchema"),

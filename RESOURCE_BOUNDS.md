@@ -231,3 +231,13 @@ its connection, up to `max_connections`; with the request body unread, the
 engine reads ahead at most 64 KiB, and `disconnect_test.mbt`: "a full unread
 body read ahead stops at 64 KiB and the handler deadline cancels it" pins
 what a configured deadline then does.
+
+## Multipart reader and buffered endpoint input
+
+| Structure | Bound | Past-bound test |
+|---|---|---|
+| `mttp_core/multipart` received part count | 256 by default, configurable `max_parts`; zero permits only an empty multipart | `mttp_core/src/multipart/reader_test.mbt`: "multipart exceeds every configured resource bound" |
+| `mttp_core/multipart` header block per part | 16 KiB including CRLFCRLF, configurable `max_header_bytes` | `mttp_core/src/multipart/reader_test.mbt`: "multipart exceeds every configured resource bound" |
+| `mttp_core/multipart` total wire bytes | 64 MiB including preamble and epilogue, configurable `max_total_bytes`; Router additionally applies its smaller request ceiling | `mttp_core/src/multipart/reader_test.mbt`: "multipart exceeds every configured resource bound" |
+| `mttp_core/multipart` candidate boundary and transport padding | 64 KiB, configurable `max_buffer_bytes` (minimum 78); ordinary payload is delivered without retaining a line. A returned payload chunk is at most 64 KiB plus this candidate bound; the reader retains at most one caller-owned source chunk | `mttp_core/src/multipart/reader_test.mbt`: "multipart exceeds every configured resource bound" |
+| `mttp_core/multipart` synchronous buffered part payload | 16 MiB, configurable `max_part_bytes`; live reader payloads are streamed | `mttp_core/src/multipart/reader_test.mbt`: "multipart exceeds every configured resource bound" |

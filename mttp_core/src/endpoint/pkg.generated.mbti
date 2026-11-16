@@ -4,6 +4,7 @@ package "gaato/mttp_core/endpoint"
 import {
   "gaato/mttp_core",
   "gaato/mttp_core/client",
+  "gaato/mttp_core/multipart",
   "gaato/mttp_core/rt",
   "gaato/mttp_core/schema",
   "gaato/mttp_core/ws",
@@ -59,6 +60,12 @@ pub fn[T] json_variant(Int32, @schema.BodyCodec[T], description? : String) -> Va
 pub fn last_event_id() -> Input[String?]
 
 pub fn media_type_token(String) -> String
+
+pub fn[T] multipart_body(MultipartCodec[T], max_parts? : Int32, max_header_bytes? : Int32, max_part_bytes? : Int32) -> Input[T]
+
+pub fn[T] multipart_field(String, @schema.BodyCodec[T]) -> MultipartCodec[T]
+
+pub fn multipart_file(String, content_type? : String) -> MultipartCodec[@multipart.ReadPart]
 
 pub fn no_content() -> Out[Unit, @client.Buffered]
 
@@ -316,6 +323,14 @@ pub(all) enum Location {
 pub fn Location::equal(Self, Self) -> Bool
 pub fn Location::not_equal(Self, Self) -> Bool
 pub fn Location::to_repr(Self) -> @debug.Repr
+
+pub struct MultipartCodec[T] {
+  // private fields
+}
+pub fn[T, U] MultipartCodec::map(Self[T], (T) -> U raise @schema.DecodeFailure, (U) -> T) -> Self[U]
+pub fn[T] MultipartCodec::new(@schema.Schema, (Array[@multipart.Part]) -> T raise @schema.DecodeFailure, (T) -> Array[@multipart.Part]) -> Self[T]
+pub fn[T] MultipartCodec::optional(Self[T]) -> Self[T?]
+pub fn[A, B] MultipartCodec::pair(Self[A], Self[B]) -> Self[(A, B)]
 
 #derive(Eq, @debug.Debug)
 pub(all) struct NoError {

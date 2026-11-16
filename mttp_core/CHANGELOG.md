@@ -44,6 +44,8 @@ never does.
   logging, by default those in `client.default_sensitive_headers`, the list
   `to_curl` now uses too; it adds `set-cookie` to the five names `to_curl`
   hid before.
+- Bounded streaming multipart/form-data reader and synchronous parser, typed
+  multipart endpoint fields and file streams, and OpenAPI per-part encoding.
 
 - `connection_scheme`, a request attribute: the scheme the connection was
   accepted under (`http` or `https`), never the request target's. h1server

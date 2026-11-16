@@ -1121,6 +1121,7 @@ pub extend HeaderObject with @json.FromJson::{from_json}
 fn is_media_type_object_field(key : String) -> Bool {
   match key {
     "schema" => true
+    "encoding" => true
     "itemSchema" => true
     _ => false
   }
@@ -1132,6 +1133,7 @@ fn is_media_type_object_field(key : String) -> Bool {
 #derive(Eq, Debug)
 pub(all) struct MediaTypeObject {
   schema : Json?
+  encoding : Map[String, Json]?
   item_schema : Json?
   unmodeled : Map[String, Json]
   extensions : Map[String, Json]
@@ -1141,12 +1143,14 @@ pub(all) struct MediaTypeObject {
 /// Creates MediaTypeObject data with defaults for optional fields.
 pub fn MediaTypeObject::new(
   schema? : Json,
+  encoding? : Map[String, Json],
   item_schema? : Json,
   unmodeled~ : Map[String, Json] = {},
   extensions~ : Map[String, Json] = {},
 ) -> MediaTypeObject {
   {
     schema,
+    encoding,
     item_schema,
     unmodeled: unmodeled.copy(),
     extensions: extensions.copy(),
@@ -1160,6 +1164,9 @@ pub impl ToJson for MediaTypeObject with fn to_json(self) {
   let obj : Map[String, Json] = Map([])
   if self.schema is Some(value) {
     obj["schema"] = Json(value)
+  }
+  if self.encoding is Some(value) {
+    obj["encoding"] = Json(value)
   }
   if self.item_schema is Some(value) {
     obj["itemSchema"] = Json(value)
@@ -1176,6 +1183,7 @@ pub impl @json.FromJson for MediaTypeObject with fn from_json(value, path) {
   let unmodeled = unmodeled_fields(obj, is_media_type_object_field)
   {
     schema: optional_field(obj, "schema", path),
+    encoding: optional_field(obj, "encoding", path),
     item_schema: optional_field(obj, "itemSchema", path),
     unmodeled,
     extensions: extension_fields(obj),

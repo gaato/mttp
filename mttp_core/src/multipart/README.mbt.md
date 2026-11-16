@@ -1,6 +1,7 @@
 # gaato/mttp_core/multipart
 
-A `multipart/form-data` writer ([RFC 7578](https://www.rfc-editor.org/rfc/rfc7578)).
+A `multipart/form-data` writer and bounded reader
+([RFC 7578](https://www.rfc-editor.org/rfc/rfc7578)).
 
 It writes text, JSON and file parts, with file bodies held in memory or
 streamed from a `@mttp_core.BodyStream` as the request is sent.
@@ -59,5 +60,36 @@ test "a text part and a file part" {
 test "a fresh boundary from injected randomness" {
   let boundary = @multipart.make_boundary(() => 0.5)
   assert_eq(boundary, "mttp-" + "i".repeat(32))
+}
+```
+
+`MultipartReader::new(source, boundary)` owns a source. `next_part()` returns
+`ReadPart { head, body }` as soon as its headers complete; read its body through
+`BodyStream`. A later `next_part()` skips unread payload and invalidates the old
+body. Close the reader on early exit. EOF, malformed framing, source failures
+and cancellation close the source once. Preamble and epilogue are ignored.
+Only CRLF delimits headers and boundary lines; arbitrary CR/LF bytes in payload
+remain payload. Boundary lines accept trailing space and tab, and the final
+boundary may omit its CRLF. Duplicate field names preserve their order.
+`filename*` is rejected under RFC 7578 section 4.2; ordinary UTF-8 `filename`
+is returned as an untrusted label. Percent escapes remain literal.
+
+The reader bounds parts (256), headers per part (16 KiB), total wire bytes
+(64 MiB), and candidate boundary lines including padding (64 KiB).
+`parse` uses the same scanner synchronously and additionally bounds each
+buffered payload (16 MiB). Each limit is configurable; `max_buffer_bytes`
+must be at least 78. Overflow raises `TransportError(TooLarge, Body)`;
+malformed input raises `TransportError(Protocol, Body)`.
+
+```mbt check
+///|
+test "decode a bounded multipart form" {
+  let (_, bytes) = @multipart.encode(
+    [@multipart.Part::text("title", "notes")],
+    "B",
+  )
+  let parts = @multipart.parse(bytes, "B", max_parts=1, max_part_bytes=8)
+  assert_eq(parts[0].name, "title")
+  assert_eq(parts[0].body.as_bytes(), Some(b"notes"))
 }
 ```
