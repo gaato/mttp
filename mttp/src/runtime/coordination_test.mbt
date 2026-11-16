@@ -44,6 +44,73 @@ async test "parent cancellation awaits both coordination children" {
 }
 
 ///|
+async test "synchronous primary completion still joins monitor cleanup and keeps its outcome" {
+  let coordination = @runtime.RuntimeCoordination::new()
+  for fails in [false, true] {
+    let cleaned = Ref(false)
+    let primary_error = @mttp_core.TransportError(
+      kind=Invalid,
+      phase=Head,
+      detail="primary",
+    )
+    let result = try {
+      coordination.supervise(primary=() => if fails { raise primary_error }, monitor=() => {
+        defer {
+          cleaned.val = true
+        }
+        // A child cancelled before starting still enters its body. A
+        // late monitor error must not replace the delivered primary result.
+        raise @mttp_core.TransportError(
+          kind=Network,
+          phase=Unknown,
+          detail="late monitor",
+        )
+      })
+      None
+    } catch {
+      error => Some(error)
+    }
+    assert_true(cleaned.val)
+    if fails {
+      assert_true(
+        result is Some(@mttp_core.TransportError(detail="primary", ..)),
+      )
+    } else {
+      assert_true(result is None)
+    }
+  }
+}
+
+///|
+async test "caller cancellation racing primary completion remains a signal" {
+  let coordination = @runtime.RuntimeCoordination::new()
+  let cancel : Ref[(() -> Unit)?] = Ref(None)
+  let cleaned = Ref(false)
+  let returned = Ref(false)
+  let caught = Ref(false)
+  @async.with_task_group(group => {
+    let task = group.spawn(() => {
+      coordination.supervise(primary=() => cancel.val.unwrap()(), monitor=() => {
+        defer {
+          cleaned.val = true
+        }
+        coordination.signal().wait()
+      }) catch {
+        _ => caught.val = true
+      }
+      returned.val = true
+    })
+    cancel.val = Some(() => task.cancel())
+    task.wait() catch {
+      @async.WaitedTaskAlreadyCancelled => ()
+      error => raise error
+    }
+  })
+  assert_true(cleaned.val)
+  assert_false(returned.val || caught.val)
+}
+
+///|
 async test "an event channel waits on runtime signals" {
   let (sender, stream) = @endpoint.EventStream::channel(
     coordination=@runtime.RuntimeCoordination::new(),

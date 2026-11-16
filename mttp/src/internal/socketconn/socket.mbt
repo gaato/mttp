@@ -51,40 +51,46 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
   }
   let buffer = self.read_buffer
   // core's handle close can detach an outstanding read without waking it.
-  // Keep a structured child per direction so close can request cancellation,
-  // while this operation joins cleanup before another operation may start.
+  // The group callback owns the I/O and joins before this operation returns.
+  // Only close needs another child: it ends the group and wakes that owner,
+  // even when the handle close detached its outstanding runtime operation.
   @async.with_task_group(group => {
-    let task = group.spawn(
-      () => {
-        let n = self.reader.read_into(buffer, max_len=size)
-        // Commit consumed bytes in the child before waking its waiter. A
-        // cancelled read-ahead waiter must not discard the next request.
-        if n == 0 {
-          self.eof = true
-        } else {
-          self.pending = Bytes::from_array(buffer[:n])
-          // A small caller limit is not evidence that bulk storage is
-          // useful. Only a full read at the current target grows it.
-          if n == self.read_size {
-            self.read_size = (self.read_size * 2).min(65536)
-          }
-        }
-      },
-      allow_failure=true,
-    )
-    self.cancel_read = Some(() => task.cancel())
+    self.cancel_read = Some(() => {
+      group.spawn_bg(no_wait=true, () => group.return_immediately())
+    })
     defer {
       self.cancel_read = None
     }
     if self.closed {
-      task.cancel()
+      return
     }
-    task.wait() catch {
-      @async.WaitedTaskAlreadyCancelled if self.closed => ()
-      error => raise error
+    let n = self.reader.read_into(buffer, max_len=size)
+    // Commit consumed bytes in the child before waking its waiter. A
+    // cancelled read-ahead waiter must not discard the next request.
+    if n == 0 {
+      self.eof = true
+    } else {
+      self.pending = Bytes::from_array(buffer[:n])
+      // A small caller limit is not evidence that bulk storage is
+      // useful. Only a full read at the current target grows it.
+      if n == self.read_size {
+        self.read_size = (self.read_size * 2).min(65536)
+      }
     }
   }) catch {
-    error => raise self.read_failure(error)
+    error => {
+      // Cleanup may fail while the owner is being cancelled. The caller's
+      // cancellation still wins over that ordinary I/O error.
+      if @async.is_being_cancelled() {
+        @async.pause()
+      }
+      raise self.read_failure(error)
+    }
+  }
+  // A completed owner can race cancellation of its waiter. Deliver that
+  // pending signal here, after committing bytes, as Task::wait used to do.
+  if @async.is_being_cancelled() {
+    @async.pause()
   }
   if self.closed || self.pending.is_empty() {
     None
@@ -143,37 +149,44 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
     )
   }
   let lower_before = self.lower_sends.map(count => count())
+  let completed = Ref(false)
   @async.with_task_group(group => {
-    let task = group.spawn(
-      () => {
-        let mut offset = 0
-        while offset < bytes.length() {
-          let end = offset + (bytes.length() - offset).min(65536)
-          self.writer.write(bytes[offset:end])
-          offset = end
-        }
-      },
-      allow_failure=true,
-    )
-    self.cancel_write = Some(() => task.cancel())
+    self.cancel_write = Some(() => {
+      group.spawn_bg(no_wait=true, () => group.return_immediately())
+    })
     defer {
       self.cancel_write = None
     }
-    if self.closed {
-      task.cancel()
+    for offset = 0; offset < bytes.length(); {
+      if self.closed {
+        return
+      }
+      let end = offset + (bytes.length() - offset).min(65536)
+      self.writer.write(bytes[offset:end])
+      continue end
     }
-    task.wait() catch {
-      // Part of `bytes` may have left: not `Closed`, which promises none.
-      @async.WaitedTaskAlreadyCancelled if self.closed =>
-        raise @mttp_core.TransportError(
-          kind=Network,
-          phase=Unknown,
-          detail="connection closed during write",
-        )
-      error => raise error
-    }
+    completed.val = true
   }) catch {
-    error => raise self.write_failure(self.cause(error), lower_before)
+    error => {
+      if @async.is_being_cancelled() {
+        @async.pause()
+      }
+      raise self.write_failure(self.cause(error), lower_before)
+    }
+  }
+  if @async.is_being_cancelled() {
+    @async.pause()
+  }
+  if !completed.val {
+    // Part of `bytes` may have left: not `Closed`, which promises none.
+    raise self.write_failure(
+      @mttp_core.TransportError(
+        kind=Network,
+        phase=Unknown,
+        detail="connection closed during write",
+      ),
+      lower_before,
+    )
   }
 }
 

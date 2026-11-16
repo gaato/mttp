@@ -11,9 +11,14 @@ priv struct ProbeIo {
   /// Writes raise `Closed`, as a connection beneath TLS may.
   closed_write : Bool
   wait_write : Bool
+  wait_read : Bool
+  cleanup_error : Bool
+  mut reading : Bool
+  mut read_cleaned : Bool
   mut writing : Bool
   mut cleaned : Bool
   after_read : (() -> Unit)?
+  after_write : (() -> Unit)?
   yield_before_read : Bool
 }
 
@@ -24,7 +29,10 @@ fn probe(
   fail_write~ : Bool = false,
   closed_write~ : Bool = false,
   wait_write~ : Bool = false,
+  wait_read~ : Bool = false,
+  cleanup_error~ : Bool = false,
   after_read? : () -> Unit,
+  after_write? : () -> Unit,
   yield_before_read~ : Bool = false,
 ) -> ProbeIo {
   {
@@ -38,9 +46,14 @@ fn probe(
     fail_write,
     closed_write,
     wait_write,
+    wait_read,
+    cleanup_error,
+    reading: false,
+    read_cleaned: false,
     writing: false,
     cleaned: false,
     after_read,
+    after_write,
     yield_before_read,
   }
 }
@@ -67,6 +80,16 @@ impl @io.BinaryReaderImpl for ProbeIo with fn raw_read_impl(
   offset~,
   max_len~,
 ) {
+  self.reading = true
+  defer {
+    self.read_cleaned = true
+    if self.cleanup_error {
+      raise Injected
+    }
+  }
+  if self.wait_read {
+    @async.Cond().wait()
+  }
   if self.yield_before_read {
     @async.pause()
   }
@@ -121,6 +144,9 @@ impl @io.BinaryWriterImpl for ProbeIo with fn raw_write_impl(
   self.writing = true
   defer {
     self.cleaned = true
+    if self.cleanup_error {
+      raise Injected
+    }
   }
   if self.wait_write {
     @async.Cond().wait()
@@ -136,6 +162,9 @@ impl @io.BinaryWriterImpl for ProbeIo with fn raw_write_impl(
     )
   }
   self.writes.push(bytes[offset:offset + len].to_owned())
+  if self.after_write is Some(after) {
+    after()
+  }
   len
 }
 
@@ -370,6 +399,150 @@ async test "closing socket cancels a pending write and joins cleanup" {
   assert_true(io.cleaned)
   assert_true(failed.val)
   assert_eq(closes.val, 1)
+}
+
+///|
+async test "close wakes and joins both detached I O owners" {
+  let io = probe(wait_read=true, wait_write=true)
+  let socket = wrap(io, Ref(0))
+  let conn : &@rt.Conn = socket
+  let read_done = Ref(false)
+  let write_done = Ref(false)
+  @async.with_task_group(group => {
+    group.spawn_bg(() => {
+      assert_eq(conn.read(max_len=1), None)
+      assert_true(io.read_cleaned)
+      read_done.val = true
+    })
+    group.spawn_bg(() => {
+      try conn.write(b"pending") catch {
+        @mttp_core.TransportError(kind=Network, ..) => ()
+        error => raise error
+      } noraise {
+        _ => fail("closed pending write succeeded")
+      }
+      assert_true(io.cleaned)
+      write_done.val = true
+    })
+    while !io.reading || !io.writing {
+      @async.pause()
+    }
+    conn.close()
+    conn.close()
+  })
+  assert_true(read_done.val && write_done.val)
+  assert_true(socket.cancel_read is None && socket.cancel_write is None)
+}
+
+///|
+async test "close during a completed write slice prevents the next slice" {
+  let close : Ref[(() -> Unit)?] = Ref(None)
+  let io = probe(after_write=() => close.val.unwrap()())
+  let conn : &@rt.Conn = wrap(io, Ref(0))
+  close.val = Some(() => conn.close())
+  try conn.write(Bytes::make(131073, b'x')) catch {
+    @mttp_core.TransportError(kind=Network, ..) => ()
+    error => raise error
+  } noraise {
+    _ => fail("partial write succeeded")
+  }
+  assert_eq(io.writes.map(Bytes::length), [65536])
+  assert_true(io.cleaned)
+}
+
+///|
+async test "caller cancellation racing the final write remains a signal" {
+  let cancel : Ref[(() -> Unit)?] = Ref(None)
+  let io = probe(after_write=() => cancel.val.unwrap()())
+  let conn : &@rt.Conn = wrap(io, Ref(0))
+  defer conn.close()
+  let returned = Ref(false)
+  let caught = Ref(false)
+  @async.with_task_group(group => {
+    let task = group.spawn(() => {
+      conn.write(b"written") catch {
+        _ => caught.val = true
+      }
+      returned.val = true
+    })
+    cancel.val = Some(() => task.cancel())
+    task.wait() catch {
+      @async.WaitedTaskAlreadyCancelled => ()
+      error => raise error
+    }
+  })
+  assert_eq(io.writes, [b"written"])
+  assert_true(io.cleaned)
+  assert_false(returned.val || caught.val)
+}
+
+///|
+async test "caller cancellation still wins when an I O owner raises during cleanup" {
+  for reading in [true, false] {
+    let io = probe(wait_read=true, wait_write=true, cleanup_error=true)
+    let conn : &@rt.Conn = wrap(io, Ref(0))
+    defer conn.close()
+    let caught = Ref(false)
+    let returned = Ref(false)
+    @async.with_task_group(group => {
+      let task = group.spawn(() => {
+        try {
+          if reading {
+            ignore(conn.read(max_len=1))
+          } else {
+            conn.write(b"pending")
+          }
+        } catch {
+          _ => caught.val = true
+        }
+        returned.val = true
+      })
+      while !(if reading { io.reading } else { io.writing }) {
+        @async.pause()
+      }
+      task.cancel()
+      task.wait() catch {
+        @async.WaitedTaskAlreadyCancelled => ()
+        error => raise error
+      }
+    })
+    assert_true(if reading { io.read_cleaned } else { io.cleaned })
+    assert_false(returned.val || caught.val)
+  }
+}
+
+///|
+async test "close before the directional owner starts never calls I O" {
+  for reading in [true, false] {
+    let io = probe(bytes=b"unread")
+    let socket = wrap(io, Ref(0))
+    let conn : &@rt.Conn = socket
+    let entered = Ref(false)
+    @async.with_task_group(group => {
+      let task = group.spawn(() => {
+        entered.val = true
+        if reading {
+          assert_eq(conn.read(max_len=1), None)
+        } else {
+          try conn.write(b"unsent") catch {
+            @mttp_core.TransportError(kind=Network, ..) => ()
+            error => raise error
+          } noraise {
+            _ => fail("write on a closed connection succeeded")
+          }
+        }
+      })
+      while !entered.val {
+        @async.pause()
+      }
+      // The operation has entered its group but its owner is still queued.
+      assert_true(socket.cancel_read is None && socket.cancel_write is None)
+      conn.close()
+      task.wait()
+    })
+    assert_eq(io.limits, [])
+    assert_eq(io.writes, [])
+  }
 }
 
 ///|

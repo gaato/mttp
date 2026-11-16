@@ -66,15 +66,8 @@ pub impl @rt.Coordination for RuntimeCoordination with fn supervise(
   let failure : Ref[@mttp_core.TransportError?] = Ref(None)
   let completed = Ref(false)
   @async.with_task_group(group => {
-    let work = group.spawn(
-      () => {
-        primary() catch {
-          error => if failure.val is None { failure.val = Some(error) }
-        }
-        completed.val = true
-      },
-      allow_failure=true,
-    )
+    // The group callback is already a structured child. Run primary there
+    // instead of creating another child just to wait for its result.
     group.spawn_bg(no_wait=true, () => {
       monitor() catch {
         error =>
@@ -82,17 +75,14 @@ pub impl @rt.Coordination for RuntimeCoordination with fn supervise(
             if failure.val is None {
               failure.val = Some(error)
             }
-            work.cancel()
+            group.return_immediately()
           }
       }
     })
-    work.wait() catch {
-      @async.WaitedTaskAlreadyCancelled => ()
-      error => raise error
+    primary() catch {
+      error => if failure.val is None { failure.val = Some(error) }
     }
-    if failure.val is Some(error) {
-      raise error
-    }
+    completed.val = true
   }) catch {
     @mttp_core.TransportError(..) as error => raise error
     error =>
@@ -101,5 +91,13 @@ pub impl @rt.Coordination for RuntimeCoordination with fn supervise(
         phase=Unknown,
         detail=error.to_string(),
       )
+  }
+  // A synchronous primary may complete the group while cancelling its
+  // caller. Preserve that caller's signal after both children have joined.
+  if @async.is_being_cancelled() {
+    @async.pause()
+  }
+  if failure.val is Some(error) {
+    raise error
   }
 }

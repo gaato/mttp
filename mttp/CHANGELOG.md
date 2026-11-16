@@ -14,6 +14,12 @@ never does.
   `PhaseEvent` and `on_phase`. On native and wasm the socket backend reports
   connection phase events (`Dialed`, `TlsDone`, `Pooled`, `Written`,
   `FirstByte`); JS fetch cannot see them and reports none.
+### Changed
+
+- Run socket I/O and supervised primary work in their task group's existing
+  child. Close starts a cancellation child only for an outstanding direction;
+  normal I/O and supervision each use one fewer task while retaining close
+  wakeup, first-outcome ordering, committed reads and joined cleanup.
 
 ## [0.4.0] - 2026-11-17
 
