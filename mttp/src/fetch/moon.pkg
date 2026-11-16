@@ -1,6 +1,11 @@
 import {
   "gaato/mttp_core",
   "gaato/mttp_core/h1",
+  "gaato/mttp_core/ws",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/cond_var",
+  "moonbitlang/core/async/semaphore",
+  "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/async/js_async",
 }
 
@@ -9,10 +14,9 @@ import {
 } for "test"
 
 import {
+  "gaato/mttp/ws" @facade_ws,
   "gaato/mttp_core/endpoint",
   "gaato/mttp_core/schema",
-  "moonbitlang/core/async",
-  "moonbitlang/core/async/cond_var",
 } for "wbtest"
 
 supported_targets = "js"
@@ -22,5 +26,6 @@ options(
     "moonbitlang/core/async",
     "moonbitlang/core/async/cond_var",
     "moonbitlang/core/async/js_async",
+    "moonbitlang/core/async/semaphore",
   ],
 )

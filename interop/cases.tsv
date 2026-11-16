@@ -31,6 +31,11 @@
 # For one case and run the last matching row decides, so a general row comes
 # first and its exceptions after it. A case with no matching row is not run.
 side	case	where	expect	note
+client	websocket	node/websocket	pass	JS mttp Session against native echo: text binary subprotocol and close
+client	websocket	deno/websocket	pass	JS mttp Session against native echo: text binary subprotocol and close
+client	websocket	bun/websocket	pass	JS mttp Session against native echo: text binary subprotocol and close
+server	websocket	deno/websocket	pass	Deno.upgradeWebSocket through fetch_handler
+server	websocket	bun/websocket	pass	Bun server.upgrade through tracked fetch and websocket callbacks
 server	ab-run	autobahn/direct	pass
 server	ab-1.*	autobahn/direct	pass
 server	ab-2.*	autobahn/direct	pass

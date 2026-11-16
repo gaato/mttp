@@ -1,8 +1,17 @@
 import {
   "gaato/mttp_core",
-  "gaato/mttp_core/rt",
   "gaato/mttp_core/ws" @core_ws,
   "gaato/mttp_core/ws/handshake",
+}
+
+#cfg(target="js")
+import {
+  "gaato/mttp/fetch",
+}
+
+#cfg(not(target="js"))
+import {
+  "gaato/mttp_core/rt",
   "gaato/mttp/runtime",
 }
 

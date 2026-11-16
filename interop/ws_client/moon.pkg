@@ -1,17 +1,29 @@
 import {
   "gaato/mttp/ws",
-  "gaato/mttp/backend",
-  "gaato/mttp_core/h1client",
   "gaato/mttp_core/ws" @core_ws,
   "moonbitlang/core/env",
-  "moonbitlang/core/string",
   "moonbitlang/core/async",
 }
 
-supported_targets = "native"
+#cfg(not(target="js"))
+import {
+  "gaato/mttp/backend",
+  "gaato/mttp_core/h1client",
+  "moonbitlang/core/string",
+}
+
+supported_targets = "native+js"
+
+#cfg(target="js")
+import {
+  "moonbitlang/core/async/js_async",
+}
 
 pkgtype(kind: "executable")
 
 options(
-  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/js_async",
+  ],
 )

@@ -80,7 +80,7 @@ addEventListener('fetch', fastly(fetch));
 // export default vercel(fetch, waitUntil);
 
 // Deno: const app = deno(fetch); Deno.serve(app.fetch);
-// Bun: const app = bun(fetch); Bun.serve({fetch: app.fetch});
+// Bun: const app = bun(fetch); Bun.serve({fetch: app.fetch, websocket: app.websocket});
 // Node: const app = node(fetch); pass app.fetch a Web Request in your HTTP bridge.
 ```
 
@@ -157,3 +157,58 @@ not override the host's execution time limits or keep an otherwise empty event
 loop alive merely by retaining a Promise. It keeps no state per response:
 the listener a marked response adds to its shutdown signal goes away with the
 body.
+
+## WebSockets
+
+`gaato/mttp/ws.connect` uses the host's message API on JS. `ws.upgrade` keeps
+the portable origin, version, key and subprotocol validation; `fetch_handler`
+turns its hand-over into the host's special upgrade response. No application
+code constructs a Web Response with status 101.
+
+| Host | Client | Server through fetch_handler | Client custom headers / Origin |
+|---|---|---|---|
+| Node 22+ with global WebSocket | Yes | 501 (a fetch bridge has no upgrade API) | Refused |
+| Deno | Yes | Deno.upgradeWebSocket | Refused |
+| Bun | Yes | server.upgrade; pass both app.fetch and app.websocket to Bun.serve | Yes, constructor options |
+| Browsers | Yes | Unavailable | Refused; the browser owns Origin/cookies |
+| Cloudflare Workers | fetch with Upgrade, then accept the returned WebSocket | WebSocketPair and the special Response | Yes, fetch headers |
+| Fastly / Vercel / Lambda | Only if a compatible global WebSocket exists | Unavailable in these fetch adapters (501) | Refused |
+
+Text and binary messages, negotiated subprotocols and peer Close code/reason
+use the same Session API as native. Host error events become Transport(Network)
+and close events become Closed(CloseFrame). A custom Backend and extensions
+are refused by JS connect; redirects are disabled. Workers can use `headers`
+and `origin`; Bun uses its extended WebSocket constructor. Other hosts refuse
+these options instead of silently dropping them.
+
+JS hosts cannot pause incoming messages. Each session therefore retains at
+most `WsLimits.max_message_bytes` **total queued UTF-8/binary bytes** (also
+the per-message and outbound-message ceiling, default 16 MiB), and at most
+`max_empty_frames` **queued messages of any size** (default 1024). Crossing
+either ceiling drops the queue and makes failure sticky: TooLarge with Close
+1009 for bytes, Closed(PolicyViolation) with Close 1008 for count. Web-standard
+client close() only permits 1000 or 3000–4999, so those clients send application
+4009/4008 when the host rejects 1009/1008. Local errors retain the portable
+meaning. Other rejected protocol Close codes likewise use `code + 3000`;
+the host API cannot send a status it forbids. The host has already allocated the incoming message: these ceilings
+bound retained application state, not the host's receive allocation.
+
+Senders serialize in arrival order. `send_timeout_ms` (30 s) includes their
+queue wait and bufferedAmount drain; cancellation or deadline aborts the session.
+Close waits at most `close_timeout_ms` (5 s). Where a host cannot terminate a
+socket, abort drops application state immediately and requests host closure.
+JS exposes neither frames nor Ping/Pong: `max_frame_bytes`, `ping_interval_ms`
+and `pong_timeout_ms` cannot be enforced here; the host owns framing/control
+validation and automatic replies. Deno's automatic idle timeout is disabled.
+
+The workerd gate checks text/binary echo, subprotocol and Close reason on real
+Workers, including three concurrent server sessions and a Workers fetch-upgrade
+client with custom headers against the native echo server. Socket I/O runs
+through a request-scoped promise pump because the shared MoonBit scheduler can
+resume a coroutine from another request's event. `scripts/gates.sh interop websocket` checks JS mttp clients under the
+Node/Deno/Bun images pinned in `interop/images.tsv` against the native echo
+server, then Deno and Bun fetch servers. `websocket/local` explicitly uses
+installed runtimes and prints their versions for environments without containers.
+The Deno and Bun checks also exercise shutdown(), which sends GoingAway,
+removes the shutdown listener when the socket closes and joins the handler
+through whenIdle().

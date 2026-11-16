@@ -10,6 +10,8 @@ let routes : Map[String, String] = {
   "/slow/partial": "partial",
   "/slow/unread": "unread",
   "/reject": "reject",
+  "/ws": "ws",
+  "/ws-client": "ws-client",
 }
 
 ///|
@@ -52,6 +54,58 @@ async fn route(request : @mttp.Request) -> @mttp.Response noraise {
     }
   }
   match (request.meth, routes.get(path_of(request.url))) {
+    (Get, Some("ws-client")) => {
+      guard binding("WS_ECHO_URL") is Some(url) else {
+        return json(501, { "error": "WS_ECHO_URL is not configured" })
+      }
+      let session = @ws.connect(
+        url,
+        subprotocols=["echo"],
+        headers=@mttp.Headers::of([("x-client", "workers")]),
+        limits={ ..@ws.WsLimits::default(), send_timeout_ms: 5000, },
+      ) catch {
+        _ => return json(500, { "error": "connect failed" })
+      }
+      defer session.abort()
+      let stage = Ref("send text")
+      let ok = @async.with_timeout(5000, () => {
+        session.send(Text("worker client"))
+        stage.val = "receive text"
+        let text = session.recv() == Text("worker client")
+        stage.val = "send binary"
+        session.send(Binary(b"\x00\xff"))
+        stage.val = "receive binary"
+        let binary = session.recv() == Binary(b"\x00\xff")
+        stage.val = "close"
+        session.close({ code: Other(4001), reason: "finished", })
+        stage.val = "complete"
+        text && binary && session.subprotocol() == Some("echo")
+      }) catch {
+        error => {
+          stage.val = "\{stage.val}: \{error}"
+          false
+        }
+      }
+      json(if ok { 200 } else { 500 }, {
+        "websocket": Json::boolean(ok),
+        "stage": Json::string(stage.val),
+        "protocol": optional(session.subprotocol()),
+      })
+    }
+    (Get, Some("ws")) =>
+      @ws.upgrade(request, origins=Any, subprotocols=["echo"], handler=session => {
+        if request.url.has_suffix("?shutdown") {
+          session.send(Text("ready")) catch {
+            _ => return
+          }
+        }
+        for ;; {
+          let message = session.recv() catch { _ => break }
+          session.send(message) catch {
+            _ => break
+          }
+        }
+      })
     (Get, Some("hello")) =>
       json(200, {
         "greeting": optional(binding("GREETING")),

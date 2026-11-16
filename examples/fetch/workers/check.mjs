@@ -37,10 +37,18 @@ const problem = /\[ERROR\]|\[WARNING\]|\[wrangler:(error|warn)\]|Uncaught|worker
 
 const port = await freePort();
 const inspector = await freePort();
+const echoPort = await freePort();
+const echo = spawn(join(here, '../../../_build/native/debug/build/gaato/mttp-interop/mttp_server/mttp_server.exe'),
+  ['websocket', `127.0.0.1:${echoPort}`], {stdio: ['ignore', 'pipe', 'pipe']});
+let echoOutput = '';
+echo.stdout.on('data', chunk => { echoOutput += chunk; });
+echo.stderr.on('data', chunk => { echoOutput += chunk; });
+const echoExited = new Promise(resolve => echo.on('exit', resolve));
 const logs = mkdtempSync(join(tmpdir(), 'mttp-workerd-'));
 const child = spawn(join(here, 'node_modules', '.bin', 'wrangler'), [
   'dev', '--ip', '127.0.0.1', '--port', String(port), '--inspector-port', String(inspector),
   '--show-interactive-dev-session=false', '--log-level', 'info',
+  '--var', `WS_ECHO_URL:ws://127.0.0.1:${echoPort}/`,
 ], {
   cwd: here,
   detached: true,
@@ -53,6 +61,8 @@ child.stderr.on('data', chunk => { output += chunk; });
 const exited = new Promise(resolve => child.on('exit', (code, signal) => resolve({code, signal})));
 
 const stop = async () => {
+  echo.kill('SIGTERM');
+  await echoExited;
   if (child.exitCode !== null || child.signalCode !== null) return;
   try { process.kill(-child.pid, 'SIGTERM'); } catch {}
   const killer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch {} }, 5000);
@@ -127,6 +137,36 @@ try {
   if (!(await ready())) {
     failures.push('wrangler dev did not become ready');
   } else {
+    const echoSocket = () => new Promise((resolve, reject) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`, ['echo']);
+      socket.binaryType = 'arraybuffer';
+      const timer = setTimeout(() => { socket.close(); reject(new Error('WebSocket echo timed out')); }, 5000);
+      let phase = 0;
+      socket.addEventListener('open', () => {
+        check(socket.protocol === 'echo', `WebSocket protocol: ${socket.protocol}`);
+        socket.send('héllo');
+      });
+      socket.addEventListener('message', event => {
+        if (phase++ === 0) {
+          check(event.data === 'héllo', `WebSocket text: ${event.data}`);
+          socket.send(new Uint8Array([0, 128, 255]));
+        } else {
+          check(same(Array.from(new Uint8Array(event.data)), [0, 128, 255]), 'WebSocket binary echo');
+          socket.close(4001, 'finished');
+        }
+      });
+      socket.addEventListener('close', event => {
+        clearTimeout(timer);
+        check(phase === 2 && event.code === 4001 && event.reason === 'finished',
+          `WebSocket close: ${phase} ${event.code} ${event.reason}`);
+        resolve();
+      });
+      socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('WebSocket failed')); });
+    });
+    await Promise.all([1, 2, 3].map(echoSocket));
+    const wsClient = await json('/ws-client', {signal: AbortSignal.timeout(15000)});
+    check(wsClient.status === 200 && wsClient.body?.websocket === true,
+      `Workers WebSocket client: ${wsClient.status} ${JSON.stringify(wsClient.body)}`);
     // The first requests arrive together, so they share the lazy import.
     const hello = await Promise.all([1, 2, 3].map(() => json('/hello')));
     for (const reply of hello) {
@@ -203,6 +243,7 @@ const flagged = output.split('\n').filter(line => problem.test(line));
 for (const line of flagged) failures.push(`wrangler logged: ${line.trim()}`);
 if (failures.length) {
   console.error(output);
+  if (echoOutput) console.error(echoOutput);
   console.error('workerd check: FAILED');
   for (const failure of failures) console.error(`  ${failure}`);
   process.exit(1);

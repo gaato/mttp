@@ -23,6 +23,28 @@ pub fn upgrade(
   let response = offer.accept(subprotocol?) catch {
     _ => return @mttp_core.Response::new(500)
   }
+  upgraded_response(response, limits, subprotocol, handler)
+}
+
+///|
+#cfg(target="js")
+fn upgraded_response(
+  response : @mttp_core.Response,
+  limits : @core_ws.WsLimits,
+  subprotocol : String?,
+  handler : async (&@core_ws.Session) -> Unit,
+) -> @mttp_core.Response {
+  @fetch.websocket_upgrade(response, limits, subprotocol, handler)
+}
+
+///|
+#cfg(not(target="js"))
+fn upgraded_response(
+  response : @mttp_core.Response,
+  limits : @core_ws.WsLimits,
+  subprotocol : String?,
+  handler : async (&@core_ws.Session) -> Unit,
+) -> @mttp_core.Response {
   {
     ..response,
     attributes: response.attributes.put(@rt.upgrade, (conn, pending, stopping) => {

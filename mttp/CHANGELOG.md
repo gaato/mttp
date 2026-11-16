@@ -19,6 +19,12 @@ never does.
 
 - `ContentEncoder::new` no longer raises: every coding has an encoder.
   Callers that caught its Invalid can drop the handler.
+- JS `ws.connect` supplies a bounded host-message Session on Node, Deno, Bun,
+  browsers and Workers (fetch upgrade). `ws.upgrade` integrates with Workers'
+  WebSocketPair, Deno.upgradeWebSocket and Bun server.upgrade in fetch_handler;
+  Node's fetch server returns 501. Bun shims forward the server argument and
+  expose websocket callbacks. Host limitations and queue bounds are documented
+  in hosts/README.md; real workerd and JS interop checks cover echo and Close.
 
 - `ws.upgrade` validates server handshakes, selects subprotocols and hands a
   bounded Session to a handler. Shutdown sends GoingAway and retains the
@@ -31,8 +37,8 @@ never does.
 
 - `ws.connect` opens ws/wss sessions over a caller backend or the default
   TLS/proxy backend, with secure runtime entropy, subprotocol validation,
-  explicit limits, and no redirects. JS and extensions refuse until their
-  later stages. The native client is tested against Autobahn fuzzingserver.
+  explicit limits, and no redirects. Extensions refuse until their later
+  stage. The native client is tested against Autobahn fuzzingserver.
 
 - `RuntimeCoordination.protect(work~)` implements the new mttp_core
   cancellation-protection port with core/async's `protect_from_cancel`, so

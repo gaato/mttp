@@ -1,6 +1,7 @@
 import {
   "gaato/mttp",
   "gaato/mttp/fetch",
+  "gaato/mttp/ws",
   "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/async",
 }

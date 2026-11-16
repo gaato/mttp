@@ -22,6 +22,7 @@ test "upgrade preserves handshake refusal statuses and headers" {
 }
 
 ///|
+#cfg(not(target="js"))
 test "upgrade selects the first supported offered protocol and installs handover" {
   let request = @handshake.client_request(
     "ws://example.test/",

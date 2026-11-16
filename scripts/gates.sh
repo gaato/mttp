@@ -149,6 +149,7 @@ static_gates() {
 # runs the Workers entry the README shows on the runtime itself.
 WORKERD_DIR=examples/fetch/workers
 workerd_gate() {
+  step moon build --deny-warn --target native interop/mttp_server
   step moon build --deny-warn --target js "$WORKERD_DIR"
   # wrangler runs without its dependencies' postinstall checks, and npm
   # versions differ in whether they run them unasked.

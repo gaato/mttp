@@ -107,6 +107,18 @@ pub fn fetch_handler(
           _ => return empty_response(400, request)
         }
         let reply = handler(model)
+        if reply.status == 101 &&
+          reply.attributes.get(host_upgrade) is Some(upgrade) {
+          defer reply.close()
+          input.close()
+          let result = upgrade.respond(
+            request.ws_request(),
+            reply.headers,
+            schedule,
+          )
+          accepting.val = false
+          return ws_response(result)
+        }
         accepting.val = false
         if input.failure is Some(error) {
           reply.close()

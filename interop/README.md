@@ -1,5 +1,13 @@
 # Interoperability suite
 
+`scripts/gates.sh interop websocket` runs the JS mttp Session on the
+digest-pinned Node, Deno and Bun images against W5's native WebSocket echo,
+then checks the fetch echo on Deno and Bun servers with the JS mttp client.
+Text, binary, protocol selection, application Close code/reason and process shutdown are
+checked end to end. `websocket/local` runs the same checks on installed
+runtimes and prints their versions, explicitly without the container pins.
+The Workers echo runs separately in `scripts/gates.sh workerd`.
+
 WebSocket servers are checked with the digest-pinned Autobahn TestSuite in
 fuzzingclient mode: `scripts/gates.sh interop server/autobahn`. The runner
 starts `mttp_server websocket 127.0.0.1:39505`, writes its configuration and

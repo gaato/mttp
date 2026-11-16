@@ -215,6 +215,7 @@ fn main {
           @ws.upgrade(
             request,
             origins=Any,
+            subprotocols=["echo"],
             // Section 9 deliberately crosses the normal 16 MiB bound.
             limits={
               ..@core_ws.WsLimits::default(),

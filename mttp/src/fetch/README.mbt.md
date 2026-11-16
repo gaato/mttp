@@ -1,5 +1,14 @@
 # gaato/mttp/fetch
 
+`websocket_connect` and `websocket_upgrade` are host bridges used by
+`gaato/mttp/ws` on JS. Applications normally use `ws.connect` / `ws.upgrade`,
+which validate URLs, offers and handshakes before invoking these bridges.
+They share the portable Session and WsLimits types; no runtime handle enters
+their public signatures. `fetch_handler` consumes the upgrade metadata and
+returns the host's special response. See the
+[host support matrix](https://github.com/gaato/mttp/blob/main/mttp/hosts/README.md#websockets)
+for header restrictions, queue bounds and Bun's required websocket callbacks.
+
 A handler as a JavaScript `fetch` export, for Web Request/Response hosts.
 
 `fetch_handler(handler)` adapts a `@mttp.Handler` to the hosts' `fetch`

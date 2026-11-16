@@ -23,8 +23,11 @@ its admission slot until the handler ends and enforces its overall `drain_ms`.
 `connect` opens a `ws://` or `wss://` session over the default backend, or a
 caller-owned Backend. TLS uses the backend's trust and dialer. Environment
 HTTP proxies use CONNECT for both schemes. Redirects are disabled; a 3xx is
-a handshake error. There is no reconnect policy. Extensions and JS host
-WebSockets are reserved for later stages; connect refuses them clearly.
+a handshake error. There is no reconnect policy. Extensions are reserved.
+On JS, connect uses the host's WebSocket message API. Workers, Deno and Bun
+also support upgrade through fetch_handler; Node fetch returns 501. The
+[host support matrix](https://github.com/gaato/mttp/blob/main/mttp/hosts/README.md#websockets) describes custom
+headers, bounded inbound queues and the controls that hosts keep private.
 
 One receiving task drives messages and answers Ping and Close. Close or
 abort every session to release its connection slot. The caller owns a

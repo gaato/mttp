@@ -1144,6 +1144,9 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
 
 ///|
 async fn main_run(filters : Array[String]) -> Int32 {
+  if filters == ["websocket/local"] {
+    return run_js_websockets(None)
+  }
   let engine = find_engine()
   let images = read_images()
   let rows = read_rows()
@@ -1156,6 +1159,9 @@ async fn main_run(filters : Array[String]) -> Int32 {
     []
   }
   let env = { engine, images, root, user, }
+  if filters == ["websocket"] {
+    return run_js_websockets(Some(env))
+  }
   if !filters.is_empty() && filters.all(f => f.has_prefix("server/autobahn")) {
     return run_autobahn(env, rows)
   }
@@ -1275,6 +1281,132 @@ async fn main_run(filters : Array[String]) -> Int32 {
     1
   } else {
     0
+  }
+}
+
+///|
+/// JS clients against W5's native server, then the same compiled fetch echo
+/// on Deno and Bun. Default execution uses images.tsv; /local is an explicit
+/// fallback for restricted hosts that cannot start containers.
+async fn run_js_websockets(env : Env?) -> Int32 {
+  ignore(must("moon", ["build", "--target", "native", "interop/mttp_server"]))
+  ignore(
+    must("moon", [
+      "build", "--target", "js", "interop/ws_client", "examples/fetch/workers",
+    ]),
+  )
+  make_dir(work)
+  for address in ["127.0.0.1:39507", "127.0.0.1:39508", "127.0.0.1:39509"] {
+    port_free(address)
+  }
+  let command = (runtime : String, path : String, args : Array[String]) => {
+    match env {
+      Some(env) => {
+        let script = "/repo/\{path}"
+        let args = if runtime == "deno" {
+          ["run", "-A", script, ..args]
+        } else {
+          [script, ..args]
+        }
+        (
+          env.engine,
+          env.run_args(
+            runtime,
+            ["--entrypoint", runtime, ..env.mount(".", "/repo")],
+            args,
+          ),
+        )
+      }
+      None =>
+        (
+          runtime,
+          if runtime == "deno" {
+            ["run", "-A", path, ..args]
+          } else {
+            [path, ..args]
+          },
+        )
+    }
+  }
+  for runtime in ["node", "deno", "bun"] {
+    match env {
+      Some(env) =>
+        ignore(must(env.engine, ["pull", "--quiet", env.image(runtime)]))
+      None =>
+        println(
+          "websocket/local \{runtime}: \{must(runtime, ["--version"]).trim()}",
+        )
+    }
+  }
+  let rows = read_rows()
+  let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+  let client = "_build/js/debug/build/\{interop_module}/ws_client/ws_client.js"
+  @async.with_task_group(group => {
+    let native = @process.spawn(
+      group,
+      native_server,
+      ["websocket", "127.0.0.1:39507"],
+      stdout=ToFile("\{work}/ws-native.log"),
+      stderr=ToFile("\{work}/ws-native.log"),
+    )
+    defer native.cancel()
+    wait_port("127.0.0.1:39507", "native WebSocket echo")
+    for runtime in ["node", "deno", "bun"] {
+      let run = "\{runtime}/websocket"
+      let expected = rows_of(rows, "client", run)
+      run_one(
+        tally,
+        "client",
+        run,
+        expected,
+        plan(expected),
+        command(runtime, client, ["ws://127.0.0.1:39507/"]),
+      )
+    }
+    for (runtime, port) in [("deno", 39508), ("bun", 39509)] {
+      let (program, args) = command(
+        runtime,
+        "interop/clients/js/websocket.mjs",
+        [],
+      )
+      let args = match env {
+        Some(_) =>
+          [args[0], args[1], "--name", "mttp-w7-ws-\{runtime}", ..args[2:]]
+        None => args
+      }
+      defer @async.protect_from_cancel(() => {
+        if env is Some(env) {
+          ignore(capture(env.engine, ["rm", "-f", "mttp-w7-ws-\{runtime}"]))
+        }
+      })
+      let server = @process.spawn(
+        group,
+        program,
+        args,
+        stdout=ToFile("\{work}/ws-\{runtime}.log"),
+        stderr=ToFile("\{work}/ws-\{runtime}.log"),
+      )
+      defer server.cancel()
+      wait_port("127.0.0.1:\{port}", "\{runtime} WebSocket echo")
+      let run = "\{runtime}/websocket"
+      let expected = rows_of(rows, "server", run).filter(row => {
+        row.id == "websocket"
+      })
+      run_one(
+        tally,
+        "server",
+        run,
+        expected,
+        plan(expected),
+        command("node", client, ["ws://127.0.0.1:\{port}/ws?shutdown"]),
+      )
+    }
+  })
+  println("WebSocket hosts: \{tally.pass} passed, \{tally.fail} failed")
+  if tally.fail == 0 {
+    0
+  } else {
+    1
   }
 }
 

@@ -4,6 +4,14 @@
 pub type JsRequest
 
 ///|
+extern "js" fn JsRequest::ws_request(self : JsRequest) -> HostRequest =
+  #| request => request
+
+///|
+extern "js" fn ws_response(response : HostResponse) -> WebResponse =
+  #| response => response
+
+///|
 /// Host promise returned to the serverless entry point.
 #external
 pub type JsPromise

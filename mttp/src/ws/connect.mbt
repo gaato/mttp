@@ -14,7 +14,7 @@ pub using @core_ws {
 /// Opens one WebSocket without redirects or retries. The default backend
 /// uses system TLS trust and environment proxies; a supplied backend stays
 /// caller-owned. Extensions are reserved: none are implemented at this stage.
-/// JS hosts are a later stage and this function refuses on JS before I/O.
+/// JS uses the host WebSocket API; see hosts/README.md for host restrictions.
 #cfg(not(target="js"))
 pub async fn connect(
   url : String,
@@ -97,10 +97,8 @@ pub async fn connect(
 }
 
 ///|
-/// JS host WebSocket integration is reserved for the later host stage.
-/// Keep the same async API on every target even though this refusal does no I/O.
+/// Uses the host WebSocket API. Custom headers require Bun or Workers.
 #cfg(target="js")
-#warnings("-unused_async")
 pub async fn connect(
   url : String,
   backend? : &@mttp_core.Backend,
@@ -110,9 +108,26 @@ pub async fn connect(
   headers? : @mttp_core.Headers,
   limits~ : @core_ws.WsLimits = @core_ws.WsLimits::default(),
 ) -> &@core_ws.Session raise @core_ws.WsError {
-  ignore((url, backend, subprotocols, extensions, origin, headers, limits))
-  raise @core_ws.WsError(
-    kind=Handshake(status=0),
-    detail="WebSocket connect is not supported on JS yet",
+  if backend is Some(_) || !extensions.is_empty() {
+    raise @core_ws.WsError(
+      kind=Handshake(status=0),
+      detail="JS host sessions do not support a backend or extensions",
+    )
+  }
+  // Reuse the portable request validator before entering a host API.
+  let request = @handshake.client_request(
+    url,
+    key="dGhlIHNhbXBsZSBub25jZQ==",
+    subprotocols~,
+    origin?,
+    headers?,
   )
+  let fields = request.headers
+    .remove("connection")
+    .remove("upgrade")
+    .remove("host")
+    .remove("sec-websocket-key")
+    .remove("sec-websocket-version")
+    .remove("sec-websocket-protocol")
+  @fetch.websocket_connect(url, subprotocols, fields, limits)
 }

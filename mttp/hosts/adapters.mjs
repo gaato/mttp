@@ -54,12 +54,16 @@ export function tracked(fetch, onError = console.error) {
   const pending = new Set();
   const stopping = new AbortController();
   return {
-    fetch(request) {
+    fetch(request, server) {
+      if (server && typeof server.upgrade === 'function') {
+        Object.defineProperty(request, Symbol.for('gaato.mttp.bunServer'), {value: server});
+      }
       return fetch(request, promise => {
         const task = promise.catch(onError).finally(() => pending.delete(task));
         pending.add(task);
       }).then(response => {
         response[closeOnShutdown]?.(stopping.signal);
+        if (response[Symbol.for('gaato.mttp.bunUpgraded')]) return undefined;
         return response;
       });
     },
@@ -73,5 +77,34 @@ export function tracked(fetch, onError = console.error) {
 }
 
 export const deno = tracked;
-export const bun = tracked;
+export function bun(fetch, onError) {
+  const app = tracked(fetch, onError);
+  return {
+    ...app,
+    websocket: {
+      open(socket) {
+        const events = new EventTarget();
+        const bridge = {
+          get readyState() { return socket.readyState; },
+          get bufferedAmount() { return socket.bufferedAmount; },
+          binaryType: 'arraybuffer',
+          send: value => socket.send(value),
+          close: (code, reason) => socket.close(code, reason),
+          terminate: () => socket.terminate(),
+          addEventListener: (...args) => events.addEventListener(...args),
+          removeEventListener: (...args) => events.removeEventListener(...args),
+        };
+        socket.data.events = events;
+        socket.data.start(bridge);
+      },
+      message(socket, data) { socket.data.events.dispatchEvent(new MessageEvent('message', {data})); },
+      close(socket, code, reason) {
+        const event = new Event('close');
+        Object.assign(event, {code, reason});
+        socket.data.events?.dispatchEvent(event);
+      },
+      drain() {},
+    },
+  };
+}
 export const node = tracked;
