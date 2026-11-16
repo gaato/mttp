@@ -19,3 +19,31 @@ Keep a receiving task running to service Ping and Close. On server shutdown,
 the helper sends Close 1001 within a 250 ms polling interval, waits at most
 `WsLimits.close_timeout_ms`, and aborts the connection. The listener retains
 its admission slot until the handler ends and enforces its overall `drain_ms`.
+
+`connect` opens a `ws://` or `wss://` session over the default backend, or a
+caller-owned Backend. TLS uses the backend's trust and dialer. Environment
+HTTP proxies use CONNECT for both schemes. Redirects are disabled; a 3xx is
+a handshake error. There is no reconnect policy. Extensions and JS host
+WebSockets are reserved for later stages; connect refuses them clearly.
+
+One receiving task drives messages and answers Ping and Close. Close or
+abort every session to release its connection slot. The caller owns a
+supplied backend; the default backend needs no separate cleanup.
+
+```mbt check
+///|
+async fn echo(url : String) -> String raise @ws.WsError {
+  let session = @ws.connect(url)
+  defer session.abort()
+  session.send(Text("hello"))
+  match session.recv() {
+    Text(text) => text
+    Binary(_) => "binary"
+  }
+}
+
+///|
+test {
+  let _ : async (String) -> String raise @ws.WsError = echo
+}
+```

@@ -1,4 +1,22 @@
 ///|
+test "Cookies and FollowRedirects pass unknown response attributes including 101" {
+  @driver.run_sync(() => {
+    let wrap : (&@mttp_core.Backend) -> &@mttp_core.Backend = inner => {
+      @client.FollowRedirects::new(
+        @cookies.Cookies::new(
+          inner,
+          @cookie.CookieJar::new(@sim.FakeClock::new()),
+        ),
+      )
+    }
+    @sim.check_backend_contract(
+      () => wrap(@client.from_fn((_, _) => @mttp_core.Response::new(200))),
+      wrap~,
+    )
+  })
+}
+
+///|
 test "redirect wrapper stores cookies before following each hop" {
   @driver.run_sync(() => {
     let seen = []

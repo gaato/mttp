@@ -18,6 +18,43 @@ async fn outcome(f : async () -> Unit) -> String {
 // ------------------------------------------------------------ coordination
 
 ///|
+priv struct DroppingAttributes {
+  inner : &@mttp_core.Backend
+  at_status : Int32
+}
+
+///|
+impl @mttp_core.Backend for DroppingAttributes with fn send(
+  self,
+  request,
+  options,
+) {
+  let response = self.inner.send(request, options)
+  if response.status == self.at_status {
+    { ..response, attributes: @mttp_core.Attributes::empty(), }
+  } else {
+    response
+  }
+}
+
+///|
+test "backend contract detects a wrapper dropping unknown response attributes" {
+  @driver.run_sync(() => {
+    for status in [200, 101] {
+      assert_eq(
+        outcome(() => {
+          @sim.check_backend_contract(() => Validating::{ closed: false, }, wrap=inner => DroppingAttributes::{
+            inner,
+            at_status: status,
+          })
+        }),
+        "check_backend_contract: response attributes were dropped at status \{status}",
+      )
+    }
+  })
+}
+
+///|
 test "sim coordination satisfies the coordination contract" {
   let d = @driver.Driver::new()
   let coordination = @sim.SimCoordination::new(d)

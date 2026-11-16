@@ -164,9 +164,10 @@ test "Decompress keeps unknown codings and bodyless metadata and removes only de
 ///|
 test "Decompress satisfies Backend validation and decoded BodyStream contracts" {
   @driver.run_sync(() => {
-    @sim.check_backend_contract(() => {
-      @codings.Decompress::new(fixture(@mttp_core.Response::new(200)))
-    })
+    @sim.check_backend_contract(
+      () => @codings.Decompress::new(fixture(@mttp_core.Response::new(200))),
+      wrap=inner => @codings.Decompress::new(inner),
+    )
     let wire = encoded(b"hello", Gzip)
     let make = () => {
       let response = @codings.Decompress::new(

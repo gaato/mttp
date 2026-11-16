@@ -566,9 +566,12 @@ async fn expect_refusal(
 /// breaks the rules may do I/O there. Deadlines, framing, bodies and
 /// connection reuse need configured peers and belong to each backend's own
 /// suite.
+/// `wrap` optionally constructs the wrapper under test over an injected
+/// upstream; it checks unknown response attributes on both 200 and 101.
 pub async fn check_backend_contract(
   make : () -> &@mttp_core.Backend,
   url~ : String = "https://example.test/",
+  wrap~ : (&@mttp_core.Backend) -> &@mttp_core.Backend = inner => inner,
 ) -> Unit {
   let check = "check_backend_contract"
   let backend = make()
@@ -616,4 +619,43 @@ pub async fn check_backend_contract(
   backend.close()
   backend.close()
   expect_refusal(check, backend, "a send after close", get, options, Closed)
+  // A real engine has no upstream Response to inspect. Wrappers supply their
+  // constructor so the check can inject metadata into a controlled upstream.
+  let key : @mttp_core.AttributeKey[Int32] = @mttp_core.AttributeKey::new(
+    "contract response marker",
+  )
+  for status in [200, 101] {
+    let upstream : &@mttp_core.Backend = AttributeBackend::{
+      response: {
+        ..@mttp_core.Response::new(status),
+        attributes: @mttp_core.Attributes::empty().put(key, 731),
+      },
+    }
+    let wrapped = wrap(upstream)
+    defer wrapped.close()
+    let response = wrapped.send(get, options)
+    defer response.close()
+    if response.attributes.get(key) != Some(731) {
+      raise violation(
+        check,
+        "response attributes were dropped at status \{status}",
+      )
+    }
+  }
+}
+
+///|
+priv struct AttributeBackend {
+  response : @mttp_core.Response
+}
+
+///|
+impl @mttp_core.Backend for AttributeBackend with fn send(
+  self,
+  request,
+  options,
+) {
+  request.validate()
+  options.validate()
+  self.response
 }

@@ -13,7 +13,7 @@ import {
 // Values
 pub fn byte_chunks(Bytes) -> Array[Bytes]
 
-pub async fn check_backend_contract(() -> &@mttp_core.Backend, url? : String) -> Unit
+pub async fn check_backend_contract(() -> &@mttp_core.Backend, url? : String, wrap? : (&@mttp_core.Backend) -> &@mttp_core.Backend) -> Unit
 
 pub async fn check_body_stream_contract(() -> &@mttp_core.BodyStream, Bytes, max_reads? : Int32) -> Unit
 

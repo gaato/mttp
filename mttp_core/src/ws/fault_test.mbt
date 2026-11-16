@@ -351,6 +351,107 @@ test "Pong read-ahead joins EOF and preserves transport failures" {
 }
 
 ///|
+test "completed messages return before the next partial header after a Pong" {
+  @sim.explore(schedule => {
+    let d = @driver.Driver::new(schedule~)
+    let (conn, peer) = controlled(d)
+    conn.stalled = false
+    let next = packet(Binary, b"next")
+    let s = session(
+      d,
+      conn,
+      pending=packet(Ping, b"x") + packet(Text, b"ready") + next[:1].to_owned(),
+    )
+    d.run(() => {
+      defer s.abort()
+      defer peer.close()
+      let received : Ref[@ws.Message?] = Ref(None)
+      let receiver = d.spawn(() => received.val = Some(s.recv()))
+      d.sleep(1)
+      assert_eq(received.val, Some(@ws.Message::Text("ready")))
+      assert_eq(conn.inner.closes(), 0)
+      ignore(receiver.wait())
+      peer.write(next[1:].to_owned())
+      assert_eq(s.recv(), @ws.Message::Binary(b"next"))
+      assert_eq(read_packet(peer).1, b"x")
+    })
+    assert_eq((d.live_tasks(), d.pending_timers()), (0, 0))
+  })
+}
+
+///|
+test "Pong read-ahead errors follow every already buffered message" {
+  @sim.explore(schedule => {
+    for role in [@frame.Role::Client, @frame.Role::Server] {
+      for buffering in 0..<3 {
+        let ahead = buffering == 2
+        let d = @driver.Driver::new(schedule~)
+        let (conn, peer) = controlled(d)
+        let failure = @mttp_core.TransportError(
+          kind=IncompleteClose,
+          phase=Body,
+          detail="speculative TLS read failed",
+        )
+        let masked = role is Server
+        let second = packet(Binary, b"second", masked~)
+        let head_len = second.length() - b"second".length()
+        let prefix = packet(Ping, b"x", masked~) +
+          packet(Text, b"first", masked~)
+        let s = session(
+          d,
+          PongReadFault::{ inner: conn, failure: Some(failure), first: true, },
+          role~,
+          pending=if ahead {
+            prefix + second[:head_len].to_owned()
+          } else {
+            b""
+          },
+        )
+        d.run(() => {
+          defer s.abort()
+          defer peer.close()
+          peer.write(
+            if ahead {
+              second[head_len:].to_owned() + packet(Text, b"third", masked~)
+            } else if buffering == 0 {
+              prefix
+            } else {
+              prefix + second
+            },
+          )
+          let receiver = d.spawn(() => {
+            assert_eq(s.recv(), @ws.Message::Text("first"))
+            if buffering != 0 {
+              assert_eq(s.recv(), @ws.Message::Binary(b"second"))
+            }
+            if ahead {
+              assert_eq(s.recv(), @ws.Message::Text("third"))
+            }
+            let seen = try {
+              ignore(s.recv())
+              false
+            } catch {
+              @ws.WsError(kind=Transport(cause), ..) =>
+                physical_equal(cause, failure)
+              error => raise error
+            }
+            assert_true(seen)
+          })
+          conn.entered.wait()
+          let _ = d.add_timer(1L, () => conn.release.notify())
+          ignore(receiver.wait())
+          assert_eq(d.now(), 1L)
+        })
+        assert_eq(
+          (conn.inner.closes(), d.live_tasks(), d.pending_timers()),
+          (1, 0, 0),
+        )
+      }
+    }
+  })
+}
+
+///|
 test "Pong dispatch races a sender and retains prefetched bytes across another Ping" {
   @sim.explore(schedule => {
     for sender in [false, true] {

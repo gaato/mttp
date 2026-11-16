@@ -1,4 +1,34 @@
 ///|
+test "101 attributes survive Client and even a custom retry decision cannot resend it" {
+  let key : @mttp_core.AttributeKey[Int32] = @mttp_core.AttributeKey::new(
+    "upgrade marker",
+  )
+  let calls = Ref(0)
+  let backend = @client.from_fn((_, _) => {
+    calls.val += 1
+    {
+      ..@mttp_core.Response::new(101),
+      attributes: @mttp_core.Attributes::empty().put(key, 9),
+    }
+  })
+  let client = @client.Client::new(
+    backend,
+    @sim.FakeClock::new(),
+    retry=@client.RetryPolicy::conservative().with_max_retries(2),
+  )
+  defer client.close()
+  @driver.run_sync(() => {
+    let response = client.send(@client.get("http://example.test/"), decide_retry=(
+      _,
+      _,
+    ) => Wait(0))
+    assert_eq(response.status, 101)
+    assert_eq(response.attributes.get(key), Some(9))
+    assert_eq(calls.val, 1)
+  })
+}
+
+///|
 priv struct RecordingLimiter {
   events : Array[String]
   clock : @sim.FakeClock

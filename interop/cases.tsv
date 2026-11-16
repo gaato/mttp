@@ -1,4 +1,6 @@
 # What the interop suite runs and what it expects. interop/run.mbtx reads it.
+# Autobahn known rows preserve raw results; 2.10's stricter Pong preference
+# does not override the bounded latest-Pong contract (RFC 6455 section 5.5.3).
 #
 # Columns, separated by one tab:
 #   side    client: gaato/mttp's Client against a third-party server
@@ -45,10 +47,6 @@ server	ab-10.*	autobahn/direct	pass
 server	ab-12.*	autobahn/direct	n/a	permessage-deflate is not negotiated yet
 server	ab-13.*	autobahn/direct	n/a	permessage-deflate is not negotiated yet
 # Exact client expectations also constrain the W4 runner when integrated.
-client	autobahn-2.10	native/autobahn	pass
-client	autobahn-7.1.6	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: echo and Close ordering is implementation defined
-client	autobahn-7.13.1	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: Close code 5000 is rejected with 1002
-client	autobahn-7.13.2	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: Close code 65535 is rejected with 1002
 
 # Client side: gaato/mttp's Client against nginx, Caddy and Apache.
 client	get	*/*/*	pass
@@ -164,3 +162,20 @@ server	h11p-cook-parsed-*	http11probe/direct	n/a	the /cookie tests check a frame
 # JSON adapter emits st-run plus one stable case per finding class/operation.
 server	st-*	schemathesis/direct	pass
 server	st-jsonschemaerror-get-events	schemathesis/direct	known	Schemathesis 4.33.4 parses each OpenAPI 3.1 text/event-stream event, then applies the media schema for the raw stream (type string) to the parsed event object; it only understands event itemSchema in OpenAPI 3.2 and ignores 3.1's registered x-oai-itemSchema extension
+
+# Autobahn fuzzingserver. Section 9 uses the client's raised 64 MiB bounds.
+client	autobahn-1.*	native/autobahn	pass
+client	autobahn-2.*	native/autobahn	pass
+client	autobahn-3.*	native/autobahn	pass
+client	autobahn-4.*	native/autobahn	pass
+client	autobahn-5.*	native/autobahn	pass
+client	autobahn-6.*	native/autobahn	pass
+client	autobahn-7.*	native/autobahn	pass
+client	autobahn-9.*	native/autobahn	pass
+client	autobahn-10.*	native/autobahn	pass
+client	autobahn-12.*	native/autobahn	n/a	permessage-deflate is not implemented at this stage
+client	autobahn-13.*	native/autobahn	n/a	permessage-deflate is not implemented at this stage
+client	autobahn-2.10	native/autobahn	pass
+client	autobahn-7.1.6	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: 256 KiB message followed immediately by Close and Ping; ordering of the echo and Close is implementation defined
+client	autobahn-7.13.1	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: reserved close code 5000 is refused with 1002; the suite defines no strict expected behavior
+client	autobahn-7.13.2	native/autobahn	known:INFORMATIONAL/INFORMATIONAL	INFORMATIONAL: reserved close code 65535 is refused with 1002; the suite defines no strict expected behavior

@@ -164,8 +164,9 @@ fn ConnSession::feed_input(self : ConnSession, bytes : Bytes) -> Unit {
 
 ///|
 /// Count raw bytes not yet reported as complete headers/payloads. Partial
-/// headers remain counted, so finishing our Pong cannot abandon the peer's
-/// half-written control frame. A deferred data head is delivered only once.
+/// headers remain counted and buffered across recv calls. A control whose
+/// complete head was parsed can still need input to unblock the peer's write.
+/// A deferred data head is delivered only once.
 fn ConnSession::next_event(self : ConnSession) -> @frame.Event? raise WsError {
   if self.deferred_head is Some(head) {
     self.deferred_head = None
@@ -220,11 +221,19 @@ async fn ConnSession::drain_pongs(self : ConnSession) -> Unit raise WsError {
       Some(Payload(bytes)) => self.on_payload(bytes)
       Some(End) => self.on_end()
       None => {
-        if self.pong_read_ahead.is_empty() &&
-          (self.pending_pong is Some(_) || !(self.pong_progress is Idle)) {
-          self.read_during_pong()
-          if self.pong_read_ahead.is_empty() {
-            continue
+        if self.pong_read_ahead.is_empty() {
+          if self.pong_read_error is Some(_) {
+            return
+          }
+          if self.pending_pong is Some(_) || !(self.pong_progress is Idle) {
+            self.read_during_pong()
+            if self.pong_read_ahead.is_empty() {
+              continue
+            }
+          } else if self.head is None {
+            // A partial next header belongs to the next recv. Once our Pong
+            // is complete, it must not delay the already committed message.
+            return
           }
         }
         self.pull_input()

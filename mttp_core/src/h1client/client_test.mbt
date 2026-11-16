@@ -257,7 +257,6 @@ test "no-body framing and connection tokens follow the method and protocol" {
     ),
     (Get, b"HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n", false),
     (Connect, b"HTTP/1.1 200 OK\r\n\r\n", false),
-    (Get, b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\n\r\n", false),
     (Get, b"HTTP/1.1 204 No Content\r\n\r\nunsolicited", false),
   ]
   for row in rows {

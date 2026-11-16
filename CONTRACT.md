@@ -133,6 +133,10 @@ our own Pong completing does not imply that the peer's partial Pong write
 has completed. The next data head is deferred rather than overwriting the
 committed message. This keeps byte-at-a-time backpressured peers live while
 retaining one message, one read-ahead chunk and one fixed header.
+Once our Pong has finished, an incomplete next header cannot delay a ready
+message; that header stays buffered for the next recv. A speculative read
+failure is retained after the parser and read-ahead bytes, so every complete
+message buffered before it is delivered before that failure is reported.
 
 ## Backend
 
@@ -188,11 +192,26 @@ retaining one message, one read-ahead chunk and one fixed header.
     records it under the `@mttp_core.protocol` attribute as its ALPN
     identifier (`http/1.0`, `http/1.1`, `h2`, `h3`). One that cannot know,
     such as JS fetch, leaves it unset.
+12. **Attributes and upgrades.** A backend or wrapper preserves response
+    attributes it does not own, because they can carry protocol ownership.
+    An HTTP/1 client accepts 101 only if the request's Connection contains
+    upgrade and its Upgrade field is present. It returns `rt.upgraded` with
+    a take-once connection and every byte read past the head. The slot remains
+    held until that connection is closed, exactly once; it is never pooled.
+    Wrappers never retry, follow or decode a 101 response.
+    Discarding an attribute-bearing response also takes and closes its
+    unclaimed upgrade (`rt.close_unclaimed`), because closing an empty HTTP
+    body does not dispose of protocol ownership. Engines and Client retain
+    only unclaimed hand-overs: take or discard unregisters immediately, close
+    reclaims the remainder, and late arrivals after close are reclaimed too.
+    Connections already claimed belong to the caller and survive Client close.
 
 A backend written outside this repository, for example over another HTTP
 engine, passes `@sim.check_backend_contract(make_backend)` from
 `gaato/mttp_core/sim`, which exercises these rules (including rule 6's phase) on
-the target it runs on.
+the target it runs on. A wrapper also supplies `wrap=inner => Wrapper::new(inner)`
+so the checker can inject upstream response attributes and verify preservation
+on both 200 and 101 without a network peer.
 
 `mttp/backend.AsyncBackend::new` accepts optional `rt.Clock` and
 `rt.Timer` ports on every target. The defaults are `AsyncClock` and

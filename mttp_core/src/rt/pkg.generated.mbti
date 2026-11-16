@@ -6,13 +6,23 @@ import {
 }
 
 // Values
+pub fn close_unclaimed(@mttp_core.Attributes) -> Unit
+
 pub fn default_random() -> Double
 
 pub let upgrade : @mttp_core.AttributeKey[async (&Conn, Bytes, () -> Bool) -> Unit noraise]
 
+pub let upgraded : @mttp_core.AttributeKey[&Upgraded]
+
 // Errors
 
 // Types and methods
+pub struct Upgrades {
+  // private fields
+}
+pub fn Upgrades::close(Self) -> Unit
+pub fn Upgrades::new() -> Self
+pub fn Upgrades::track(Self, @mttp_core.Response) -> @mttp_core.Response
 
 // Type aliases
 
@@ -51,4 +61,8 @@ pub(open) trait Signal {
 
 pub(open) trait Timer {
   async fn within(Self, Int32, async () -> Unit noraise) -> Bool noraise
+}
+
+pub(open) trait Upgraded {
+  fn take_conn(Self) -> (&Conn, Bytes)?
 }

@@ -7,6 +7,8 @@ import {
 }
 
 // Values
+pub async fn connect(String, backend? : &@mttp_core.Backend, subprotocols? : Array[String], extensions? : Array[String], origin? : String, headers? : @mttp_core.Headers, limits? : @gaato/mttp_core/ws.WsLimits) -> &@gaato/mttp_core/ws.Session raise @gaato/mttp_core/ws.WsError
+
 pub fn upgrade(@mttp_core.Request, origins? : @handshake.OriginPolicy, subprotocols? : Array[String], limits? : @gaato/mttp_core/ws.WsLimits, handler~ : async (&@gaato/mttp_core/ws.Session) -> Unit) -> @mttp_core.Response
 
 // Errors
@@ -14,5 +16,18 @@ pub fn upgrade(@mttp_core.Request, origins? : @handshake.OriginPolicy, subprotoc
 // Types and methods
 
 // Type aliases
+pub using @gaato/mttp_core/ws {type CloseCode}
+
+pub using @gaato/mttp_core/ws {type CloseFrame}
+
+pub using @gaato/mttp_core/ws {type Message}
+
+pub using @gaato/mttp_core/ws {type WsError}
+
+pub using @gaato/mttp_core/ws {type WsErrorKind}
+
+pub using @gaato/mttp_core/ws {type WsLimits}
+
+pub using @gaato/mttp_core/ws {trait Session}
 
 // Traits

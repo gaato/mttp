@@ -208,7 +208,10 @@ pub async fn FollowRedirects::send(
         error => raise after_redirect(error, followed)
       }
     }
-    errdefer response.close()
+    errdefer {
+      @rt.close_unclaimed(response.attributes)
+      response.close()
+    }
     let planned = if max > 0 {
       plan_redirect(
         request.head(),
@@ -233,6 +236,7 @@ pub async fn FollowRedirects::send(
       }
     }
     let next = apply_redirect(request, plan)
+    @rt.close_unclaimed(response.attributes)
     response.close()
     let hop = RedirectHop::{
       request: request.head(),

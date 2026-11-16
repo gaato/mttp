@@ -205,3 +205,20 @@ its RFC validator is deliberately incomplete. Check each discrepancy against
 [CONTRACT.md](../CONTRACT.md),
 [h1server's guarantees](../mttp_core/src/h1server/README.mbt.md) and
 [documented conformance differences](../conformance/data/h1_differences.txt).
+
+WebSocket clients run against the digest-pinned Autobahn TestSuite 25.10.1
+in fuzzingserver mode (`interop/servers/autobahn-client.json`):
+
+```sh
+INTEROP_ENGINE=docker moon run interop/run.mbtx -- client/native/autobahn
+```
+
+The native `ws_client` asks for every case, echoes messages, and requests the
+JSON report; `clients/autobahn/adapter.mbtx` converts both behavior and close verdicts
+to CASE lines. Raw reports remain in `_build/interop/autobahn-client/reports`.
+The [upstream configuration](https://github.com/crossbario/autobahn-testsuite)
+selects sections 1–7, 9 and 10; 12–13 are excluded until permessage-deflate.
+Section 9 uses explicit 64 MiB frame/message limits and a raised empty-frame
+work limit. The shared adapter requires strict OK for case 2.10: the session
+answers each Ping while its Pong writer is free. Only 7.1.6, 7.13.1 and
+7.13.2 allow the exact INFORMATIONAL/INFORMATIONAL verdict pair.

@@ -14,6 +14,17 @@ never does.
   deadlines ending at the head. Router's in-process WebSocket path uses the
   real codec over a bounded byte pair and explicit scheduling ports.
 
+- `rt.close_unclaimed(attributes)` and `rt.Upgrades` keep upgraded sockets
+  owned through decoder failures, cancellation, redirects and Client/engine
+  closure. Only unclaimed connections are reclaimed; take/discard removes
+  retained entries immediately. A 101 from a fresh resend keeps stale_resend.
+
+- HTTP/1 client upgrades retain their slot and read-ahead through the
+  take-once `rt.Upgraded` / `rt.upgraded` hand-over.
+  Unrequested 101 responses are Protocol errors in Head. Proxy upgrades use
+  CONNECT. Wrappers preserve unknown attributes and never retry a 101;
+  `sim.check_backend_contract(wrap~)` checks metadata preservation.
+
 - Sans-I/O `ws/handshake`: injected 16-byte client keys, RFC accept values,
   client request and server response validation, 400/403/426 server refusals,
   same-origin policy, bounded generic extension syntax, and value-only 101
@@ -78,6 +89,10 @@ never does.
   (CONTRACT.md, Connections and coordination).
 
 ### Fixed
+
+- WebSocket Pong draining returns completed messages without waiting for a
+  partial next header. Speculative read errors, including TLS IncompleteClose,
+  follow all messages already buffered instead of discarding them.
 
 - Keep Pong writes in the independent receive monitor so two backpressured
   peers continue reading while both reply to Ping. The parser waits only for

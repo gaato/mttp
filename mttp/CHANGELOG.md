@@ -13,7 +13,15 @@ never does.
   bounded Session to a handler. Shutdown sends GoingAway and retains the
   connection's admission slot until completion or the listener drain deadline.
 
-### Added
+- Decompress reclaims unclaimed upgrade metadata on a head-decoding refusal;
+  ws.connect cleanup also guards the unclaimed interval before acquisition.
+  Runtime tests count actual h1 slot reuse after handshake/decoder failure
+  and release cancellation, and inject cancellation at response/take boundaries.
+
+- `ws.connect` opens ws/wss sessions over a caller backend or the default
+  TLS/proxy backend, with secure runtime entropy, subprotocol validation,
+  explicit limits, and no redirects. JS and extensions refuse until their
+  later stages. The native client is tested against Autobahn fuzzingserver.
 
 - `RuntimeCoordination.protect(work~)` implements the new mttp_core
   cancellation-protection port with core/async's `protect_from_cancel`, so

@@ -1,5 +1,7 @@
 ///|
 /// Decides whether to retry after a failed attempt, and how long to wait.
+/// A 101 always stops: its connection has left HTTP, regardless of policy
+/// status rules or a server override.
 ///
 /// `attempt` counts the retries already made: 0 after the first attempt
 /// fails. The checks run in order, and the first that applies wins:
@@ -75,6 +77,9 @@ pub fn RetryRule::decide(
   idempotent~ : Bool,
   replayable~ : Bool,
 ) -> Decision {
+  if outcome is Response(status=101, ..) {
+    return Stop(NotRetryable)
+  }
   if attempt >= self.max_retries {
     return Stop(Exhausted)
   }

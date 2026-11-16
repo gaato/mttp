@@ -287,7 +287,9 @@ async fn dial_route(
       let wire = Wire::dial(dialer, proxy.host, proxy.port, proxy.secure)
       errdefer wire.close()
       open_tunnel(wire, target, proxy, agent, limits)
-      wire.conn = dialer.start_tls(wire.conn, host=target.host)
+      if target.secure {
+        wire.conn = dialer.start_tls(wire.conn, host=target.host)
+      }
       wire
     }
   }

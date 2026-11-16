@@ -17,6 +17,7 @@ pub struct Client {
   priv proxies : Proxies
   priv pool : IdlePool[Wire]
   priv slots : Slots
+  priv upgrades : @rt.Upgrades
 }
 
 ///|
@@ -83,6 +84,7 @@ pub fn Client::new(
       max_total?=config.max_connections,
       max_per_origin?=config.max_connections_per_origin,
     ),
+    upgrades: @rt.Upgrades::new(),
   }
 }
 
@@ -96,7 +98,9 @@ pub fn Client::idle_connections(self : Client) -> Int32 {
 /// Closes the parked connections and refuses queued and later sends with
 /// `Closed` in phase Pool. Responses in flight keep their connections;
 /// finishing them closes the connection instead of parking it. Idempotent.
+/// Unclaimed upgrades are reclaimed; already taken connections stay caller-owned.
 pub impl @mttp_core.Backend for Client with fn close(self) {
+  self.upgrades.close()
   for wire in self.pool.drain() {
     wire.close()
   }
@@ -150,7 +154,16 @@ async fn Client::send_request(
     raise invalid("negative body byte ceiling")
   }
   let target = target(request)
-  let route = self.proxies.route(target)
+  let wants_upgrade = connection_token(request.headers, "upgrade") &&
+    request.headers.contains("upgrade")
+  let route = match self.proxies.route(target) {
+    Forward(proxy) if wants_upgrade => Tunnel(proxy)
+    route => route
+  }
+  // Plain upgrades use CONNECT where ordinary HTTP uses forwarding. Their
+  // origin slot is shared, but a forwarded idle wire is not a tunnel. Do not
+  // reuse it, or park a declined upgrade's tunnel for a later forward send.
+  let fresh_tunnel = wants_upgrade && !target.secure && route is Tunnel(_)
   let key = route.key(target.origin)
   let headers = route.headers(request.headers)
   let headers = if headers.contains("host") {
@@ -208,7 +221,7 @@ async fn Client::send_request(
       old.close()
     }
     // After a stale connection, the others parked as long are suspect too.
-    let cached = if fresh {
+    let cached = if fresh || fresh_tunnel {
       if cached is Some(old) {
         old.close()
       }
@@ -264,23 +277,6 @@ async fn Client::send_request(
       error => raise error
     }
     let response = exchanged.head
-    let body_framing = @h1.response_framing(
-      response.headers,
-      status=response.status,
-      meth=request.meth,
-    ) catch {
-      error => raise failure(Head, error)
-    }
-    let keep_alive = exchanged.uploaded &&
-      !(body_framing is UntilClose) &&
-      response.status != 101 &&
-      request.meth != Connect &&
-      !connection_token(request.headers, "close") &&
-      !connection_token(response.headers, "close") &&
-      (
-        response.version == Http11 ||
-        connection_token(response.headers, "keep-alive")
-      )
     let attributes = @mttp_core.Attributes::empty().put(
       @mttp_core.protocol,
       match response.version {
@@ -293,6 +289,45 @@ async fn Client::send_request(
     } else {
       attributes
     }
+    if response.status == 101 {
+      if !wants_upgrade {
+        raise @mttp_core.TransportError(
+          kind=Protocol,
+          phase=Head,
+          detail="unsolicited 101 response",
+        )
+      }
+      let pending = wire.pending
+      wire.pending = b""
+      let upgrade : &@rt.Upgraded = Upgrade::{
+        conn: { wire, slots: self.slots, key, closed: false, },
+        pending: Some(pending),
+      }
+      owned = false
+      transferred = true
+      return self.upgrades.track({
+        ..@mttp_core.Response::new(101, headers=response.headers),
+        attributes: attributes.put(@rt.upgraded, upgrade),
+      })
+    }
+    let body_framing = @h1.response_framing(
+      response.headers,
+      status=response.status,
+      meth=request.meth,
+    ) catch {
+      error => raise failure(Head, error)
+    }
+    let keep_alive = exchanged.uploaded &&
+      !fresh_tunnel &&
+      !(body_framing is UntilClose) &&
+      response.status != 101 &&
+      request.meth != Connect &&
+      !connection_token(request.headers, "close") &&
+      !connection_token(response.headers, "close") &&
+      (
+        response.version == Http11 ||
+        connection_token(response.headers, "keep-alive")
+      )
     owned = false
     transferred = true
     if body_framing is NoBody || body_framing == Length(0L) {

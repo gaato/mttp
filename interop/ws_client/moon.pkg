@@ -1,0 +1,17 @@
+import {
+  "gaato/mttp/ws",
+  "gaato/mttp/backend",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp_core/ws" @core_ws,
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+  "moonbitlang/core/async",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)

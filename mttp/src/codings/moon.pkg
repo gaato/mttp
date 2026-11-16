@@ -1,5 +1,6 @@
 import {
   "gaato/mttp_core",
+  "gaato/mttp_core/rt",
   "gaato/codec_bytes",
   "gaato/deflate",
   "gaato/deflate/gzip",

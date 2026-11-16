@@ -79,7 +79,10 @@ pub impl @mttp_core.Backend for Decompress with fn send(self, request, options) 
     request
   }
   let response = self.inner.send(sent, options)
-  errdefer response.close()
+  errdefer {
+    @rt.close_unclaimed(response.attributes)
+    response.close()
+  }
   if !decode || !has_body(request.meth.to_string(), response.status) {
     return response
   }

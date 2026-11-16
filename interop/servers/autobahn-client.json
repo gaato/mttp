@@ -1,0 +1,8 @@
+{
+  "url": "ws://127.0.0.1:39050",
+  "webport": 39051,
+  "outdir": "/reports",
+  "cases": ["*"],
+  "exclude-cases": ["12.*", "13.*"],
+  "exclude-agent-cases": {}
+}

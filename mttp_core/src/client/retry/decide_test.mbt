@@ -1,4 +1,20 @@
 ///|
+test "101 cannot be retried by a status rule or a server override" {
+  let rule = { ..rule(), statuses: [{ statuses: [Code(101)], methods: Any, }], }
+  assert_eq(
+    rule.decide(
+      response(101, [("x-should-retry", "true")]),
+      @mttp_core.Request::get("/").head(),
+      attempt=0,
+      random=0.5,
+      idempotent=true,
+      replayable=true,
+    ),
+    Stop(NotRetryable),
+  )
+}
+
+///|
 // Backoff without jitter: 100, 200, 400, ... ms, so every wait is exact.
 fn rule() -> @retry.RetryRule {
   {

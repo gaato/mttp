@@ -1172,10 +1172,11 @@ pub fn client_request(String, key~ : String, subprotocols? : Array[String], head
 pub fn check_client_request(@mttp_core.Request, origins? : OriginPolicy) -> Offer raise Refusal   // 400, 403 or 426
 
 // gaato/mttp_core/rt: the hand-over, carried in attributes (§5.4)
-pub let upgrade : @mttp_core.AttributeKey[...]        // server: set on a 101 by the handler
-pub let upgraded : @mttp_core.AttributeKey[...]       // client: set by an engine on an accepted 101
-// gaato/mttp_core/ws
-pub let ws_session : @mttp_core.AttributeKey[&Session] // a backend that has a session already (Router, JS hosts, HTTP/2 later)
+pub let upgrade : @mttp_core.AttributeKey[async (&Conn, Bytes, () -> Bool) -> Unit noraise]
+pub(open) trait Upgraded { fn take_conn(Self) -> (&Conn, Bytes)? }
+pub let upgraded : @mttp_core.AttributeKey[&Upgraded]
+// gaato/mttp_core/ws: a backend that has a session already (Router, JS hosts, HTTP/2 later)
+pub let ws_session : @mttp_core.AttributeKey[&Session]
 
 // endpoint: one definition, four uses
 pub struct WsEndpoint[S, I, In, Out]                  // security, handshake inputs, client-to-server and server-to-client messages
@@ -1193,7 +1194,7 @@ pub struct WsEndpoint[S, I, In, Out]                  // security, handshake inp
 | decompressed message | the message bound, its own ledger row | wire and decoded bytes are bounded apart (§5.2) |
 | permessage-deflate | off; window 15 required; no context takeover offered | gaato/deflate has a fixed 32 KiB window; constant memory per connection |
 
-The connection hand-over lives in `rt` because `rt` depends on the root; the session key lives in `ws` to avoid the same dependency cycle.
+The connection hand-over keys and `Upgraded` live in `rt` because `rt` depends on the root, so the root cannot name `Conn`; the session key lives in `ws` to avoid the same dependency cycle. The client takes its connection once and closes it to release the slot; the server joins its HTTP reader before invoking the callback and retains admission until return, with shutdown reported by the probe.
 
 `recv` retains parser/assembly state and committed messages across cancellation; its control writes use `rt.Coordination.protect` with their own send deadline, which closes the Conn on expiry, so a cancelled receiver never leaves a partial Pong or Close reply on a reusable connection (owner decision, 2026-11-15).
 The answer wait starts after the Ping write completes, since the peer cannot answer an incomplete frame; a byte received during that write already establishes life.

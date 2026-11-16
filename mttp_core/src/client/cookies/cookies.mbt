@@ -44,6 +44,8 @@ pub async fn Cookies::send(
   let attached = self.jar.attach(request)
   attached.validate()
   let response = self.inner.send(attached, options)
+  // Store is synchronous and non-raising: ownership transfers to the caller
+  // before pending cancellation can be delivered at its next suspension.
   self.jar.store(response.headers, request.url)
   response
 }

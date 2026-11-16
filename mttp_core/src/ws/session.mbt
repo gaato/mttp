@@ -42,6 +42,7 @@ priv struct ConnSession {
   mut pending_pong : Bytes?
   mut pong_progress : PongProgress
   mut pong_read_ahead : Bytes
+  mut pong_read_error : @mttp_core.TransportError?
   mut buffered_wire : Int32
   mut deferred_head : @frame.FrameHead?
   mut pong_drain : Bool
@@ -100,6 +101,7 @@ pub fn session_over_conn(
     pending_pong: None,
     pong_progress: Idle,
     pong_read_ahead: b"",
+    pong_read_error: None,
     buffered_wire: pending.length(),
     deferred_head: None,
     pong_drain: false,
@@ -121,6 +123,7 @@ fn ConnSession::drop(self : ConnSession) -> Unit {
   self.closing = self.closing.finish()
   self.pending_pong = None
   self.pong_read_ahead = b""
+  self.pong_read_error = None
   self.buffered_wire = 0
   self.deferred_head = None
   self.pong_drain = false
@@ -411,7 +414,7 @@ async fn ConnSession::flush_pong(self : ConnSession) -> Unit raise WsError {
 async fn ConnSession::offer_pong(
   self : ConnSession,
   payload : Bytes,
-) -> Unit raise WsError {
+) -> Unit noraise {
   let busy = self.pong_progress is (Queued | Writing) ||
     !self.lock.queue.is_empty()
   self.pending_pong = Some(payload)
@@ -444,8 +447,9 @@ async fn ConnSession::offer_pong(
 async fn ConnSession::read_during_pong(
   self : ConnSession,
   finish~ : Bool = false,
-) -> Unit raise WsError {
-  if !finish && !self.pong_read_ahead.is_empty() {
+) -> Unit noraise {
+  if self.pong_read_error is Some(_) ||
+    (!finish && !self.pong_read_ahead.is_empty()) {
     return
   }
   let ahead = Buffer()
@@ -503,7 +507,9 @@ async fn ConnSession::read_during_pong(
   ) catch {
     cause =>
       if !physical_equal(cause, completed) {
-        raise WsError(kind=Transport(cause), detail="Pong read-ahead failed")
+        // This read followed all parser and read-ahead bytes. Deliver those
+        // messages before exposing its terminal error through read_input.
+        self.pong_read_error = Some(cause)
       }
   }
 }
@@ -516,6 +522,9 @@ async fn ConnSession::read_input(
     let bytes = self.pong_read_ahead
     self.pong_read_ahead = b""
     return Some(bytes)
+  }
+  if self.pong_read_error is Some(cause) {
+    raise cause
   }
   self.conn.read(max_len=65536)
 }

@@ -11,3 +11,35 @@ supported_targets = "native+wasm+js"
 import {
   "gaato/mttp_core/ws/handshake",
 } for "test"
+
+#cfg(not(target="js"))
+import {
+  "gaato/mttp_core/client",
+  "gaato/mttp/backend",
+  "moonbitlang/core/env",
+}
+
+import {
+  "moonbitlang/core/async",
+} for "test"
+
+#cfg(not(target="js"))
+import {
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/encoding/utf8",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp_core/sim",
+} for "test"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/socket",
+  ],
+  targets: {
+    "socket_test.mbt": [ "native", "wasm" ],
+    "connect_test.mbt": [ "native", "wasm" ],
+    "upgrade_cleanup_test.mbt": [ "native", "wasm" ],
+    "host.js_test.mbt": [ "js" ],
+  },
+)

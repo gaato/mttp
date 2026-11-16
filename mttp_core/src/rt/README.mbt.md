@@ -11,6 +11,7 @@ against it imports no event loop and builds on every target.
 | `Timer` | A time limit for a piece of work (`within`) |
 | `Gate` | A counting, FIFO admission gate |
 | `Conn` | An owned, full-duplex byte connection |
+| `Upgraded` | Take-once client connection hand-over and HTTP read-ahead |
 | `Dialer` | Opening connections and upgrading them to TLS |
 | `Signal` | A sticky one-shot notification |
 | `Coordination` | Structured concurrency: a primary task and its monitor |
@@ -18,11 +19,30 @@ against it imports no event loop and builds on every target.
 `default_random` returns a sample in [0, 1) for jitter and boundaries; it is
 not for secrets.
 
-`upgrade` is the server-side attribute carrying a 101 connection hand-over.
-Its callback receives the connection, bytes read past the request head and
-a shutdown probe, after the HTTP reader is joined. It retains admission until
-return and runs without HTTP deadlines; the listener's drain deadline still
-applies. The application helper is `gaato/mttp/ws.upgrade`.
+An accepted HTTP 101 carries `upgraded`, whose `take_conn()` transfers the
+connection and read-ahead once. Its owner closes the connection to release
+the engine's slot. Closing the HTTP response body does not close it.
+Discarding a response calls `close_unclaimed(response.attributes)` as well as
+closing its body. Engines and Client use `Upgrades` to reclaim unclaimed
+hand-overs on close, including responses arriving after close; taking or
+discarding unregisters immediately, so the registry retains no completed
+history. Claimed connections survive HTTP client closure.
+Server handlers use `upgrade` for a callback receiving the connection,
+read-ahead and a shutdown probe, after the HTTP reader is joined. The engine
+retains admission until return and runs without HTTP deadlines; the listener's
+drain deadline still applies. The application helper is `gaato/mttp/ws.upgrade`.
+
+```mbt check
+///|
+test {
+  assert_eq(@rt.upgraded.name(), "upgraded")
+  assert_eq(@rt.upgrade.name(), "upgrade")
+  let owner = @rt.Upgrades::new()
+  let response = owner.track(@mttp_core.Response::new(200))
+  @rt.close_unclaimed(response.attributes)
+  owner.close()
+}
+```
 
 The implementations live elsewhere:
 

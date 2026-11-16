@@ -1067,6 +1067,82 @@ fn selected(filters : Array[String], key : String) -> Bool {
 }
 
 ///|
+/// Autobahn's fuzzingserver drives the native mttp WebSocket client. The
+/// JSON adapter preserves every raw verdict; cases.tsv owns known outcomes.
+async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
+  let run = "native/autobahn"
+  let rows = rows_of(rows, "client", run)
+  let cases = plan(rows)
+  port_free("127.0.0.1:39050")
+  port_free("127.0.0.1:39051")
+  ignore(must("moon", ["build", "--target", "native", "interop/ws_client"]))
+  make_dir("\{work}/autobahn-client/reports")
+  ignore(must(env.engine, ["pull", "--quiet", env.image("autobahn")]))
+  let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+  @async.with_task_group(group => {
+    defer @async.protect_from_cancel(() => {
+      ignore(capture(env.engine, ["rm", "-f", "mttp-interop-ws-client"]))
+    })
+    let server = @process.spawn(
+      group,
+      env.engine,
+      env.run_args(
+        "autobahn",
+        [
+          "--name",
+          "mttp-interop-ws-client",
+          ..env.user,
+          ..env.mount(
+            "interop/servers/autobahn-client.json", "/config/fuzzingserver.json",
+          ),
+          ..env.mount(
+            "\{work}/autobahn-client/reports",
+            "/reports",
+            writable=true,
+          ),
+        ],
+        [],
+      ),
+      stdout=ToFile("\{work}/autobahn-client/server.log"),
+      stderr=ToFile("\{work}/autobahn-client/server.log"),
+    )
+    defer server.cancel()
+    wait_port("127.0.0.1:39050", "Autobahn fuzzingserver")
+    ignore(
+      must(
+        "_build/native/debug/build/\{interop_module}/ws_client/ws_client.exe",
+        [],
+      ),
+    )
+    run_one(
+      tally,
+      "client",
+      run,
+      rows,
+      cases,
+      (
+        "moon",
+        [
+          "run",
+          "interop/clients/autobahn/adapter.mbtx",
+          "--",
+          "\{work}/autobahn-client/reports/index.json",
+          "mttp-client",
+        ],
+      ),
+    )
+  })
+  println(
+    "Autobahn client: \{tally.pass} passed, \{tally.known} known, \{tally.fail} failed",
+  )
+  if tally.fail == 0 {
+    0
+  } else {
+    1
+  }
+}
+
+///|
 async fn main_run(filters : Array[String]) -> Int32 {
   let engine = find_engine()
   let images = read_images()
@@ -1084,6 +1160,14 @@ async fn main_run(filters : Array[String]) -> Int32 {
     return run_autobahn(env, rows)
   }
   println("interop: \{engine}, images pinned in interop/images.tsv")
+  let ws_status = if selected(filters, "client/native/autobahn") {
+    run_autobahn_client(env, rows)
+  } else {
+    0
+  }
+  if !filters.is_empty() && filters.all(f => f == "client/native/autobahn") {
+    return ws_status
+  }
   for
     addr in [
       server_addr, "127.0.0.1:39010", "127.0.0.1:39020", "127.0.0.1:39030", openapi_server_addr,
@@ -1187,7 +1271,7 @@ async fn main_run(filters : Array[String]) -> Int32 {
   } else {
     0
   }
-  if tally.fail > 0 || autobahn != 0 {
+  if tally.fail > 0 || autobahn != 0 || ws_status != 0 {
     1
   } else {
     0
@@ -1334,10 +1418,17 @@ async fn self_test_autobahn() -> Unit {
       }
     }
   }
-  let scratch = @env.get_env_var("TMPDIR").unwrap_or(work)
-  make_dir(scratch)
-  let fixture = "\{scratch}/mttp-autobahn-verdict-fixture.json"
-  defer @fs.remove(fixture)
+  let first = autobahn_fixture_dir()
+  defer (if @fs.exists(first) { @fs.rmdir(first, recursive=true) })
+  let second = autobahn_fixture_dir()
+  defer (if @fs.exists(second) { @fs.rmdir(second, recursive=true) })
+  assert_true(first != second, msg="Autobahn runs must own separate fixtures")
+  @fs.write_text("\{first}/index.json", "first run")
+  @fs.write_text("\{second}/index.json", "second run")
+  assert_eq(@fs.read_text("\{first}/index.json"), "first run")
+  @fs.rmdir(first, recursive=true)
+  assert_eq(@fs.read_text("\{second}/index.json"), "second run")
+  let fixture = "\{second}/index.json"
   for agent in ["mttp", "mttp-client"] {
     let prefix = if agent == "mttp" { "ab" } else { "autobahn" }
     for
@@ -1367,6 +1458,11 @@ async fn self_test_autobahn() -> Unit {
     }
   }
   println("Autobahn verdict self-tests: OK")
+}
+
+///|
+async fn autobahn_fixture_dir() -> String {
+  @fs.tmpdir(prefix="mttp-autobahn-verdict-fixture")
 }
 
 ///|

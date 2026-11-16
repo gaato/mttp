@@ -36,6 +36,11 @@ the doubles here pass them in this package's tests, and gaato/mttp's
 runtime adapters pass the same checks. Each raises `Failure` naming the first
 rule it saw broken.
 
+For a backend wrapper, supply `wrap=inner => Wrapper::new(inner)` as well:
+the checker injects unknown response metadata into that upstream and checks
+that the wrapper preserves it on both 200 and 101. This protects ownership
+attributes such as the WebSocket connection hand-over without needing a peer.
+
 `check_splits` checks that an incremental parser gives the same result
 however its input is split. The generators (`gen_chunks`, `gen_text`,
 `gen_headers`, `gen_invalid_url`) feed property tests from the caller's

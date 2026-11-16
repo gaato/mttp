@@ -33,6 +33,7 @@ pub struct Client {
   priv observer : (Attempt) -> Unit
   priv random : () -> Double
   priv mut closed : Bool
+  priv upgrades : @rt.Upgrades
 }
 
 ///|
@@ -116,6 +117,7 @@ pub fn Client::new(
     observer,
     random,
     closed: false,
+    upgrades: @rt.Upgrades::new(),
   }
 }
 
@@ -124,9 +126,12 @@ pub fn Client::new(
 /// returns its last outcome if closed before its wait or when that wait wakes,
 /// without another limiter acquisition. Closing does not interrupt Clock.sleep.
 /// Later sends fail with Closed in phase Pool before admission.
+/// Unclaimed upgrade hand-overs are reclaimed; already taken connections
+/// stay caller-owned, so closing the HTTP client cannot abort a live session.
 pub fn Client::close(self : Client) -> Unit {
   if !self.closed {
     self.closed = true
+    self.upgrades.close()
     self.backend.close()
   }
 }
@@ -217,10 +222,11 @@ async fn[T, M] Client::exchange(
   received : Ref[@mttp_core.ResponseHead?],
 ) -> ReadResult[T] {
   let started = self.clock.now_unix_ms()
-  let response = self.backend.send(request, options)
+  let response = self.upgrades.track(self.backend.send(request, options))
   received.val = Some(response.head())
   let mut transferred = false
   defer (if !transferred { response.close() })
+  errdefer @rt.close_unclaimed(response.attributes)
   if options.timeout_ms is Some(ms) &&
     self.clock.now_unix_ms() - started >= ms.to_int64() {
     raise timeout(ms)
@@ -277,6 +283,9 @@ pub async fn[T, M : ResponseMode] Client::send(
           raise InvalidRequest(message="a total deadline requires a Timer")
       }
       let result : Ref[Result[Reply[T], Error]?] = Ref(None)
+      errdefer (if result.val is Some(Ok(reply)) {
+        @rt.close_unclaimed(reply.attributes)
+      })
       // Capture ordinary failures as data across the Timer's noraise callback.
       // Cancellation bypasses this catch and still unwinds the owned bodies.
       let completed = timer.within(ms, () => {
@@ -451,7 +460,12 @@ async fn[T, M : ResponseMode] Client::send_loop(
       Some(decide) => decide(event, context)
       None => default_decision
     }
-    let decision = self.guard_retry(proposed, context)
+    let decision : Decision = if received.val is Some(head) &&
+      head.status == 101 {
+      Stop(NotRetryable)
+    } else {
+      self.guard_retry(proposed, context)
+    }
     let error : Error? = match outcome {
       Err(error) => Some(error)
       _ => None
@@ -597,7 +611,10 @@ async fn[T, M] Client::exchange_timed(
 ///|
 fn[T] discard(value : ReadResult[T]) -> Unit {
   match value {
-    Buffered(_, response) | Streaming(response, _) => response.close()
+    Buffered(_, response) | Streaming(response, _) => {
+      @rt.close_unclaimed(response.attributes)
+      response.close()
+    }
   }
 }
 
