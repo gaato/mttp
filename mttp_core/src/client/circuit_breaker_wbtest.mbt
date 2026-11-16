@@ -2,6 +2,22 @@
 priv struct StillClock {}
 
 ///|
+test "origin keys normalize an unknown scheme without inventing a port" {
+  assert_eq(
+    origin_key("CUSTOM://EXAMPLE.COM/path"),
+    Some("custom://example.com"),
+  )
+  assert_eq(
+    origin_key("custom://example.com/other"),
+    Some("custom://example.com"),
+  )
+  assert_eq(
+    origin_key("custom://example.com:123/path"),
+    Some("custom://example.com:123"),
+  )
+}
+
+///|
 impl @rt.Clock for StillClock with fn now_unix_ms(_) {
   0L
 }

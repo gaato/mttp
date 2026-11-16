@@ -20,6 +20,24 @@ async fn received(chunks : Array[Bytes]) -> Array[@multipart.Part] {
 }
 
 ///|
+test "quoted MIME parameters allow trailing spaces and tabs before another parameter" {
+  assert_eq(
+    @multipart.parse_boundary(
+      "multipart/form-data; boundary=\"B\" \t; extra=ok",
+    ),
+    "B",
+  )
+  let parts = @multipart.parse(
+    b"--B\r\nContent-Disposition: form-data; name=\"field\" \t; filename=\"file.txt\" \t\r\n\r\nx\r\n--B--\r\n",
+    "B",
+  )
+  assert_eq(parts.length(), 1)
+  assert_eq(parts[0].name, "field")
+  assert_eq(parts[0].filename, Some("file.txt"))
+  assert_eq(parts[0].body.as_bytes(), Some(b"x"))
+}
+
+///|
 test "reader corpus at every split and byte by byte" {
   let corpus : Array[(Bytes, Bool)] = [
     (

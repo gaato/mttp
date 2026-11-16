@@ -102,6 +102,79 @@ async fn auth_send(
 }
 
 ///|
+test "a late 401 reuses credentials refreshed since its send" {
+  let d = @driver.Driver::new()
+  let tokens = Tokens::new()
+  let backend = @client.AuthRefresh::new(
+    @client.from_fn((request, _) => {
+      tokens.sends += 1
+      let authorized = request.headers.get("authorization") == Some("Bearer 1")
+      if !authorized && request.url.has_suffix("/late") {
+        d.sleep(20)
+      }
+      @mttp_core.Response::new(if authorized { 200 } else { 401 })
+    }),
+    origin=@mttp_core.Url::parse("https://api.example/"),
+    refresh=() => {
+      tokens.refreshes += 1
+      tokens.current = 1
+    },
+    apply=tokens.apply(),
+    coordination=@sim.SimCoordination::new(d),
+  )
+  let statuses = []
+  d.run(() => {
+    let late = d.spawn(() => {
+      statuses.push(
+        auth_send(backend, @mttp_core.Request::get("https://api.example/late")).0,
+      )
+    })
+    d.sleep(1)
+    assert_eq(tokens.sends, 1)
+    statuses.push(
+      auth_send(backend, @mttp_core.Request::get("https://api.example/fast")).0,
+    )
+    assert_eq(tokens.refreshes, 1)
+    assert_true(late.wait())
+  })
+  assert_eq(statuses, [200, 200])
+  assert_eq((tokens.refreshes, tokens.sends), (1, 4))
+}
+
+///|
+test "a request joining a failed refresh returns its original empty 401" {
+  let d = @driver.Driver::new()
+  let tokens = Tokens::new()
+  let backend = @client.AuthRefresh::new(
+    tokens.backend(d),
+    origin=@mttp_core.Url::parse("https://api.example/"),
+    refresh=() => {
+      tokens.refreshes += 1
+      d.sleep(20)
+      fail("token endpoint down")
+    },
+    apply=tokens.apply(),
+    coordination=@sim.SimCoordination::new(d),
+  )
+  let results = []
+  d.run(() => {
+    let first = d.spawn(() => {
+      results.push(
+        auth_send(backend, @mttp_core.Request::get("https://api.example/first")),
+      )
+    })
+    d.sleep(1)
+    assert_eq(tokens.refreshes, 1)
+    results.push(
+      auth_send(backend, @mttp_core.Request::get("https://api.example/join")),
+    )
+    assert_true(first.wait())
+  })
+  assert_eq(results, [(401, b""), (401, b"")])
+  assert_eq((tokens.refreshes, tokens.sends), (1, 2))
+}
+
+///|
 test "concurrent 401s share one refresh under every schedule" {
   @sim.explore(schedule => {
     let d = @driver.Driver::new(schedule~)

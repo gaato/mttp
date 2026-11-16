@@ -123,6 +123,65 @@ test "event streams reconnect after EOF and a failure with Last-Event-ID and ret
 }
 
 ///|
+test "an empty event ID removes the caller header while preserving Accept" {
+  let d = @driver.Driver::new()
+  let server = SseServer::new(d, [
+    Events([Chunk(b"id: next\ndata: a\n\n"), End]),
+    Events([Chunk(b"id:\n\n"), End]),
+    Answer(204, []),
+  ])
+  let client = server.client()
+  let received = []
+  let end = d.run(() => {
+    client.sse_reconnecting(
+      @mttp_core.Request::get("/events")
+      .header("last-event-id", "initial")
+      .header("accept", "text/event-stream; custom=yes"),
+      event => received.push(event.data),
+      policy=sse_policy(),
+    )
+  })
+  assert_true(end is NoContent)
+  assert_eq(received, ["a"])
+  assert_eq(server.seen, [
+    (0L, Some("initial"), Some("text/event-stream; custom=yes")),
+    (100L, Some("next"), Some("text/event-stream; custom=yes")),
+    (300L, None, Some("text/event-stream; custom=yes")),
+  ])
+  assert_true(server.feeds.iter().all(feed => feed.closes() == 1))
+}
+
+///|
+test "a reconnecting stream propagates Client configuration errors before sending" {
+  let d = @driver.Driver::new()
+  let sends = Ref(0)
+  let client = @client.Client::new(
+    @client.from_fn((_, _) => {
+      sends.val += 1
+      @mttp_core.Response::new(204)
+    }),
+    @sim.SimClock::new(d),
+    total_ms=1000,
+  )
+  try
+    d.run(() => {
+      client.sse_reconnecting(
+        @mttp_core.Request::get("https://api.example/events"),
+        _ => fail("no event expected"),
+        policy=sse_policy(),
+      )
+    })
+  catch {
+    @client.InvalidRequest(message="a total deadline requires a Timer") => ()
+    error => raise error
+  } noraise {
+    _ => fail("expected Client configuration error")
+  }
+  assert_eq(sends.val, 0)
+  assert_eq(d.now(), 0L)
+}
+
+///|
 test "event stream statuses give up after max_attempts and honour Retry-After" {
   let d = @driver.Driver::new()
   let server = SseServer::new(d, [
