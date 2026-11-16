@@ -167,6 +167,7 @@ The router is itself a `Backend`, as above, and its `handler()` is what
 | `gaato/mttp_core/sse` | A bounded `text/event-stream` parser, reader and encoder |
 | `gaato/mttp_core/multipart` | A `multipart/form-data` writer with streamed parts |
 | `gaato/mttp_core/cookie` | An RFC 6265 cookie jar on an injected clock |
+| `gaato/mttp_core/urlpattern` | WHATWG URL patterns without regular expressions, matched in linear time, for RFC 9842's `match` |
 | `gaato/mttp_core/sf` | RFC 9651 Structured Field Values: parsing and serializing Lists, Dictionaries and Items |
 | `gaato/mttp_core/jsonkit` | `Presence`, an object builder, field decoders and open enums for JSON models |
 | `gaato/mttp_core/schema` | Text, JSON and body codecs that carry their JSON Schema, and validators |

@@ -197,3 +197,11 @@ gaato/mttp_core	gaato/mttp_core/sf	js	8
 gaato/mttp_core	gaato/mttp_core/sf	native	8
 gaato/mttp_core	gaato/mttp_core/sf	wasm	8
 gaato/mttp_core	gaato/mttp_core/sf	wasm-gc	8
+gaato/mttp-conformance	gaato/mttp-conformance/urlpattern	js	1
+gaato/mttp-conformance	gaato/mttp-conformance/urlpattern	native	1
+gaato/mttp-conformance	gaato/mttp-conformance/urlpattern	wasm	1
+gaato/mttp-conformance	gaato/mttp-conformance/urlpattern	wasm-gc	1
+gaato/mttp_core	gaato/mttp_core/urlpattern	js	24
+gaato/mttp_core	gaato/mttp_core/urlpattern	native	24
+gaato/mttp_core	gaato/mttp_core/urlpattern	wasm	24
+gaato/mttp_core	gaato/mttp_core/urlpattern	wasm-gc	24

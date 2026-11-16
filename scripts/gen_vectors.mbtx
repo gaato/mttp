@@ -21,13 +21,16 @@ import {
 //   moon run scripts/gen_vectors.mbtx -- llhttp <llhttp checkout>
 //   moon run scripts/gen_vectors.mbtx -- wpt-fetch <wpt checkout>
 //   moon run scripts/gen_vectors.mbtx -- sf <structured-field-tests checkout>
+//   moon run scripts/gen_vectors.mbtx -- urlpattern <urlpatterntestdata.json>
 //
 // `url` and `cookie` write their test files directly, the data as JSON in a
 // string, one entry per line: `url` keeps the rows of urltestdata.json whose
 // input or result is an http, https, ws or wss URL; `cookie` turns
 // tough-cookie's copies of the http-state tests, TypeScript object literals,
 // into JSON; `sf` keeps every case of httpwg's structured-field-tests, its
-// parsing tests and its serialisation-tests, each with the name of its file.
+// parsing tests and its serialisation-tests, each with the name of its file;
+// `urlpattern` keeps every case of WPT's urlpatterntestdata.json, its lone
+// surrogates as U+FFFD (see usv_escapes).
 // `llhttp` and `wpt-fetch` copy the upstream cases verbatim into
 // conformance/data/: each llhttp test's markdown heading, metadata, input
 // block and expected callback log, and the HTTP/1 parsing resources and
@@ -201,6 +204,49 @@ async fn write_if_changed(target : String, text : String) -> Unit {
   } else {
     println("unchanged \{target}")
   }
+}
+
+///|
+/// `text`, JSON, with each `\\u` escape of a lone surrogate written as
+/// `\\uFFFD`. A few urlpattern cases pass lone surrogates, which the
+/// standard's USVString arguments turn into U+FFFD before it sees them, and
+/// which @json.parse refuses.
+fn usv_escapes(text : String) -> String {
+  let chars = text.to_array()
+  let surrogate = (i : Int32) => {
+    guard i + 6 <= chars.length() && chars[i] == '\\' && chars[i + 1] == 'u' else {
+      return -1
+    }
+    let hex = String::from_array(chars[i + 2:i + 6])
+    let v = @string.parse_int(hex, base=16) catch { _ => return -1 }
+    if v >= 0xD800 && v <= 0xDFFF {
+      v
+    } else {
+      -1
+    }
+  }
+  let out = StringBuilder()
+  let mut i = 0
+  while i < chars.length() {
+    // A backslash escaping a backslash is not the start of an escape.
+    if chars[i] == '\\' && i + 1 < chars.length() && chars[i + 1] == '\\' {
+      out.write_string("\\\\")
+      i += 2
+      continue
+    }
+    let v = surrogate(i)
+    if v >= 0xD800 && v <= 0xDBFF && surrogate(i + 6) >= 0xDC00 {
+      out.write_string(String::from_array(chars[i:i + 12]))
+      i += 12
+    } else if v >= 0 {
+      out.write_string("\\uFFFD")
+      i += 6
+    } else {
+      out.write_char(chars[i])
+      i += 1
+    }
+  }
+  out.to_string()
 }
 
 ///|
@@ -1534,11 +1580,20 @@ async fn main {
         "conformance/src/sf/structured_field_tests_test.mbt",
         header + string_of_rows("structured_field_tests", sf_rows(root)),
       )
+    ["urlpattern", source] =>
+      write_if_changed(
+        "conformance/src/urlpattern/urlpatterntestdata_test.mbt",
+        header +
+        string_of_rows(
+          "urlpatterntestdata",
+          rows_of(@json.parse(usv_escapes(@fs.read_text(source)))),
+        ),
+      )
     ["llhttp", root] => extract_llhttp(root)
     ["wpt-fetch", root] => extract_wpt_fetch(root)
     _ => {
       eprintln(
-        "usage: moon run scripts/gen_vectors.mbtx -- [--check] | url <urltestdata.json> | cookie <parser.ts> <examples.ts> <bsd-examples.ts> | llhttp <checkout> | wpt-fetch <checkout> | sf <checkout>",
+        "usage: moon run scripts/gen_vectors.mbtx -- [--check] | url <urltestdata.json> | cookie <parser.ts> <examples.ts> <bsd-examples.ts> | llhttp <checkout> | wpt-fetch <checkout> | sf <checkout> | urlpattern <urlpatterntestdata.json>",
       )
       @env.exit(2)
     }

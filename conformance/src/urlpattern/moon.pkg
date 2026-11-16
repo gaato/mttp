@@ -1,0 +1,5 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/urlpattern" @up,
+  "moonbitlang/core/json",
+} for "test"

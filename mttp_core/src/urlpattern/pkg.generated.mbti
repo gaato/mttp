@@ -1,0 +1,54 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/urlpattern"
+
+import {
+  "gaato/mttp_core",
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+#derive(Eq, @debug.Debug)
+pub(all) suberror PatternError {
+  Invalid(String)
+  RegexpGroup
+  Unsupported(String)
+}
+pub fn PatternError::equal(Self, Self) -> Bool
+pub fn PatternError::not_equal(Self, Self) -> Bool
+pub fn PatternError::output(Self, &Logger) -> Unit
+pub fn PatternError::to_repr(Self) -> @debug.Repr
+pub fn PatternError::to_string(Self) -> String
+pub impl Show for PatternError
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct PatternInit {
+  mut protocol : String?
+  mut username : String?
+  mut password : String?
+  mut hostname : String?
+  mut port : String?
+  mut pathname : String?
+  mut search : String?
+  mut hash : String?
+  mut base_url : @mttp_core.Url?
+}
+pub fn PatternInit::equal(Self, Self) -> Bool
+pub fn PatternInit::new(protocol? : String, username? : String, password? : String, hostname? : String, port? : String, pathname? : String, search? : String, hash? : String, base_url? : @mttp_core.Url) -> Self
+pub fn PatternInit::not_equal(Self, Self) -> Bool
+pub fn PatternInit::to_repr(Self) -> @debug.Repr
+
+pub struct UrlPattern {
+  // private fields
+}
+pub fn UrlPattern::components(Self) -> FixedArray[String]
+pub fn UrlPattern::matches(Self, @mttp_core.Url) -> Bool
+pub fn UrlPattern::matches_init(Self, PatternInit) -> Bool raise PatternError
+pub fn UrlPattern::new(PatternInit) -> Self raise PatternError
+pub fn UrlPattern::parse(String, base? : @mttp_core.Url) -> Self raise PatternError
+
+// Type aliases
+
+// Traits

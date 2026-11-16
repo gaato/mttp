@@ -15,7 +15,9 @@ responses, the response templates of the Python handlers and the expectation
 tables of fetch/h1-parsing/ (h1-parsing.tentative.html, status-code.window.js,
 lone-cr.window.js) and of fetch/content-length/ (content-lengths.json,
 identical-duplicates.asis), which src/http1/wpt_vectors_test.mbt holds as
-vectors, all from
+vectors, and src/urlpattern/urlpatterntestdata_test.mbt every case of
+urlpattern/resources/urlpatterntestdata.json, its lone surrogates written
+as U+FFFD, all from
 web-platform-tests/wpt at commit e58225abb92a4f3b2efa0f5ab6bb1dd99f3dfa73,
 used under their 3-Clause BSD License:
 

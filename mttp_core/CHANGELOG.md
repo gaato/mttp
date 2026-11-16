@@ -14,6 +14,15 @@ never does.
   including failure and cancellation. Successful upgrades retain ownership
   until their callback ends instead of acknowledging an HTTP completion.
 
+- `urlpattern`: WHATWG URL patterns, `UrlPattern::parse` and
+  `UrlPattern::new`, with `matches` and `matches_init`, for RFC 9842's
+  `match`. Every component, named groups, wildcards and modifiers follow
+  the standard; matching is an automaton run once over the input, and a
+  regular expression group is refused with `RegexpGroup`. 337 of
+  web-platform-tests' 369 urlpattern cases pass; of the rest, 29 need what
+  is left out (regular expressions, `ignoreCase`, IDNA) and 3 a URL that
+  `Url::parse` reads otherwise than WHATWG's parser.
+
 - `sf`: RFC 9651 Structured Field Values. `parse_list`,
   `parse_dictionary` and `parse_item` take a field's lines, and
   `serialize_*` write the canonical text, both as section 4 states them;

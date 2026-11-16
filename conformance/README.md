@@ -14,6 +14,14 @@ commit `43f92f0`:
   httpwg's structured-field-tests: 1,607 fields parsed, compared and
   serialized back to their canonical form, and 553 values serialized or
   refused, with no exclusions.
+- URL patterns (`gaato/mttp_core/urlpattern`) against web-platform-tests'
+  urlpatterntestdata.json, checked as its runner checks them (the
+  constructor, each component's pattern string, `test`): 337 of its 369
+  cases. The other 32 are counted and pinned: 22 need regular expression
+  groups and 4 the `ignoreCase` option, which the package leaves out, 3
+  IDNA hostnames, and 3 URLs that `Url::parse`, an RFC 3986 parser, reads
+  otherwise than WHATWG's (a special scheme without `//`, and spaces in an
+  opaque path).
 - The HTTP/1 codec (`gaato/mttp_core/h1`) against 212 of llhttp's 255
   request and response tests and 165 rows of web-platform-tests' HTTP/1
   response parsing tables, each read whole, split in two at every offset,
