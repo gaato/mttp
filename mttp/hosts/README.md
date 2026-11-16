@@ -210,5 +210,10 @@ Node/Deno/Bun images pinned in `interop/images.tsv` against the native echo
 server, then Deno and Bun fetch servers. `websocket/local` explicitly uses
 installed runtimes and prints their versions for environments without containers.
 The Deno and Bun checks also exercise shutdown(), which sends GoingAway,
-removes the shutdown listener when the socket closes and joins the handler
-through whenIdle().
+waits at most close_timeout_ms, then cancels and joins the handler even when
+it is waiting outside recv. whenIdle() includes that cancellation cleanup.
+Deno upgrade responses append application header pairs without replacing the
+host's Connection, Upgrade or Sec-WebSocket handshake fields; Set-Cookie stays
+separate. Bun clients use a Headers object in the constructor's options
+overload to preserve repeated list fields in order, as supported by
+[Bun's WebSocket header type](https://github.com/oven-sh/bun/blob/main/packages/bun-types/bun.d.ts).

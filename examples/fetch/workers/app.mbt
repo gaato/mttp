@@ -92,8 +92,8 @@ async fn route(request : @mttp.Request) -> @mttp.Response noraise {
         "protocol": optional(session.subprotocol()),
       })
     }
-    (Get, Some("ws")) =>
-      @ws.upgrade(request, origins=Any, subprotocols=["echo"], handler=session => {
+    (Get, Some("ws")) => {
+      let response = @ws.upgrade(request, origins=Any, subprotocols=["echo"], handler=session => {
         if request.url.has_suffix("?shutdown") {
           session.send(Text("ready")) catch {
             _ => return
@@ -104,8 +104,21 @@ async fn route(request : @mttp.Request) -> @mttp.Response noraise {
           session.send(message) catch {
             _ => break
           }
+          if request.url.has_suffix("?shutdown") &&
+            message == Text("before stop") {
+            // The interop check shuts down while the handler waits outside recv.
+            @async.sleep(60000)
+          }
         }
       })
+      {
+        ..response,
+        headers: response.headers
+        .add("set-cookie", "a=1; Expires=Wed, 21 Oct 2037 07:28:00 GMT")
+        .add("set-cookie", "b=2; HttpOnly")
+        .add("x-app", "kept"),
+      }
+    }
     (Get, Some("hello")) =>
       json(200, {
         "greeting": optional(binding("GREETING")),

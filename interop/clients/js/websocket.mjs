@@ -7,7 +7,7 @@ const fetch = (request, background) => fetch_with_env(request, background, {});
 const handler = app => request => {
   if (new URL(request.url).pathname === '/shutdown') {
     app.shutdown();
-    return new Response('stopping');
+    return app.whenIdle().then(() => new Response('stopping'));
   }
   return app.fetch(request);
 };
@@ -17,7 +17,7 @@ if (globalThis.Deno) {
 } else {
   const app = bun(fetch);
   Bun.serve({hostname: '127.0.0.1', port: 39509, fetch(request, server) {
-    if (new URL(request.url).pathname === '/shutdown') { app.shutdown(); return new Response('stopping'); }
+    if (new URL(request.url).pathname === '/shutdown') { app.shutdown(); return app.whenIdle().then(() => new Response('stopping')); }
     return app.fetch(request, server);
   }, websocket: app.websocket});
 }

@@ -154,7 +154,7 @@ gaato/mttp	gaato/mttp/codings	native	49
 gaato/mttp	gaato/mttp/codings	wasm	49
 gaato/mttp	gaato/mttp/conn	native	9
 gaato/mttp	gaato/mttp/conn	wasm	10
-gaato/mttp	gaato/mttp/fetch	js	39
+gaato/mttp	gaato/mttp/fetch	js	42
 gaato/mttp	gaato/mttp/files	native	17
 gaato/mttp	gaato/mttp/files	wasm	17
 gaato/mttp	gaato/mttp/internal/control	native	2

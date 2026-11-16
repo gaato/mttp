@@ -148,7 +148,9 @@ extern "js" fn open_socket(
   #|     socket.accept(); const h = make(socket); h.negotiated = protocol; return h;
   #|   }
   #|   if (headers.length && !globalThis.Bun) throw new Error('custom headers require Bun or Workers fetch upgrade');
-  #|   const socket = globalThis.Bun ? new WebSocket(url, protocols, {headers: Object.fromEntries(headers)}) : new WebSocket(url, protocols);
+  #|   // Bun accepts Headers in its options overload, preserving repeated list
+  #|   // fields in arrival order instead of replacing them in a plain object.
+  #|   const socket = globalThis.Bun ? new WebSocket(url, {protocols, headers: new Headers(headers)}) : new WebSocket(url, protocols);
   #|   const h = make(socket);
   #|   try {
   #|     await new Promise((resolve, reject) => {

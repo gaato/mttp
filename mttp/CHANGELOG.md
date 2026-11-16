@@ -7,6 +7,15 @@ never does.
 
 ## [Unreleased]
 
+### Fixed
+
+- JS WebSocket shutdown now closes within `close_timeout_ms`, then cancels
+  and joins handlers waiting outside `recv`, so process `whenIdle()` settles.
+- Deno WebSocket upgrades retain application headers, including separate
+  Set-Cookie values, while keeping the host-generated handshake fields.
+- Bun WebSocket clients pass a Headers object through the options overload,
+  preserving every repeated list-header value in order.
+
 ### Added
 
 - The server compresses with zstd too: `compress` and `negotiate_encoding`

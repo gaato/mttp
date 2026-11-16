@@ -44,6 +44,7 @@ fn Upgrade::respond(
   let ready : Ref[HostSession?] = Ref(None)
   let changed = @cond_var.Cond()
   let live = Ref(true)
+  let stopping = Ref(false)
   let response = upgrade_response(
     request,
     self.protocol.unwrap_or(""),
@@ -57,11 +58,9 @@ fn Upgrade::respond(
       changed.broadcast()
       defer_turn(turn)
       () => {
-        ignore(
-          @js_async.Promise::from_async(() => {
-            session.close({ code: GoingAway, reason: "host shutdown", })
-          }),
-        )
+        stopping.val = true
+        changed.broadcast()
+        defer_turn(turn)
       }
     },
   )
@@ -83,10 +82,27 @@ fn Upgrade::respond(
         }
       })
       let session = ready.val.unwrap()
-      (self.handler)(session) catch {
-        @ws.WsError(kind=Closed(_), ..) => ()
-        error => raise error
-      }
+      // Closing the socket cannot wake a handler waiting on unrelated work.
+      // Keep both children owned here and join cancellation after bounded Close.
+      @async.with_task_group(group => {
+        let work = group.spawn(allow_failure=true, () => {
+          (self.handler)(session) catch {
+            @ws.WsError(kind=Closed(_), ..) => ()
+            error => raise error
+          }
+        })
+        group.spawn_bg(no_wait=true, () => {
+          while !stopping.val {
+            changed.wait()
+          }
+          session.close({ code: GoingAway, reason: "host shutdown", })
+          work.cancel()
+        })
+        work.wait() catch {
+          @async.WaitedTaskAlreadyCancelled => ()
+          error => raise error
+        }
+      })
     })
   }
   response
@@ -127,6 +143,12 @@ extern "js" fn upgrade_response(
   #|   }
   #|   if (typeof globalThis.Deno?.upgradeWebSocket === 'function') {
   #|     const {socket, response} = Deno.upgradeWebSocket(request, {protocol: protocol || undefined, idleTimeout: 0});
+  #|     // Only the host knows its upgrade handshake fields. Append application
+  #|     // pairs individually so Set-Cookie values never become a comma list.
+  #|     const handshake = new Set(['connection', 'upgrade', 'sec-websocket-accept', 'sec-websocket-protocol', 'sec-websocket-extensions']);
+  #|     for (const [name, value] of pairs) {
+  #|       if (!handshake.has(name.toLowerCase())) response.headers.append(name, value);
+  #|     }
   #|     return mark(response, manage(socket));
   #|   }
   #|   const server = request[Symbol.for('gaato.mttp.bunServer')];

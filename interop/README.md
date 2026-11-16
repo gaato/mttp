@@ -7,6 +7,10 @@ Text, binary, protocol selection, application Close code/reason and process shut
 checked end to end. `websocket/local` runs the same checks on installed
 runtimes and prints their versions, explicitly without the container pins.
 The Workers echo runs separately in `scripts/gates.sh workerd`.
+The Bun client also sends a repeated Accept field to a native handshake that
+requires both values. Deno/Bun server checks inspect application cookies and
+host handshake fields on the wire, then await whenIdle() during shutdown while
+the handler is sleeping outside recv.
 
 WebSocket servers are checked with the digest-pinned Autobahn TestSuite in
 fuzzingclient mode: `scripts/gates.sh interop server/autobahn`. The runner

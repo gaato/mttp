@@ -73,6 +73,10 @@ error mapping, cancellation, concurrent recv and bounded send/close tests under
 Node. The interop runner checks Node/Deno/Bun clients against native, then
 Deno/Bun fetch servers. The workerd gate checks the Workers echo route on the
 real runtime. These JS-only sources are absent from native coverage.
+`fetch/websocket_wbtest.mbt` also pins cancellation and asynchronous cleanup
+joining for handlers blocked outside recv, application cookies alongside Deno
+handshake fields, and repeated Bun list headers. Pinned interop checks these
+against real Deno/Bun upgrades and the native handshake server.
 
 The consumer lifecycle regressions in `mttp_core/src/client/close_test.mbt` cover
 observer closure and closure during backoff, the last reply/error/selected

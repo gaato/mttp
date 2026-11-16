@@ -16,6 +16,7 @@ supported_targets = "native+js"
 
 #cfg(target="js")
 import {
+  "gaato/mttp_core",
   "moonbitlang/core/async/js_async",
 }
 

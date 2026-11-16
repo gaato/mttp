@@ -212,6 +212,11 @@ fn main {
     @mttp.run(async fn() {
       @server.serve(
         request => {
+          if request.url.has_suffix("/headers") &&
+            request.headers.get_all("accept").join(", ") !=
+            "text/plain, application/json" {
+            return @mttp_core.Response::new(400)
+          }
           @ws.upgrade(
             request,
             origins=Any,

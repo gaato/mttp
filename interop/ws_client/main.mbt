@@ -66,6 +66,23 @@ async fn main {
   @async.with_timeout(10000, () => {
     let args = @env.args()
     let url = args.get(args.length() - 1).unwrap_or("ws://127.0.0.1:39507/")
+    if is_bun() {
+      let headers = @ws.connect(
+        url + "headers",
+        subprotocols=["echo"],
+        headers=@mttp_core.Headers::of([
+          ("Accept", "text/plain"),
+          ("accept", "application/json"),
+        ]),
+      )
+      defer headers.abort()
+      headers.send(Text("headers retained"))
+      assert_eq(headers.recv(), Text("headers retained"))
+      headers.close({ code: Normal, reason: "", })
+    }
+    if url.has_suffix("?shutdown") {
+      assert_true(check_upgrade_headers(url).wait())
+    }
     let session = @ws.connect(url, subprotocols=["other", "echo"])
     defer session.abort()
     assert_eq(session.subprotocol(), Some("echo"))
@@ -112,3 +129,32 @@ async fn main {
 #cfg(target="js")
 extern "js" fn stop_host(url : String) -> @js_async.Promise[Unit] =
   #| async url => { const target = new URL('/shutdown', url.replace(/^ws/, 'http')); await fetch(target); }
+
+///|
+#cfg(target="js")
+extern "js" fn is_bun() -> Bool =
+  #| () => !!globalThis.Bun
+
+///|
+#cfg(target="js")
+extern "js" fn check_upgrade_headers(url : String) -> @js_async.Promise[Bool] =
+  #| async url => {
+  #|   const {connect} = await import('node:net');
+  #|   const target = new URL(url);
+  #|   return new Promise((resolve, reject) => {
+  #|     const socket = connect(Number(target.port), target.hostname);
+  #|     const timer = setTimeout(() => { socket.destroy(); reject(new Error('upgrade headers timed out')); }, 3000);
+  #|     let text = '';
+  #|     socket.on('connect', () => socket.write(`GET /ws HTTP/1.1\r\nHost: ${target.host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Protocol: echo\r\n\r\n`));
+  #|     socket.on('data', bytes => {
+  #|       text += bytes.toString('latin1');
+  #|       if (!text.includes('\r\n\r\n')) return;
+  #|       clearTimeout(timer); socket.destroy();
+  #|       const lines = text.split('\r\n\r\n')[0].split('\r\n');
+  #|       const fields = name => lines.slice(1).filter(line => line.toLowerCase().startsWith(name + ':')).map(line => line.slice(line.indexOf(':') + 1).trim());
+  #|       resolve(lines[0].includes('101') && fields('sec-websocket-accept')[0] === 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=' &&
+  #|         fields('sec-websocket-protocol')[0] === 'echo' && JSON.stringify(fields('set-cookie')) === JSON.stringify(['a=1; Expires=Wed, 21 Oct 2037 07:28:00 GMT', 'b=2; HttpOnly']) && fields('x-app')[0] === 'kept');
+  #|     });
+  #|     socket.on('error', error => { clearTimeout(timer); reject(error); });
+  #|   });
+  #| }
