@@ -1,5 +1,6 @@
 import {
   "gaato/mttp_core",
+  "gaato/mttp_core/dictionary",
   "gaato/mttp_core/rt",
   "gaato/mttp_core/h1client",
   "gaato/mttp/trust",

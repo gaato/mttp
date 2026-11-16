@@ -17,17 +17,55 @@ let brotli_window_bits : Int32 = 24
 let zstd_window_bits : Int32 = 23
 
 ///|
+/// The largest `dcz` window accepted, as a power of two, before the
+/// dictionary is counted: 8 MiB, RFC 9842 section 5's floor.
+let dcz_min_window_bits : Int32 = 23
+
+///|
+/// The largest window RFC 9842 section 5 lets a `dcz` stream ask for:
+/// 128 MiB.
+let dcz_max_window_bits : Int32 = 27
+
+///|
+/// The `zstd` window a `dcz` decoder accepts with a dictionary of `length`
+/// bytes: at least 8 MiB or 1.25 times the dictionary, whichever is greater,
+/// as RFC 9842 section 5 requires, rounded up to a power of two and at most
+/// 128 MiB.
+fn dcz_window_bits(length : Int32) -> Int32 {
+  let need = (length.to_int64() * 5L + 3L) / 4L
+  let mut bits = dcz_min_window_bits
+  while bits < dcz_max_window_bits && 1L << bits < need {
+    bits += 1
+  }
+  bits
+}
+
+///|
+/// The fixed header before a `dcb` stream: a magic number, then the
+/// dictionary's SHA-256 (RFC 9842 section 4).
+let dcb_magic : Bytes = b"\xff\x44\x43\x42"
+
+///|
+/// The fixed header before a `dcz` stream: a Zstandard skippable frame of 32
+/// bytes holding the dictionary's SHA-256 (RFC 9842 section 5).
+let dcz_magic : Bytes = b"\x5e\x2a\x4d\x18\x20\x00\x00\x00"
+
+///|
 /// One coding being undone. Its input is the previous stage's output, or the
 /// wire for the first stage.
 priv struct Stage {
   coding : Coding
   /// `None` for a `deflate` body until its first two bytes, which tell zlib
-  /// from raw DEFLATE, have arrived.
+  /// from raw DEFLATE, have arrived, and for `dcb` and `dcz` until their
+  /// header has, and named the dictionary.
   mut decoder : &@codec_bytes.Decode?
-  /// The at most one byte of a `deflate` body seen before that.
+  /// The bytes of a `deflate` body or a `dcb`/`dcz` header seen before that.
   mut sniffed : Bytes
   /// Input accepted from upstream and not yet consumed.
   mut input : BytesView
+  /// Input that waits while a held `deflate` byte goes to the decoder first,
+  /// so the chunk after it is not copied to join them.
+  mut deferred : BytesView
   /// Upstream has nothing more.
   mut input_ended : Bool
   /// Some input has arrived.
@@ -64,6 +102,8 @@ pub struct ContentDecoder {
   priv mut waiting : Bool
   priv mut ended : Bool
   priv mut failure : @mttp_core.TransportError?
+  // The dictionary the request offered, for dcb and dcz stages.
+  priv dictionary : @dictionary.Dictionary?
 }
 
 ///|
@@ -83,6 +123,7 @@ pub(all) enum Pulled {
 /// codings are required; an empty or oversized plan raises Invalid.
 pub fn ContentDecoder::new(
   undo : Array[Coding],
+  dictionary? : @dictionary.Dictionary,
 ) -> ContentDecoder raise @mttp_core.TransportError {
   if undo.is_empty() || undo.length() > max_content_codings {
     raise @mttp_core.TransportError(
@@ -91,16 +132,28 @@ pub fn ContentDecoder::new(
       detail="decoder needs one to five codings",
     )
   }
+  for coding in undo {
+    // A dictionary coding the request did not offer a dictionary for, or
+    // two of them, cannot be undone: each names the one dictionary offered.
+    if coding is (Dcb | Dcz) && dictionary is None {
+      raise @mttp_core.TransportError(
+        kind=Protocol,
+        phase=Body,
+        detail="response is \{coding.name()}-coded, but the request offered no dictionary",
+      )
+    }
+  }
   let stages = undo.map(coding => {
     coding,
     decoder: match coding {
       Gzip => Some(@gzip.Decoder(keep_header=false))
-      Deflate => None
+      Deflate | Dcb | Dcz => None
       Brotli => Some(@brotli.Decoder(max_window_bits=brotli_window_bits))
       Zstd => Some(@zstd.Decoder(max_window_bits=zstd_window_bits))
     },
     sniffed: b"",
     input: b""[:],
+    deferred: b""[:],
     input_ended: false,
     started: false,
     finished: false,
@@ -108,7 +161,7 @@ pub fn ContentDecoder::new(
     failure: None,
     output: FixedArray::make(decoded_slice_bytes, b'\x00'),
   })
-  { stages, waiting: true, ended: false, failure: None, }
+  { stages, waiting: true, ended: false, failure: None, dictionary, }
 }
 
 ///|
@@ -198,6 +251,10 @@ fn ContentDecoder::pull_stage(
     if stage.finished {
       return Done
     }
+    if stage.input.length() == 0 && stage.deferred.length() > 0 {
+      stage.input = stage.deferred
+      stage.deferred = b""[:]
+    }
     if stage.input.length() == 0 && !stage.input_ended && !stage.output_pending {
       if index == 0 {
         return NeedInput
@@ -209,8 +266,9 @@ fn ContentDecoder::pull_stage(
       }
     }
     if !stage.started {
-      if stage.input.length() == 0 {
-        // An empty body, as for HEAD, 204 or 304, is empty in any coding.
+      // An empty body, as for HEAD, 204 or 304, is empty in any coding but
+      // dcb and dcz, whose fixed header RFC 9842 always requires.
+      if stage.input.length() == 0 && !(stage.coding is (Dcb | Dcz)) {
         stage.finished = true
         continue
       }
@@ -218,29 +276,88 @@ fn ContentDecoder::pull_stage(
     }
     let decoder = match stage.decoder {
       Some(decoder) => decoder
+      None if stage.coding is (Dcb | Dcz) => {
+        let magic = if stage.coding is Dcb { dcb_magic } else { dcz_magic }
+        let header_length = magic.length() + 32
+        // Only the header is copied; the rest stays a view of the chunk.
+        let take = (header_length - stage.sniffed.length()).min(
+          stage.input.length(),
+        )
+        let joined = stage.sniffed + stage.input[:take].to_owned()
+        stage.input = stage.input[take:]
+        if joined.length() < header_length {
+          guard stage.input_ended else {
+            stage.sniffed = joined
+            continue
+          }
+          raise malformed(stage.coding, "header cut short")
+        }
+        // ContentDecoder::new refused these codings without a dictionary.
+        let dictionary = self.dictionary.unwrap()
+        guard joined[:magic.length()] == magic[:] else {
+          raise malformed(stage.coding, "wrong magic number")
+        }
+        // RFC 9842 has the hash checked before the dictionary is used.
+        guard joined[magic.length():header_length] == dictionary.hash[:] else {
+          raise malformed(
+            stage.coding,
+            "names a dictionary other than the one offered",
+          )
+        }
+        let decoder : &@codec_bytes.Decode = if stage.coding is Dcb {
+          (
+            @brotli.Decoder(
+              max_window_bits=brotli_window_bits,
+              dictionary=@brotli.Dictionary(dictionary.content),
+            ) : &@codec_bytes.Decode)
+        } else {
+          (
+            @zstd.Decoder(
+              max_window_bits=dcz_window_bits(dictionary.content.length()),
+              dictionary=@zstd.Dictionary::raw(dictionary.content),
+            ) : &@codec_bytes.Decode)
+        }
+        stage.decoder = Some(decoder)
+        stage.sniffed = b""
+        decoder
+      }
       None => {
-        let joined = stage.sniffed + stage.input.to_owned()
-        if joined.length() < 2 && !stage.input_ended {
-          stage.sniffed = joined
+        // The two bytes that tell zlib from raw DEFLATE, read in place: a
+        // first chunk of one byte is held, never joined to the next chunk.
+        let held = stage.sniffed.length()
+        // Compared as a difference: a chunk near Int's top cannot wrap it.
+        if stage.input.length() < 2 - held && !stage.input_ended {
+          stage.sniffed = stage.sniffed + stage.input.to_owned()
           stage.input = b""[:]
           continue
         }
-        let decoder = if joined.length() >= 2 &&
-          @zlib.is_header(joined[0], joined[1]) {
+        let first = if held > 0 { stage.sniffed[0] } else { stage.input[0] }
+        let second = if held > 0 {
+          stage.input.get(0)
+        } else {
+          stage.input.get(1)
+        }
+        let decoder = if second is Some(second) &&
+          @zlib.is_header(first, second) {
           (@zlib.Decoder() : &@codec_bytes.Decode)
         } else {
           // Raw DEFLATE, which also refuses a body of one byte as cut short.
           @deflate.Decoder()
         }
         stage.decoder = Some(decoder)
-        stage.input = joined[:]
+        if held > 0 {
+          // The held byte goes first; the chunk waits for it, uncopied.
+          stage.deferred = stage.input
+          stage.input = stage.sniffed[:]
+        }
+        stage.sniffed = b""
         decoder
       }
     }
     let status = decoder.step(
       stage.input,
       stage.output.mut_view(),
-      end=stage.input_ended,
+      end=stage.input_ended && stage.deferred.length() == 0,
     ) catch {
       CodecError(_, message) => {
         let error = malformed(stage.coding, message)

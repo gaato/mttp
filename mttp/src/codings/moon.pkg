@@ -1,6 +1,7 @@
 import {
   "gaato/mttp_core",
   "gaato/mttp_core/rt",
+  "gaato/mttp_core/dictionary",
   "gaato/codec_bytes",
   "gaato/deflate",
   "gaato/deflate/gzip",
@@ -19,6 +20,7 @@ import {
 import {
   "gaato/mttp_core/driver",
   "gaato/mttp_core/sim",
+  "moonbitlang/core/encoding/base64",
 } for "test"
 
 supported_targets = "native+wasm+js"

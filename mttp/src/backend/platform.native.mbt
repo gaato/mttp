@@ -4,6 +4,8 @@ fn platform_backend(
   trust : @trust.Trust,
   clock : &@rt.Clock,
   timer : &@rt.Timer,
+  dictionaries : @dictionary.DictionaryStore?,
+  partition : String,
 ) -> AsyncBackend {
   let config = config.unwrap_or_else(() => {
     ..@h1client.ClientConfig::default(),
@@ -17,7 +19,7 @@ fn platform_backend(
     config~,
   )
   {
-    inner: @codings.Decompress::new(client),
+    inner: @codings.Decompress::new(client, dictionaries?, partition~),
     idle: () => client.idle_connections(),
   }
 }

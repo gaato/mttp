@@ -333,6 +333,20 @@ pub fn DictionaryStore::clear(
 }
 
 ///|
+/// The store's clock, read now: the time a client sends a request at, for
+/// `offer`'s `request_time_ms`.
+pub fn DictionaryStore::now_unix_ms(self : DictionaryStore) -> Int64 {
+  self.clock.now_unix_ms()
+}
+
+///|
+/// The largest dictionary the store keeps, in bytes: a client need not
+/// collect more of a body to offer it.
+pub fn DictionaryStore::max_dictionary_bytes(self : DictionaryStore) -> Int32 {
+  self.max_dictionary_bytes.min(self.max_total_bytes)
+}
+
+///|
 /// How many dictionaries are stored, and their bytes.
 pub fn DictionaryStore::size(self : DictionaryStore) -> (Int32, Int64) {
   (self.entries.length(), self.total_bytes)

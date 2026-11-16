@@ -7,6 +7,11 @@ pub(all) enum Coding {
   Deflate
   Brotli
   Zstd
+  /// Dictionary-Compressed Brotli (RFC 9842 section 4): needs the
+  /// dictionary the request offered.
+  Dcb
+  /// Dictionary-Compressed Zstandard (RFC 9842 section 5), likewise.
+  Dcz
 }
 
 ///|
@@ -34,14 +39,23 @@ pub fn Coding::name(self : Coding) -> String {
     Deflate => "deflate"
     Brotli => "br"
     Zstd => "zstd"
+    Dcb => "dcb"
+    Dcz => "dcz"
   }
 }
 
 ///|
 /// The `Accept-Encoding` the transport sends when the request has none: every
 /// coding it undoes and nothing else, so a server never picks one it cannot.
-pub fn accept_encoding() -> String {
-  decodable_codings.map(Coding::name).join(", ")
+/// `dcb` and `dcz` are listed only with `dictionary`, when the request offers
+/// one: RFC 9842 section 6.1 forbids them otherwise.
+pub fn accept_encoding(dictionary~ : Bool = false) -> String {
+  let codings = if dictionary {
+    [..decodable_codings, Dcb, Dcz]
+  } else {
+    decodable_codings
+  }
+  codings.map(Coding::name).join(", ")
 }
 
 ///|
@@ -53,6 +67,8 @@ fn coding_of(token : String) -> Coding? {
     "deflate" => Some(Deflate)
     "br" => Some(Brotli)
     "zstd" => Some(Zstd)
+    "dcb" => Some(Dcb)
+    "dcz" => Some(Dcz)
     _ => None
   }
 }
@@ -132,9 +148,11 @@ pub fn has_body(http_method : String, status : Int32) -> Bool {
 /// The decoder for a body whose head is `head`, or `None` when there is
 /// nothing to undo. With a decoder, the returned head describes the
 /// decoded body: `Content-Length`, which counted the coded bytes, is dropped,
-/// and `Content-Encoding` names only the codings left, if any.
+/// and `Content-Encoding` names only the codings left, if any. `dictionary`
+/// is the one the request offered, for `dcb` and `dcz`.
 pub fn decode_head(
   head : @mttp_core.ResponseHead,
+  dictionary? : @dictionary.Dictionary,
 ) -> (@mttp_core.ResponseHead, ContentDecoder?) raise @mttp_core.TransportError {
   let plan = coding_plan_fields(head.headers.get_all("content-encoding"))
   if plan.undo.is_empty() {
@@ -145,5 +163,5 @@ pub fn decode_head(
     Some(remaining) => headers.set("content-encoding", remaining)
     None => headers.remove("content-encoding")
   }
-  ({ ..head, headers, }, Some(ContentDecoder::new(plan.undo)))
+  ({ ..head, headers, }, Some(ContentDecoder::new(plan.undo, dictionary?)))
 }

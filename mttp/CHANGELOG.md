@@ -7,6 +7,12 @@ never does.
 
 ## [Unreleased]
 
+### Changed
+
+- gaato/deflate 0.2.0, gaato/brotli 0.5.0 and gaato/zstd 0.5.0: decoding
+  errors read as those releases word them ("the input ends inside ...",
+  "data after the last meta-block", "data after the last frame").
+
 ### Fixed
 
 - JS WebSocket abort requests host `close()` without a status instead of
@@ -25,6 +31,19 @@ never does.
   preserving every repeated list-header value in order.
 
 ### Added
+
+- RFC 9842 compression dictionaries on the client: `Decompress::new` and
+  `AsyncBackend::new` take a `@dictionary.DictionaryStore` (and a
+  partition). Requests a stored dictionary matches advertise it and accept
+  `dcb` and `dcz`; such responses are decoded with it after their header's
+  hash is checked; 200 responses with `Use-As-Dictionary` fill the store
+  once read to the end. Socket targets only: on JS the host's fetch
+  negotiates.
+
+- `Coding` has `Dcb` and `Dcz`; `ContentDecoder::new` and `decode_head`
+  take the offered dictionary, `accept_encoding(dictionary=true)` lists
+  them, and `ContentEncoder::new(coding, dictionary=)` writes them with a
+  `ServerDictionary`.
 
 - The server compresses with zstd too: `compress` and `negotiate_encoding`
   accept `zstd`, and `ContentEncoder::new(Zstd)` encodes at level 3 (a 2 MiB

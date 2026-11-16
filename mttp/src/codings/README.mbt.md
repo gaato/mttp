@@ -45,6 +45,33 @@ It passes SendOptions unchanged: the engine counts wire bytes and the caller's
 reader bounds decoded bytes. Decoding is lazy and closes its upstream source
 on EOF, error, cancellation, or early close.
 
+With a dictionary store, `Decompress::new(inner, dictionaries=store)` is
+[RFC 9842](https://www.rfc-editor.org/rfc/rfc9842)'s client. A request the
+store has a dictionary for (`@dictionary.DictionaryStore::select`: https or a
+loopback host, a fresh dictionary of the same origin whose pattern matches)
+carries `Available-Dictionary`, `Dictionary-ID` when the server gave an id,
+and `dcb, dcz` after the other codings in `Accept-Encoding`; without one
+they are not sent, as section 6.1 requires. A `dcb` or `dcz` response is
+decoded with that dictionary once its header names it: a header with another
+hash, a wrong magic number, or a dictionary coding the request offered no
+dictionary for is a `Protocol` error before any byte is decoded. A `dcz`
+window up to 8 MiB, or 1.25 times a larger dictionary, up to 128 MiB, is
+accepted, as section 5 requires; `dcb` keeps Brotli's 16 MiB. A `dcb`
+copy that would run past the end of the dictionary is refused, as
+gaato/brotli and the reference decoder refuse it, though RFC 9841 section
+3.2 continues it into the window: the reference encoder never writes one,
+and continuing it would need bytes the window has already dropped. A 200
+response with `Use-As-Dictionary` and no coding left on it is offered to the
+store when its body has been read to the end; a body larger than the store
+keeps is not held. `partition` keeps the dictionaries of one user, site or
+profile apart, as section 10 asks. The store hashes with the SHA-256 it was
+given; `ServerDictionary::new` likewise.
+
+On the server side, `ContentEncoder::new(Dcb, dictionary=d)` and `Dcz`
+write RFC 9842's header, then a stream compressed with `d`, a
+`ServerDictionary` whose Brotli and Zstandard forms are built once and
+shared.
+
 `compress(handler, min_bytes=1024)` negotiates gzip, deflate, Brotli or zstd
 and returns a Handler. At equal weights it prefers them in that order, so a
 client that offers several gets the same coding it got before zstd was served. It skips HEAD, 1xx, 204, 304, Range requests, 206 and

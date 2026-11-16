@@ -29,3 +29,13 @@ test "codec window declarations admit HTTP limits and refuse the next size" {
     is Err(_),
   )
 }
+
+///|
+test "the dcz window is 8 MiB, or 1.25 times a larger dictionary, up to 128 MiB" {
+  assert_eq(dcz_window_bits(0), 23)
+  assert_eq(dcz_window_bits(4 * 1024 * 1024), 23)
+  // 1.25 times 8 MiB needs 10 MiB: a 16 MiB window.
+  assert_eq(dcz_window_bits(8 * 1024 * 1024), 24)
+  assert_eq(dcz_window_bits(100 * 1024 * 1024), 27)
+  assert_eq(dcz_window_bits(2147483647), 27)
+}

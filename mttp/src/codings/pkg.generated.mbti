@@ -3,11 +3,12 @@ package "gaato/mttp/codings"
 
 import {
   "gaato/mttp_core",
+  "gaato/mttp_core/dictionary",
   "moonbitlang/core/debug",
 }
 
 // Values
-pub fn accept_encoding() -> String
+pub fn accept_encoding(dictionary? : Bool) -> String
 
 pub fn coding_plan(String) -> Array[Coding] raise @mttp_core.TransportError
 
@@ -15,7 +16,7 @@ pub fn coding_plan_fields(Array[String]) -> CodingPlan raise @mttp_core.Transpor
 
 pub fn compress(async (@mttp_core.Request) -> @mttp_core.Response noraise, min_bytes? : Int32) -> async (@mttp_core.Request) -> @mttp_core.Response noraise
 
-pub fn decode_head(@mttp_core.ResponseHead) -> (@mttp_core.ResponseHead, ContentDecoder?) raise @mttp_core.TransportError
+pub fn decode_head(@mttp_core.ResponseHead, dictionary? : @dictionary.Dictionary) -> (@mttp_core.ResponseHead, ContentDecoder?) raise @mttp_core.TransportError
 
 pub fn encode_body(@mttp_core.Body, Coding) -> @mttp_core.Body raise @mttp_core.TransportError
 
@@ -37,6 +38,8 @@ pub(all) enum Coding {
   Deflate
   Brotli
   Zstd
+  Dcb
+  Dcz
 }
 pub fn Coding::equal(Self, Self) -> Bool
 pub fn Coding::name(Self) -> String
@@ -53,7 +56,7 @@ pub struct ContentDecoder {
 }
 pub fn ContentDecoder::end(Self) -> Unit raise @mttp_core.TransportError
 pub fn ContentDecoder::feed(Self, Bytes) -> Unit raise @mttp_core.TransportError
-pub fn ContentDecoder::new(Array[Coding]) -> Self raise @mttp_core.TransportError
+pub fn ContentDecoder::new(Array[Coding], dictionary? : @dictionary.Dictionary) -> Self raise @mttp_core.TransportError
 pub fn ContentDecoder::pull(Self) -> Pulled raise @mttp_core.TransportError
 
 pub struct ContentEncoder {
@@ -61,14 +64,14 @@ pub struct ContentEncoder {
 }
 pub fn ContentEncoder::end(Self) -> Unit raise @mttp_core.TransportError
 pub fn ContentEncoder::feed(Self, Bytes) -> Unit raise @mttp_core.TransportError
-pub fn ContentEncoder::new(Coding) -> Self
+pub fn ContentEncoder::new(Coding, dictionary? : ServerDictionary) -> Self
 pub fn ContentEncoder::pull(Self) -> Pulled raise @mttp_core.TransportError
 
 pub struct Decompress {
   // private fields
 }
 pub fn Decompress::close(Self) -> Unit
-pub fn Decompress::new(&@mttp_core.Backend) -> Self
+pub fn Decompress::new(&@mttp_core.Backend, dictionaries? : @dictionary.DictionaryStore, partition? : String) -> Self
 pub async fn Decompress::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
 pub impl @mttp_core.Backend for Decompress
 
@@ -89,6 +92,14 @@ pub(all) enum Pulled {
   NeedInput
   Done
 }
+
+pub struct ServerDictionary {
+  content : Bytes
+  hash : Bytes
+  id : String
+  // private fields
+}
+pub fn ServerDictionary::new(Bytes, sha256~ : (BytesView) -> Bytes, id? : String) -> Self
 
 // Type aliases
 

@@ -11,19 +11,39 @@ pub struct ContentEncoder {
   priv mut ended : Bool
   priv mut done : Bool
   priv mut failure : @mttp_core.TransportError?
+  // The dcb or dcz header, sent before the first compressed byte.
+  priv mut prefix : Bytes
 }
 
 ///|
-/// Creates gzip, zlib-wrapped deflate, Brotli or zstd compression. Brotli
-/// uses a 22-bit window; gzip and deflate use a 32 KiB history window; zstd
-/// is level 3, whose window for a stream of unknown length is 2 MiB, within
-/// the 8 MB RFC 9659 lets HTTP's zstd coding use.
-pub fn ContentEncoder::new(coding : Coding) -> ContentEncoder {
-  let encoder : &@codec_bytes.Encode = match coding {
-    Gzip => (@gzip.Encoder() : &@codec_bytes.Encode)
-    Deflate => @zlib.Encoder()
-    Brotli => @brotli.Encoder(window_bits=22)
-    Zstd => @zstd.Encoder(level=3)
+/// Creates gzip, zlib-wrapped deflate, Brotli or zstd compression, or with
+/// `dictionary` RFC 9842's `dcb` or `dcz`. Brotli and `dcb` use a 22-bit
+/// window, within the 16 MB RFC 9842 allows `dcb`; gzip and deflate use a 32
+/// KiB history window; zstd and `dcz` are level 3, whose window for a stream
+/// of unknown length is 2 MiB, within the 8 MB RFC 9659 and RFC 9842 let
+/// them use. `dcb` or `dcz` without a dictionary cannot be written: the
+/// first `pull` raises `Invalid`.
+pub fn ContentEncoder::new(
+  coding : Coding,
+  dictionary? : ServerDictionary,
+) -> ContentEncoder {
+  let mut failure = None
+  let encoder : &@codec_bytes.Encode = match (coding, dictionary) {
+    (Gzip, _) => (@gzip.Encoder() : &@codec_bytes.Encode)
+    (Deflate, _) => @zlib.Encoder()
+    (Brotli, _) => @brotli.Encoder(window_bits=22)
+    (Zstd, _) => @zstd.Encoder(level=3)
+    (Dcb, Some(d)) => @brotli.Encoder(window_bits=22, dictionary=d.brotli)
+    (Dcz, Some(d)) => @zstd.Encoder(level=3, dictionary=d.zstd)
+    (Dcb | Dcz, None) => {
+      failure = Some(encoder_misuse("\{coding.name()} needs a dictionary"))
+      @zstd.Encoder(level=3)
+    }
+  }
+  let prefix = match (coding, dictionary) {
+    (Dcb, Some(d)) => dcb_magic + d.hash
+    (Dcz, Some(d)) => dcz_magic + d.hash
+    _ => b""
   }
   {
     encoder,
@@ -32,7 +52,8 @@ pub fn ContentEncoder::new(coding : Coding) -> ContentEncoder {
     waiting: true,
     ended: false,
     done: false,
-    failure: None,
+    failure,
+    prefix,
   }
 }
 
@@ -79,6 +100,11 @@ pub fn ContentEncoder::pull(
 ) -> Pulled raise @mttp_core.TransportError {
   if self.failure is Some(error) {
     raise error
+  }
+  if self.prefix.length() > 0 {
+    let header = self.prefix
+    self.prefix = b""
+    return Slice(header)
   }
   if self.done {
     return Done

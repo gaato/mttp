@@ -4,6 +4,7 @@ package "gaato/mttp/backend"
 import {
   "gaato/mttp/trust",
   "gaato/mttp_core",
+  "gaato/mttp_core/dictionary",
   "gaato/mttp_core/h1client",
   "gaato/mttp_core/rt",
 }
@@ -18,7 +19,7 @@ pub struct AsyncBackend {
 }
 pub fn AsyncBackend::close(Self) -> Unit
 pub fn AsyncBackend::idle_connections(Self) -> Int32
-pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust? : @trust.Trust, clock? : &@rt.Clock, timer? : &@rt.Timer) -> Self
+pub fn AsyncBackend::new(config? : @h1client.ClientConfig, trust? : @trust.Trust, clock? : &@rt.Clock, timer? : &@rt.Timer, dictionaries? : @dictionary.DictionaryStore, dictionary_partition? : String) -> Self
 pub async fn AsyncBackend::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
 pub impl @mttp_core.Backend for AsyncBackend
 

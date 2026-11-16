@@ -41,7 +41,9 @@ pub struct DictionaryStore {
 }
 pub fn DictionaryStore::clear(Self, partition? : String) -> Unit
 pub fn DictionaryStore::find(Self, BytesView, partition? : String) -> Dictionary?
+pub fn DictionaryStore::max_dictionary_bytes(Self) -> Int32
 pub fn DictionaryStore::new(sha256~ : (BytesView) -> Bytes, clock~ : &@rt.Clock, max_entries? : Int32, max_dictionary_bytes? : Int32, max_total_bytes? : Int32) -> Self
+pub fn DictionaryStore::now_unix_ms(Self) -> Int64
 pub fn DictionaryStore::offer(Self, @mttp_core.Url, @mttp_core.Headers, Bytes, request_time_ms~ : Int64, partition? : String) -> Bool
 pub fn DictionaryStore::select(Self, @mttp_core.Url, dest? : String, partition? : String) -> Dictionary?
 pub fn DictionaryStore::size(Self) -> (Int32, Int64)

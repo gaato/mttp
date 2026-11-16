@@ -12,6 +12,9 @@ fn platform_backend(
   _trust : @trust.Trust,
   clock : &@rt.Clock,
   timer : &@rt.Timer,
+  // The host's fetch negotiates content codings and dictionaries itself.
+  _dictionaries : @dictionary.DictionaryStore?,
+  _partition : String,
 ) -> AsyncBackend {
   let driver = FetchDriver::{
     ceiling: config.unwrap_or_else(@h1client.ClientConfig::default).max_body_bytes,

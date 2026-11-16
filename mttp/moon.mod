@@ -21,7 +21,7 @@ supported_targets = "native+wasm+js"
 import {
   "gaato/mttp_core@0.1.0",
   "gaato/codec_bytes@0.1.2",
-  "gaato/deflate@0.1.2",
-  "gaato/brotli@0.4.3",
-  "gaato/zstd@0.4.1",
+  "gaato/deflate@0.2.0",
+  "gaato/brotli@0.5.0",
+  "gaato/zstd@0.5.0",
 }

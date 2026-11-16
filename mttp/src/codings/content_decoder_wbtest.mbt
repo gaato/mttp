@@ -176,28 +176,32 @@ test "ContentDecoder undoes each coding and chain" {
       [Gzip],
       hello_gzip[:hello_gzip.length() - 4].to_owned(),
       Err(
-        "malformed gzip response body: the stream ends inside a member's trailer",
+        "malformed gzip response body: the input ends inside a member's trailer",
       ),
     ),
     (
       "a deflate body of one byte",
       [Deflate],
       b"\x78",
-      Err("malformed deflate response body: the DEFLATE data ends early"),
+      Err(
+        "malformed deflate response body: the input ends inside the DEFLATE data",
+      ),
     ),
     (
       "a truncated zlib body",
       [Deflate],
       hello_zlib[:hello_zlib.length() - 1].to_owned(),
       Err(
-        "malformed deflate response body: the stream ends inside its header or trailer",
+        "malformed deflate response body: the input ends inside the header or the trailer",
       ),
     ),
     (
       "a truncated raw DEFLATE body",
       [Deflate],
       hello_raw[:hello_raw.length() - 1].to_owned(),
-      Err("malformed deflate response body: the DEFLATE data ends early"),
+      Err(
+        "malformed deflate response body: the input ends inside the DEFLATE data",
+      ),
     ),
     (
       "data after a gzip body",
@@ -210,7 +214,7 @@ test "ContentDecoder undoes each coding and chain" {
       [Gzip],
       hello_gzip + b"\x1f\x8b",
       Err(
-        "malformed gzip response body: the stream ends inside a member's header",
+        "malformed gzip response body: the input ends inside a member's header",
       ),
     ),
     (
@@ -237,13 +241,13 @@ test "ContentDecoder undoes each coding and chain" {
       "a truncated br body",
       [Brotli],
       hello_br[:hello_br.length() - 1].to_owned(),
-      Err("malformed br response body: the stream ends early"),
+      Err("malformed br response body: the input ends inside the stream"),
     ),
     (
       "data after a br body",
       [Brotli],
       hello_br + b"x",
-      Err("malformed br response body: data after the end of the stream"),
+      Err("malformed br response body: data after the last meta-block"),
     ),
     (
       "a corrupt br body",
@@ -261,21 +265,19 @@ test "ContentDecoder undoes each coding and chain" {
       "an inner br stream with data after it",
       [Gzip, Brotli],
       @gzip.compress(hello_br + b"x"),
-      Err("malformed br response body: data after the end of the stream"),
+      Err("malformed br response body: data after the last meta-block"),
     ),
     (
       "a truncated zstd body",
       [Zstd],
       hello_zstd[:hello_zstd.length() - 1].to_owned(),
-      Err("malformed zstd response body: the stream ends inside a frame"),
+      Err("malformed zstd response body: the input ends inside a frame"),
     ),
     (
       "data after a zstd body",
       [Zstd],
       hello_zstd + b"junk",
-      Err(
-        "malformed zstd response body: data after the last frame that starts no frame",
-      ),
+      Err("malformed zstd response body: data after the last frame"),
     ),
     (
       "a zstd checksum mismatch",
@@ -303,9 +305,7 @@ test "ContentDecoder undoes each coding and chain" {
       "an inner zstd stream with data after it",
       [Gzip, Zstd],
       @gzip.compress(hello_zstd + b"junk"),
-      Err(
-        "malformed zstd response body: data after the last frame that starts no frame",
-      ),
+      Err("malformed zstd response body: data after the last frame"),
     ),
     (
       "not gzip at all",
@@ -382,19 +382,19 @@ test "a stream's reader gets the output before an error, then the error" {
       "br",
       [Brotli],
       hello_br + b"x",
-      "malformed br response body: data after the end of the stream",
+      "malformed br response body: data after the last meta-block",
     ),
     (
       "zstd",
       [Zstd],
       hello_zstd + b"junk",
-      "malformed zstd response body: data after the last frame that starts no frame",
+      "malformed zstd response body: data after the last frame",
     ),
     (
       "gzip around br",
       [Gzip, Brotli],
       @gzip.compress(hello_br + b"x"),
-      "malformed br response body: data after the end of the stream",
+      "malformed br response body: data after the last meta-block",
     ),
   ]
   for row in rows {

@@ -15,15 +15,23 @@ pub struct AsyncBackend {
 /// `clock` defaults to AsyncClock; `timer` defaults to ClockTimer on that
 /// clock. Socket pool expiry and deadlines use these ports; fetch uses them
 /// for upload, head and body deadlines (host pooling remains outside them).
+/// With `dictionaries`, socket targets use RFC 9842 compression dictionaries
+/// from that store, in `dictionary_partition`, and fill it (see
+/// `@codings.Decompress`); on JS the host's fetch decides, and the store is
+/// not used.
 pub fn AsyncBackend::new(
   config? : @h1client.ClientConfig,
   trust~ : @trust.Trust = System,
   clock? : &@rt.Clock,
   timer? : &@rt.Timer,
+  dictionaries? : @dictionary.DictionaryStore,
+  dictionary_partition~ : String = "",
 ) -> AsyncBackend {
   let clock = clock.unwrap_or_else(() => @runtime.AsyncClock::new())
   let timer = timer.unwrap_or_else(() => @runtime.ClockTimer::new(clock~))
-  platform_backend(config, trust, clock, timer)
+  platform_backend(
+    config, trust, clock, timer, dictionaries, dictionary_partition,
+  )
 }
 
 ///|
