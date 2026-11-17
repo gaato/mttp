@@ -130,6 +130,16 @@ generics, tuple/empty structs, more than 16 fields, mixed enums, duplicate wire
 names/tags and malformed examples are hard errors with file:line:column.
 Enums have 1 to 64 cases. The tool does not raise object16's limit.
 
+`schema_default` is refused on any field whose generated codec encodes
+through its type's recursive proxy, including inside arrays/maps/options or
+Presence. Defaults encode their value while constructing the codec, before
+that proxy is initialized; the generator cannot inspect an identifier's
+value to prove it empty or None. Defaults on nonrecursive fields remain
+supported, as do explicit codec overrides that do not use the generated
+proxy. Use a hand-written codec for a recursive default annotation.
+Distinct types must also have distinct generated codec names: for example,
+`FooBar` and `Foo_bar` both map to `foo_bar_codec` and are refused together.
+
 ## Repository checks and releases
 
 ```sh

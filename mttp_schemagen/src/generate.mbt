@@ -141,6 +141,7 @@ fn record_code(
     bindings.push(binding)
     assignments.push("\{label}: \{binding}")
     let override_ = attrs.codec
+    let field_self_used = Ref(false)
     let mut codec = codec_type(
       field.ty,
       declarations,
@@ -148,13 +149,25 @@ fn record_code(
       self_binding=local_prefix + "self_codec",
       omittable=attrs.omittable,
       nullable=attrs.nullable,
-      self_used~,
+      self_used=field_self_used,
       override_?,
     )
+    if field_self_used.val {
+      self_used.val = true
+    }
     if !attrs.examples.is_empty() {
       codec += ".with_examples([\{attrs.examples.join(", ")}])"
     }
     if attrs.default_ is Some(value) {
+      // Defaults encode immediately. An identifier's value is opaque here,
+      // so even an apparently optional/empty value cannot safely be assumed
+      // to avoid the recursive proxy before its cell has been initialized.
+      if field_self_used.val {
+        reject(
+          field.loc,
+          "schema_default cannot encode a recursive field during codec initialization; use a hand-written codec for this annotation",
+        )
+      }
       codec += ".with_default(\{value})"
     }
     let description = doc_text(field.doc)
@@ -344,8 +357,16 @@ fn generate(
       }
     }
   }
+  let generated : Map[String, String] = Map([])
   for _, declaration in declarations {
     let binding = codec_name(declaration.type_.tycon)
+    if generated.get(binding) is Some(previous) {
+      reject(
+        declaration.type_.loc,
+        "generated codec name \{binding} collides between \{previous} and \{declaration.type_.tycon}",
+      )
+    }
+    generated[binding] = declaration.type_.tycon
     if existing.contains(binding) {
       reject(
         declaration.type_.loc,

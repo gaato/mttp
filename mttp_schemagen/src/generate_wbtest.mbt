@@ -29,6 +29,100 @@ fn refuses(source : String, expected : String) -> Unit raise {
 }
 
 ///|
+test "recursive field defaults are refused before proxy initialization" {
+  let source =
+    #|#mttp.schema
+    #|struct DefaultTree {
+    #|  value : Int
+    #|  #mttp.schema_default(default_children)
+    #|  children : Array[DefaultTree]
+    #|}
+    #|let default_children : Array[DefaultTree] = [{ value: 1, children: [] }]
+  refuses(source, "schema_default cannot encode a recursive field")
+  for
+    ty in [
+      "DefaultTree?", "Map[String, DefaultTree]", "@jsonkit.Presence[DefaultTree]",
+    ] {
+    refuses(
+      "#mttp.schema\nstruct DefaultTree {\n#mttp.schema_default(default_value)\nchild : \{ty}\n}",
+      "schema_default cannot encode a recursive field",
+    )
+  }
+}
+
+///|
+test "recursive codecs retain defaults that do not encode through the proxy" {
+  let source =
+    #|#mttp.schema
+    #|struct SafeTree {
+    #|  children : Array[SafeTree]
+    #|  #mttp.schema_default(default_count)
+    #|  count : Int
+    #|  #mttp.codec(external_child)
+    #|  #mttp.schema_default(default_child)
+    #|  child : SafeTree?
+    #|}
+  let output = generate([("safe.mbt", source)])
+  assert_true(output.contains("@schema.recursive("))
+  assert_true(output.contains("@schema.jint.with_default(default_count)"))
+  assert_true(
+    output.contains(
+      "@schema.option((external_child)).with_default(default_child)",
+    ),
+  )
+}
+
+///|
+test "derived codec names are unique across input files" {
+  let message = try {
+    ignore(
+      generate([
+        ("first.mbt", "#mttp.schema\nstruct FooBar { value : Int }"),
+        ("second.mbt", "#mttp.schema\nstruct Foo_bar { value : String }"),
+      ]),
+    )
+    "accepted"
+  } catch {
+    Invalid(message) => message
+  }
+  assert_true(message.has_prefix("second.mbt:"), msg=message)
+  assert_true(message.contains("foo_bar_codec"), msg=message)
+  assert_true(
+    message.contains("FooBar") && message.contains("Foo_bar"),
+    msg=message,
+  )
+}
+
+///|
+test "reviewed discriminator and constructor attribute refusals remain positioned" {
+  for value_type in ["String", "Int"] {
+    for
+      (tag, annotation) in [
+        ("type", ""),
+        ("kind", "#mttp.discriminator(\"kind\")\n"),
+      ] {
+      refuses(
+        "#mttp.schema\nstruct Payload {\n#mttp.rename(\"\{tag}\")\nvalue : \{value_type}\n}\n#mttp.schema\n\{annotation}enum Event { A(Payload) }",
+        "payload field collides with discriminator \{tag}",
+      )
+    }
+  }
+  for argument in ["", "(Payload)"] {
+    let payload = "#mttp.schema\nstruct Payload { value : Int }\n"
+    refuses(
+      payload +
+      "#mttp.schema\nenum Event {\n#mttp.unrecognized\nA\{argument}\n}",
+      "unsupported #mttp.unrecognized",
+    )
+    refuses(
+      payload +
+      "#mttp.schema\nenum Event {\n#mttp.tag(\"a\")\n#mttp.tag(\"a\")\nA\{argument}\n}",
+      "duplicate #mttp.tag",
+    )
+  }
+}
+
+///|
 test "positioned refusals cover unsupported declarations and attributes" {
   refuses("#mttp.schema\nstruct Box[T] { item : T }", "generic")
   refuses("#mttp.schema\nstruct Pair(Int, String)", "tuple structs")
@@ -167,7 +261,25 @@ async test "only marked files are replaced and check never writes" {
 async test "freshly generated collision and response fixtures compile and execute" {
   let dir = test_directory()
   defer @fs.rmdir(dir, recursive=true)
-  let source = @fs.read_text("release.input")
+  let source = @fs.read_text("release.input") +
+    "\n" +
+    (
+      #|///|
+      #|let self_codec : @schema.JsonCodec[Int] = @schema.jint
+      #|///|
+      #|#derive(Eq, Debug)
+      #|#mttp.schema
+      #|struct BinderTree {
+      #|  #mttp.codec(self_codec)
+      #|  value : Int
+      #|  children : Array[BinderTree]
+      #|}
+      #|///|
+      #|test "recursive binder preserves a user codec named self_codec" {
+      #|  let value = BinderTree::{ value: 1, children: [{ value: 2, children: [] }] }
+      #|  assert_eq(binder_tree_codec.from_json(binder_tree_codec.to_json(value)), value)
+      #|}
+    )
   let output = formatted(
     generate([("release.input", source)], toolchain=toolchain_version()),
   )
@@ -208,7 +320,7 @@ async test "freshly generated collision and response fixtures compile and execut
     "-C", dir, "test", "-p", "schemagen/fixture", "--target", "wasm", "--deny-warn",
   ]).output(timeout_ms=60000)
   assert_eq(result.exit_code(), 0, msg=result.stdout() + result.stderr())
-  assert_true(result.stdout().contains("Total tests: 2, passed: 2, failed: 0."))
+  assert_true(result.stdout().contains("Total tests: 3, passed: 3, failed: 0."))
 }
 
 ///|

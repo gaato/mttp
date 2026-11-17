@@ -221,4 +221,4 @@ gaato/mttp_core	gaato/mttp_core/apispec/diff	js	25
 gaato/mttp_core	gaato/mttp_core/apispec/diff	native	25
 gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm	25
 gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm-gc	25
-gaato/mttp_schemagen	gaato/mttp_schemagen	wasm	7
+gaato/mttp_schemagen	gaato/mttp_schemagen	wasm	11
