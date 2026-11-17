@@ -49,6 +49,9 @@
 #                                           in canary, outside full
 #   scripts/gates.sh mutate [SITE]...       the hand-run HTTP/1 mutation
 #                                           sample; not part of full or CI
+#   scripts/gates.sh prove [--solver z3|cvc5] the number core and negative
+#                                           controls, pinned solver only;
+#                                           manual, outside quick/static/full
 #   scripts/gates.sh apispec-corpus DIR     round-trip external OpenAPI JSON
 #                                           documents through apispec. Manual
 #                                           only: the documents are not ours
@@ -233,6 +236,10 @@ case "$mode" in
     ;;
   mutate)
     step script scripts/mutate.mbtx -- "$@"
+    finish
+    ;;
+  prove)
+    step script scripts/prove.mbtx -- "$@"
     finish
     ;;
   apispec-corpus)

@@ -139,23 +139,14 @@ fn skip_quoted(line : StringView, i : Int32) -> Int32 raise ParseError {
 /// Extensions are validated and ignored. Whitespace is allowed only around
 /// extension delimiters, never before the size or after a size alone.
 fn chunk_size(line : StringView) -> Int64 raise ParseError {
-  let mut size = 0L
-  let mut i = 0
-  while i < line.length() {
-    let digit = match line[i] {
-      '0'..<='9' as c => c.to_int() - '0'.to_int()
-      'a'..<='f' as c => c.to_int() - 'a'.to_int() + 10
-      'A'..<='F' as c => c.to_int() - 'A'.to_int() + 10
-      _ => break
-    }
-    if size > (9223372036854775807L - digit.to_int64()) / 16L {
-      raise malformed("chunk size overflow")
-    }
-    size = size * 16L + digit.to_int64()
-    i += 1
-  }
+  let (digits, n) = number_prefix(line, hex=true)
+  let mut i = n
   if i == 0 {
     raise malformed("invalid chunk size")
+  }
+  let size = @number.fold(digits, n, 16L)
+  if size < 0L {
+    raise malformed("chunk size overflow")
   }
   while i < line.length() {
     i = skip_bws(line, i)

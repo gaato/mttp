@@ -1,0 +1,3 @@
+// No dependencies: the proof frontend cannot order the root package's opaque
+// types correctly in its generated Why3 interface (see h1/PROOFS.md).
+proof_enabled = true

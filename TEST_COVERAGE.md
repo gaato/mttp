@@ -25,6 +25,18 @@ run itself failed (a failing test, a build error).
 `--from-json` only rechecks a stored report against the ledger; it does not
 rerun the tests.
 
+HTTP/1 numeric arithmetic is also verified by `moon prove` in the
+dependency-free `mttp_core/src/internal/number`: the recursive positional
+model, bounded digit step and fixed-array fold, including exact overflow
+refusal. [The proof record](mttp_core/src/h1/PROOFS.md) describes the boundary
+between that proof and h1's tested UTF-16/ASCII mapping, OWS and exceptions.
+The numeric tests cover empty/invalid inputs, leading zeros, the signed
+63-bit bound and one past it in both bases. No uncovered-line exemption is
+added: a targeted native run covered all 12 lines of h1's `numbers.mbt`
+and all 21 lines of `internal/number/number.mbt`. The manual
+`scripts/gates.sh prove` gate checks fresh reports and
+four false contracts with either pinned solver, outside quick/static/full.
+
 ### What is measured
 
 - Sources: every non-test `.mbt` under `<module>/src/` of every library or

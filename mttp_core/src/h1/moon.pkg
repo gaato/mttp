@@ -1,5 +1,6 @@
 import {
   "gaato/mttp_core",
+  "gaato/mttp_core/internal/number",
   "moonbitlang/core/debug",
 }
 

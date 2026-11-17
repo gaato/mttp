@@ -1,0 +1,256 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/process",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+}
+----
+
+// Adapted from codecs.mbt/scripts/prove.mbtx. Run from the repository root:
+//   moon run scripts/prove.mbtx -- [--solver z3|cvc5]
+// One moon prove and one Why3 prover at a time. Both exit status and a fresh
+// proof report must agree. A frontend/harness error is never a passing
+// negative control. All false claims must fail individually, while the
+// copied production goals still pass, to catch inconsistent assumptions.
+// Exit: 0 success, 1 proof/control failure, 2 setup failure.
+
+///|
+fn[T] die(code : Int32, message : String) -> T {
+  eprintln(message)
+  @env.exit(code)
+}
+
+///|
+async fn ensure_dir(path : String) -> Unit {
+  if !@fs.exists(path) {
+    @fs.mkdir(path, recursive=true)
+  }
+}
+
+///|
+async fn on_path(name : String) -> String? {
+  for dir in @env.get_env_var("PATH").unwrap_or("").split(":") {
+    let path = "\{dir}/\{name}"
+    if dir != "" && @fs.exists(path) {
+      return Some(path)
+    }
+  }
+  None
+}
+
+///|
+fn seconds_since(start : UInt64) -> String {
+  let ms = @env.now() - start
+  "\{ms / 1000}.\{ms % 1000 / 100}"
+}
+
+///|
+async fn config(
+  solver : String,
+  version : String,
+  executable : String,
+  limit : String,
+  root : String,
+) -> String {
+  let home = @env.get_env_var("MOON_HOME").unwrap_or(
+    "\{@env.get_env_var("HOME").unwrap_or("")}/.moon",
+  )
+  // lib may be a moonup symlink; share is beside its target, not ~/.moon/lib.
+  let data = "\{home}/lib/../share/why3"
+  if !@fs.exists("\{data}/drivers") {
+    die(2, "no Why3 drivers at \{data}; set MOON_HOME to the pinned toolchain")
+  }
+  let text = @fs.read_text("scripts/proof/\{solver}.conf.in")
+    .replace_all(old="@WHY3_DATADIR@", new=data)
+    .replace_all(old="@WHY3_LIBDIR@", new="\{home}/lib/why3")
+    .replace_all(old="@PROVER@", new=executable)
+    .replace_all(old="@VERSION@", new=version)
+    .replace_all(old="@LIMIT@", new=limit)
+  let path = "\{root}/_build/proof/\{solver}-\{limit}.conf"
+  @fs.write_text(path, text)
+  path
+}
+
+///|
+async fn run_proof(
+  args : Array[String],
+  report : String,
+  log : String,
+) -> (Int32, Json, String) {
+  // A failed compiler can leave yesterday's success report behind.
+  if @fs.exists(report) {
+    @fs.remove(report)
+  }
+  let start = @env.now()
+  let result = @process.run(
+    "timeout",
+    ["600", "moon", ..args],
+    stdout=Collect,
+    stderr=DuplicateStdout,
+  )
+  @fs.write_text(log, result.stdout_text())
+  let report = if @fs.exists(report) {
+    @json.parse(@fs.read_text(report)) catch {
+      _ => null
+    }
+  } else {
+    null
+  }
+  (result.exit_code, report, seconds_since(start))
+}
+
+///|
+async fn main {
+  let (solver, version, limit) = match @env.args()[1:] {
+    [] | ["--solver", "z3"] => ("z3", "4.16.0", "10")
+    ["--solver", "cvc5"] => ("cvc5", "1.4.2", "30")
+    _ => die(2, "usage: moon run scripts/prove.mbtx -- [--solver z3|cvc5]")
+  }
+  if @env.get_env_var("MOON_PROVE_PRELUDE_OVERRIDE").unwrap_or("") != "" {
+    die(
+      2, "prove.mbtx requires the default unbounded prelude; unset MOON_PROVE_PRELUDE_OVERRIDE",
+    )
+  }
+  let root = @env.current_dir().unwrap_or_else(() => {
+    die(2, "cannot determine repository root")
+  })
+  let source = "mttp_core/src/internal/number"
+  if !@fs.exists("\{source}/number.mbtp") {
+    die(2, "run prove.mbtx from the repository root")
+  }
+  let found = on_path(solver).unwrap_or_else(() => {
+    die(2, "no \{solver} on PATH")
+  })
+  let executable = if found.contains("/mise/shims/") {
+    let result = @process.run(
+      "mise",
+      ["which", solver],
+      stdout=Collect,
+      stderr=DuplicateStdout,
+    )
+    if result.exit_code != 0 {
+      die(2, "mise which \{solver} failed")
+    }
+    result.stdout_text().trim().to_owned()
+  } else {
+    found
+  }
+  let result = @process.run(
+    executable,
+    ["--version"],
+    stdout=Collect,
+    stderr=DuplicateStdout,
+  )
+  let words = result.stdout_text().split(" ").to_array()
+  let actual = if solver == "z3" { words.get(2) } else { words.get(1) }
+  if result.exit_code != 0 || actual != Some(version[:]) {
+    die(2, "expected \{solver} \{version}; got \{result.stdout_text().trim()}")
+  }
+  ensure_dir("_build/proof")
+  let conf = config(solver, version, executable, limit, root)
+  let report_path = "_build/verif/gaato/mttp_core/internal/number/number.proof.json"
+  let (code, report, seconds) = run_proof(
+    ["prove", "--why3-config", conf, "-j", "1", source],
+    report_path,
+    "_build/proof/\{solver}-number.log",
+  )
+  let proved = report
+    is {
+      "result": String("success"),
+      "summary": { "valid": Number(count, ..), .. },
+      ..
+    } &&
+    count >= 6
+  if code != 0 || !proved {
+    die(
+      1,
+      "FAIL \{solver}: number, \{seconds} s, exit \{code}; see _build/proof/\{solver}-number.log and \{report_path}",
+    )
+  }
+  @fs.write_text("_build/proof/\{solver}-number.proof.json", report.stringify())
+  let count = match report {
+    { "summary": { "valid": Number(count, ..), .. }, .. } => count.to_int()
+    _ => 0
+  }
+  println(
+    "proved  \{source}  \{solver} \{version}, \{seconds} s: \{count} goals",
+  )
+
+  // Isolate false claims from real sources and module discovery. The nested
+  // workspace stops moon from selecting the outer application's workspace.
+  let control = "_build/proof/negative"
+  ensure_dir("\{control}/src/controls")
+  @fs.write_text("\{control}/moon.work", "members = [\".\"]\n")
+  @fs.write_text(
+    "\{control}/moon.mod",
+    "name = \"gaato/mttp_number_controls\"\nsource = \"src\"\n",
+  )
+  @fs.write_text("\{control}/src/controls/moon.pkg", "proof_enabled = true\n")
+  for file in ["number.mbt", "number.mbtp"] {
+    @fs.write_text(
+      "\{control}/src/controls/\{file}",
+      @fs.read_text("\{source}/\{file}"),
+    )
+  }
+  @fs.write_text(
+    "\{control}/src/controls/controls.mbt",
+    @fs.read_text("scripts/proof/controls.mbt.in"),
+  )
+  let control_report = "\{control}/_build/verif/controls/controls.proof.json"
+  // False claims never need long attempts; the copied true goals must still
+  // prove. The solver version, driver and prelude stay identical.
+  let negative_conf = config(solver, version, executable, "1", root)
+  let (code, report, seconds) = run_proof(
+    [
+      "-C",
+      "\{root}/\{control}",
+      "prove",
+      "--why3-config",
+      negative_conf,
+      "-j",
+      "1",
+      "src/controls",
+    ],
+    control_report,
+    "_build/proof/\{solver}-controls.log",
+  )
+  let required = [
+    "step_never_overflows'vc", "step_always_overflows'vc", "fold_always_accepts'vc",
+    "fold_always_refuses'vc",
+  ]
+  let mut ok = code != 0 && report is { "result": String("proof_failure"), .. }
+  let failed : Array[String] = []
+  if report is { "failures": Array(failures), .. } {
+    for failure in failures {
+      if failure is { "goal": String(goal), .. } {
+        if !failed.contains(goal) {
+          failed.push(goal)
+        }
+      } else {
+        ok = false
+      }
+    }
+  } else {
+    ok = false
+  }
+  if !required.iter().all(name => failed.contains(name)) ||
+    !failed.iter().all(name => required.contains(name)) {
+    ok = false
+  }
+  @fs.write_text(
+    "_build/proof/\{solver}-controls.proof.json",
+    report.stringify(),
+  )
+  if !ok {
+    die(
+      1,
+      "FAIL \{solver}: controls, \{seconds} s, exit \{code}; see _build/proof/\{solver}-controls.log and \{control_report}",
+    )
+  }
+  println(
+    "refused all \{required.length()} negative controls  \{solver} \{version}, \{seconds} s",
+  )
+  println("prove (\{solver}): OK")
+}

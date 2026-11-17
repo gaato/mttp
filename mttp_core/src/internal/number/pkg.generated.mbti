@@ -1,0 +1,15 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/internal/number"
+
+// Values
+pub fn fold(FixedArray[Int64], Int32, Int64) -> Int64
+
+pub fn step(Int64, Int64, Int64) -> Int64
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

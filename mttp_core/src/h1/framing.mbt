@@ -59,14 +59,16 @@ fn content_length(value : String) -> Int64 raise ParseError {
   if value.is_empty() {
     raise malformed("empty Content-Length")
   }
-  let mut length = 0L
-  for c in value {
-    guard c is ('0'..<='9') else { raise malformed("invalid Content-Length") }
-    let digit = (c.to_int() - '0'.to_int()).to_int64()
-    if length > (9223372036854775807L - digit) / 10L {
-      raise malformed("Content-Length overflow")
-    }
-    length = length * 10L + digit
+  let (digits, n) = number_prefix(value, hex=false)
+  if n == 0 {
+    raise malformed("invalid Content-Length")
+  }
+  let length = @number.fold(digits, n, 10L)
+  if length < 0L {
+    raise malformed("Content-Length overflow")
+  }
+  if n != value.length() {
+    raise malformed("invalid Content-Length")
   }
   length
 }

@@ -1,0 +1,64 @@
+// Helpers stay nonrecursive so recursive model's body uses only pure logic
+// calls. Direct primitive operations lower to program calls and hide its
+// defining equation from SMT solvers on moonc 0.10.20.
+fn zero(_n : Int) -> Int64 { 0L }
+fn previous(n : Int) -> Int { n - 1 }
+fn has_prefix(a : FixedArray[Int64], n : Int) -> Bool { 0 < n && n <= a.length() }
+fn append_model(value : Int64, a : FixedArray[Int64], n : Int, base : Int64) -> Int64 {
+  value * base + a[n - 1]
+}
+
+fn model(a : FixedArray[Int64], n : Int, base : Int64) -> Int64 where {
+  proof_decrease: n,
+} {
+  if has_prefix(a, n) {
+    append_model(model(a, previous(n), base), a, n, base)
+  } else {
+    zero(n)
+  }
+}
+
+predicate radix(base : Int64) {
+  base == 10L || base == 16L
+}
+
+predicate step_pre(value : Int64, digit : Int64, base : Int64) {
+  0L <= value && value <= 9223372036854775807L &&
+  radix(base) && 0L <= digit && digit < base
+}
+
+predicate step_post(value : Int64, digit : Int64, base : Int64, result : Int64) {
+  if value * base + digit > 9223372036854775807L {
+    result == -1L
+  } else {
+    result == value * base + digit && 0L <= result && result <= 9223372036854775807L
+  }
+}
+
+predicate digits(a : FixedArray[Int64], n : Int, base : Int64) {
+  ∀ j : Int, 0 <= j && j < n → 0L <= a[j] && a[j] < base
+}
+
+predicate fold_pre(a : FixedArray[Int64], n : Int, base : Int64) {
+  0 <= n && n <= 2147483647 && n <= a.length() && radix(base)
+}
+
+predicate fold_post(a : FixedArray[Int64], n : Int, base : Int64, result : Int64) {
+  if n == 0 { result == -1L } else {
+    if digits(a, n, base) {
+      if model(a, n, base) > 9223372036854775807L { result == -1L } else {
+        result == model(a, n, base) && 0L <= result && result <= 9223372036854775807L
+      }
+    } else { result == -1L }
+  }
+}
+
+predicate fold_inv(a : FixedArray[Int64], i : Int, base : Int64, acc : Int64, overflow : Bool) {
+  0L <= acc && acc <= 9223372036854775807L &&
+  accumulated(a, i, base, acc, overflow)
+}
+
+predicate accumulated(a : FixedArray[Int64], i : Int, base : Int64, acc : Int64, overflow : Bool) {
+  if overflow { model(a, i, base) > 9223372036854775807L } else { acc == model(a, i, base) }
+}
+

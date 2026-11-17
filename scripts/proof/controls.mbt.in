@@ -1,0 +1,36 @@
+// Each claim is false on allowed inputs. The runner requires each named
+// function to fail, and no other failure, with each pinned solver. Kept out
+// of production packages: prove.mbtx copies the real core and this file into
+// an isolated generated workspace, so no deliberately false contract ships.
+
+///|
+pub fn step_never_overflows(value : Int64, digit : Int64, base : Int64) -> Int64 where {
+  proof_require: step_pre(value, digit, base),
+  proof_ensure: result => result >= 0L,
+} {
+  step(value, digit, base)
+}
+
+///|
+pub fn step_always_overflows(value : Int64, digit : Int64, base : Int64) -> Int64 where {
+  proof_require: step_pre(value, digit, base),
+  proof_ensure: result => result == -1L,
+} {
+  step(value, digit, base)
+}
+
+///|
+pub fn fold_always_accepts(a : FixedArray[Int64], n : Int32, base : Int64) -> Int64 where {
+  proof_require: fold_pre(a, n, base),
+  proof_ensure: result => result >= 0L,
+} {
+  fold(a, n, base)
+}
+
+///|
+pub fn fold_always_refuses(a : FixedArray[Int64], n : Int32, base : Int64) -> Int64 where {
+  proof_require: fold_pre(a, n, base),
+  proof_ensure: result => result == -1L,
+} {
+  fold(a, n, base)
+}
