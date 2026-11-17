@@ -12,6 +12,9 @@ never does.
 - A migration guide from `moonbitlang/core/async/http` and
   `moonbitlang/async/http`, with compiled before and after examples and
   checked source blocks and local output.
+- Copyable native API-server and Cloudflare Workers templates with typed
+  endpoints and in-process tests. The template gate checks release pins and
+  builds fresh copies against the local modules.
 - Opt-in `codings.CompressRequests` Backend wrapper and `compress_request`:
   replayable buffered gzip/deflate/br/zstd request compression, optional lazy
   stream compression, integrity-header exclusions and one uncompressed 415

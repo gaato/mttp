@@ -1,0 +1,21 @@
+import {
+  "gaato/mttp",
+  "gaato/mttp_core/apispec",
+  "gaato/mttp_core/client",
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/openapi",
+  "gaato/mttp_core/router",
+  "gaato/mttp_core/schema",
+}
+
+import {
+  "example/api-server" @api,
+  "moonbitlang/core/async",
+  "moonbitlang/core/encoding/utf8",
+} for "test"
+
+supported_targets = "native"
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)

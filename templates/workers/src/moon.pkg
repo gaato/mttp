@@ -1,0 +1,20 @@
+import {
+  "gaato/mttp",
+  "gaato/mttp/fetch",
+  "gaato/mttp_core/client",
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/router",
+  "gaato/mttp_core/schema",
+}
+
+import {
+  "example/worker",
+  "moonbitlang/core/async",
+} for "test"
+
+supported_targets = "js"
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+  link: { "js": { "exports": [ "fetch_with_env" ], "format": "esm" } },
+)

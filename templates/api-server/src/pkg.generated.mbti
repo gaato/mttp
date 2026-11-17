@@ -1,0 +1,28 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "example/api-server"
+
+import {
+  "gaato/mttp_core/apispec",
+  "gaato/mttp_core/client",
+  "gaato/mttp_core/endpoint",
+  "gaato/mttp_core/router",
+}
+
+// Values
+pub let account : @endpoint.Endpoint[String, Unit, String, String, @client.Buffered]
+
+pub fn application(String) -> @router.Router
+
+pub let echo : @endpoint.Endpoint[Unit, String, @endpoint.NoError, String, @client.Buffered]
+
+pub let hello : @endpoint.Endpoint[Unit, String, @endpoint.NoError, String, @client.Buffered]
+
+pub fn specification() -> @apispec.OpenApi raise
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

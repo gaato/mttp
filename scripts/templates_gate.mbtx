@@ -1,0 +1,150 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/env",
+}
+----
+
+// Copies must build as independent modules: keeping them outside moon.work
+// makes the dependency pins users receive visible, rather than overridden.
+// A disposable workspace supplies the unreleased local libraries only here.
+
+///|
+fn quoted(line : StringView) -> String raise {
+  guard line.split("\"").collect() is [_, value, ..] else {
+    fail("expected a quoted manifest value: \{line}")
+  }
+  value.to_owned()
+}
+
+///|
+fn field(text : String, name : String) -> String raise {
+  for line in text.split("\n") {
+    if line.trim().has_prefix(name + " =") {
+      return quoted(line)
+    }
+  }
+  fail("manifest is missing \{name}")
+}
+
+///|
+fn check_pins(text : String, expected : Array[(String, String)]) -> Unit raise {
+  for (name, version) in expected {
+    let pins = text
+      .split("\n")
+      .filter(line => line.trim().has_prefix("\"" + name + "@"))
+      .collect()
+    guard pins is [pin] && quoted(pin) == name + "@" + version else {
+      fail("template must pin \{name}@\{version}")
+    }
+  }
+}
+
+///|
+async fn run(args : Array[String], cwd : String) -> Unit {
+  println("+ moon " + args.join(" "))
+  let result = @shell.Cmd("moon", args, cwd~).output(timeout_ms=600000)
+  let log = result.stdout() + result.stderr()
+  if !log.is_empty() {
+    println(log)
+  }
+  if result.exit_code() != 0 || log.contains("depends on experimental package") {
+    fail("template command failed in \{cwd}")
+  }
+}
+
+///|
+async fn copy_tree(source : String, destination : String) -> Unit {
+  let excluded = ["_build", ".mooncakes", "node_modules", ".wrangler"]
+  @fs.walk(
+    source,
+    (dir, entries) => {
+      let target = destination + dir[source.length():].to_owned()
+      @fs.mkdir(target, recursive=true, allow_existing=true)
+      for entry in entries {
+        if excluded.contains(entry) {
+          continue
+        }
+        let path = dir + "/" + entry
+        if @fs.kind(path, follow_symlink=false) != Directory {
+          @fs.write_binary(target + "/" + entry, @fs.read_binary(path))
+        }
+      }
+    },
+    exclude=path => excluded.any(name => path.has_suffix("/" + name)),
+    max_concurrency=1,
+  )
+}
+
+///|
+async fn main {
+  let root = @fs.realpath(".")
+  let expected = []
+  for library in ["mttp", "mttp_core"] {
+    let text = @fs.read_text(root + "/" + library + "/moon.mod")
+    expected.push((field(text, "name"), field(text, "version")))
+  }
+  let self_test = @env.args()[1:] is ["--self-test"]
+  if !self_test && !@env.args()[1:].is_empty() {
+    fail("usage: moon run scripts/templates_gate.mbtx [-- --self-test]")
+  }
+  for name in ["api-server", "workers"] {
+    let text = @fs.read_text(root + "/templates/" + name + "/moon.mod")
+    check_pins(text, expected)
+    if self_test {
+      for (library, version) in expected {
+        let changed = text.replace(
+          old=library + "@" + version,
+          new=library + "@99.0.0",
+        )
+        let rejected = try {
+          check_pins(changed, expected)
+          false
+        } catch {
+          _ => true
+        }
+        if !rejected {
+          fail("changed \{library} pin was accepted in \{name}")
+        }
+      }
+    }
+  }
+  if self_test {
+    println(
+      "templates gate self-test: OK (both pins rejected in both templates)",
+    )
+    return
+  }
+  @fs.mkdir(root + "/_build", allow_existing=true)
+  let temporary = @shell.Cmd("mktemp", [
+    "-d",
+    root + "/_build/templates-XXXXXXXX",
+  ]).output()
+  if temporary.exit_code() != 0 {
+    fail("cannot create template workspace: " + temporary.stderr())
+  }
+  let scratch = temporary.stdout().trim().to_owned()
+  // Preserve failures for inspection; successful runs leave no copied caches.
+  for (name, target) in [("api-server", "native"), ("workers", "js")] {
+    let stage = scratch + "/" + name
+    let copy = stage + "/app"
+    copy_tree(root + "/templates/" + name, copy)
+    @fs.write_text(
+      stage + "/moon.work",
+      "members = [\n  \"" +
+      root +
+      "/mttp_core\",\n  \"" +
+      root +
+      "/mttp\",\n  \"app\",\n]\n",
+    )
+    run(["check", "--target", target, "--deny-warn", "src"], copy)
+    run(["fmt", "--check", "src"], copy)
+    run(["info", "--target", target, "src"], copy)
+    run(["test", "--target", target, "--deny-warn", "src"], copy)
+    run(["build", "--target", target, "--release", "src"], copy)
+  }
+  @fs.remove(scratch, recursive=true)
+  println("templates gate: OK (api-server/native; workers/js)")
+}

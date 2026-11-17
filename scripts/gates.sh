@@ -165,6 +165,10 @@ static_gates() {
   # so this check needs no checkout and no network.
   step script scripts/gen_vectors.mbtx -- --check
   step script scripts/docs_audit.mbtx --self-test
+  # Copied applications need isolated builds; keep these out of quick's
+  # per-package loop so each target run does not rebuild both templates.
+  step script scripts/templates_gate.mbtx -- --self-test
+  step script scripts/templates_gate.mbtx
   # The root README's code, outputs, links and MoonBit badge. It runs the
   # README's examples (native builds, about two seconds of retry waits),
   # cheap beside the coverage run below.

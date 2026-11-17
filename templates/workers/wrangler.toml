@@ -1,0 +1,6 @@
+name = "mttp-worker"
+main = "entry.js"
+compatibility_date = "2026-07-14"
+
+[build]
+command = "moon build --target js --release"

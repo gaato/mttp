@@ -1,0 +1,15 @@
+import {
+  "example/api-server" @api,
+  "gaato/mttp",
+  "gaato/mttp/server",
+  "moonbitlang/core/async/signal",
+  "moonbitlang/core/env",
+}
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async/signal" ],
+)
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")
