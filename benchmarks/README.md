@@ -46,7 +46,7 @@ digests are in `images.tsv`.
 - Command:
 
   ```sh
-  export PATH=/home/gaato/.moonup/toolchains/0.10.20+65efd5b93/bin:$PATH
+  export PATH=$HOME/.moonup/toolchains/0.10.20+65efd5b93/bin:$PATH
   export MOON_CC=cc
   export BENCH_ENGINE=docker
   scripts/gates.sh bench --record
