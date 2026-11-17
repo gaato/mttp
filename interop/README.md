@@ -38,6 +38,36 @@ full suite unchanged. The Autobahn process ceiling is one hour because the
 compression matrix can outlast the ordinary ten-minute command ceiling.
 Both Autobahn directions use native release builds; the client permits
 600 seconds per case, beyond the suite's longest 480-second case deadline.
+Client-run failures, including missing reports, print outcome counts and the
+first/last outcome of each error kind, the container state (including
+`OOMKilled`), and the fuzzing server's last 80 log lines (at most 16 KiB).
+Full error representations escape newlines so CI retains the whole error on
+one line. These observations include intentionally rejected frames and
+handshakes; the reports still decide the protocol verdicts. Logs remain in
+`_build/interop/autobahn-client/{client,server}.log`, including when the client
+times out. A stopped fuzzing server ends the report wait immediately.
+Set `INTEROP_AUTOBAHN_MEMORY=3g` to limit the client run's fuzzing server to
+3 GiB without swap, for a resource-pressure reproduction; this changes no cases.
+
+For the full client configuration and pinned image, cases 302–391 are section
+12 and 392–517 are section 13. Case 367 is 12.4.12 and case 368 is 12.4.13:
+1000 compressed HTML messages, 32768 bytes each, fragmented into 256-byte
+frames. Thus failure from case 368 starts partway through section 12.
+On 2026-11-17, a Docker run capped at 7 GiB and 2 CPUs after startup passed
+all 517 cases (460 passed, 57 exact known verdicts). At 3 GiB without swap the server
+was OOM-killed in 13.2.9 (case 418); case 419 onward and `updateReports`
+failed with connection refused, and no index was written. The server had
+only 14 open descriptors in late section 12. This reproduces the CI failure
+pattern under memory pressure, but does not prove the historical CI cause.
+A later full 3 GiB run died earlier, in 12.1.17 (case 318), so the failure
+position is not fixed. Its 517 outcomes and final control error occupied
+exactly 519 log lines, retaining each complete error on one line.
+A fresh compression-only run at 3 GiB also OOM-killed the server in 13.2.9;
+simply separating sections 12/13 together is insufficient at that limit.
+The option preserving all coverage is to budget more server memory (the
+7 GiB capped run passed), or investigate finer batches with fresh servers
+and retain every case verdict. Batching adds startup and report aggregation
+work; lowering message limits would sacrifice coverage and is not enabled.
 Only exact documented INFORMATIONAL/NON-STRICT cases belong in known rows;
 all other non-OK results fail, except the fixed-window cases below.
 Autobahn rows use `known:INFORMATIONAL/INFORMATIONAL` to require both exact

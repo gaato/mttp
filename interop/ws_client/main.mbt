@@ -44,6 +44,33 @@ async fn control(base : String, path : String) -> String {
 
 ///|
 #cfg(not(target="js"))
+fn outcome(stage : String, error : Error) -> (String, String) {
+  let (kind, detail) = match error {
+    @core_ws.WsError(kind~, detail~) => {
+      let name = match kind {
+        Closed({ code: Normal, .. }) => "ClosedNormal"
+        Closed(_) => "Closed"
+        Protocol => "Protocol"
+        TooLarge(_) => "TooLarge"
+        Timeout(_) => "Timeout"
+        Transport(_) => "Transport"
+        Handshake(_) => "Handshake"
+        @core_ws.WsErrorKind::.. => "OtherWsError"
+      }
+      (name, "\{Repr(kind)}: \{detail}")
+    }
+    _ => ("Other", "\{Repr(error)}")
+  }
+  (
+    kind,
+    (stage + ": " + detail)
+    .replace_all(old="\r", new="\\r")
+    .replace_all(old="\n", new="\\n"),
+  )
+}
+
+///|
+#cfg(not(target="js"))
 async fn main {
   let args = @env.args()
   let base = args.get(1).unwrap_or("ws://127.0.0.1:39050")
@@ -51,30 +78,31 @@ async fn main {
   println("Autobahn: \{count} cases")
   for case in 1..<=count {
     // Compression cases allow up to 480 s in Autobahn itself.
-    @async.with_timeout(600000, () => {
+    let (kind, detail) = @async.with_timeout(600000, () => {
       let session = open(base, "/runCase?case=\{case}&agent=mttp-client")
       defer session.abort()
       for ;; {
-        let message = session.recv() catch { _ => break }
+        let message = session.recv() catch {
+          error => return outcome("recv", error)
+        }
         session.send(message) catch {
-          _ => break
+          error => return outcome("send", error)
         }
       }
     }) catch {
       // Some negotiation cases intentionally fail the opening handshake.
       // Continue so Autobahn can report that exact verdict and later cases.
-      @core_ws.WsError(kind~, detail~) =>
-        println("Autobahn case \{case} ended: \{Repr(kind)}: \{detail}")
-      error => println("Autobahn case \{case} ended: \{Repr(error)}")
+      error => outcome("open/timeout", error)
     }
-    println("Autobahn case \{case}/\{count} completed")
+    println("Autobahn outcome \{case} \{kind}: \{detail}")
   }
   // Autobahn can end this control connection after writing its reports.
   // The adapter checks reports/index.json to decide whether it succeeded.
   ignore(control(base, "/updateReports?agent=mttp-client")) catch {
-    @core_ws.WsError(kind~, detail~) =>
-      println("Autobahn updateReports ended: \{Repr(kind)}: \{detail}")
-    error => println("Autobahn updateReports ended: \{Repr(error)}")
+    error => {
+      let (kind, detail) = outcome("control", error)
+      println("Autobahn updateReports ended: \{kind}: \{detail}")
+    }
   }
 }
 

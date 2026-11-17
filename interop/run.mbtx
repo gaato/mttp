@@ -1125,6 +1125,81 @@ fn selected(filters : Array[String], key : String) -> Bool {
 }
 
 ///|
+/// Summarize terminal observations without printing all 517 client outcomes.
+fn autobahn_outcome_summary(output : String) -> Array[String] {
+  let counts : Map[String, Int32] = Map([])
+  let first : Map[String, String] = Map([])
+  let last : Map[String, String] = Map([])
+  let mut total = 0
+  for line in output.split("\n") {
+    guard line.strip_prefix("Autobahn outcome ") is Some(outcome) else {
+      continue
+    }
+    guard outcome.split(" ").to_array() is [_, kind, ..] else { continue }
+    let kind = kind.to_owned()
+    counts[kind] = counts.get(kind).unwrap_or(0) + 1
+    total += 1
+    if kind != "ClosedNormal:" {
+      let line = line.to_owned()
+      if !first.contains(kind) {
+        first[kind] = line
+      }
+      last[kind] = line
+    }
+  }
+  let lines = ["Autobahn client outcomes: \{total}"]
+  // These are transport observations, not Autobahn protocol verdicts: some
+  // framing and negotiation cases deliberately end with an error.
+  for kind, count in counts {
+    lines.push("  \{kind} \{count}")
+    if first.get(kind) is Some(line) {
+      lines.push("Autobahn first \{kind} \{line}")
+      lines.push("Autobahn last \{kind} \{last[kind]}")
+    }
+  }
+  lines
+}
+
+///|
+async fn autobahn_client_diagnostics(env : Env, container : String) -> Unit {
+  let dir = "\{work}/autobahn-client"
+  if @fs.exists("\{dir}/client.log") {
+    let log = @fs.read_text("\{dir}/client.log") catch {
+      error => {
+        println("Autobahn client log unreadable: \{Repr(error)}")
+        ""
+      }
+    }
+    for line in autobahn_outcome_summary(log) {
+      println(line)
+    }
+  } else {
+    println("Autobahn client log missing (client did not start)")
+  }
+  let (status, out, err) = capture(
+    env.engine,
+    ["inspect", "--format", "{{json .State}}", container],
+    timeout_ms=10000,
+  ) catch {
+    error => (-1, "", "\{Repr(error)}")
+  }
+  let state = (out + err).trim().to_owned().split("\n").to_array().join("\\n")
+  println("Autobahn container state (\{status}): \{state[:4096]}")
+  println("Autobahn fuzzingserver log tail (at most 80 lines / 16 KiB):")
+  let (_, out, err) = capture(
+    "tail",
+    ["-c", "16384", "\{dir}/server.log"],
+    timeout_ms=10000,
+  ) catch {
+    error => (-1, "", "\{Repr(error)}")
+  }
+  let lines = (out + err).split("\n").to_array()
+  for line in lines[(lines.length() - 80).max(0):] {
+    println(line.to_owned())
+  }
+}
+
+///|
 /// Autobahn's fuzzingserver drives the native mttp WebSocket client. The
 /// JSON adapter preserves every raw verdict; cases.tsv owns known outcomes.
 async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
@@ -1144,6 +1219,8 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
     @fs.rmdir("\{work}/autobahn-client/reports", recursive=true)
   }
   make_dir("\{work}/autobahn-client/reports")
+  // Startup failure must not summarize the preceding run's client output.
+  @fs.write_text("\{work}/autobahn-client/client.log", "")
   let config = @fs.read_text("interop/servers/autobahn-client.json")
   let config = if compression_only() {
     config.replace(
@@ -1169,14 +1246,21 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
     defer @async.protect_from_cancel(() => {
       ignore(capture(env.engine, ["rm", "-f", container]))
     })
+    let memory = @env.get_env_var("INTEROP_AUTOBAHN_MEMORY")
+      .map(value => ["--memory", value, "--memory-swap", value])
+      .unwrap_or([])
     let server = @process.spawn(
       group,
       env.engine,
-      env.run_args(
+      env
+      .run_args(
         "autobahn",
         [
           "--name",
           container,
+          "--env",
+          "PYTHONUNBUFFERED=1",
+          ..memory,
           ..env.user,
           ..env.mount(config_path, "/config/fuzzingserver.json"),
           ..env.mount(
@@ -1186,23 +1270,38 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
           ),
         ],
         [],
-      ),
+      )
+      .filter(arg => arg != "--rm"),
       stdout=ToFile("\{work}/autobahn-client/server.log"),
-      stderr=ToFile("\{work}/autobahn-client/server.log"),
+      stderr=DuplicateStdout,
     )
     defer server.cancel()
+    let mut diagnose = true
+    // Keep the stopped container until this runs, so OOMKilled and ExitCode
+    // survive. Diagnostics also run for startup, client and adapter errors.
+    defer @async.protect_from_cancel(() => {
+      if diagnose {
+        autobahn_client_diagnostics(env, container) catch {
+          error => println("Autobahn diagnostics failed: \{Repr(error)}")
+        }
+      }
+    })
     // Container startup can outlast the ordinary 30 s port probe under load.
     wait_port("127.0.0.1:39050", "Autobahn fuzzingserver", attempts=900)
     // Sections 12/13 multiply the large-message matrix; the former ten-minute
     // command ceiling expires before the compression cases can finish.
-    let (status, stdout, stderr) = capture(
+    let client = @process.spawn(
+      group,
       "_build/native/release/build/\{interop_module}/ws_client/ws_client.exe",
       [],
-      timeout_ms=3600000,
+      stdout=ToFile("\{work}/autobahn-client/client.log"),
+      stderr=DuplicateStdout,
     )
-    @fs.write_text("\{work}/autobahn-client/client.log", stdout + stderr)
+    defer client.cancel()
+    let status = @async.with_timeout(3600000, () => client.wait())
+    let stdout = @fs.read_text("\{work}/autobahn-client/client.log")
     if status != 0 {
-      raise RunError("Autobahn client exited \{status}\n\{stdout}\n\{stderr}")
+      raise RunError("Autobahn client exited \{status}")
     }
     for line in stdout.split("\n") {
       if line.has_prefix("Autobahn updateReports") {
@@ -1215,6 +1314,9 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
     // reading an absent one.
     let index = "\{work}/autobahn-client/reports/index.json"
     for waited = 0; !@fs.exists(index) && waited < 900; waited = waited + 1 {
+      if server.try_wait() is Some(_) {
+        break
+      }
       @async.sleep(1000)
     }
     run_one(
@@ -1234,6 +1336,7 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
         ],
       ),
     )
+    diagnose = tally.fail > 0 || !@fs.exists(index)
   })
   println(
     "Autobahn client: \{tally.pass} passed, \{tally.known} known, \{tally.fail} failed",
@@ -1763,6 +1866,19 @@ async fn main {
 /// A known Autobahn case must never hide protocol failures or absent verdicts,
 /// on either side of the transport. Exercise the real reporting path.
 async fn self_test_autobahn() -> Unit {
+  assert_eq(
+    autobahn_outcome_summary(
+      "Autobahn: 3 cases\n" +
+      "Autobahn outcome 1 ClosedNormal: recv: Closed(Normal)\n" +
+      "Autobahn outcome 2 Transport: open/timeout: Transport(\\n refused)\n" +
+      "Autobahn outcome 3 Transport: recv: Transport(\\n reset)\n",
+    ),
+    [
+      "Autobahn client outcomes: 3", "  ClosedNormal: 1", "  Transport: 2", "Autobahn first Transport: Autobahn outcome 2 Transport: open/timeout: Transport(\\n refused)",
+      "Autobahn last Transport: Autobahn outcome 3 Transport: recv: Transport(\\n reset)",
+    ],
+  )
+  assert_eq(autobahn_outcome_summary(""), ["Autobahn client outcomes: 0"])
   for id in ["ab-run", "ab-12.*", "ab-13.1.1", "autobahn-12.*", "autobahn-13.1"] {
     assert_true(compression_case(id))
   }
