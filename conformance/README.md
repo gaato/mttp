@@ -2,7 +2,7 @@
 
 This unpublished module checks `gaato/mttp_core` through public
 APIs on all four targets. It retains the HTTP-only suites from mbt-sdk
-commit `43f92f0`:
+(since renamed moonbit-sdks) commit `43f92f0`:
 
 - URL parsing against 245 applicable WHATWG URL vectors, including all 19
   previously excluded IPv6/IPv4-tail rows. IPv6 serialization uses RFC 5952
