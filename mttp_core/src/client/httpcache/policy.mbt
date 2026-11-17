@@ -46,6 +46,7 @@ fn storable(
     200 | 203 | 204 | 300 | 301 | 308 | 404 | 405 | 410 | 414 | 501 => true
     _ => false
   }
+  // RFC 6585 forbids storing 428, 429, 431 and 511 even with explicit freshness.
   request.meth == Get &&
   !request.headers.contains("range") &&
   !req.no_store &&
@@ -55,6 +56,7 @@ fn storable(
   !@mttp_core.reason_phrase(status).is_empty() &&
   status != 206 &&
   status != 304 &&
+  ![428, 429, 431, 511].contains(status) &&
   status <= 599 &&
   (
     understood ||
@@ -135,7 +137,9 @@ fn merged_headers(
   update : @mttp_core.Headers,
 ) -> @mttp_core.Headers {
   let update = end_to_end(update).remove("content-length")
-  let mut out = old
+  // Age belongs to the validating exchange. An omitted Age means zero,
+  // rather than carrying the previous response's corrected initial age.
+  let mut out = old.remove("age")
   for (name, _) in update.iter() {
     out = out.remove(name)
   }
@@ -170,4 +174,55 @@ fn HttpCache::cached(
     ),
     status,
   )
+}
+
+///|
+/// HTTP sends an empty path as slash. Keep query and fragment handling the
+/// same for request keys and Location/Content-Location invalidation keys.
+fn key_url(url : @mttp_core.Url) -> String {
+  let url = url.without_fragment()
+  let text = url.to_string()
+  if (url.scheme == Some("http") || url.scheme == Some("https")) &&
+    url.path.is_empty() {
+    match text.find("?") {
+      Some(i) => text[:i].to_owned() + "/" + text[i:].to_owned()
+      None => text + "/"
+    }
+  } else {
+    text
+  }
+}
+
+///|
+/// If-None-Match uses weak comparison: the weakness flag is not part of
+/// the opaque tag's identity; its case-sensitive contents still are.
+fn weak_etag_matches(stored : String, received : String) -> Bool {
+  let stored = if stored.has_prefix("W/") { stored[2:] } else { stored[:] }
+  let received = if received.has_prefix("W/") {
+    received[2:]
+  } else {
+    received[:]
+  }
+  stored == received
+}
+
+///|
+/// HEAD can contradict a complete GET even though HEAD itself is not stored.
+/// Discard uncertain metadata as well, rather than claiming a fresh GET body
+/// after a successful validation that cannot confirm its representation.
+fn head_conflicts(stored : Stored, received : @mttp_core.Headers) -> Bool {
+  let mut validated = false
+  for name in ["etag", "last-modified"] {
+    if received.get(name) is Some(value) {
+      if stored.head.headers.get(name) != Some(value) {
+        return true
+      }
+      validated = true
+    }
+  }
+  if received.get("content-length") is Some(length) &&
+    length != stored.body.length().to_string() {
+    return true
+  }
+  !validated
 }

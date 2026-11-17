@@ -12,6 +12,7 @@ pub struct HttpCache {
   priv mut closed : Bool
   priv mut generation : Int64
   priv mut writing : Bool
+  priv mut disabled : Bool
 }
 
 ///|
@@ -35,6 +36,7 @@ pub fn HttpCache::new(
     closed: false,
     generation: 0L,
     writing: false,
+    disabled: false,
   }
 }
 
@@ -45,8 +47,12 @@ async fn HttpCache::lookup(
   self : HttpCache,
   key : CacheKey,
 ) -> Array[Stored] noraise {
-  self.store.lookup(key) catch {
-    _ => []
+  let entries = self.store.lookup(key) catch { _ => [] }
+  // A concurrent invalidation may have failed while lookup was suspended.
+  if self.disabled {
+    []
+  } else {
+    entries
   }
 }
 
@@ -54,7 +60,9 @@ async fn HttpCache::lookup(
 #warnings("-fragile_catch_all")
 async fn HttpCache::remove(self : HttpCache, key : CacheKey) -> Unit noraise {
   self.store.remove(key) catch {
-    _ => ()
+    // Entries that could not be removed can no longer be trusted. A single
+    // flag also bounds this fallback independently of the number of URLs.
+    _ => self.disabled = true
   }
 }
 
@@ -69,6 +77,7 @@ async fn HttpCache::offer(
   generation : Int64,
 ) -> Unit noraise {
   if self.closed ||
+    self.disabled ||
     self.writing ||
     generation != self.generation ||
     self.max_variants == 0 {
@@ -82,17 +91,20 @@ async fn HttpCache::offer(
     let variants = self.store.lookup(key)
     let keep = variants.filter(s => s.vary_headers != stored.vary_headers)
     if keep.length() >= self.max_variants {
-      self.store.remove(key)
+      self.remove(key)
+      if self.disabled {
+        return
+      }
       let start = keep.length() - self.max_variants + 1
       for i in start..<keep.length() {
         self.store.insert(key, keep[i])
       }
     }
-    if generation == self.generation && !self.closed {
+    if generation == self.generation && !self.closed && !self.disabled {
       self.store.insert(key, stored)
     }
     if generation != self.generation || self.closed {
-      self.store.remove(key)
+      self.remove(key)
     }
   } catch {
     _ => ()
@@ -115,7 +127,7 @@ async fn HttpCache::invalidate(
       let url = origin.resolve(relative).without_fragment()
       if origin.same_origin(url) {
         self.remove({
-          url: url.to_string(),
+          url: key_url(url),
           credential: request.headers.get("authorization"),
         })
       }
@@ -143,7 +155,7 @@ pub async fn HttpCache::send(
   let force_validation = req.no_cache ||
     (
       request.headers.get_all("cache-control").is_empty() &&
-      request.headers.get("pragma") == Some("no-cache")
+      @cache.CacheControl::parse(request.headers.get_all("pragma")).no_cache
     )
   let parsed = try @mttp_core.Url::parse(request.url) catch {
     _ => None
@@ -152,7 +164,7 @@ pub async fn HttpCache::send(
   }
   let key : CacheKey = {
     url: match parsed {
-      Some(u) => u.without_fragment().to_string()
+      Some(u) => key_url(u)
       None => request.url
     },
     credential: request.headers.get("authorization"),
@@ -164,7 +176,8 @@ pub async fn HttpCache::send(
   let conditional = [
     "if-none-match", "if-modified-since", "if-match", "if-unmodified-since", "if-range",
   ].any(n => request.headers.contains(n))
-  let bypass = (self.credentials == Bypass && key.credential is Some(_)) ||
+  let bypass = self.disabled ||
+    (self.credentials == Bypass && key.credential is Some(_)) ||
     req.no_store ||
     request.headers.contains("range") ||
     conditional ||
@@ -229,7 +242,10 @@ pub async fn HttpCache::send(
       (
         s.head.headers.get("etag") is None ||
         response.headers.get("etag") is None ||
-        response.headers.get("etag") == s.head.headers.get("etag")
+        weak_etag_matches(
+          s.head.headers.get("etag").unwrap(),
+          response.headers.get("etag").unwrap(),
+        )
       ) &&
       (request.meth == Get || request.meth == Head) &&
       (
@@ -270,6 +286,13 @@ pub async fn HttpCache::send(
       response.close()
       return self.cached(key, s, request, Stale)
     }
+  }
+  if request.meth == Head &&
+    response.status == 200 &&
+    stored is Some(s) &&
+    head_conflicts(s, response.headers) {
+    self.generation += 1L
+    self.remove(key)
   }
   let response = marked(response, if bypass { Bypass } else { Miss })
   if bypass || !storable(request, response.head()) {

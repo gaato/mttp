@@ -63,7 +63,8 @@ pub struct Stored {
 ///|
 /// A private cache's storage. Lookup returns variants oldest first; insert
 /// replaces an equal Vary selection and makes it newest. Methods must be
-/// safe for concurrent callers. Failures are treated as cache misses.
+/// safe for concurrent callers. Lookup/insert failures skip caching; a remove
+/// failure disables caching in the wrapper because retained entries may be stale.
 /// Persisted credentials must be hashed. remove invalidates the URL across
 /// all credential partitions, so an authenticated mutation also invalidates
 /// anonymous representations of the same resource. Variant eviction may
