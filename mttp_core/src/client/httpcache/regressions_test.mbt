@@ -211,7 +211,7 @@ test "validating 304 accepts weakly matching entity tags" {
   for
     (stored_tag, validated_tag) in [
       ("\"v1\"", "W/\"v1\""),
-      ("W/\"v1\"", "\"v1\""),
+      ("\"v1\"", "\"v1\""),
       ("W/\"v1\"", "W/\"v1\""),
     ] {
     let d = @driver.Driver::new()
@@ -382,4 +382,131 @@ test "failed removal also protects suspended lookups and variant eviction" {
     assert_eq(status(fetch(d, cache)), Some(Bypass))
     assert_eq(store.lookups.val, lookups)
   }
+}
+
+///|
+test "strong 304 cannot upgrade weakly validated bytes and fetches unconditionally" {
+  for stored_tag in [Some("W/\"v1\""), Some("\"v0\""), None] {
+    let d = @driver.Driver::new()
+    let clock = @sim.FakeClock::new()
+    let calls = Ref(0)
+    let seen = []
+    let rejected = @sim.Feed::bytes(d, [])
+    let options : @mttp_core.SendOptions = {
+      timeout_ms: Some(150),
+      body: Stream(idle_ms=Some(25)),
+    }
+    let cache = @httpcache.HttpCache::new(
+      @client.from_fn((r, o) => {
+        calls.val += 1
+        seen.push(
+          (r.headers.get("if-none-match"), r.headers.get("if-modified-since")),
+        )
+        assert_eq(o, options) catch {
+          e => abort(e.to_string())
+        }
+        if calls.val == 1 {
+          let fields = [("last-modified", "Thu, 01 Jan 1970 00:00:00 GMT")]
+          if stored_tag is Some(tag) {
+            fields.push(("etag", tag))
+          }
+          response(cc="max-age=0", extra=fields, body=b"weak bytes")
+        } else if calls.val == 2 {
+          clock.advance(120000)
+          {
+            ..response(status=304, extra=[("etag", "\"v1\"")], body=b""),
+            body: Stream(@mttp_core.StreamBody::new(rejected)),
+          }
+        } else {
+          clock.advance(6000)
+          assert_eq(rejected.closes(), 1) catch {
+            e => abort(e.to_string())
+          }
+          response(extra=[("etag", "\"v1\"")], body=b"strong bytes")
+        }
+      }),
+      clock~,
+    )
+    let get = @mttp_core.Request::get("http://example.test/a")
+    d.run(() => {
+      let initial = cache.send(get, options)
+      ignore(initial.body.read_all(max=100))
+      initial.close()
+      let r = cache.send(get, options)
+      defer r.close()
+      assert_eq(r.body.read_all(max=100), b"strong bytes")
+      assert_eq(r.headers.get("etag"), Some("\"v1\""))
+      assert_eq(status(r), Some(Miss))
+      let hit = cache.send(get, options)
+      defer hit.close()
+      assert_eq(status(hit), Some(Hit))
+      assert_eq(hit.headers.get("age"), Some("6"))
+      assert_eq(hit.body.as_bytes(), Some(b"strong bytes"))
+    })
+    assert_eq(calls.val, 3)
+    assert_eq(seen, [
+      (None, None),
+      (
+        stored_tag,
+        if stored_tag is Some(_) {
+          None
+        } else {
+          Some("Thu, 01 Jan 1970 00:00:00 GMT")
+        },
+      ),
+      (None, None),
+    ])
+  }
+}
+
+///|
+test "unconditional cache refetch rejects a second 304 without looping" {
+  let d = @driver.Driver::new()
+  let calls = Ref(0)
+  let replies = []
+  let cache = @httpcache.HttpCache::new(
+    @client.from_fn((r, _) => {
+      calls.val += 1
+      if calls.val == 1 {
+        response(cc="max-age=0", extra=[("etag", "W/\"v1\"")])
+      } else {
+        if calls.val == 3 {
+          assert_eq(r.headers.get("if-none-match"), None) catch {
+            e => abort(e.to_string())
+          }
+        }
+        let feed = @sim.Feed::bytes(d, [])
+        replies.push(feed)
+        {
+          ..response(status=304, extra=[("etag", "\"v1\"")], body=b""),
+          body: Stream(@mttp_core.StreamBody::new(feed)),
+        }
+      }
+    }),
+    clock=@sim.FakeClock::new(),
+  )
+  ignore(fetch(d, cache))
+  let refused = try {
+    ignore(fetch(d, cache))
+    false
+  } catch {
+    @mttp_core.TransportError(kind=Protocol, phase=Head, ..) => true
+    _ => false
+  }
+  assert_true(refused)
+  assert_eq(calls.val, 3)
+  assert_eq(replies.length(), 2)
+  for feed in replies {
+    assert_eq(feed.closes(), 1)
+  }
+  assert_eq(
+    fetch(
+      d,
+      cache,
+      request=@mttp_core.Request::get("http://example.test/a").header(
+        "cache-control", "only-if-cached",
+      ),
+    ).status,
+    504,
+  )
 }

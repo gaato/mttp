@@ -229,24 +229,47 @@ pub async fn HttpCache::send(
       raise error
     }
   }
+  let response_time_ms = self.clock.now_unix_ms()
+  let (response, request_time_ms, response_time_ms, generation) = if response.status ==
+    304 &&
+    stored is Some(s) &&
+    !validation_matches(s, response.headers) {
+    // This 304 does not identify reusable bytes. Release it before another
+    // send, including on a one-slot backend, and do not promote its validator.
+    @rt.close_unclaimed(response.attributes)
+    response.close()
+    self.generation += 1L
+    let generation = self.generation
+    self.remove(key)
+    stored = None
+    let request_time_ms = self.clock.now_unix_ms()
+    let full = self.inner.send(request, options)
+    let response_time_ms = self.clock.now_unix_ms()
+    if full.status == 304 {
+      // One unconditional retry is enough: a further 304 cannot satisfy an
+      // unconditional request, and must not turn into a retry loop.
+      @rt.close_unclaimed(full.attributes)
+      full.close()
+      raise @mttp_core.TransportError(
+        kind=Protocol,
+        phase=Head,
+        detail="304 response to unconditional cache refetch",
+      )
+    }
+    (full, request_time_ms, response_time_ms, generation)
+  } else {
+    (response, request_time_ms, response_time_ms, generation)
+  }
   errdefer {
     @rt.close_unclaimed(response.attributes)
     response.close()
   }
-  let response_time_ms = self.clock.now_unix_ms()
   if !safe && response.status >= 200 && response.status < 400 {
     self.invalidate(request, response, key)
   }
   if stored is Some(s) {
     if response.status == 304 &&
-      (
-        s.head.headers.get("etag") is None ||
-        response.headers.get("etag") is None ||
-        weak_etag_matches(
-          s.head.headers.get("etag").unwrap(),
-          response.headers.get("etag").unwrap(),
-        )
-      ) &&
+      validation_matches(s, response.headers) &&
       (request.meth == Get || request.meth == Head) &&
       (
         s.head.headers.contains("etag") ||

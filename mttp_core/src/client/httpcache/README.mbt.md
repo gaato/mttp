@@ -31,8 +31,12 @@ for heuristically cacheable statuses without explicit expiration. Query URLs
 have no heuristic. Set `heuristic_percent=0` to disable it. Stale responses
 validate with ETag, otherwise Last-Modified. A matching 304 updates end-to-end
 metadata and freshness; a full response replaces the representation when read.
-A 304 compares entity tags weakly and computes Age from the validation exchange;
-an omitted Age starts at zero. A 200 HEAD contradicting a stored GET's validator
+A 304 with a strong ETag must match the same strong stored ETag; a weak ETag
+may identify the most recent weakly matching representation. An unidentifiable
+304 is closed, the old entry invalidated, and the original request sent once
+without cache-added conditionals. A further unexpected 304 is a Protocol error.
+Age is computed from the validation exchange; an omitted Age starts at zero.
+A 200 HEAD contradicting a stored GET's validator
 or body length, or unable to confirm it, invalidates that representation.
 Statuses 428, 429, 431 and 511
 are never stored, including with explicit freshness metadata.

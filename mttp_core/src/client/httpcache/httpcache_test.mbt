@@ -720,7 +720,7 @@ test "304 Vary update and mismatched entity tag" {
         calls.val += 1
         if calls.val == 1 {
           response(cc="max-age=0", extra=[("etag", "old")])
-        } else {
+        } else if calls.val == 2 {
           response(
             status=304,
             extra=[
@@ -729,6 +729,11 @@ test "304 Vary update and mismatched entity tag" {
             ],
             body=b"",
           )
+        } else {
+          response(
+            extra=[("etag", "other"), ("vary", "x-new")],
+            body=b"replacement",
+          )
         }
       }),
       clock=@sim.FakeClock::new(),
@@ -736,6 +741,11 @@ test "304 Vary update and mismatched entity tag" {
     ignore(fetch(d, cache))
     let r = fetch(d, cache)
     assert_eq(status(r), Some(if mismatch { Miss } else { Revalidated }))
+    if mismatch {
+      assert_eq(r.body.as_bytes(), Some(b"replacement"))
+      assert_eq(calls.val, 3)
+      assert_eq(status(fetch(d, cache)), Some(Hit))
+    }
     if !mismatch {
       assert_eq(status(fetch(d, cache)), Some(Hit))
       assert_eq(

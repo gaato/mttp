@@ -194,16 +194,27 @@ fn key_url(url : @mttp_core.Url) -> String {
 }
 
 ///|
-/// If-None-Match uses weak comparison: the weakness flag is not part of
-/// the opaque tag's identity; its case-sensitive contents still are.
-fn weak_etag_matches(stored : String, received : String) -> Bool {
-  let stored = if stored.has_prefix("W/") { stored[2:] } else { stored[:] }
-  let received = if received.has_prefix("W/") {
-    received[2:]
-  } else {
-    received[:]
+/// RFC 9111 section 4.3.4 selects a stored representation for a 304 update.
+/// A strong received ETag requires the same strong stored ETag; a weak one
+/// can identify the most recent weakly matching representation. This differs
+/// from the weak comparison used to evaluate If-None-Match at the origin.
+fn validation_matches(stored : Stored, received : @mttp_core.Headers) -> Bool {
+  match received.get("etag") {
+    Some(tag) =>
+      match stored.head.headers.get("etag") {
+        Some(old) =>
+          if tag.has_prefix("W/") {
+            let old = if old.has_prefix("W/") { old[2:] } else { old[:] }
+            old == tag[2:]
+          } else {
+            !old.has_prefix("W/") && old == tag
+          }
+        None => false
+      }
+    None =>
+      stored.head.headers.contains("etag") ||
+      stored.head.headers.contains("last-modified")
   }
-  stored == received
 }
 
 ///|
