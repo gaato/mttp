@@ -1536,12 +1536,24 @@ fn autobahn_inventory(output : String) -> Array[String] raise RunError {
 }
 
 ///|
+/// Sections 1 to 11 run as one batch. The compression sections 12 and 13 run
+/// one subsection (12.1, 12.2, ...) per batch: a whole section 12 on one
+/// fuzzing server was killed for memory on a 16 GB GitHub runner, once at its
+/// 67th case, while a subsection stays far below that.
 fn autobahn_batches(ids : Array[String]) -> Array[(String, Array[String])] {
-  [
+  let batches : Array[(String, Array[String])] = [
     ("basic", ids.filter(id => !id.has_prefix("12.") && !id.has_prefix("13."))),
-    ("12", ids.filter(id => id.has_prefix("12."))),
-    ("13", ids.filter(id => id.has_prefix("13."))),
-  ].filter(batch => !batch.1.is_empty())
+  ]
+  for id in ids {
+    guard id.has_prefix("12.") || id.has_prefix("13.") else { continue }
+    let parts = id.split(".").map(part => part.to_owned()).collect()
+    let name = if parts.length() >= 2 { "\{parts[0]}.\{parts[1]}" } else { id }
+    match batches.search_by(batch => batch.0 == name) {
+      Some(index) => batches[index].1.push(id)
+      None => batches.push((name, [id]))
+    }
+  }
+  batches.filter(batch => !batch.1.is_empty())
 }
 
 ///|

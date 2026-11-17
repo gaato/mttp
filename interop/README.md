@@ -39,8 +39,10 @@ because the compression matrix can outlast the ordinary ten-minute ceiling.
 Both Autobahn directions use native release builds; the client permits
 600 seconds per case, beyond the suite's longest 480-second case deadline.
 
-The native client suite restarts its fuzzing server between three batches:
-`basic` (sections 1–11, 301 cases), `12` (90 cases), and `13` (126 cases).
+The native client suite restarts its fuzzing server between batches:
+`basic` (sections 1–11, 301 cases), then one batch per subsection of the
+compression sections 12 and 13 (`12.1`, `12.2`, …, `13.7`). A whole
+section 12 on one server was killed for memory on a 16 GB GitHub runner.
 The pinned suite currently has no cases in sections 8 or 11. A short initial
 `inventory` server only answers `/getCaseCount` and `/getCaseInfo`; it runs no
 test cases. Its complete case inventory is partitioned without exclusions,
