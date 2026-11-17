@@ -860,6 +860,19 @@ async fn run_http11probe(env : Env) -> Unit {
 }
 
 ///|
+/// The image runs as its own non-root user. Under rootless Podman that user
+/// maps to a subordinate UID that cannot write the host's work directory,
+/// so run it as the container's root, which is the invoking host user there.
+/// Docker already gets the host's UID and GID through `env.user`.
+fn schemathesis_user(env : Env) -> Array[String] {
+  if env.engine.contains("docker") {
+    env.user
+  } else {
+    ["--user", "0:0"]
+  }
+}
+
+///|
 /// Runs Schemathesis's stateless phases against the document served by the
 /// dedicated endpoint server. A nonzero status is expected when it finds a
 /// conformance issue; the JSON report, not that status, decides CASE lines.
@@ -879,7 +892,7 @@ async fn run_schemathesis(env : Env) -> Unit {
     env.engine,
     env.run_args(
       "schemathesis",
-      [..env.user, ..env.mount(schemathesis_work, "/work", writable=true)],
+      [..schemathesis_user(env), ..env.mount(schemathesis_work, "/work", writable=true)],
       [
         "run",
         "http://\{openapi_server_addr}/openapi.json",
