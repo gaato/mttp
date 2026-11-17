@@ -142,6 +142,14 @@ pub let protocol : AttributeKey[String] = AttributeKey::new("protocol")
 pub let replay_safe : AttributeKey[Bool] = AttributeKey::new("replay_safe")
 
 ///|
+/// This request's credential header names, matched case-insensitively by
+/// redirect stripping and diagnostic redaction. `Request::credential` adds
+/// lowercase names; the attribute stays with the request across redirect hops.
+pub let credential_headers : AttributeKey[Array[String]] = AttributeKey::new(
+  "credential_headers",
+)
+
+///|
 /// An idempotent method or an explicit replay_safe statement. A header alone
 /// cannot establish the remote service's deduplication contract.
 pub fn is_idempotent(req : Request) -> Bool {

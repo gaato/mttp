@@ -19,6 +19,8 @@ pub let connection_scheme : AttributeKey[String]
 
 pub fn connection_scheme_of(String) -> String?
 
+pub let credential_headers : AttributeKey[Array[String]]
+
 pub fn encode_path(Array[String]) -> String
 
 pub fn encode_utf8(String) -> Bytes
@@ -230,6 +232,7 @@ pub fn Request::body_form(Self, ArrayView[(String, String)]) -> Self
 pub fn Request::body_json(Self, @json.Json) -> Self
 pub fn Request::body_stream(Self, &BodyStream, length? : Int64, content_type? : String) -> Self
 pub fn Request::body_text(Self, String) -> Self
+pub fn Request::credential(Self, String, String) -> Self
 pub fn Request::delete(String) -> Self
 pub fn Request::get(String) -> Self
 pub fn Request::head(Self) -> RequestHead

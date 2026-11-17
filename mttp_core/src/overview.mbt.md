@@ -36,6 +36,10 @@ moon add gaato/mttp_core
 ## Requests and backends
 
 Values are immutable: each builder returns a copy.
+Use `credential(name, value)` for SDK-specific credentials. It adds the header
+and marks its lowercase name in `credential_headers`, so redirect following
+strips it on origin changes and `to_curl` hides it even with a default Client.
+Names and values use the same send-time validation as `header`.
 
 ```mbt check
 ///|
@@ -43,9 +47,14 @@ test "describe a request" {
   let request = @mttp_core.Request::post("https://api.example.com/v1/items")
     .query("dry_run", "true")
     .bearer("token")
+    .credential("X-SDK-Key", "secret")
     .body_json({ "name": "first" })
   assert_eq(request.url, "https://api.example.com/v1/items?dry_run=true")
   assert_eq(request.headers.get("content-type"), Some("application/json"))
+  assert_eq(
+    request.attributes.get(@mttp_core.credential_headers),
+    Some(["x-sdk-key"]),
+  )
   assert_false(@mttp_core.is_idempotent(request))
 }
 ```

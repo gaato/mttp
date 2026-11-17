@@ -30,6 +30,8 @@ pub let default_sensitive_headers : ReadOnlyArray[String] = [
 /// (ASCII case ignored) becomes `<redacted>`, as in `to_curl`; the other
 /// fields, the names and the order stay. Use it on `Attempt.request.headers`
 /// and `Attempt.headers` before they leave the process.
+/// Pass the request's `credential_headers` attribute as `credential_headers`
+/// to hide its marked names in addition to `names`.
 ///
 /// ```mbt check
 /// test {
@@ -49,8 +51,10 @@ pub let default_sensitive_headers : ReadOnlyArray[String] = [
 pub fn redact_headers(
   headers : @mttp_core.Headers,
   names~ : ArrayView[String] = default_sensitive_headers[:],
+  credential_headers~ : ArrayView[String] = [],
 ) -> @mttp_core.Headers {
   let sensitive = names.map(String::to_lower)
+  sensitive.push_iter(credential_headers.iter().map(String::to_lower))
   headers
   .iter()
   .fold(init=@mttp_core.Headers::empty(), (out, field) => {
@@ -69,7 +73,8 @@ pub fn redact_headers(
 ///|
 /// Renders a POSIX-shell curl diagnostic for the raw request, before Client
 /// defaults, cookies, retries or redirects. Sensitive header names
-/// (default: `default_sensitive_headers`) are matched case-insensitively. URL userinfo is redacted; query strings and byte bodies
+/// (default: `default_sensitive_headers`) and the request's marked credential
+/// names are matched case-insensitively. URL userinfo is redacted; query strings and byte bodies
 /// are not. Set include_body=false to omit byte bodies as well.
 ///
 /// Byte bodies use a quoted printf pipeline so NUL, quotes, newlines and an
@@ -85,6 +90,13 @@ pub fn[T] ClientRequest::to_curl(
 ) -> String {
   let request = self.raw
   let sensitive = sensitive_headers.map(String::to_lower)
+  sensitive.push_iter(
+    request.attributes
+    .get(@mttp_core.credential_headers)
+    .unwrap_or([])
+    .iter()
+    .map(String::to_lower),
+  )
   let args = [
     "curl",
     "--globoff",

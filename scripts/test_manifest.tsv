@@ -2,18 +2,18 @@
 # Regenerate with 'scripts/gates.sh manifest --update' after adding or
 # removing tests.
 module	package	target	count
-gaato/mttp_core	gaato/mttp_core	js	84
-gaato/mttp_core	gaato/mttp_core	native	84
-gaato/mttp_core	gaato/mttp_core	wasm	84
-gaato/mttp_core	gaato/mttp_core	wasm-gc	84
+gaato/mttp_core	gaato/mttp_core	js	86
+gaato/mttp_core	gaato/mttp_core	native	86
+gaato/mttp_core	gaato/mttp_core	wasm	86
+gaato/mttp_core	gaato/mttp_core	wasm-gc	86
 gaato/mttp_core	gaato/mttp_core/apispec	js	14
 gaato/mttp_core	gaato/mttp_core/apispec	native	14
 gaato/mttp_core	gaato/mttp_core/apispec	wasm	14
 gaato/mttp_core	gaato/mttp_core/apispec	wasm-gc	14
-gaato/mttp_core	gaato/mttp_core/client	js	181
-gaato/mttp_core	gaato/mttp_core/client	native	181
-gaato/mttp_core	gaato/mttp_core/client	wasm	181
-gaato/mttp_core	gaato/mttp_core/client	wasm-gc	181
+gaato/mttp_core	gaato/mttp_core/client	js	184
+gaato/mttp_core	gaato/mttp_core/client	native	184
+gaato/mttp_core	gaato/mttp_core/client	wasm	184
+gaato/mttp_core	gaato/mttp_core/client	wasm-gc	184
 gaato/mttp_core	gaato/mttp_core/client/cookies	js	10
 gaato/mttp_core	gaato/mttp_core/client/cookies	native	10
 gaato/mttp_core	gaato/mttp_core/client/cookies	wasm	10

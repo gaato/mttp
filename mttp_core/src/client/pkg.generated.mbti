@@ -60,7 +60,7 @@ pub fn post(String) -> RequestPlan[Result[String, ResponseFailure], Buffered]
 
 pub let rate_limit_bucket : @mttp_core.AttributeKey[String]
 
-pub fn redact_headers(@mttp_core.Headers, names? : ArrayView[String]) -> @mttp_core.Headers
+pub fn redact_headers(@mttp_core.Headers, names? : ArrayView[String], credential_headers? : ArrayView[String]) -> @mttp_core.Headers
 
 pub let redirect_history : @mttp_core.AttributeKey[Array[RedirectHop]]
 

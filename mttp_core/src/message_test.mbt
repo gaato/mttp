@@ -210,3 +210,47 @@ test "unsent classification is conservative" {
     assert_true(error.message().has_suffix(": test failure"))
   }
 }
+
+///|
+test "credentials normalize marks without mutating earlier requests" {
+  let source = @mttp_core.Request::get("https://h/")
+  let first = source.credential("X-SDK-KEY", "one")
+  let second = first
+    .credential("x-sdk-key", "two")
+    .credential("X-Other", "three")
+  assert_eq(source.attributes.get(@mttp_core.credential_headers), None)
+  assert_eq(
+    first.attributes.get(@mttp_core.credential_headers),
+    Some(["x-sdk-key"]),
+  )
+  assert_eq(
+    second.attributes.get(@mttp_core.credential_headers),
+    Some(["x-sdk-key", "x-other"]),
+  )
+  assert_eq(second.headers.get_all("X-Sdk-Key"), ["one", "two"])
+  second.validate()
+}
+
+///|
+test "credentials reject invalid names and values through the same validation as header" {
+  for
+    (name, value) in [
+      ("", "x"),
+      ("bad name", "x"),
+      ("a:b", "x"),
+      ("x", "a\r\nb"),
+      ("x", "\u0000"),
+      ("x", "日本"),
+      ("x", " a"),
+    ] {
+    let source = @mttp_core.Request::get("https://h/")
+    for request in [source.header(name, value), source.credential(name, value)] {
+      try request.validate() catch {
+        @mttp_core.TransportError(kind=Invalid, phase=Pool, ..) => ()
+        _ => fail("wrong validation error")
+      } noraise {
+        _ => fail("accepted invalid credential")
+      }
+    }
+  }
+}

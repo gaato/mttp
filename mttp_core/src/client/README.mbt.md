@@ -108,6 +108,31 @@ answered.
 `redirect=RedirectConfig::none()` turns redirects off for the whole Client:
 every 3xx comes back as the backend gave it.
 
+On an origin change, both `RedirectConfig.credential_headers` and the request's
+`@mttp_core.credential_headers` names are stripped, ignoring case. A same-host
+upgrade from HTTP port 80 to HTTPS port 443 keeps them. Marks survive every hop.
+An SDK can mark its own credentials without changing its caller's Client:
+
+```mbt check
+///|
+test "mark an SDK credential" {
+  let request = @mttp_core.Request::get("https://api.example/items").credential(
+    "X-SDK-Key", "secret",
+  )
+  let names = request.attributes
+    .get(@mttp_core.credential_headers)
+    .unwrap_or([])
+  assert_eq(names, ["x-sdk-key"])
+  assert_false(@client.request(request).to_curl().contains("secret"))
+  assert_eq(
+    @client.redact_headers(request.headers, credential_headers=names).get(
+      "x-sdk-key",
+    ),
+    Some("<redacted>"),
+  )
+}
+```
+
 With `cookies=`, a caller-owned `@cookie.CookieJar`, the Client sends the
 jar's matching cookies with every request and redirect hop and stores every
 response's `Set-Cookie` before the next hop. Several Clients may share a jar.
@@ -200,6 +225,9 @@ under `trace_id`; a request that has its own `traceparent` keeps it.
 `redact_headers(headers)` replaces the values of credential fields with
 `<redacted>` for logging; its default list, `default_sensitive_headers`, is
 the one `to_curl` uses, plus `set-cookie`.
+`to_curl` also always hides the request's marked credential names; for
+`redact_headers`, which receives only headers, pass those names through its
+optional `credential_headers` argument. They augment any explicit redaction list.
 
 ```mbt check
 ///|

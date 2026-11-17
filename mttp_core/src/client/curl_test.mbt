@@ -106,3 +106,38 @@ test "redact_headers hides the same credentials as to_curl, and set-cookie" {
     Some("Bearer a"),
   )
 }
+
+///|
+test "marked credentials redact in curl and header logs regardless of case" {
+  let request = @mttp_core.Request::get("https://h/")
+    .credential("X-SDK-KEY", "secret-one")
+    .header("x-sdk-key", "secret-two")
+    .header("accept", "text/plain")
+    .attribute(@mttp_core.credential_headers, ["X-SDK-KEY"])
+  let plan = @client.request(request)
+  for curl in [plan.to_curl(), plan.to_curl(sensitive_headers=[])] {
+    assert_false(curl.contains("secret"))
+    assert_true(curl.contains("x-sdk-key: <redacted>"))
+    assert_true(curl.contains("accept: text/plain"))
+  }
+  let marked = request.attributes
+    .get(@mttp_core.credential_headers)
+    .unwrap_or([])
+  for
+    headers in [
+      @client.redact_headers(request.headers, credential_headers=marked),
+      @client.redact_headers(
+        request.headers,
+        names=[],
+        credential_headers=marked,
+      ),
+    ] {
+    assert_eq(headers.get_all("x-sdk-key"), ["<redacted>", "<redacted>"])
+    assert_eq(headers.get("accept"), Some("text/plain"))
+  }
+  assert_eq(request.headers.get("x-sdk-key"), Some("secret-one"))
+  assert_eq(
+    @client.redact_headers(request.headers).get("x-sdk-key"),
+    Some("secret-one"),
+  )
+}

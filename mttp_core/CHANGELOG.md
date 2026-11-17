@@ -20,6 +20,10 @@ never does.
   Accept negotiation. `Out::negotiated` selects matching response variants,
   adds `Vary: Accept`, and returns 406 when none is acceptable (400 for invalid
   Accept); OpenAPI documents these responses.
+- `Request::credential` and the request-local `credential_headers` attribute:
+  SDKs can mark their own credential header names for cross-origin redirect
+  stripping and `to_curl` redaction. `client.redact_headers` accepts optional
+  `credential_headers` names in addition to its existing redaction list.
 
 - `client.ReconnectPolicy` and `ReconnectDecision`: when to reconnect a
   long-lived stream, as data (`decide`, `next_attempts`; default 1 s to 30 s

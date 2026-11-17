@@ -550,6 +550,8 @@ pub fn Cookies::new(inner : &@mttp_core.Backend, jar : @cookie.CookieJar) -> Coo
 
 **Redirects and cookies.** The Client wraps its backend once, at construction, as `FollowRedirects(Cookies(backend, jar))` (Cookies only with a jar; FollowRedirects unless `redirect.max_redirects` ≤ 0). FollowRedirects is configured once (`RedirectConfig`) and overridden per request through the `redirect_limit` attribute (set by `RequestPlan::follow_redirects` and `max_redirects`). It closes intermediate bodies unread and records `redirect_history` and `final_url`. The whole chain is one attempt: one admission and release (with the final head), one `Attempt`, one attempt deadline. Retry sits above redirects: a 503 on hop 2 re-sends hop 1.
 
+Credential stripping uses the union of `RedirectConfig.credential_headers` and the request-local root `credential_headers : AttributeKey[Array[String]]`, ignoring case. `Request::credential(name, value)` adds a header with the same validation as `Request::header` and records its lowercase name without mutating an earlier request. Marks remain in the attributes across all hops, so a same-origin first hop cannot lose the stripping rule for a later origin change. The existing same-host HTTP port 80 to HTTPS port 443 exception keeps credentials. `to_curl` always redacts marked names; `redact_headers`, which has no request, accepts an optional `credential_headers` argument that augments its `names` list. Unmarked requests keep their existing behavior.
+
 **Rate limiter (`client/ratelimit`).** The rules `WindowLimiter` keeps; the package README shows how to wire it.
 
 `rate_limit_headers` reads a nonnegative remaining count and a reset in

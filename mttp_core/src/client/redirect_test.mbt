@@ -427,3 +427,89 @@ test "a failure after a followed redirect is never unsent, so it is not resent" 
   }
   assert_eq(failure, Some((Timeout(ms=5), Unknown)))
 }
+
+///|
+test "request credential marks strip across origins and survive two hops in wrappers and Clients" {
+  for use_client in [false, true] {
+    for
+      (start, middle, kept) in [
+        ("https://h/a", "https://h/b", true),
+        ("https://h/a", "https://g/b", false),
+        ("http://h:80/a", "https://h:443/b", true),
+        ("http://h:8080/a", "https://h:443/b", false),
+      ] {
+      let seen = []
+      let inner = @client.from_fn((request, _) => {
+        seen.push(request)
+        if seen.length() <= 2 {
+          @mttp_core.Response::new(
+            307,
+            headers=@mttp_core.Headers::of([
+              (
+                "location",
+                if seen.length() == 1 {
+                  middle
+                } else {
+                  "https://other/final"
+                },
+              ),
+            ]),
+          )
+        } else {
+          @mttp_core.Response::new(200)
+        }
+      })
+      let config = {
+        ..@client.RedirectConfig::default(),
+        credential_headers: ["X-Configured"],
+      }
+      let request = @mttp_core.Request::get(start)
+        .credential("X-SDK-KEY", "secret")
+        .header("x-configured", "configured")
+        .header("x-unmarked", "public")
+        .attribute(@mttp_core.credential_headers, ["X-SDK-KEY"])
+      let status = if use_client {
+        let client = @client.Client::new(
+          inner,
+          @sim.FakeClock::new(),
+          redirect=config,
+        )
+        defer client.close()
+        @driver.run_sync(() => client.send(@client.request(request))).status
+      } else {
+        let backend = @client.FollowRedirects::new(inner, config~)
+        defer backend.close()
+        @driver.run_sync(() => {
+          backend.send(request, @mttp_core.SendOptions::default())
+        }).status
+      }
+      assert_eq(status, 200)
+      assert_eq(seen.length(), 3)
+      assert_eq(
+        seen[1].headers.get("x-sdk-key"),
+        if kept {
+          Some("secret")
+        } else {
+          None
+        },
+      )
+      assert_eq(
+        seen[1].headers.get("x-configured"),
+        if kept {
+          Some("configured")
+        } else {
+          None
+        },
+      )
+      assert_eq(seen[2].headers.get("x-sdk-key"), None)
+      assert_eq(seen[2].headers.get("x-configured"), None)
+      for hop in seen {
+        assert_eq(
+          hop.attributes.get(@mttp_core.credential_headers),
+          Some(["X-SDK-KEY"]),
+        )
+        assert_eq(hop.headers.get("x-unmarked"), Some("public"))
+      }
+    }
+  }
+}

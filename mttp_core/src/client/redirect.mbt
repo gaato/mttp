@@ -89,8 +89,8 @@ pub(all) struct RedirectConfig {
   allow_downgrade : Bool
   /// Headers removed, ignoring ASCII case, when a redirect changes the
   /// origin (except a same-host upgrade from `http` on port 80 to `https`
-  /// on port 443). The list is the whole set: replacing it with one that
-  /// omits a name forwards that header across origins.
+  /// on port 443). Request-local `@mttp_core.credential_headers` are removed
+  /// too, even when omitted from this configured list.
   credential_headers : Array[String]
 }
 
@@ -229,7 +229,13 @@ pub async fn FollowRedirects::send(
         followed~,
         max_redirects=max,
         allow_downgrade=self.config.allow_downgrade,
-        credential_headers=self.credentials,
+        credential_headers=[
+          ..self.credentials,
+          ..request.attributes
+          .get(@mttp_core.credential_headers)
+          .unwrap_or([])
+          .map(String::to_lower),
+        ],
       ) catch {
         error => raise redirect_failure(error)
       }

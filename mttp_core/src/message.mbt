@@ -70,6 +70,27 @@ pub fn Request::header(
 }
 
 ///|
+/// Adds a credential header, preserving duplicate fields as `header` does,
+/// and marks its name for redirect stripping and diagnostic redaction.
+/// Like `header`, invalid names and values are rejected by `validate`.
+pub fn Request::credential(
+  self : Request,
+  name : String,
+  value : String,
+) -> Request {
+  let request = self.header(name, value)
+  let names = self.attributes
+    .get(credential_headers)
+    .unwrap_or([])
+    .map(String::to_lower)
+  let name = name.to_lower()
+  if !names.contains(name) {
+    names.push(name)
+  }
+  request.attribute(credential_headers, names)
+}
+
+///|
 /// Returns a copy replacing every header of this name at its first position.
 pub fn Request::set_header(
   self : Request,
