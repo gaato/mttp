@@ -364,7 +364,9 @@ pub fn compare(
   let br = new.to_json()
   let old_schemes = field(field(ar, "components"), "securitySchemes")
   let new_schemes = field(field(br, "components"), "securitySchemes")
-  if old_schemes != new_schemes {
+  // Equal wrappers may reference targets outside the securitySchemes map.
+  if old_schemes != new_schemes ||
+    obj(old_schemes).values().any(scheme => text(field(scheme, "$ref")) != None) {
     s.push(
       old_schemes,
       new_schemes,
@@ -444,8 +446,17 @@ pub fn compare(
     s.active = Some(w)
     s.uncertain = w.uncertain
     i += 1
-    let xref = text(field(w.old, "$ref"))
-    let yref = text(field(w.new, "$ref"))
+    // OAuth scopes maps contain scope names and descriptions, not references.
+    let xref = if w.context == "oauth-scopes" {
+      None
+    } else {
+      text(field(w.old, "$ref"))
+    }
+    let yref = if w.context == "oauth-scopes" {
+      None
+    } else {
+      text(field(w.new, "$ref"))
+    }
     if xref != yref {
       s.emit(
         w.side,

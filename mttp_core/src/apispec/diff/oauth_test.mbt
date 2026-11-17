@@ -11,6 +11,129 @@ fn oauth_doc(flows : Json) -> @apispec.OpenApi raise {
 }
 
 ///|
+test "OAuth scope named $ref is ordinary data alongside sibling scopes" {
+  let before = oauth_doc({
+    "implicit": {
+      "authorizationUrl": "https://id.test/auth",
+      "scopes": { "$ref": "Reference access", "read": "Old description" },
+    },
+  })
+  let after = oauth_doc({
+    "implicit": {
+      "authorizationUrl": "https://id.test/auth",
+      "scopes": { "read": "New description" },
+    },
+  })
+  for
+    (a, b, severity) in [
+      (before, after, @diff.Breaking),
+      (after, before, @diff.Info),
+    ] {
+    let result = @diff.compare(a, b)
+    assert_eq(result.request.length(), 2)
+    assert_eq(result.response, [])
+    assert_true(result.complete())
+    assert_true(
+      result.request
+      .iter()
+      .any(c => {
+        c.path == "/components/securitySchemes/oauth/flows/implicit/scopes/$ref" &&
+        c.kind is KeywordChanged(keyword="$ref", ..) &&
+        c.client == severity &&
+        c.server == severity
+      }),
+    )
+    assert_true(
+      result.request
+      .iter()
+      .any(c => {
+        c.path == "/components/securitySchemes/oauth/flows/implicit/scopes/read" &&
+        c.kind is KeywordChanged(keyword="read", ..) &&
+        c.client == @diff.Info &&
+        c.server == @diff.Info
+      }),
+    )
+  }
+  let described = oauth_doc({
+    "implicit": {
+      "authorizationUrl": "https://id.test/auth",
+      "scopes": { "$ref": "New description", "read": "Old description" },
+    },
+  })
+  let result = @diff.compare(before, described)
+  assert_eq(result.request.length(), 1)
+  assert_true(result.request[0].kind is KeywordChanged(keyword="$ref", ..))
+  assert_eq(result.request[0].client, @diff.Info)
+}
+
+///|
+test "unchanged security scheme references compare external component targets" {
+  let before : Json = {
+    "type": "oauth2",
+    "flows": {
+      "implicit": {
+        "authorizationUrl": "https://id.test/auth",
+        "scopes": { "read": "Read" },
+      },
+    },
+  }
+  let cases : Array[(Json, String)] = [
+    ({ "type": "oauth2", "flows": {} }, "/flows/implicit"),
+    (
+      {
+        "type": "oauth2",
+        "flows": {
+          "implicit": {
+            "authorizationUrl": "https://id.test/auth",
+            "scopes": {},
+          },
+        },
+      },
+      "/flows/implicit/scopes/read",
+    ),
+  ]
+  for (target, suffix) in cases {
+    for changed_sibling in [false, true] {
+      let schemes : Map[String, Json] = { "oauth": { "$ref": "#/x-auth" } }
+      let a = doc({}, components={ "securitySchemes": Json(schemes.copy()) })
+      if changed_sibling {
+        schemes["basic"] = { "type": "http", "scheme": "basic" }
+      }
+      let b = doc({}, components={ "securitySchemes": Json(schemes) })
+      let a = { ..a, extensions: { "x-auth": before }, }
+      let b = { ..b, extensions: { "x-auth": target }, }
+      let result = @diff.compare(a, b)
+      assert_eq(result.request.length(), if changed_sibling { 2 } else { 1 })
+      assert_eq(result.response, [])
+      assert_true(result.complete())
+      assert_true(
+        result.request
+        .iter()
+        .any(c => {
+          c.path == "/x-auth" + suffix &&
+          c.kind is KeywordChanged(..) &&
+          c.client == @diff.Breaking &&
+          c.server == @diff.Breaking
+        }),
+      )
+      let limited = @diff.compare(a, b, max_nodes=4)
+      assert_false(limited.complete())
+      assert_eq(
+        limited.request.iter().filter(c => c.kind is LimitReached(..)).count(),
+        1,
+      )
+    }
+  }
+  let cycle = doc({}, components={
+    "securitySchemes": { "oauth": { "$ref": "#/x-auth" } },
+  })
+  let cycle = { ..cycle, extensions: { "x-auth": { "$ref": "#/x-auth" } }, }
+  let result = @diff.compare(cycle, cycle, max_nodes=100)
+  assert_true(result.complete())
+  assert_eq(result.request, [])
+}
+
+///|
 test "every OAuth flow and scope removal breaks clients and additions are informational" {
   for
     kind in [

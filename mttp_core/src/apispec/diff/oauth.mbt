@@ -8,7 +8,15 @@ fn State::security_fields(s : State, w : Work) -> Unit {
     }
     let a = obj(w.old).get(key)
     let b = obj(w.new).get(key)
-    if a == b || key == "$ref" {
+    // Scope names are arbitrary strings; "$ref" is data in a scopes map.
+    // An equal scheme wrapper can still point at a changed document target.
+    let follow_reference = w.context == "security-schemes" &&
+      (
+        (a is Some(value) && text(field(value, "$ref")) != None) ||
+        (b is Some(value) && text(field(value, "$ref")) != None)
+      )
+    if (a == b && !follow_reference) ||
+      (key == "$ref" && w.context != "oauth-scopes") {
       continue
     }
     let context = match w.context {
