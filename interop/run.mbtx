@@ -1301,7 +1301,16 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
     let status = @async.with_timeout(3600000, () => client.wait())
     let stdout = @fs.read_text("\{work}/autobahn-client/client.log")
     if status != 0 {
-      raise RunError("Autobahn client exited \{status}")
+      // The outcome summary skips fatal messages such as a failed
+      // /getCaseCount, and CI keeps no client.log: show its last lines.
+      let lines = stdout.split("\n").map(line => line.to_owned()).collect()
+      let tail = lines[(lines.length() - 40).max(0):].join("\n")
+      let tail = if tail.length() > 8192 {
+        tail[tail.length() - 8192:].to_owned()
+      } else {
+        tail
+      }
+      raise RunError("Autobahn client exited \{status}; last lines:\n\{tail}")
     }
     for line in stdout.split("\n") {
       if line.has_prefix("Autobahn updateReports") {
