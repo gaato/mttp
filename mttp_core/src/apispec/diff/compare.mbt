@@ -362,6 +362,17 @@ pub fn compare(
   }
   let ar = old.to_json()
   let br = new.to_json()
+  let old_schemes = field(field(ar, "components"), "securitySchemes")
+  let new_schemes = field(field(br, "components"), "securitySchemes")
+  if old_schemes != new_schemes {
+    s.push(
+      old_schemes,
+      new_schemes,
+      "/components/securitySchemes",
+      Request,
+      "security-schemes",
+    )
+  }
   let ap = field(ar, "paths")
   let bp = field(br, "paths")
   let matched : Map[String, Bool] = Map([])
@@ -538,6 +549,12 @@ pub fn compare(
     }
     if w.context == "schema" {
       s.schema(w)
+      continue
+    }
+    if [
+        "security-schemes", "security-scheme", "oauth-flows", "oauth-flow", "oauth-scopes",
+      ].contains(w.context) {
+      s.security_fields(w)
       continue
     }
     if w.context == "responses" ||

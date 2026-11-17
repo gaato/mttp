@@ -94,7 +94,7 @@ pub fn default_decode_failure(
     for f in context.failures {
       if f.atom.location is Auth(scheme~, ..) {
         let challenge = match scheme {
-          Bearer(..) => "Bearer"
+          Bearer(..) | OAuth2(..) | OpenIdConnect(..) => "Bearer"
           Basic => "Basic charset=\"UTF-8\""
           _ => "ApiKey"
         }

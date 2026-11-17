@@ -547,6 +547,7 @@ pub fn check_definitions(
       }
     }
     for atom in [..d.security, ..d.inputs] {
+      check_oauth(atom, d.template, out)
       ignore(atom.schema.reference(schemas, problems=schema_problems))
     }
     for variant in [..d.outputs, ..d.errors] {

@@ -38,6 +38,7 @@ gaato/mttp_core/client	SseEnd
 gaato/mttp_core/testing	Canned
 gaato/mttp_core/schema	DecodeKind
 gaato/mttp_core/endpoint	AuthScheme
+gaato/mttp_core/endpoint	OAuthFlow
 gaato/mttp_core/endpoint	Location
 gaato/mttp_core/endpoint	BodyValue
 gaato/mttp_core/endpoint	Seg

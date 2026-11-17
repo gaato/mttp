@@ -1,5 +1,45 @@
 # gaato/mttp_core/endpoint
 
+`oauth2(flows~, scopes=[], scheme_name="oauth2")` and
+`openid_connect(url, scopes=[], scheme_name="openIdConnect")` read and write
+`Authorization: Bearer <token>` exactly like `bearer`. They return the token;
+the application must validate tokens and granted scopes in its authentication
+callback. Declaring required scopes does not enforce them. OAuth flow scopes
+map available names to descriptions; input scopes name this operation's grants.
+Empty flow lists, repeated flow kinds and required scopes absent from every
+flow are fatal definition errors. Each flow requires its relevant URLs and an
+explicit `refresh_url=None` when no refresh URL is advertised.
+
+```mbt check
+///|
+test "OAuth2 and OpenID Connect security inputs" {
+  let flows : Array[@endpoint.OAuthFlow] = [
+    AuthorizationCode(
+      authorization_url="https://id.example.test/authorize",
+      token_url="https://id.example.test/token",
+      refresh_url=None,
+      scopes={ "read": "Read items" },
+    ),
+  ]
+  let ep = @endpoint.endpoint
+    .get("/items")
+    .security(@endpoint.oauth2(flows~, scopes=["read"]))
+  assert_eq(
+    ep.request("token", ()).raw().headers.get("authorization"),
+    Some("Bearer token"),
+  )
+  let oidc = @endpoint.endpoint
+    .get("/profile")
+    .security(
+      @endpoint.openid_connect(
+        "https://id.example.test/.well-known/openid-configuration",
+        scopes=["openid"],
+      ),
+    )
+  assert_eq(@endpoint.check_definitions([ep.doc(), oidc.doc()]), [])
+}
+```
+
 Typed endpoints: one definition gives a client call, a server handler and documentation.
 
 `request_example(name, value, summary?)` and

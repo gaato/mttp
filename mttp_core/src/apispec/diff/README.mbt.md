@@ -53,6 +53,12 @@ OAuth scopes are matched as sets. Schema-based parameter `style`, `explode`
 and `allowReserved` changes use effective defaults and report breaking
 `KeywordChanged` entries at the setting's pointer. The defaults follow the
 [OpenAPI parameter specification](https://spec.openapis.org/oas/v3.2.0.html#fixed-fields-for-use-with-schema).
+Security scheme flow objects are compared at their component pointers:
+removing any OAuth flow or advertised scope is breaking in both views; adding
+one is informational. Changes to authorization, token, refresh and device
+authorization URLs are warnings; scope description changes are informational.
+These use `KeywordChanged` with the field or scope name. Their traversal shares
+`max_nodes` with operation and schema comparisons.
 Local reference resolution accepts object members and canonical zero-based
 array indices as specified in [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901.html#section-4).
 Unresolved path-item targets warn at the path's pointer instead of hiding

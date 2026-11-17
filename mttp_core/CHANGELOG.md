@@ -9,11 +9,27 @@ never does.
 
 ### Changed
 
+- Breaking: `AuthScheme` adds `OAuth2(flows~, scopes~)` and
+  `OpenIdConnect(url~, scopes~)`; use `oauth2` / `openid_connect` inputs to
+  read Bearer credentials and declare the scheme and required operation scopes
+  together. Applications still validate tokens and scope grants.
+- Breaking: `apispec.SecurityScheme` adds `flows : OAuthFlows?`. Code using
+  record literals must supply `flows: None`, or use `SecurityScheme::new`
+  (its new `flows?` argument is optional). OAuth flows formerly accessed via
+  `unmodeled["flows"]` now use `flows`, `OAuthFlows` and `OAuthFlowObject`.
+  Unknown flows and extensions remain lossless.
 - Pin MoonBit 0.10.21+06da1ed44, migrate Buffer capacity hints and regenerate
   the schemagen fixtures and interfaces with the pinned formatter.
 
 ### Added
 
+- OAuth2's authorization-code, client-credentials, implicit, password and
+  device-authorization flow definitions, plus OpenID Connect security inputs.
+  Definition checks refuse empty/duplicate OAuth flows and undeclared required
+  scopes. OpenAPI 3.1/3.2 project flows and per-operation scope unions; device
+  authorization requires 3.2. Document requirements check OAuth scope names.
+  `apispec/diff` reports flow and scope removals as client-breaking changes;
+  flow URL changes are warnings and scope description changes informational.
 - `client/httpcache`: RFC 9111 private `HttpCache` Backend wrapper with
   clock-injected freshness, EOF-only GET storage, HEAD reuse, Vary,
   conditional validation, stale-if-error, only-if-cached, unsafe-method

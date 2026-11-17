@@ -102,7 +102,7 @@ fn default_json(value : String) -> String {
 /// types and those 3.2 adds. The 3.2 fields are optional and stay unset in a
 /// 3.1 document, so the field sets are complete for both versions and a move
 /// to 3.2 adds no field (design, section 0.1). A member a record does not type (an `example`, a `callbacks` map,
-/// OAuth `flows`, a path item `$ref`) is kept verbatim in `unmodeled`, so a
+/// a path item `$ref`) is kept verbatim in `unmodeled`, so a
 /// document survives decoding and encoding unchanged. `PathItem` is written
 /// by hand in `codec.mbt`: its operations are keyed by method, not by field.
 fn records() -> Array[(String, Array[Field])] {
@@ -276,10 +276,47 @@ fn records() -> Array[(String, Array[Field])] {
         optional("in_", "String", wire="in"),
         optional("bearer_format", "String", wire="bearerFormat"),
         optional("open_id_connect_url", "String", wire="openIdConnectUrl"),
+        optional("flows", "OAuthFlows"),
         optional("description", "String"),
         // 3.2
         default("deprecated", "Bool", "false"),
         optional("oauth2_metadata_url", "String", wire="oauth2MetadataUrl"),
+      ],
+    ),
+    (
+      "OAuthFlows",
+      [
+        optional("implicit", "OAuthFlowObject"),
+        optional("password", "OAuthFlowObject"),
+        optional(
+          "client_credentials",
+          "OAuthFlowObject",
+          wire="clientCredentials",
+        ),
+        optional(
+          "authorization_code",
+          "OAuthFlowObject",
+          wire="authorizationCode",
+        ),
+        optional(
+          "device_authorization",
+          "OAuthFlowObject",
+          wire="deviceAuthorization",
+        ),
+      ],
+    ),
+    (
+      "OAuthFlowObject",
+      [
+        optional("authorization_url", "String", wire="authorizationUrl"),
+        optional("token_url", "String", wire="tokenUrl"),
+        optional("refresh_url", "String", wire="refreshUrl"),
+        optional(
+          "device_authorization_url",
+          "String",
+          wire="deviceAuthorizationUrl",
+        ),
+        required("scopes", "Map[String, String]"),
       ],
     ),
     (
@@ -527,7 +564,14 @@ fn record(out : StringBuilder, name : String, fields : Array[Field]) -> Unit {
       Default(value, ..) => "field(obj, \{wire}, path, default=\{value})"
       Optional => "optional_field(obj, \{wire}, path)"
     }
-    out.write_string("    \{field.name}: \{call},\n")
+    let line = "    \{field.name}: \{call},"
+    if line.length() > width && field.kind is Optional {
+      out.write_string(
+        "    \{field.name}: optional_field(\n      obj, \{wire}, path,\n    ),\n",
+      )
+    } else {
+      out.write_string(line + "\n")
+    }
   }
   out.write_string(
     (

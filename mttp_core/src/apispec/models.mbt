@@ -1574,6 +1574,7 @@ fn is_security_scheme_field(key : String) -> Bool {
     "in" => true
     "bearerFormat" => true
     "openIdConnectUrl" => true
+    "flows" => true
     "description" => true
     "deprecated" => true
     "oauth2MetadataUrl" => true
@@ -1592,6 +1593,7 @@ pub(all) struct SecurityScheme {
   in_ : String?
   bearer_format : String?
   open_id_connect_url : String?
+  flows : OAuthFlows?
   description : String?
   deprecated : Bool
   oauth2_metadata_url : String?
@@ -1608,6 +1610,7 @@ pub fn SecurityScheme::new(
   in_? : String,
   bearer_format? : String,
   open_id_connect_url? : String,
+  flows? : OAuthFlows,
   description? : String,
   deprecated~ : Bool = false,
   oauth2_metadata_url? : String,
@@ -1621,6 +1624,7 @@ pub fn SecurityScheme::new(
     in_,
     bearer_format,
     open_id_connect_url,
+    flows,
     description,
     deprecated,
     oauth2_metadata_url,
@@ -1652,6 +1656,9 @@ pub impl ToJson for SecurityScheme with fn to_json(self) {
   if self.open_id_connect_url is Some(value) {
     obj["openIdConnectUrl"] = Json(value)
   }
+  if self.flows is Some(value) {
+    obj["flows"] = Json(value)
+  }
   if self.description is Some(value) {
     obj["description"] = Json(value)
   }
@@ -1680,6 +1687,7 @@ pub impl @json.FromJson for SecurityScheme with fn from_json(value, path) {
     in_: optional_field(obj, "in", path),
     bearer_format: optional_field(obj, "bearerFormat", path),
     open_id_connect_url: optional_field(obj, "openIdConnectUrl", path),
+    flows: optional_field(obj, "flows", path),
     description: optional_field(obj, "description", path),
     deprecated: field(obj, "deprecated", path, default=false),
     oauth2_metadata_url: optional_field(obj, "oauth2MetadataUrl", path),
@@ -1703,6 +1711,218 @@ pub extend SecurityScheme with ToJson::{to_json}
 ///|
 /// Deserializes SecurityScheme at a JSON path.
 pub extend SecurityScheme with @json.FromJson::{from_json}
+
+///|
+/// Whether `key` names a field OAuthFlows types.
+fn is_o_auth_flows_field(key : String) -> Bool {
+  match key {
+    "implicit" => true
+    "password" => true
+    "clientCredentials" => true
+    "authorizationCode" => true
+    "deviceAuthorization" => true
+    _ => false
+  }
+}
+
+///|
+/// OpenAPI 3.1 OAuthFlows data. Members it does not type are kept in
+/// `unmodeled`, and `x-*` members in `extensions`.
+#derive(Eq, Debug)
+pub(all) struct OAuthFlows {
+  implicit : OAuthFlowObject?
+  password : OAuthFlowObject?
+  client_credentials : OAuthFlowObject?
+  authorization_code : OAuthFlowObject?
+  device_authorization : OAuthFlowObject?
+  unmodeled : Map[String, Json]
+  extensions : Map[String, Json]
+}
+
+///|
+/// Creates OAuthFlows data with defaults for optional fields.
+pub fn OAuthFlows::new(
+  implicit? : OAuthFlowObject,
+  password? : OAuthFlowObject,
+  client_credentials? : OAuthFlowObject,
+  authorization_code? : OAuthFlowObject,
+  device_authorization? : OAuthFlowObject,
+  unmodeled~ : Map[String, Json] = {},
+  extensions~ : Map[String, Json] = {},
+) -> OAuthFlows {
+  {
+    implicit,
+    password,
+    client_credentials,
+    authorization_code,
+    device_authorization,
+    unmodeled: unmodeled.copy(),
+    extensions: extensions.copy(),
+  }
+}
+
+///|
+/// Encodes OAuthFlows, omitting absent optional fields and fields at their
+/// empty default, then its unmodeled members and its extensions.
+pub impl ToJson for OAuthFlows with fn to_json(self) {
+  let obj : Map[String, Json] = Map([])
+  if self.implicit is Some(value) {
+    obj["implicit"] = Json(value)
+  }
+  if self.password is Some(value) {
+    obj["password"] = Json(value)
+  }
+  if self.client_credentials is Some(value) {
+    obj["clientCredentials"] = Json(value)
+  }
+  if self.authorization_code is Some(value) {
+    obj["authorizationCode"] = Json(value)
+  }
+  if self.device_authorization is Some(value) {
+    obj["deviceAuthorization"] = Json(value)
+  }
+  add_unmodeled(obj, self.unmodeled, is_o_auth_flows_field)
+  add_extensions(obj, self.extensions)
+  Json::object(obj)
+}
+
+///|
+/// Decodes OAuthFlows, keeping unmodeled members and extensions.
+pub impl @json.FromJson for OAuthFlows with fn from_json(value, path) {
+  let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_o_auth_flows_field)
+  {
+    implicit: optional_field(obj, "implicit", path),
+    password: optional_field(obj, "password", path),
+    client_credentials: optional_field(obj, "clientCredentials", path),
+    authorization_code: optional_field(obj, "authorizationCode", path),
+    device_authorization: optional_field(obj, "deviceAuthorization", path),
+    unmodeled,
+    extensions: extension_fields(obj),
+  }
+}
+
+///|
+/// Compares OAuthFlows values.
+pub extend OAuthFlows with Eq::{equal, not_equal}
+
+///|
+/// Formats OAuthFlows values.
+pub extend OAuthFlows with @debug.Debug::{to_repr}
+
+///|
+/// Serializes OAuthFlows to a JSON value.
+pub extend OAuthFlows with ToJson::{to_json}
+
+///|
+/// Deserializes OAuthFlows at a JSON path.
+pub extend OAuthFlows with @json.FromJson::{from_json}
+
+///|
+/// Whether `key` names a field OAuthFlowObject types.
+fn is_o_auth_flow_object_field(key : String) -> Bool {
+  match key {
+    "authorizationUrl" => true
+    "tokenUrl" => true
+    "refreshUrl" => true
+    "deviceAuthorizationUrl" => true
+    "scopes" => true
+    _ => false
+  }
+}
+
+///|
+/// OpenAPI 3.1 OAuthFlowObject data. Members it does not type are kept in
+/// `unmodeled`, and `x-*` members in `extensions`.
+#derive(Eq, Debug)
+pub(all) struct OAuthFlowObject {
+  authorization_url : String?
+  token_url : String?
+  refresh_url : String?
+  device_authorization_url : String?
+  scopes : Map[String, String]
+  unmodeled : Map[String, Json]
+  extensions : Map[String, Json]
+}
+
+///|
+/// Creates OAuthFlowObject data with defaults for optional fields.
+pub fn OAuthFlowObject::new(
+  authorization_url? : String,
+  token_url? : String,
+  refresh_url? : String,
+  device_authorization_url? : String,
+  scopes : Map[String, String],
+  unmodeled~ : Map[String, Json] = {},
+  extensions~ : Map[String, Json] = {},
+) -> OAuthFlowObject {
+  {
+    authorization_url,
+    token_url,
+    refresh_url,
+    device_authorization_url,
+    scopes,
+    unmodeled: unmodeled.copy(),
+    extensions: extensions.copy(),
+  }
+}
+
+///|
+/// Encodes OAuthFlowObject, omitting absent optional fields and fields at their
+/// empty default, then its unmodeled members and its extensions.
+pub impl ToJson for OAuthFlowObject with fn to_json(self) {
+  let obj : Map[String, Json] = Map([])
+  if self.authorization_url is Some(value) {
+    obj["authorizationUrl"] = Json(value)
+  }
+  if self.token_url is Some(value) {
+    obj["tokenUrl"] = Json(value)
+  }
+  if self.refresh_url is Some(value) {
+    obj["refreshUrl"] = Json(value)
+  }
+  if self.device_authorization_url is Some(value) {
+    obj["deviceAuthorizationUrl"] = Json(value)
+  }
+  obj["scopes"] = Json(self.scopes)
+  add_unmodeled(obj, self.unmodeled, is_o_auth_flow_object_field)
+  add_extensions(obj, self.extensions)
+  Json::object(obj)
+}
+
+///|
+/// Decodes OAuthFlowObject, keeping unmodeled members and extensions.
+pub impl @json.FromJson for OAuthFlowObject with fn from_json(value, path) {
+  let obj = expect_object(value, path)
+  let unmodeled = unmodeled_fields(obj, is_o_auth_flow_object_field)
+  {
+    authorization_url: optional_field(obj, "authorizationUrl", path),
+    token_url: optional_field(obj, "tokenUrl", path),
+    refresh_url: optional_field(obj, "refreshUrl", path),
+    device_authorization_url: optional_field(
+      obj, "deviceAuthorizationUrl", path,
+    ),
+    scopes: field(obj, "scopes", path),
+    unmodeled,
+    extensions: extension_fields(obj),
+  }
+}
+
+///|
+/// Compares OAuthFlowObject values.
+pub extend OAuthFlowObject with Eq::{equal, not_equal}
+
+///|
+/// Formats OAuthFlowObject values.
+pub extend OAuthFlowObject with @debug.Debug::{to_repr}
+
+///|
+/// Serializes OAuthFlowObject to a JSON value.
+pub extend OAuthFlowObject with ToJson::{to_json}
+
+///|
+/// Deserializes OAuthFlowObject at a JSON path.
+pub extend OAuthFlowObject with @json.FromJson::{from_json}
 
 ///|
 /// Whether `key` names a field Components types.

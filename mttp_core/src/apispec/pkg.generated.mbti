@@ -143,6 +143,44 @@ pub impl @json.FromJson for MediaTypeObject
 pub impl @json.ToJson for MediaTypeObject
 
 #derive(Eq, @debug.Debug)
+pub(all) struct OAuthFlowObject {
+  authorization_url : String?
+  token_url : String?
+  refresh_url : String?
+  device_authorization_url : String?
+  scopes : Map[String, String]
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn OAuthFlowObject::equal(Self, Self) -> Bool
+pub fn OAuthFlowObject::from_json(@json.Json, @json.DecodeContext) -> Self raise @json.JsonDecodeError
+pub fn OAuthFlowObject::new(authorization_url? : String, token_url? : String, refresh_url? : String, device_authorization_url? : String, Map[String, String], unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn OAuthFlowObject::not_equal(Self, Self) -> Bool
+pub fn OAuthFlowObject::to_json(Self) -> @json.Json
+pub fn OAuthFlowObject::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for OAuthFlowObject
+pub impl @json.ToJson for OAuthFlowObject
+
+#derive(Eq, @debug.Debug)
+pub(all) struct OAuthFlows {
+  implicit : OAuthFlowObject?
+  password : OAuthFlowObject?
+  client_credentials : OAuthFlowObject?
+  authorization_code : OAuthFlowObject?
+  device_authorization : OAuthFlowObject?
+  unmodeled : Map[String, @json.Json]
+  extensions : Map[String, @json.Json]
+}
+pub fn OAuthFlows::equal(Self, Self) -> Bool
+pub fn OAuthFlows::from_json(@json.Json, @json.DecodeContext) -> Self raise @json.JsonDecodeError
+pub fn OAuthFlows::new(implicit? : OAuthFlowObject, password? : OAuthFlowObject, client_credentials? : OAuthFlowObject, authorization_code? : OAuthFlowObject, device_authorization? : OAuthFlowObject, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn OAuthFlows::not_equal(Self, Self) -> Bool
+pub fn OAuthFlows::to_json(Self) -> @json.Json
+pub fn OAuthFlows::to_repr(Self) -> @debug.Repr
+pub impl @json.FromJson for OAuthFlows
+pub impl @json.ToJson for OAuthFlows
+
+#derive(Eq, @debug.Debug)
 pub(all) struct OpenApi {
   info : Info
   paths : Map[String, PathItem]
@@ -280,6 +318,7 @@ pub(all) struct SecurityScheme {
   in_ : String?
   bearer_format : String?
   open_id_connect_url : String?
+  flows : OAuthFlows?
   description : String?
   deprecated : Bool
   oauth2_metadata_url : String?
@@ -288,7 +327,7 @@ pub(all) struct SecurityScheme {
 }
 pub fn SecurityScheme::equal(Self, Self) -> Bool
 pub fn SecurityScheme::from_json(@json.Json, @json.DecodeContext) -> Self raise @json.JsonDecodeError
-pub fn SecurityScheme::new(String, scheme? : String, name? : String, in_? : String, bearer_format? : String, open_id_connect_url? : String, description? : String, deprecated? : Bool, oauth2_metadata_url? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
+pub fn SecurityScheme::new(String, scheme? : String, name? : String, in_? : String, bearer_format? : String, open_id_connect_url? : String, flows? : OAuthFlows, description? : String, deprecated? : Bool, oauth2_metadata_url? : String, unmodeled? : Map[String, @json.Json], extensions? : Map[String, @json.Json]) -> Self
 pub fn SecurityScheme::not_equal(Self, Self) -> Bool
 pub fn SecurityScheme::to_json(Self) -> @json.Json
 pub fn SecurityScheme::to_repr(Self) -> @debug.Repr

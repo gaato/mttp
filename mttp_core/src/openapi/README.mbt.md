@@ -1,5 +1,39 @@
 # gaato/mttp_core/openapi
 
+OAuth2 flow declarations become `components.securitySchemes.*.flows`;
+required input scopes become operation security requirements. Atoms sharing a
+scheme name must declare equal flows (flow order is irrelevant), while their
+operation scopes may differ. Scope unions are sorted lexically and de-duplicated,
+preserving AND across schemes. Root `security=` may require declared OAuth
+scopes; OpenID Connect scopes are accepted without discovery I/O. These inputs
+only parse Bearer credentials: applications validate tokens and scope grants.
+`DeviceAuthorization` requires `version=V3_2`; 3.1 projection refuses it and
+names the scheme in the definition error.
+
+```mbt check
+///|
+test "OAuth2 projection keeps advertised and required scopes separate" {
+  let flows : Array[@endpoint.OAuthFlow] = [
+    ClientCredentials(
+      token_url="https://id.example.test/token",
+      refresh_url=None,
+      scopes={ "read": "Read items", "write": "Write items" },
+    ),
+  ]
+  let ep = @endpoint.endpoint
+    .get("/items")
+    .security(@endpoint.oauth2(flows~, scopes=["read"]))
+  let spec = @openapi.to_openapi([ep.doc()], @apispec.Info::new("Items", "1"), security=[
+    { "oauth2": ["write"] },
+  ])
+  assert_eq(
+    spec.paths["/items"].operations["get"].security,
+    Some([{ "oauth2": ["read"] }]),
+  )
+  assert_eq(spec.components.security_schemes["oauth2"].type_, "oauth2")
+}
+```
+
 WebSocket endpoint docs project only the handshake GET: 101, declared
 parameters and security, plus `x-websocket: { "subprotocols": [...] }`.
 Message schemas remain in `EndpointDoc.websocket`, including in Router.docs(),

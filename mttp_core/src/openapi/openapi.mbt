@@ -109,7 +109,27 @@ pub fn to_openapi(
             doc.template,
           )
         Auth(scheme~, scheme_name~) => {
+          let scopes = match scheme {
+            OAuth2(scopes~, ..) | OpenIdConnect(scopes~, ..) => scopes
+            _ => []
+          }
           let scheme = match scheme {
+            OAuth2(flows~, ..) =>
+              @apispec.SecurityScheme::new(
+                "oauth2",
+                flows=oauth_flows(
+                  flows,
+                  version,
+                  scheme_name,
+                  doc.template,
+                  problems,
+                ),
+              )
+            OpenIdConnect(url~, ..) =>
+              @apispec.SecurityScheme::new(
+                "openIdConnect",
+                open_id_connect_url=url,
+              )
             Bearer(format~) =>
               @apispec.SecurityScheme::new(
                 "http",
@@ -144,9 +164,9 @@ pub fn to_openapi(
             schemes[scheme_name] = scheme
           }
           if atom.required {
-            requirement[scheme_name] = []
+            add_scopes(requirement, scheme_name, scopes)
           }
-          all_schemes[scheme_name] = []
+          add_scopes(all_schemes, scheme_name, scopes)
         }
         Body(media_type~, ..) =>
           request_body = Some(
@@ -382,7 +402,7 @@ pub fn to_openapi(
   }
   if security is Some(requirements) {
     for requirement in requirements {
-      for name, _ in requirement {
+      for name, scopes in requirement {
         if !schemes.contains(name) {
           problems.push(
             @endpoint.DefinitionProblem::new(
@@ -390,6 +410,29 @@ pub fn to_openapi(
               "undefined document security scheme " + name,
             ),
           )
+        }
+        if schemes.get(name) is Some(scheme) && scheme.flows is Some(flows) {
+          for scope in scopes {
+            if ![
+                flows.implicit,
+                flows.password,
+                flows.client_credentials,
+                flows.authorization_code,
+                flows.device_authorization,
+              ]
+              .iter()
+              .any(flow => flow is Some(f) && f.scopes.contains(scope)) {
+              problems.push(
+                @endpoint.DefinitionProblem::new(
+                  "",
+                  "OAuth2 scheme " +
+                  name +
+                  " requires undeclared document scope " +
+                  scope,
+                ),
+              )
+            }
+          }
         }
       }
     }

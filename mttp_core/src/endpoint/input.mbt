@@ -9,6 +9,8 @@ pub(all) enum AuthScheme {
   ApiKeyQuery(String)
   ApiKeyCookie(String)
   Signature(String)
+  OAuth2(flows~ : Array[OAuthFlow], scopes~ : Array[String])
+  OpenIdConnect(url~ : String, scopes~ : Array[String])
 }
 
 ///|
@@ -203,8 +205,13 @@ pub fn[T] header(name : String, codec : @schema.TextCodec[T]) -> Input[T] {
 ///|
 /// Reads a nonempty Bearer credential with a case-insensitive scheme name.
 pub fn bearer(scheme_name~ : String = "bearer") -> Input[String] {
+  bearer_input(Bearer(format=None), scheme_name)
+}
+
+///|
+fn bearer_input(scheme : AuthScheme, scheme_name : String) -> Input[String] {
   let a = atom(
-    Auth(scheme=Bearer(format=None), scheme_name~),
+    Auth(scheme~, scheme_name~),
     "Authorization",
     @schema.string.schema(),
   )

@@ -70,7 +70,11 @@ pub fn multipart_file(String, content_type? : String) -> MultipartCodec[@multipa
 
 pub fn no_content() -> Out[Unit, @client.Buffered]
 
+pub fn oauth2(flows~ : Array[OAuthFlow], scopes? : Array[String], scheme_name? : String) -> Input[String]
+
 pub fn[T] one_of(Array[Variant[T]]) -> Out[T, @client.Buffered]
+
+pub fn openid_connect(String, scopes? : Array[String], scheme_name? : String) -> Input[String]
 
 pub fn[A, B] pair(Input[A], Input[B]) -> Input[(A, B)]
 
@@ -154,6 +158,8 @@ pub(all) enum AuthScheme {
   ApiKeyQuery(String)
   ApiKeyCookie(String)
   Signature(String)
+  OAuth2(flows~ : Array[OAuthFlow], scopes~ : Array[String])
+  OpenIdConnect(url~ : String, scopes~ : Array[String])
 }
 pub fn AuthScheme::equal(Self, Self) -> Bool
 pub fn AuthScheme::not_equal(Self, Self) -> Bool
@@ -343,6 +349,19 @@ pub(all) struct NoError {
 pub fn NoError::equal(Self, Self) -> Bool
 pub fn NoError::not_equal(Self, Self) -> Bool
 pub fn NoError::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum OAuthFlow {
+  AuthorizationCode(authorization_url~ : String, token_url~ : String, refresh_url~ : String?, scopes~ : Map[String, String])
+  ClientCredentials(token_url~ : String, refresh_url~ : String?, scopes~ : Map[String, String])
+  Implicit(authorization_url~ : String, refresh_url~ : String?, scopes~ : Map[String, String])
+  Password(token_url~ : String, refresh_url~ : String?, scopes~ : Map[String, String])
+  DeviceAuthorization(device_authorization_url~ : String, token_url~ : String, refresh_url~ : String?, scopes~ : Map[String, String])
+}
+pub fn OAuthFlow::equal(Self, Self) -> Bool
+pub fn OAuthFlow::not_equal(Self, Self) -> Bool
+pub fn OAuthFlow::to_repr(Self) -> @debug.Repr
 
 pub struct Out[T, M] {
   // private fields

@@ -38,7 +38,6 @@ nothing:
 - `example`, `examples` and `encoding` (parameters, headers, media types);
 - `links` (responses, components) and `callbacks` (operations, components);
 - `components.examples`;
-- OAuth `flows` of a security scheme;
 - Reference Objects in path items, parameters, request bodies and security
   schemes.
 
@@ -48,3 +47,31 @@ encoding.
 The codecs keep wire field names such as `operationId`, `requestBody` and
 `securitySchemes` apart from the MoonBit field names, and keep extension
 values when a document is decoded and encoded again.
+
+`SecurityScheme.flows` models OAuth2 with `OAuthFlows`: optional `implicit`,
+`password`, `client_credentials`, `authorization_code`, and (3.2 only)
+`device_authorization` objects. Each `OAuthFlowObject` has optional
+`authorization_url`, `token_url`, `refresh_url`, `device_authorization_url`
+and a required `scopes` map, including an empty map. These are document data;
+the endpoint `OAuthFlow` enum supplies flow-specific required URL guarantees.
+Both records preserve `extensions` and `unmodeled`; unknown flow kinds stay in
+`OAuthFlows.unmodeled`. Existing consumers of `unmodeled["flows"]` should use
+the typed `flows` field instead.
+
+```mbt check
+///|
+test "typed OAuth2 document data" {
+  let flow = @apispec.OAuthFlowObject::new(
+    { "read": "Read items" },
+    token_url="https://id.example.test/token",
+  )
+  let scheme = @apispec.SecurityScheme::new(
+    "oauth2",
+    flows=@apispec.OAuthFlows::new(client_credentials=flow, unmodeled={
+      "futureFlow": { "url": "https://id.example.test/future" },
+    }),
+  )
+  let decoded : @apispec.SecurityScheme = @json.from_json(Json(scheme))
+  assert_eq(decoded, scheme)
+}
+```

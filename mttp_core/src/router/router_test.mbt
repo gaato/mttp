@@ -1,4 +1,32 @@
 ///|
+test "OAuth2 router missing token has the Bearer status and challenge" {
+  let flows : Array[@endpoint.OAuthFlow] = [
+    ClientCredentials(token_url="https://id.test/token", refresh_url=None, scopes={}),
+  ]
+  let router = @router.Router::new([
+    @endpoint.endpoint
+    .get("/oauth")
+    .security(@endpoint.oauth2(flows~))
+    .serve(_ => Ok(()), (_, _) => Ok(())),
+    @endpoint.endpoint
+    .get("/bearer")
+    .security(@endpoint.bearer())
+    .serve(_ => Ok(()), (_, _) => Ok(())),
+  ])
+  @driver.run_sync(() => {
+    let actual = router.dispatch(@mttp_core.Request::get("/oauth"))
+    let expected = router.dispatch(@mttp_core.Request::get("/bearer"))
+    assert_eq(actual.status, 401)
+    assert_eq(actual.status, expected.status)
+    assert_eq(actual.headers.get("www-authenticate"), Some("Bearer"))
+    assert_eq(
+      actual.headers.get("www-authenticate"),
+      expected.headers.get("www-authenticate"),
+    )
+  })
+}
+
+///|
 test "router refuses equivalent cross-method templates with inconsistent capture names" {
   let get = @endpoint.endpoint
     .get("/pets/{id}")
