@@ -23,7 +23,7 @@ The codecs:
 | JSON scalars | `jstring`, `jint`, `jint64`, `jdouble`, `jbool`, `jvalue`, `string_enum`, `open_string` |
 | JSON structures | `array`, `map_of`, `object1` to `object16` with `field`, `recursive`, `json()` for a type that implements `JsonSchema` |
 | Unions | `tagged` (by a tag field) and `any_of` (the first case that decodes), with `case_` |
-| Optional fields | `option`, `presence`, `omittable` |
+| Optional / nullable fields | `option`, `presence`, `omittable`, `nullable` |
 | Bodies | `JsonCodec::body()`, `text_body`, `html_body`, `raw_bytes`, `form_body`, `form_codec` |
 | Validators | `minimum`, `maximum`, `min_length`, `max_length`, `pattern`, `one_of_values`, `custom` |
 
@@ -39,6 +39,30 @@ encoders omit absent values, and none of the three fields is `required`.
 `object1` through `object16` use typed getters and constructors. Sixteen supports
 larger records while keeping the generated source modest (about 1,100 lines);
 fixed arities avoid runtime casts for heterogeneous fields.
+
+`nullable` is for a key that must be present even when its value is null.
+It returns `T?`, requires the key on decode and encodes `None` as explicit
+null. The schema marks the property required and allows the null type.
+
+`tagged(..., unknown=codec)` optionally handles objects with unknown string
+tags. It shares the caller's step budget and preserves known-case validation
+errors. Missing/non-string discriminators still fail. The fallback encoder
+must produce an object with an unknown string tag; known tags belong to the
+ordinary case projections. Its schema includes a disjoint unknown-tag
+alternative, which counts toward the 64-case limit.
+
+```mbt check
+///|
+test {
+  let codec = @schema.object1(
+    "RequiredName",
+    @schema.field("name", @schema.nullable(@schema.jstring), name => name),
+    name => name,
+  )
+  assert_eq(codec.from_json({ "name": null }), None)
+  assert_eq(codec.to_json(None), { "name": null })
+}
+```
 
 `JsonCodec::with_description` describes a value's schema. A field's optional
 `description` describes that use of the value; for a named child it sits next

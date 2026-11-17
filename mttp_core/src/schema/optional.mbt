@@ -31,6 +31,14 @@ pub fn[T] option(codec : JsonCodec[T]) -> JsonCodec[T?] {
 }
 
 ///|
+/// A required, nullable value. Unlike `option`, an object must contain the
+/// key and None encodes as explicit null. Validation and definitions of the
+/// non-null codec are preserved.
+pub fn[T] nullable(codec : JsonCodec[T]) -> JsonCodec[T?] {
+  { ..option(codec), missing_: None, omit_: never_omit, }
+}
+
+///|
 /// A value that an object may leave out but must not set to null. In an
 /// object field, a missing field decodes to None and None is omitted on
 /// encoding; null goes to the child codec, which refuses it with its usual

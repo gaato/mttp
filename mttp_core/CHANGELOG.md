@@ -24,6 +24,13 @@ never does.
   SDKs can mark their own credential header names for cross-origin redirect
   stripping and `to_curl` redaction. `client.redact_headers` accepts optional
   `credential_headers` names in addition to its existing redaction list.
+- `schema.nullable(codec)`: a required object key accepting null, returning
+  `None` for null and encoding `None` as explicit null. The schema preserves
+  the child's constraints and marks the property required.
+- `schema.tagged(..., unknown?)` decodes unknown string discriminators with
+  a fallback codec under the same step budget, without masking known payload
+  errors. Its schema admits unknown tags while retaining known tag mappings.
+
 - `schema.field(..., description?)` documents each property, next to `$ref`
   for named children; `JsonCodec::with_description` documents a value schema.
   Both preserve decoding, encoding and missing-value behavior.

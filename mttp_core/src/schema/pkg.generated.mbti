@@ -58,6 +58,8 @@ pub fn min_length(Int32) -> Validator[String]
 
 pub fn minimum(Int32) -> Validator[Int32]
 
+pub fn[T] nullable(JsonCodec[T]) -> JsonCodec[T?]
+
 pub fn[T, A0] object1(String, Field[T, A0], (A0) -> T) -> JsonCodec[T]
 
 pub fn[T, A0, A1, A2, A3, A4, A5, A6, A7, A8, A9] object10(String, Field[T, A0], Field[T, A1], Field[T, A2], Field[T, A3], Field[T, A4], Field[T, A5], Field[T, A6], Field[T, A7], Field[T, A8], Field[T, A9], (A0, A1, A2, A3, A4, A5, A6, A7, A8, A9) -> T) -> JsonCodec[T]
@@ -110,7 +112,7 @@ pub let string : TextCodec[String]
 
 pub fn string_enum(String, Array[String]) -> JsonCodec[String]
 
-pub fn[T] tagged(String, String, Array[Case[T]]) -> JsonCodec[T]
+pub fn[T] tagged(String, String, Array[Case[T]], unknown? : JsonCodec[T]) -> JsonCodec[T]
 
 pub let text_body : BodyCodec[String]
 

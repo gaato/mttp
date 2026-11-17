@@ -54,11 +54,16 @@ fn[T] case_problems(name : String, cases : Array[Case[T]]) -> Array[String] {
 /// 1 to 64 cases records a problem in its schema (see `Schema::problems`);
 /// decoding then uses the first case with the tag. Payload encoders must
 /// return objects; their discriminator field is replaced by the tag.
-/// Projections must be exhaustive.
+/// Projections must be exhaustive, or `unknown` must encode their remainder.
+/// The optional codec decodes only unknown string tags, sharing this decode's
+/// budget. Known payload errors and missing/non-string tags never fall back.
+/// Its encoder must return an object with a string discriminator not present
+/// in `cases`. The unknown alternative counts toward the 64-case bound.
 pub fn[T] tagged(
   name : String,
   discriminator : String,
   cases : Array[Case[T]],
+  unknown? : JsonCodec[T],
 ) -> JsonCodec[T] {
   let problems = case_problems(name, cases)
   let cases = cases.copy()
@@ -86,6 +91,33 @@ pub fn[T] tagged(
       "#/components/schemas/\{pointer_segment(name)}/oneOf/\{i}",
     )
   }
+  if unknown is Some(codec) {
+    if cases.length() == max_union_cases {
+      problems.push(
+        "union \{name} has 65 cases including unknown; 1 to 64 are allowed",
+      )
+    }
+    let child = codec.schema_.reference(defs, problems~)
+    let properties : Map[String, Json] = Map([
+      (
+        discriminator,
+        {
+          "type": "string",
+          "not": { "enum": Json(cases.map(case_ => case_.tag)) },
+        },
+      ),
+    ])
+    alternatives.push({
+      "allOf": [
+        child,
+        {
+          "type": "object",
+          "required": [discriminator],
+          "properties": Json::object(properties),
+        },
+      ],
+    })
+  }
   {
     from_: (j, path, d) => {
       guard j is Object(obj) else {
@@ -108,6 +140,9 @@ pub fn[T] tagged(
           return (case_.decode)(j, path, d)
         }
       }
+      if unknown is Some(codec) {
+        return d.apply(codec, j, path)
+      }
       raise invalid([
         { path: p, code: "discriminator", message: "unknown discriminator", },
       ])
@@ -122,6 +157,17 @@ pub fn[T] tagged(
           obj[discriminator] = Json(case_.tag)
           return Json::object(obj)
         }
+      }
+      if unknown is Some(codec) {
+        let encoded = (codec.to_)(value)
+        guard encoded is Object(obj) &&
+          obj.get(discriminator) is Some(String(tag)) &&
+          !cases.iter().any(case_ => case_.tag == tag) else {
+          abort(
+            "unknown tagged encoder must return an object with an unknown string discriminator",
+          )
+        }
+        return encoded
       }
       abort("union projections do not cover encoded value")
     },
