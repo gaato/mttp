@@ -1200,8 +1200,22 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
       [],
       timeout_ms=3600000,
     )
+    @fs.write_text("\{work}/autobahn-client/client.log", stdout + stderr)
     if status != 0 {
       raise RunError("Autobahn client exited \{status}\n\{stdout}\n\{stderr}")
+    }
+    for line in stdout.split("\n") {
+      if line.has_prefix("Autobahn updateReports") {
+        println(line.to_owned())
+      }
+    }
+    // Autobahn writes the reports for all 517 cases when updateReports
+    // arrives, which takes minutes on a CI runner with sections 12 and 13;
+    // the client's connection can end first. Wait for the index rather than
+    // reading an absent one.
+    let index = "\{work}/autobahn-client/reports/index.json"
+    for waited = 0; !@fs.exists(index) && waited < 900; waited = waited + 1 {
+      @async.sleep(1000)
     }
     run_one(
       tally,

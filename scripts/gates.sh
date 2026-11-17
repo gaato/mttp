@@ -104,18 +104,30 @@ mbti_snapshot() {
     LC_ALL=C sort -z | xargs -0 -r sha256sum
 }
 
+# The committed formatting is the pinned toolchain's. Another toolchain (the
+# canary's nightly row) may format the same code differently, as when a newer
+# formatter adds trailing commas the pinned one removes; that is news about
+# the toolchain, reported as a note, not formatting someone forgot to apply.
+fmt_check() {
+  if moon version --all | grep -qF -- "$(cat moonbit-version)"; then
+    step moon fmt --check "$@"
+  elif ! moon fmt --check "$@" >/dev/null 2>&1; then
+    echo "note: 'moon fmt' on this toolchain formats ${1:-the workspace} differently from moonbit-version's" >&2
+  fi
+}
+
 static_gates() {
   # The registry index, which the .mbtx scripts and modules resolve from.
   step moon update
   step script scripts/release.mbtx -- check
-  step moon fmt --check
+  fmt_check
   # The scripts too, except docs_audit.mbtx: it is shared verbatim with every
   # gaato MoonBit repository and changes only there.
   local file
   for file in scripts/*.mbtx interop/*.mbtx; do
-    [ "$file" = scripts/docs_audit.mbtx ] || step moon fmt --check "$file"
+    [ "$file" = scripts/docs_audit.mbtx ] || fmt_check "$file"
   done
-  step moon fmt --check benchmarks/run.mbtx
+  fmt_check benchmarks/run.mbtx
   local before after
   before=$(mbti_snapshot)
   step moon info
