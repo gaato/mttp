@@ -2,10 +2,9 @@
 
 Generate ordinary `@schema.object1` to `object16`, enum and recursive codecs
 from annotated MoonBit types. Check the generated `<name>_schema.mbt` into
-source control. The consumer needs **gaato/mttp_core 0.2.1 or later**: registry
-0.2.0 predates `field(description?)`, `with_description`, `nullable` and
-`tagged(unknown?)`.
-The local checkout supplies these APIs until that core release is published.
+source control. The consumer needs **gaato/mttp_core 0.3.0 or later**:
+earlier releases lack `field(description?)`, `with_description`, `nullable`
+and `tagged(unknown?)`.
 
 ## Install
 

@@ -7,6 +7,12 @@ never does.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-18
+
+### Changed
+
+- Require gaato/mttp_core 0.3.0 and MoonBit 0.10.21+06da1ed44.
+
 ## [0.4.0] - 2026-11-17
 
 ### Changed

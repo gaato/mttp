@@ -7,8 +7,18 @@ never does.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-18
+
 ### Changed
 
+- Breaking (MoonBit 0.10.21): the `apispec` models' `from_json` now take
+  `@json.DecodeContext` instead of `@json.JsonPath`, following core's
+  `FromJson` trait. Code that calls them directly passes the context it
+  received; `@json.from_json` callers are unaffected.
+- Breaking: `apispec.MediaTypeObject` adds `encoding : Map[String, Json]`
+  for multipart per-part encodings. Record literals must supply
+  `encoding: {}`, or use `MediaTypeObject::new` (its `encoding?` argument is
+  optional).
 - Breaking: `AuthScheme` adds `OAuth2(flows~, scopes~)` and
   `OpenIdConnect(url~, scopes~)`; use `oauth2` / `openid_connect` inputs to
   read Bearer credentials and declare the scheme and required operation scopes
@@ -20,6 +30,14 @@ never does.
   Unknown flows and extensions remain lossless.
 - Pin MoonBit 0.10.21+06da1ed44, migrate Buffer capacity hints and regenerate
   the schemagen fixtures and interfaces with the pinned formatter.
+- Reduce header copies in construction, snapshot iteration and HTTP/1 head
+  serialization. Input arrays remain isolated, derived headers retain their
+  snapshots, and replaced framing fields are still validated.
+- HTTP/1 Content-Length and chunk-size now delegate numeric arithmetic to
+  the dependency-free `internal/number` core, proved with Z3 4.16.0 and
+  CVC5 1.4.2 against a recursive positional-value model. Public signatures,
+  OWS, chunk extensions and error order are preserved. The manual
+  `scripts/gates.sh prove` gate checks the core and negative controls.
 
 ### Added
 
@@ -112,17 +130,6 @@ never does.
   undefined security names, duplicate webhook names and cross-document schema,
   security-scheme and operation-ID conflicts are refused. Public operations
   retain explicit empty security requirements.
-
-### Changed
-
-- Reduce header copies in construction, snapshot iteration and HTTP/1 head
-  serialization. Input arrays remain isolated, derived headers retain their
-  snapshots, and replaced framing fields are still validated.
-- HTTP/1 Content-Length and chunk-size now delegate numeric arithmetic to
-  the dependency-free `internal/number` core, proved with Z3 4.16.0 and
-  CVC5 1.4.2 against a recursive positional-value model. Public signatures,
-  OWS, chunk extensions and error order are preserved. The manual
-  `scripts/gates.sh prove` gate checks the core and negative controls.
 
 ## [0.2.0] - 2026-11-17
 

@@ -2,12 +2,7 @@
 
 ## [Unreleased]
 
-### Changed
-
-- Regenerate fixtures with the pinned MoonBit 0.10.21+06da1ed44 formatter
-  and use core/async's recursive file removal API for test cleanup.
-
-## [0.1.0] - 2026-11-17
+## [0.1.0] - 2026-11-18
 
 ### Added
 
@@ -20,6 +15,5 @@
 - Versioned headers, generated-file ownership checks, byte comparison mode,
   positioned hard errors and compilation of newly generated collision fixtures.
 
-The output requires `gaato/mttp_core` 0.2.1 or later, including the description
-and required-nullable APIs plus `tagged(unknown?)`. Release that core version before distributing the
-generator to consumers; the registry's 0.2.0 predates those APIs.
+The output requires `gaato/mttp_core` 0.3.0 or later, which adds the
+description and required-nullable APIs and `tagged(unknown?)`.

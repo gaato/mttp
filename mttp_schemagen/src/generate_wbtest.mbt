@@ -293,7 +293,7 @@ async test "freshly generated collision and response fixtures compile and execut
   write_output(dir + "/model_schema_test.mbt", output, check=false)
   let local_core = @fs.realpath("../mttp_core") catch { _ => "" }
   let version = if local_core == "" {
-    "0.2.1"
+    "0.3.0"
   } else {
     // The coordinated core release will bump this version; the local
     // compiler fixture must follow its manifest rather than pinning 0.2.0.

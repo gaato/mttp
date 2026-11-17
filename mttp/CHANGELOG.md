@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-18
+
 ### Added
 
 - A migration guide from `moonbitlang/core/async/http` and
@@ -30,6 +32,8 @@ never does.
   `FirstByte`); JS fetch cannot see them and reports none.
 ### Changed
 
+- Requires `gaato/mttp_core` 0.3.0; its changelog lists the breaking
+  changes, which reach apps that use the re-exported types or typed endpoints.
 - Pin MoonBit 0.10.21+06da1ed44. Adopt its core/async IO traits, typed IO
   errors and positioned FileView reads in the regular tree; TLS closes
   without close_notify now report IncompleteClose on the pinned toolchain.
