@@ -1,0 +1,56 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp-example-migrate"
+
+import {
+  "gaato/mttp_core",
+  "moonbitlang/core/json",
+}
+
+// Values
+pub async fn body_after(@mttp_core.Request) -> @mttp_core.Response noraise
+
+pub async fn errors_after(String) -> String
+
+pub async fn errors_before(String) -> String
+
+pub async fn get_after(String) -> (String, @json.Json)
+
+pub async fn get_before(String) -> (String, @json.Json)
+
+pub fn handler_after(@mttp_core.Request) -> @mttp_core.Response
+
+pub async fn post_after(String) -> String
+
+pub async fn post_before(String) -> String
+
+pub fn response_stream_after(@mttp_core.Request) -> @mttp_core.Response
+
+pub async fn reuse_after(String) -> String
+
+pub async fn reuse_before(String) -> String
+
+pub fn routing_after() -> async (@mttp_core.Request) -> @mttp_core.Response noraise
+
+pub async fn shutdown_after(String, (String) -> Unit) -> Unit
+
+pub async fn shutdown_before(String, (String) -> Unit) -> Unit
+
+pub async fn stream_after(String) -> Int64
+
+pub async fn stream_before(String) -> Int64
+
+pub async fn timeout_after(String) -> String
+
+pub async fn timeout_before(String) -> String
+
+pub async fn tls_after(String, String) -> Bytes
+
+pub async fn tls_before(String, String) -> Bytes
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

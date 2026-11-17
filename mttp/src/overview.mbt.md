@@ -34,6 +34,10 @@ a table of what to replace.
 
 ## Install
 
+Coming from `moonbitlang/core/async/http` or `moonbitlang/async/http`?
+The [migration guide](https://github.com/gaato/mttp/blob/main/MIGRATING.md)
+has compiled before and after examples for clients and servers.
+
 ```sh
 moon add gaato/mttp
 ```

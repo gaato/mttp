@@ -8,9 +8,9 @@ import {
 ----
 
 ///|
-/// Keeps the repository's README.md true to the code it shows. The README is
-/// read on GitHub only (mooncakes shows each module's own overview), so no
-/// doc test covers it; this script does.
+/// Keeps README.md and MIGRATING.md true to the code they show. These root
+/// documents are read on GitHub only (mooncakes shows each module's own
+/// overview), so no doc test covers them; this script does.
 ///
 /// A check is an HTML comment on its own line, followed by a fenced block:
 ///
@@ -22,20 +22,31 @@ import {
 ///   `moon run examples/tour` prints, in order, from its first line to its
 ///   last; a line that is `...` stands for any number of lines left out.
 ///
-/// The README must hold each kind at least once, so deleting a comment does
-/// not silently drop its check. Besides: every relative link names a file or
-/// directory that exists, and the MoonBit badge shows the toolchain version
-/// `moonbit-version` pins.
+/// The README must hold each kind at least once; MIGRATING must hold source
+/// and output checks and mark every MoonBit fence. It needs no excerpt or
+/// badge: repeating its short output or the README's badge adds no evidence.
+/// These requirements keep removed comments from silently dropping checks.
+/// Besides: every relative link names a file or directory that exists, and
+/// the README's MoonBit badge shows the version `moonbit-version` pins.
 ///
 /// Usage, from the repository root:
-///   moon run scripts/readme_check.mbtx [-- [--self-test] [README]]
+///   moon run scripts/readme_check.mbtx [-- [--self-test] [FILE ...]]
 ///
-/// `--self-test` first checks the README, then changes it in memory in ways
-/// that must fail (a line of each kind of block, the badge, a link, a
-/// removed comment) and fails if any change passes.
+/// With no FILE, both documents are checked. `--self-test` changes each in
+/// memory in ways that must fail (a line of each present kind, required
+/// comments, a link, and the README's badge) and fails if any change passes.
 
 ///|
 let kinds : Array[String] = ["source", "output", "excerpt"]
+
+///|
+fn required_kinds(path : String) -> Array[String] {
+  if path.has_suffix("MIGRATING.md") {
+    ["source", "output"]
+  } else {
+    kinds
+  }
+}
 
 ///|
 /// The start of the MoonBit badge for `version`: its alt text and the
@@ -59,6 +70,7 @@ priv struct Check {
 /// that keep it from being read.
 fn parse(
   readme : String,
+  path : String,
 ) -> (Array[Check], Array[(Int32, String)], Array[String]) {
   let lines = readme.split("\n").map(line => line.to_owned()).to_array()
   let checks : Array[Check] = []
@@ -70,6 +82,11 @@ fn parse(
     let line = lines[i]
     let trimmed = line.trim()
     if trimmed.has_prefix("```") {
+      if !fence &&
+        path.has_suffix("MIGRATING.md") &&
+        (trimmed.has_prefix("```mbt") || trimmed.has_prefix("```moonbit")) {
+        problems.push("\{path}:\{i + 1}: MoonBit block has no source marker")
+      }
       fence = !fence
       i += 1
       continue
@@ -83,7 +100,7 @@ fn parse(
         let start = i + 1
         if start >= lines.length() || !lines[start].has_prefix("```") {
           problems.push(
-            "README.md:\{i + 1}: <!-- \{kind}: \{target} --> is not followed by a fenced block",
+            "\{path}:\{i + 1}: <!-- \{kind}: \{target} --> is not followed by a fenced block",
           )
           i += 1
           continue
@@ -95,7 +112,7 @@ fn parse(
           end += 1
         }
         if end >= lines.length() {
-          problems.push("README.md:\{i + 1}: the block is not closed")
+          problems.push("\{path}:\{i + 1}: the block is not closed")
         }
         checks.push({ kind, target, line: i + 1, lines: block, })
         i = end + 1
@@ -108,9 +125,9 @@ fn parse(
     }
     i += 1
   }
-  for kind in kinds {
+  for kind in required_kinds(path) {
     if !checks.iter().any(check => check.kind == kind) {
-      problems.push("README.md has no <!-- \{kind}: ... --> block")
+      problems.push("\{path} has no <!-- \{kind}: ... --> block")
     }
   }
   (checks, links, problems)
@@ -257,11 +274,15 @@ async fn Checker::exists(self : Checker, path : String) -> Bool {
 
 ///|
 /// Everything in `readme` that is not true of the repository.
-async fn Checker::check(self : Checker, readme : String) -> Array[String] {
-  let (checks, links, problems) = parse(readme)
+async fn Checker::check(
+  self : Checker,
+  readme : String,
+  path : String,
+) -> Array[String] {
+  let (checks, links, problems) = parse(readme, path)
   for check in checks {
     let block = check.lines.map(line => line + "\n").join("")
-    let place = "README.md:\{check.line}"
+    let place = "\{path}:\{check.line}"
     match check.kind {
       "source" =>
         if !self.exists(check.target) {
@@ -294,15 +315,13 @@ async fn Checker::check(self : Checker, readme : String) -> Array[String] {
   for link in links {
     let (line, target) = link
     if !self.exists(target) {
-      problems.push(
-        "README.md:\{line}: the link target \{target} does not exist",
-      )
+      problems.push("\{path}:\{line}: the link target \{target} does not exist")
     }
   }
   let badge = moonbit_badge(self.version)
-  if !readme.contains(badge) {
+  if !path.has_suffix("MIGRATING.md") && !readme.contains(badge) {
     problems.push(
-      "README.md: the MoonBit badge must show \{self.version}, the version moonbit-version pins (\{badge}...)",
+      "\{path}: the MoonBit badge must show \{self.version}, the version moonbit-version pins (\{badge}...)",
     )
   }
   problems
@@ -328,33 +347,53 @@ fn change_block(readme : String, kind : String, suffix : String) -> String {
 }
 
 ///|
-async fn self_test(checker : Checker, readme : String) -> Unit {
+async fn self_test(checker : Checker, readme : String, path : String) -> Unit {
   let badge = moonbit_badge(checker.version)
   let changes = [
-    ("a changed source line", change_block(readme, "source", " // drift")),
-    ("a changed output line", change_block(readme, "output", " drift")),
-    ("a changed excerpt line", change_block(readme, "excerpt", " drift")),
-    (
-      "a stale MoonBit badge",
-      readme.replace(old=badge, new=moonbit_badge("0.0.1")),
-    ),
     ("a broken link", readme + "\n[gone](scripts/no_such_file.md)\n"),
-    (
-      "a removed output comment",
-      readme.replace_all(old="<!-- output: ", new="<!-- shown: "),
-    ),
   ]
+  let (checks, _, _) = parse(readme, path)
+  for kind in kinds {
+    if checks.iter().any(check => check.kind == kind) {
+      changes.push(
+        ("a changed \{kind} line", change_block(readme, kind, " drift")),
+      )
+    }
+  }
+  for kind in required_kinds(path) {
+    changes.push(
+      (
+        "removed \{kind} comments",
+        readme.replace_all(old="<!-- \{kind}: ", new="<!-- shown: "),
+      ),
+    )
+  }
+  if path.has_suffix("MIGRATING.md") {
+    changes.push(
+      (
+        "one removed source comment among many",
+        readme.replace(old="<!-- source: ", new="<!-- shown: "),
+      ),
+    )
+  } else {
+    changes.push(
+      (
+        "a stale MoonBit badge",
+        readme.replace(old=badge, new=moonbit_badge("0.0.1")),
+      ),
+    )
+  }
   for change in changes {
     let (label, changed) = change
     if changed == readme {
-      fail("self-test: \{label} left the README unchanged")
+      fail("self-test: \{label} left \{path} unchanged")
     }
-    let problems = checker.check(changed)
+    let problems = checker.check(changed, path)
     if problems.is_empty() {
-      fail("self-test: the check accepted \{label}")
+      fail("self-test: \{path}: the check accepted \{label}")
     }
     let first = problems[0].split("\n").next().unwrap_or("")
-    println("self-test: rejected \{label}: \{first}")
+    println("self-test: \{path}: rejected \{label}: \{first}")
   }
 }
 
@@ -363,25 +402,24 @@ async fn main {
   let args = @env.args()[1:].to_owned()
   let self_testing = args.contains("--self-test")
   let paths = args.filter(arg => arg != "--self-test")
-  guard paths.length() <= 1 else {
-    fail(
-      "usage: moon run scripts/readme_check.mbtx [-- [--self-test] [README]]",
-    )
+  if paths.is_empty() {
+    paths.append(["README.md", "MIGRATING.md"])
   }
-  let path = paths.get(0).unwrap_or("README.md")
   let checker : Checker = {
     version: @fs.read_text("moonbit-version").trim().to_owned(),
     files: Map([]),
     outputs: Map([]),
     exists: Map([]),
   }
-  let readme = @fs.read_text(path)
-  let problems = checker.check(readme)
-  if !problems.is_empty() {
-    fail("\{path}:\n" + problems.map(p => "  " + p).join("\n"))
-  }
-  println("\{path}: blocks, outputs, links and the MoonBit badge are current")
-  if self_testing {
-    self_test(checker, readme)
+  for path in paths {
+    let readme = @fs.read_text(path)
+    let problems = checker.check(readme, path)
+    if !problems.is_empty() {
+      fail("\{path}:\n" + problems.map(p => "  " + p).join("\n"))
+    }
+    println("\{path}: blocks, outputs, links and required metadata are current")
+    if self_testing {
+      self_test(checker, readme, path)
+    }
   }
 }

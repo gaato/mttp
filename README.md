@@ -195,8 +195,12 @@ caller marks it safe to replay.
 
 ## Beside `moonbitlang/core/async/http`
 
-For a simple GET the standard library is enough: `@http.get_text(url)` is one
-line and adds no dependency. mttp is for what grows around that call:
+See [MIGRATING.md](MIGRATING.md) for compiled before and after examples for
+clients and servers, including `moonbitlang/async/http`.
+
+For a simple GET the standard library is enough: `@http.get(url)` returns
+the response header and body without another dependency. mttp is for what
+grows around that call:
 
 | | `moonbitlang/core/async/http` | mttp |
 |---|---|---|

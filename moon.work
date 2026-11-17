@@ -9,6 +9,7 @@ members = [
   "examples/fetch",
   "examples/tour",
   "examples/retries",
+  "examples/migrate",
   "benchmarks/transport",
   "interop",
   "fuzz",
