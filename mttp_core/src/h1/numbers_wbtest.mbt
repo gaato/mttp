@@ -17,6 +17,16 @@ test "decimal and hex mapping cover every UTF16 code unit with only ASCII digits
       assert_eq(digit_value(unit.to_int(), hex~), expected[code])
     }
   }
+  let suffix = ";name=" + "x".repeat(4096)
+  let (hex_digits, hex_n) = number_prefix("0aF" + suffix, hex=true)
+  assert_eq(hex_n, 3)
+  assert_eq(hex_digits, [0L, 10L, 15L])
+  let (decimal_digits, decimal_n) = number_prefix("0aF" + suffix, hex=false)
+  assert_eq(decimal_n, 1)
+  assert_eq(decimal_digits, [0L])
+  let (empty_digits, empty_n) = number_prefix(suffix, hex=true)
+  assert_eq(empty_n, 0)
+  assert_eq(empty_digits.length(), 0)
 }
 
 ///|
@@ -44,6 +54,7 @@ test "public Content-Length agrees with the digit core including the exact bound
   for (text, expected) in cases {
     let value = ows(text)
     let (digits, n) = number_prefix(value, hex=false)
+    assert_eq(digits.length(), n)
     let core = @number.fold(digits, n, 10L)
     let accepted = if n == value.length() && core >= 0L {
       Some(core)
@@ -82,6 +93,7 @@ test "public chunk decoder agrees with the hex core at the signed bound" {
   ]
   for (text, expected) in cases {
     let (digits, n) = number_prefix(text, hex=true)
+    assert_eq(digits.length(), n)
     let value = @number.fold(digits, n, 16L)
     let core = if n == text.length() && value >= 0L {
       Some(value)

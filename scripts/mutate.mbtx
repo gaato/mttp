@@ -145,11 +145,17 @@ let sites : Array[Site] = [
     "if !value.is_empty() {",
   ),
   site(
-    "F10", "mttp_core/src/h1/framing.mbt", "> -> >=", "if length > (9223372036854775807L - digit) / 10L {",
-    "if length >= (9223372036854775807L - digit) / 10L {",
+    "F10", "mttp_core/src/internal/number/number.mbt", "> -> >= (decimal)", "if value > (9223372036854775807L - digit) / base {",
+    "if value > (9223372036854775807L - digit) / base || (base == 10L && value == (9223372036854775807L - digit) / base) {",
   ),
   site(
     "F11", "mttp_core/src/h1/framing.mbt", "boundary +1", "status == 304 ||", "status == 305 ||",
+  ),
+  // Keep sentinel handling separate from the shared arithmetic mutations:
+  // otherwise a wrapper that accepts the core's -1 could escape this sample.
+  site(
+    "F12", "mttp_core/src/h1/framing.mbt", "miss -1 sentinel", "if length < 0L {",
+    "if length == -2L {",
   ),
   site(
     "C01", "mttp_core/src/h1/chunked.mbt", "&& -> ||", "while j < line.length() && line[j] is (' ' | '\\t') {",
@@ -159,8 +165,8 @@ let sites : Array[Site] = [
     "C02", "mttp_core/src/h1/chunked.mbt", "== -> !=", "if j == i {", "if j != i {",
   ),
   site(
-    "C03", "mttp_core/src/h1/chunked.mbt", "> -> >=", "if size > (9223372036854775807L - digit.to_int64()) / 16L {",
-    "if size >= (9223372036854775807L - digit.to_int64()) / 16L {",
+    "C03", "mttp_core/src/internal/number/number.mbt", "> -> >= (hex)", "if value > (9223372036854775807L - digit) / base {",
+    "if value > (9223372036854775807L - digit) / base || (base == 16L && value == (9223372036854775807L - digit) / base) {",
   ),
   site(
     "C04", "mttp_core/src/h1/chunked.mbt", "|| -> &&", "self.limits.max_chunk_line_bytes < 0 ||\n    self.limits.max_trailer_bytes < 0 ||",
@@ -208,6 +214,10 @@ let sites : Array[Site] = [
   site(
     "C15", "mttp_core/src/h1/chunked.mbt", "negate guard", "if !(self.state is Done) {",
     "if self.state is Done {",
+  ),
+  site(
+    "C16", "mttp_core/src/h1/chunked.mbt", "miss -1 sentinel", "if size < 0L {",
+    "if size == -2L {",
   ),
   site(
     "W01", "mttp_core/src/h1/write.mbt", "boundary +1", "if n < 0L {", "if n <= 0L {",

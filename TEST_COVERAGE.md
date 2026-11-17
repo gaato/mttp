@@ -183,7 +183,7 @@ uncovered-line budget is needed for these additions.
 `moon_mutest` 0.1.7 and `moonseal` 0.1.6 could not be installed on this
 toolchain because their CLI dependency graphs support JS only, so
 `scripts/mutate.mbtx` runs a bounded, hand-selected sample in a disposable
-copy. The 50 sites cover comparison and limit boundaries, boolean operators,
+copy. The original 50 sites cover comparison and limit boundaries, boolean operators,
 negated guards, deleted raises/returns, ParseKind changes and swapped arms in
 `head.mbt` (including HeadDecoder), `framing.mbt`, `chunked.mbt` and
 `write.mbt`; h1, h1client and h1server tests run for each site.
@@ -194,6 +194,17 @@ before its character guard. C03 exposed a gap at the maximum Int64 chunk size;
 the exact `7fffffffffffffff` boundary test now kills it. Final result: 49
 killed, zero survived, one equivalent, zero timeout. Run with
 `scripts/gates.sh mutate`.
+
+After the V11b extraction, F10 and C03 target `internal/number.step`'s
+overflow guard, changing `>` to `>=` only for decimal or hexadecimal
+respectively. New F12 and C16 independently make each h1 wrapper miss the
+core's -1 sentinel. The inventory now has 52 sites. The restricted review
+run `scripts/gates.sh mutate F10 C03 F12 C16` passed its baseline and killed
+all four, with zero survivors or timeouts; the other sites were not rerun.
+Digit scratch now holds only the initial digit run. The existing h1 mapping
+test checks exact capacity with a 4 KiB extension suffix and an empty run;
+public/core agreement cases also check capacity. A targeted native coverage
+run still covered all 12 lines of `h1/numbers.mbt`, with no new exemption.
 
 ## Coverage-guided fuzzing (2026-11-16)
 

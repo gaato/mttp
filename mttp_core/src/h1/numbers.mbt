@@ -16,18 +16,17 @@ fn digit_value(code : Int32, hex~ : Bool) -> Int64 {
 ///|
 // Map only the initial digit run. Folding it before handling the remainder
 // preserves the existing error order: overflow before a later bad character
-// or chunk extension. The scratch array is never retained by a decoder.
+// or chunk extension. Count before allocating so extensions and invalid
+// suffixes need no digit storage. The array is never retained by a decoder.
 fn number_prefix(value : StringView, hex~ : Bool) -> (FixedArray[Int64], Int32) {
-  let digits = FixedArray::make(value.length(), 0L)
   let n = for i = 0; i < value.length(); {
-    let digit = digit_value(value[i].to_int(), hex~)
-    if digit < 0L {
+    if digit_value(value[i].to_int(), hex~) < 0L {
       break i
     }
-    digits[i] = digit
     continue i + 1
   } nobreak {
     value.length()
   }
+  let digits = FixedArray::makei(n, i => digit_value(value[i].to_int(), hex~))
   (digits, n)
 }

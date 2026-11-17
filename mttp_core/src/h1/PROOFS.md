@@ -175,3 +175,22 @@ four existing h1 rows changed from 52 to 56 tests; four number rows with
 generated public interfaces are unchanged; the new internal package's
 interface was generated with `moon info`. No quick, static, full, interop
 or workerd gate was run.
+
+## Review follow-up
+
+The h1 mapping now counts the initial digit run before allocating its
+FixedArray, so extensions and invalid suffixes consume no digit slots.
+The existing tests check exact capacity, an empty run and a 4 KiB suffix.
+The core source, mathematical model and contracts are unchanged; this does
+not weaken or replace the proof. The updated h1 code passed all 56 tests on
+each of the four targets, and its targeted native coverage remains 12/12.
+
+The old mutation entries F10/C03 searched for guards removed by extraction.
+They now mutate the shared `step` overflow guard for base 10 and base 16
+separately. F12/C16 independently test the wrappers' handling of -1.
+`scripts/gates.sh mutate F10 C03 F12 C16` passed its baseline and killed
+all four mutations, with no survivor or timeout. The rest of the mutation
+sample was not rerun. No proof source or generated Why3 was changed.
+
+The follow-up also passed `moon check --deny-warn`, `moon info`, formatting
+and `scripts/gates.sh manifest --update` (215 rows, no manifest diff).
