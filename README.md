@@ -66,6 +66,10 @@ async fn main {
 }
 ```
 
+To start a service with typed endpoints, an OpenAPI document and tests
+already in place, copy one of the [templates](templates): a native API
+server, or a Cloudflare Workers app.
+
 ## One definition, three uses
 
 Typed endpoints come from `gaato/mttp_core`, the part of the family without
