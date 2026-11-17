@@ -21,11 +21,14 @@ suberror SanitizeError {
 }
 
 ///|
-// UBSan was tried with address,undefined on 0.10.20. The compiler lowers
-// Bytes::unsafe_read_uint32_le to an unaligned const uint32_t load:
-// gaato/deflate@0.1.2 internal/lz77/matchfinder.mbt:36 -> longest_match ->
-// Deflater.parse_lazy -> backend's gzip test. UBSan alignment stops there;
-// leave UBSan out until that generated-C intrinsic is alignment-safe.
+// UBSan was tried with address,undefined on 0.10.20. MoonBit's runtime header
+// (moonbit_runtime.h, READ_UINT32 under SUPPORTS_UNALIGNED_ACCESS) reads a
+// uint32_t through a cast pointer, which UBSan reports as a misaligned load
+// wherever generated C calls Bytes::unsafe_read_uint32_le; the first hit is
+// gaato/deflate's internal/lz77/matchfinder.mbt (longest_match ->
+// Deflater.parse_lazy -> the backend's gzip test). The fault is in the
+// runtime, not in deflate: leave UBSan out until the runtime reads unaligned
+// words through memcpy.
 let flags : String = "-g -fsanitize=address -fno-omit-frame-pointer"
 
 ///|

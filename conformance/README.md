@@ -30,7 +30,7 @@ commit `43f92f0`:
 The SSE size-limit classification is `TransportError(kind=TooLarge)`, matching
 the new transport error vocabulary; event results and mutation counts remain
 unchanged. The tests use no runtime and no wall clock. Cookie time comes from
-the explicit FakeClock. JSON-RPC corpora remain in mbt-sdk.
+the explicit FakeClock. JSON-RPC corpora remain in moonbit-sdks.
 
 See [NOTICE](NOTICE) for upstream revisions and licenses.
 [scripts/gen_vectors.mbtx](../scripts/gen_vectors.mbtx) writes every file
