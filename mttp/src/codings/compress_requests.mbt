@@ -183,11 +183,14 @@ fn excludes_request_coding(
 /// Validates before taking a stream or delegating. A 415 only triggers a
 /// single uncompressed resend when its Accept-Encoding excludes our coding
 /// and the original body is still replayable. Malformed hints are ignored.
+/// Request streams close on every exit. After a 415, transport failures
+/// retain their original diagnostic but cannot claim the exchange was unsent.
 pub impl @mttp_core.Backend for CompressRequests with fn send(
   self,
   request,
   options,
 ) {
+  defer (if request.body is Stream(stream) { stream.close() })
   if self.closed {
     raise @mttp_core.TransportError(
       kind=Closed,
@@ -214,9 +217,29 @@ pub impl @mttp_core.Backend for CompressRequests with fn send(
     excludes_request_coding(response.headers, self.coding) {
     @rt.close_unclaimed(response.attributes)
     response.close()
-    return self.inner.send(request, options)
+    return self.inner.send(request, options) catch {
+      error => raise after_request_415(error)
+    }
   }
   response
+}
+
+///|
+// A 415 proves the compressed request reached the peer. A later refusal or
+// dial failure describes only the resend, not an unsent original exchange.
+fn after_request_415(
+  error : @mttp_core.TransportError,
+) -> @mttp_core.TransportError {
+  let @mttp_core.TransportError(kind~, ..) = error
+  let kind : @mttp_core.Kind = match kind {
+    Connect | Proxy(_) | Refused => Network
+    kind => kind
+  }
+  @mttp_core.TransportError(
+    kind~,
+    phase=Unknown,
+    detail="Request send failed after a 415 fallback: \{error.message()}",
+  )
 }
 
 ///|

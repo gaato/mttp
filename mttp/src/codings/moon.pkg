@@ -21,6 +21,8 @@ import {
 import {
   "gaato/mttp_core/driver",
   "gaato/mttp_core/sim",
+  "gaato/mttp_core/client",
+  "gaato/mttp_core/client/retry",
   "gaato/mttp_core/h1client",
   "gaato/mttp_core/h1server",
   "moonbitlang/core/encoding/base64",
