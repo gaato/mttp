@@ -52,3 +52,6 @@ gaato/mttp_core/openapi	OpenApiVersion
 gaato/mttp_core/apispec/diff	ChangeKind
 gaato/mttp_core/client/httpcache	CredentialMode
 gaato/mttp_core/client/httpcache	CacheStatus
+gaato/mttp_core/representation	Precondition
+gaato/mttp_core/representation	RangeChoice
+gaato/mttp_core/representation	MediaChoice

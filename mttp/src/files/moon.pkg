@@ -1,5 +1,6 @@
 import {
   "gaato/mttp_core",
+  "gaato/mttp_core/representation",
   "moonbitlang/core/async/fs",
   "moonbitlang/core/path",
 }

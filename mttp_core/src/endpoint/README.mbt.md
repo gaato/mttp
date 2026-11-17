@@ -452,3 +452,23 @@ test "declare a typed multipart input" {
   assert_eq(input.atoms()[0].name, "body")
 }
 ```
+
+`Out::negotiated()` opts into Accept negotiation among variants whose value
+projection matches. It adds `Vary: Accept`, including 406 when no offer is
+acceptable and 400 for malformed or oversized Accept. `one_of` alone keeps
+its first matching variant. Bodyless outputs do not negotiate a media type;
+dynamic body outputs use their actual Content-Type. Dynamic encoders are
+called once for selection; unselected encoded bodies are discarded and
+closed. Output transformations preserve the negotiation setting. OpenAPI
+includes Vary and the additional bodyless responses.
+
+```mbt check
+///|
+test "opt into representation selection" {
+  let output = @endpoint.one_of([
+    @endpoint.json_variant(200, @schema.text_body),
+    @endpoint.json_variant(200, @schema.html_body),
+  ]).negotiated()
+  assert_true(output.docs().iter().any(doc => doc.status == 406))
+}
+```

@@ -242,12 +242,13 @@ pub fn[T] Variant::fixed_header(
 pub struct Out[T, M] {
   priv mode : M
   priv variants : Array[Variant[T]]
+  priv negotiate : Bool
 }
 
 ///|
 /// Creates an ordered output union; the first matching encoder is selected.
 pub fn[T] one_of(variants : Array[Variant[T]]) -> Out[T, @client.Buffered] {
-  { mode: @client.Buffered::{ }, variants: variants.copy(), }
+  { mode: @client.Buffered::{ }, variants: variants.copy(), negotiate: false, }
 }
 
 ///|
@@ -256,13 +257,21 @@ pub fn[T] json_out(
   codec : @schema.BodyCodec[T],
   status~ : Int32 = 200,
 ) -> Out[T, @client.Buffered] {
-  { mode: @client.Buffered::{ }, variants: [json_variant(status, codec)], }
+  {
+    mode: @client.Buffered::{ },
+    variants: [json_variant(status, codec)],
+    negotiate: false,
+  }
 }
 
 ///|
 /// Creates a bodyless 204 output.
 pub fn no_content() -> Out[Unit, @client.Buffered] {
-  { mode: @client.Buffered::{ }, variants: [empty_variant(204)], }
+  {
+    mode: @client.Buffered::{ },
+    variants: [empty_variant(204)],
+    negotiate: false,
+  }
 }
 
 ///|
@@ -274,6 +283,7 @@ pub fn[T, H, M] Out::and_header(
 ) -> Out[(T, H), M] {
   {
     mode: self.mode,
+    negotiate: self.negotiate,
     variants: self.variants.map(v => v.and_header(name, codec)),
   }
 }
@@ -281,7 +291,30 @@ pub fn[T, H, M] Out::and_header(
 ///|
 /// Returns metadata for each declared output variant.
 pub fn[T, M] Out::docs(self : Out[T, M]) -> Array[VariantDoc] {
-  self.variants.map(v => v.doc())
+  let docs = self.variants.map(v => {
+    let doc = v.doc()
+    if self.negotiate {
+      let headers = if doc.headers.iter().any(name => name.to_lower() == "vary") {
+        doc.headers
+      } else {
+        [..doc.headers, "vary"]
+      }
+      let header_schemas = doc.header_schemas.copy()
+      header_schemas["vary"] = @schema.string.schema()
+      { ..doc, headers, header_schemas, }
+    } else {
+      doc
+    }
+  })
+  if self.negotiate {
+    docs.push(
+      VariantDoc::new(400, headers=["vary"], description="Invalid Accept"),
+    )
+    docs.push(
+      VariantDoc::new(406, headers=["vary"], description="Not Acceptable"),
+    )
+  }
+  docs
 }
 
 ///|
@@ -294,17 +327,96 @@ pub let declared_headers : @mttp_core.AttributeKey[Array[String]] = @mttp_core.A
 )
 
 ///|
-fn[T, M] Out::encode(self : Out[T, M], v : T) -> @mttp_core.Response? {
-  for variant in self.variants {
+fn[T, M] Out::encode(
+  self : Out[T, M],
+  v : T,
+  request_headers~ : @mttp_core.Headers = @mttp_core.Headers::empty(),
+) -> @mttp_core.Response? {
+  let mut variants = self.variants
+  let mut selected_body : (@mttp_core.Headers, @mttp_core.Body)? = None
+  if self.negotiate {
+    let candidates = variants.filter(variant => (variant.matches)(v))
+    if candidates.is_empty() {
+      return None
+    }
+    // Bodyless outputs have no representation to negotiate.
+    if candidates[0].media_type is None && !candidates[0].dynamic_media {
+      variants = [candidates[0]]
+    } else {
+      let encoded = candidates.map(variant => {
+        if variant.dynamic_media {
+          Some((variant.encode)(v))
+        } else {
+          None
+        }
+      })
+      let offers = candidates.mapi((i, variant) => {
+        match encoded[i] {
+          Some((headers, _)) =>
+            headers.get("content-type").unwrap_or("application/octet-stream")
+          None => variant.media_type.unwrap_or("application/octet-stream")
+        }
+      })
+      let choice = @representation.negotiate_media(request_headers, offers[:]) catch {
+        _ => {
+          for item in encoded {
+            if item is Some((_, body)) {
+              discard(body)
+            }
+          }
+          return Some(
+            @mttp_core.Response::new(
+              400,
+              headers=@mttp_core.Headers::of([("vary", "Accept")]),
+            ),
+          )
+        }
+      }
+      let chosen = match choice {
+        Offer(index) => Some(index)
+        _ => None
+      }
+      for i, item in encoded {
+        if chosen != Some(i) && item is Some((_, body)) {
+          discard(body)
+        }
+      }
+      match choice {
+        Offer(index) => {
+          variants = [candidates[index]]
+          selected_body = encoded[index]
+        }
+        Unacceptable =>
+          return Some(
+            @mttp_core.Response::new(
+              406,
+              headers=@mttp_core.Headers::of([("vary", "Accept")]),
+            ),
+          )
+        @representation.MediaChoice::.. => return None
+      }
+    }
+  }
+  for variant in variants {
     if (variant.matches)(v) {
       let status = match variant.status_of {
         Some(f) => f(v)
         None => variant.status
       }
       if status < 200 || status > 599 {
+        if selected_body is Some((_, body)) {
+          discard(body)
+        }
         return None
       }
-      let (headers, body) = (variant.encode)(v)
+      let (headers, body) = selected_body.unwrap_or_else(() => {
+        (variant.encode)(v)
+      })
+      let headers = if self.negotiate {
+        headers.add("vary", "Accept")
+      } else {
+        headers
+      }
       let response = if status == 204 || status == 304 {
         discard(body)
         @mttp_core.Response::new(status, headers~)
@@ -788,7 +900,7 @@ pub fn[T] sse_body_out(
       }
     }),
   }
-  { mode: @client.Streaming::{ }, variants: [variant], }
+  { mode: @client.Streaming::{ }, variants: [variant], negotiate: false, }
 }
 
 ///|
@@ -802,7 +914,14 @@ pub extend NoError with Eq::{equal, not_equal}
 
 ///|
 fn no_errors() -> Out[NoError, @client.Buffered] {
-  { mode: @client.Buffered::{ }, variants: [], }
+  { mode: @client.Buffered::{ }, variants: [], negotiate: false, }
+}
+
+///|
+/// Selects a matching output representation using Accept and adds Vary: Accept.
+/// A refused offer produces 406; malformed or oversized Accept produces 400.
+pub fn[T, M] Out::negotiated(self : Out[T, M]) -> Out[T, M] {
+  { ..self, negotiate: true, }
 }
 
 ///|

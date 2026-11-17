@@ -6,7 +6,7 @@ import {
 }
 
 // Values
-pub fn static_files(String, prefix? : String, cache_control? : String, index? : String) -> async (@mttp_core.Request) -> @mttp_core.Response noraise
+pub fn static_files(String, prefix? : String, cache_control? : String, index? : String, ranges? : Bool) -> async (@mttp_core.Request) -> @mttp_core.Response noraise
 
 // Errors
 

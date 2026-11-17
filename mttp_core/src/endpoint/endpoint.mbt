@@ -65,7 +65,11 @@ pub let endpoint : Endpoint[Unit, Unit, NoError, Unit, @client.Buffered] = {
   security: unit(),
   input: unit(),
   errors: no_errors(),
-  output: { variants: [empty_variant(200)], mode: @client.Buffered::{ }, },
+  output: {
+    variants: [empty_variant(200)],
+    mode: @client.Buffered::{ },
+    negotiate: false,
+  },
   info: {
     operation_id: None,
     summary: None,

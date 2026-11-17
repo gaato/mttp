@@ -502,3 +502,90 @@ async test "a sibling directory whose name extends the root with a backslash is 
     assert_eq(body_of(response), "Not Found\n")
   })
 }
+
+///|
+async test "range-enabled files return 206 416 304 412 and honor strong If-Range" {
+  with_tree(root => {
+    let files = @files.static_files(root, ranges=true)
+    let full = files(@mttp_core.Request::get("/style.css"))
+    let tag = full.headers.get("etag").unwrap()
+    let modified = full.headers.get("last-modified").unwrap()
+    assert_false(tag.has_prefix("W/"))
+    assert_eq(full.headers.get("accept-ranges"), Some("bytes"))
+    assert_eq(body_of(full), "body{}")
+    for
+      (range, status, expected) in [
+        ("bytes=1-3", 206, "ody"),
+        ("bytes=-2", 206, "{}"),
+        ("bytes=4-", 206, "{}"),
+        ("bytes=0-99", 206, "body{}"),
+        ("bytes=0-1,4-5", 200, "body{}"),
+        ("items=0-1", 200, "body{}"),
+      ] {
+      let response = files(
+        @mttp_core.Request::get("/style.css").header("range", range),
+      )
+      assert_eq(response.status, status)
+      assert_eq(body_of(response), expected)
+    }
+    let partial = files(
+      @mttp_core.Request::get("/style.css")
+      .header("range", "bytes=1-3")
+      .header("if-range", tag),
+    )
+    assert_eq(partial.status, 206)
+    assert_eq(partial.headers.get("content-range"), Some("bytes 1-3/6"))
+    assert_eq(partial.body.length(), Some(3L))
+    assert_eq(body_of(partial), "ody")
+    for
+      (value, status) in [
+        ("W/" + tag, 200),
+        ("\"other\"", 200),
+        (modified, 206),
+      ] {
+      let response = files(
+        @mttp_core.Request::get("/style.css")
+        .header("range", "bytes=1-3")
+        .header("if-range", value),
+      )
+      assert_eq(response.status, status)
+      ignore(body_of(response))
+    }
+    let refused = files(
+      @mttp_core.Request::get("/style.css").header("range", "bytes=6-"),
+    )
+    assert_eq(refused.status, 416)
+    assert_eq(refused.headers.get("content-range"), Some("bytes */6"))
+    for
+      (name, value, status) in [
+        ("if-match", "W/" + tag, 412),
+        ("if-none-match", "W/" + tag, 304),
+        ("if-unmodified-since", "Thu, 01 Jan 1970 00:00:00 GMT", 412),
+        ("if-modified-since", modified, 304),
+      ] {
+      let response = files(
+        @mttp_core.Request::get("/style.css")
+        .header(name, value)
+        .header("range", "bytes=999-"),
+      )
+      assert_eq(response.status, status)
+      assert_eq(response.body, @mttp_core.Empty)
+      assert_eq(response.headers.get("etag"), Some(tag))
+    }
+    let response = files(
+      @mttp_core.Request::new(Head, "/style.css").header("range", "bytes=1-3"),
+    )
+    assert_eq(response.status, 200)
+    assert_eq(response.body, @mttp_core.Empty)
+    let response = files(
+      @mttp_core.Request::new(Head, "/style.css").header("if-none-match", tag),
+    )
+    assert_eq(response.status, 304)
+    @fs.write_text("\{root}/zero.txt", "")
+    let zero = files(
+      @mttp_core.Request::get("/zero.txt").header("range", "bytes=0-"),
+    )
+    assert_eq(zero.status, 416)
+    assert_eq(zero.headers.get("content-range"), Some("bytes */0"))
+  })
+}

@@ -350,6 +350,7 @@ pub struct Out[T, M] {
 pub fn[T, H, M] Out::and_header(Self[T, M], String, @schema.TextCodec[H]) -> Self[(T, H), M]
 pub fn[T, M] Out::and_status(Self[T, M]) -> Self[(T, Int32), M]
 pub fn[T, M] Out::docs(Self[T, M]) -> Array[VariantDoc]
+pub fn[T, M] Out::negotiated(Self[T, M]) -> Self[T, M]
 pub fn[T, M] Out::set_cookie(Self[T, M], String) -> Self[(T, String), M]
 
 pub struct RequestSink {

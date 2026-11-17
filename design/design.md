@@ -1457,7 +1457,7 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | oneOfUsingField / discriminator | `tagged` + `case_` (verified in `wf2/completeness/schema/src/fix/union.mbt`) |
 | DecodeResult | raised `DecodeFailure`/`InputErrors` inside input decoding; client results as `Result[Result[O, E], ResponseFailure]` |
 | oneOf / oneOfVariant | `one_of` + `Variant::contramap`; same status tried in order |
-| oneOfBody, NotAcceptableInterceptor (406) | later; non-breaking because `Out` is opaque |
+| oneOfBody, NotAcceptableInterceptor (406) | `Out::negotiated` uses `representation.negotiate_media`: Accept weights, then specificity and offer order; `Vary: Accept`, 406 for no acceptable offer, 400 for malformed/oversized Accept. `one_of` alone keeps ordered value selection. |
 | serverLogic / serverSecurityLogic / PartialServerEndpoint | `serve` / `serve_public` with `Result`-returning handlers; no PartialServerEndpoint type |
 | serverLogicRecoverErrors | `serve` (declared errors are `Err` values) |
 | ServerInterpreter | `ServerEndpoint::dispatch` + `Router` (credentials-first deviation) |
@@ -1472,7 +1472,8 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | Examples, docs extensions, Input default, deprecated params, docs UIs (swagger, redoc) | later (SC-13) |
 | auth.bearer/basic/apiKey; oauth2; openIdConnect | `bearer`, `signature_header`, basic, api keys; OAuth2/OIDC later |
 | multipartBody (client and endpoint) | client: `@multipart.body`; endpoint: `stream_body_out` for replies, multipart input later |
-| static files (files module) | later: `mttp/files` + sans-IO conditional/Range helpers |
+| static files (files module) | `mttp/files.static_files`; `ranges=true` enables strong size/nanosecond-mtime ETags, RFC precondition order and single bytes ranges (206/416). Default keeps weak tags and whole files. |
+| Conditional requests / Range / Accept | Pure `mttp_core/representation`: `Validators`, `evaluate_preconditions`, `not_modified`, `choose_range`, `content_range`, `range_not_satisfiable`, `negotiate_media`. Range: 1 KiB/100 ranges, multiple/unknown/malformed/overflow selects Full; Accept: 16 KiB/128 items, overflow raises Invalid in Head. No multipart ranges or language/charset negotiation. |
 | streamBody / serverSentEventsBody / webSocketBody | `stream_body` / `sse_out` + `EventStream` / later |
 | server backends (netty, jdkhttp), serverless | `mttp/server` (over `h1server`), `mttp/fetch` + `hosts` (Workers, Fastly, Vercel, Deno, Bun, Lambda URLs); `h1server.serve_conn` for any other runtime |
 | openapi-codegen | mbt-sdk tools/gen (Python) |

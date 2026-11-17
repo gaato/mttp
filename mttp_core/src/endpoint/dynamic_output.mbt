@@ -5,6 +5,7 @@
 pub fn[T, M] Out::and_status(self : Out[T, M]) -> Out[(T, Int32), M] {
   {
     mode: self.mode,
+    negotiate: self.negotiate,
     variants: self.variants.map(variant => variant.and_status()),
   }
 }
@@ -64,7 +65,7 @@ pub fn body_out(
     }),
     decode_stream: None,
   }
-  { mode: @client.Buffered::{ }, variants: [variant], }
+  { mode: @client.Buffered::{ }, variants: [variant], negotiate: false, }
 }
 
 ///|
@@ -105,7 +106,7 @@ pub fn stream_body_out(
       )
     }),
   }
-  { mode: @client.Buffered::{ }, variants: [variant], }
+  { mode: @client.Buffered::{ }, variants: [variant], negotiate: false, }
 }
 
 ///|
@@ -126,6 +127,7 @@ pub fn[T, M] Out::set_cookie(
   )
   {
     mode: self.mode,
+    negotiate: self.negotiate,
     variants: self.variants.map(variant => {
       let paired = variant.and_header("set-cookie", codec)
       let select = (head : @mttp_core.ResponseHead) => {

@@ -19,11 +19,16 @@ const CHUNK_BYTES : Int32 = 65536
 ///   Only regular files are opened.
 /// - Other methods under `prefix` are 405 with `Allow: GET, HEAD`; a path
 ///   outside `prefix` is a 404 whatever the method.
-/// - A 200 carries `Content-Type` from the extension, a weak `ETag` from the
+/// - By default, a 200 carries `Content-Type` from the extension, a weak `ETag` from the
 ///   size and modification time, `Last-Modified` and `Cache-Control` (left
 ///   out when `cache_control` is `""`). A matching `If-None-Match` is a 304
 ///   without a body. Ranges are not supported: a GET is always the whole
 ///   file, read in slices of at most 64 KiB as the connection pulls them.
+/// - With `ranges=true`, ETags are strong (size and nanosecond mtime), all
+///   preconditions are evaluated before Range, and one bytes range on GET
+///   returns 206 or 416. HEAD ignores Range. Multiple/unknown/malformed or
+///   oversized ranges fall back to the full file; If-Range accepts a strong
+///   ETag or an exact Last-Modified date.
 ///
 /// Failures say nothing about the file system: every refusal and lookup
 /// failure is the same plain 404.
@@ -40,10 +45,11 @@ pub fn static_files(
   prefix~ : String = "/",
   cache_control~ : String = "no-cache",
   index~ : String = "index.html",
+  ranges~ : Bool = false,
 ) -> @mttp_core.Handler {
   let mount = mount_segments(prefix)
   async fn(request) noraise {
-    serve(root, mount, cache_control, index, request)
+    serve(root, mount, cache_control, index, ranges, request)
   }
 }
 
@@ -67,6 +73,7 @@ async fn serve(
   mount : Array[String],
   cache_control : String,
   index : String,
+  ranges : Bool,
   request : @mttp_core.Request,
 ) -> @mttp_core.Response noraise {
   // A handler owns its request body; a file server never reads one.
@@ -98,32 +105,83 @@ async fn serve(
       return plain(500)
     }
   }
-  let etag = "W/\"\{size.to_string(radix=16)}-\{mtime.sec().to_string(radix=16)}.\{mtime.nsec().to_string(radix=16)}\""
+  let tag = "\"\{size.to_string(radix=16)}-\{mtime.sec().to_string(radix=16)}.\{mtime.nsec().to_string(radix=16)}\""
+  let etag = if ranges { tag } else { "W/" + tag }
   let mut validators = @mttp_core.Headers::of([("etag", etag)])
   if !cache_control.is_empty() {
     validators = validators.set("cache-control", cache_control)
   }
-  if request.headers
+  let current = @representation.Validators::new(
+    etag~,
+    last_modified_ms=mtime.msec(),
+  )
+  if ranges {
+    validators = validators
+      .set("accept-ranges", "bytes")
+      .set("last-modified", @mttp_core.format_http_date(mtime.msec()))
+    match @representation.evaluate_preconditions(request.head(), current) {
+      NotModified => {
+        file.close()
+        return @representation.not_modified(current, validators)
+      }
+      Failed => {
+        file.close()
+        return @mttp_core.Response::new(412, headers=validators)
+      }
+      _ => ()
+    }
+  } else if request.headers
     .get_all("if-none-match")
     .iter()
     .any(field => matches(field, etag)) {
     file.close()
     return @mttp_core.Response::new(304, headers=validators)
   }
-  let headers = validators
+  let mut headers = validators
     .set("content-type", content_type(names[names.length() - 1]))
     .set("last-modified", @mttp_core.format_http_date(mtime.msec()))
+  let mut status = 200
+  let mut start = 0L
+  let mut remaining = size
+  if ranges {
+    match @representation.choose_range(request.head(), size, current) {
+      Partial(start=from, end=last) => {
+        status = 206
+        start = from
+        remaining = last - from + 1L
+        headers = headers.set(
+          "content-range",
+          @representation.content_range(from, last, size),
+        )
+      }
+      Unsatisfiable => {
+        file.close()
+        let response = @representation.range_not_satisfiable(size)
+        return {
+          ..response,
+          headers: headers.set("content-range", "bytes */\{size}"),
+        }
+      }
+      _ => ()
+    }
+  }
   if request.meth is Head {
     file.close()
     return @mttp_core.Response::new(200, headers~)
   }
   @mttp_core.Response::new(
-    200,
+    status,
     headers~,
     body=Stream(
       @mttp_core.StreamBody::new(
-        FileBody::{ file, remaining: size, buffer: None, closed: false, },
-        length=size,
+        FileBody::{
+          file,
+          remaining,
+          position: start,
+          buffer: None,
+          closed: false,
+        },
+        length=remaining,
       ),
     ),
   )
@@ -292,6 +350,7 @@ fn plain(status : Int32) -> @mttp_core.Response {
 /// `CHUNK_BYTES`; the file is closed at the end, on failure and on close.
 priv struct FileBody {
   file : @fs.File
+  mut position : Int64
   mut remaining : Int64
   mut buffer : FixedArray[Byte]?
   mut closed : Bool
@@ -319,7 +378,7 @@ impl @mttp_core.BodyStream for FileBody with fn read_some(self) {
       buffer
     }
   }
-  let n = self.file.read_into(buffer, max_len=want) catch {
+  let n = self.file.read_at(buffer, position=self.position, len=want) catch {
     error => {
       @mttp_core.BodyStream::close(self)
       raise @mttp_core.TransportError(
@@ -335,6 +394,7 @@ impl @mttp_core.BodyStream for FileBody with fn read_some(self) {
     return None
   }
   self.remaining -= n.to_int64()
+  self.position += n.to_int64()
   Some(Bytes::from_array(buffer[:n]))
 }
 

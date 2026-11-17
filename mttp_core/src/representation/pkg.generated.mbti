@@ -1,0 +1,65 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/representation"
+
+import {
+  "gaato/mttp_core",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn choose_range(@mttp_core.RequestHead, Int64, Validators) -> RangeChoice
+
+pub fn content_range(Int64, Int64, Int64) -> String
+
+pub fn evaluate_preconditions(@mttp_core.RequestHead, Validators) -> Precondition
+
+pub fn negotiate_media(@mttp_core.Headers, ArrayView[String]) -> MediaChoice raise @mttp_core.TransportError
+
+pub fn not_modified(Validators, @mttp_core.Headers) -> @mttp_core.Response
+
+pub fn range_not_satisfiable(Int64) -> @mttp_core.Response
+
+// Errors
+
+// Types and methods
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum MediaChoice {
+  Offer(Int32)
+  Unacceptable
+}
+pub fn MediaChoice::equal(Self, Self) -> Bool
+pub fn MediaChoice::not_equal(Self, Self) -> Bool
+pub fn MediaChoice::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum Precondition {
+  Proceed
+  NotModified
+  Failed
+}
+pub fn Precondition::equal(Self, Self) -> Bool
+pub fn Precondition::not_equal(Self, Self) -> Bool
+pub fn Precondition::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum RangeChoice {
+  Full
+  Partial(start~ : Int64, end~ : Int64)
+  Unsatisfiable
+}
+pub fn RangeChoice::equal(Self, Self) -> Bool
+pub fn RangeChoice::not_equal(Self, Self) -> Bool
+pub fn RangeChoice::to_repr(Self) -> @debug.Repr
+
+pub struct Validators {
+  etag : String?
+  last_modified_ms : Int64?
+}
+pub fn Validators::new(etag? : String, last_modified_ms? : Int64) -> Self
+
+// Type aliases
+
+// Traits

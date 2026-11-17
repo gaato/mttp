@@ -129,3 +129,18 @@ know; give them a prefix such as `/assets/` to keep the rest of the space
 404. The same fallback can be a middleware in the Router's
 `ServerOptions.middleware`, which then also runs the other middleware (such
 as `access_log`) for the files.
+
+With `ranges=true`, static files use strong size and nanosecond mtime ETags,
+evaluate all preconditions before Range, and support one byte range on GET
+(206 or 416). HEAD ignores Range; multiple ranges, unknown units, malformed
+or oversized fields return the full representation. The default keeps weak
+ETags, If-None-Match and whole-file responses.
+
+```mbt check
+///|
+async test "enable byte ranges explicitly" {
+  let handler = @files.static_files("public", ranges=true)
+  let response = handler(@mttp_core.Request::get("/../secret"))
+  assert_eq(response.status, 404)
+}
+```

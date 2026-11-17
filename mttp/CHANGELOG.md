@@ -13,6 +13,10 @@ never does.
   replayable buffered gzip/deflate/br/zstd request compression, optional lazy
   stream compression, integrity-header exclusions and one uncompressed 415
   fallback only with an excluding Accept-Encoding and a replayable original.
+- `files.static_files(ranges=true)`: strong size/mtime ETags, all HTTP
+  preconditions and single byte ranges with 206/416 responses. The default
+  retains weak ETags and whole-file responses.
+
 - `client()` takes `observer`, `events` and `random` and passes them to the
   `Client` it builds. The root package re-exports `Attempt`, `ClientEvent`,
   `PhaseEvent` and `on_phase`. On native and wasm the socket backend reports

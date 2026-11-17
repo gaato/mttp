@@ -366,7 +366,7 @@ fn[E] respond_error(
   ctx : DispatchContext,
 ) -> @mttp_core.Response {
   out
-  .encode(error)
+  .encode(error, request_headers=req.headers)
   .unwrap_or_else(() => {
     (ctx.unhandled)(req, Failure("no declared error variant matched"))
   })
@@ -408,7 +408,7 @@ pub fn[S, I, E, O, P, M] Endpoint::serve_with(
         Err(error) => return respond_error(self.errors, req, error, ctx)
       }
       self.output
-      .encode(value)
+      .encode(value, request_headers=req.headers)
       .unwrap_or_else(() => {
         (ctx.unhandled)(req, Failure("no output variant matched"))
       })

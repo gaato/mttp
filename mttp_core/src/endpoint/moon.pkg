@@ -1,5 +1,6 @@
 import {
   "gaato/mttp_core",
+  "gaato/mttp_core/representation",
   "gaato/mttp_core/schema",
   "gaato/mttp_core/multipart",
   "gaato/mttp_core/client",

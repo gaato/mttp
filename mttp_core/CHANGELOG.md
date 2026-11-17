@@ -16,6 +16,10 @@ never does.
   `cache.heuristic_lifetime` supplies optional Last-Modified heuristics.
   A pinned external cache-tests forward-proxy runner is provided under
   `conformance/cache-tests` for manual comparison.
+- `representation`: pure conditional requests, single byte ranges and bounded
+  Accept negotiation. `Out::negotiated` selects matching response variants,
+  adds `Vary: Accept`, and returns 406 when none is acceptable (400 for invalid
+  Accept); OpenAPI documents these responses.
 
 - `client.ReconnectPolicy` and `ReconnectDecision`: when to reconnect a
   long-lived stream, as data (`decide`, `next_attempts`; default 1 s to 30 s
