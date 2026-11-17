@@ -1,10 +1,15 @@
 # gaato/mttp
 
-HTTP for MoonBit apps that need more than the standard library's client: an
-API client with retries under a budget, deadlines, redirects, cookies,
-decompression and typed failures, plus an HTTP/1.1 server, on
-`moonbitlang/core/async` for native, wasm and js. It is the module an app
-starts with; an app that calls APIs and serves plain handlers needs no other.
+HTTP for MoonBit — client, server and WebSockets, on native, wasm and JS
+hosts. With `gaato/mttp_core`, one endpoint definition is your handler,
+your typed client and your OpenAPI document. External suites check the stack,
+fuzzing probes protocol readers, and proofs check the HTTP/1 number core.
+See the repository's [verification overview](https://github.com/gaato/mttp#how-it-is-checked).
+
+This is the module an app starts with: retries under a budget, deadlines,
+redirects, cookies, decompression and typed failures, on
+`moonbitlang/core/async`. An app that calls APIs and serves plain handlers
+needs no other module.
 
 Its root re-exports what such an app uses from
 [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core), the part
@@ -14,8 +19,9 @@ of the family without I/O: the messages (`Request`, `Response`, `Body`,
 the client API (`Client`, `get`, `as_json` and the rest). Add
 `gaato/mttp_core` to the app as well when it uses the parts this module
 does not re-export: typed endpoints, the router and OpenAPI documents,
-multipart forms, server-sent events, rate limits such as `WindowLimiter`, or
-the test doubles of `gaato/mttp_core/testing`.
+multipart forms, server-sent events, the private HTTP cache, representation
+helpers, rate limits such as `WindowLimiter`, or the test doubles of
+`gaato/mttp_core/testing`.
 
 Writing a library, such as an SDK for some API? Depend on `gaato/mttp_core`
 only: it has the same types and client without any I/O, so it builds on
@@ -293,8 +299,13 @@ its public API names no runtime types.
 ## Targets
 
 native, wasm (under moonrun) and js. On js the client uses the host's `fetch`,
-which decides proxies, pooling and decompression itself. wasm-gc has no
-runtime here; use `gaato/mttp_core` there and provide its runtime ports.
+which decides protocol versions, proxies, pooling and decompression itself.
+The native/wasm engine speaks HTTP/1.1; an HTTP/2 engine awaits ALPN in
+core/tls. JS servers use their host's protocols. WebSocket clients use
+the host's WebSocket API on JS; fetch upgrades are available on Workers,
+Deno and Bun. See the [host matrix](https://github.com/gaato/mttp/blob/main/mttp/hosts/README.md#websockets).
+wasm-gc has no runtime here; use `gaato/mttp_core` there and provide its
+runtime ports.
 
 ## Packages
 
@@ -303,12 +314,22 @@ runtime here; use `gaato/mttp_core` there and provide its runtime ports.
 | `gaato/mttp` | native, wasm, js | `run`, `client()`, `backend()`, `clock()`, `timer()`, `coordination()`, and re-exports of the types and client functions an app uses |
 | `backend` | native, wasm, js | `AsyncBackend`: the HTTP/1.1 engine over TCP and TLS with decompression; the host's `fetch` on js |
 | `server` | native, wasm | `serve`: bounded listener, graceful shutdown, background work |
-| `files` | native, wasm | `static_files`: a directory's files for GET and HEAD, streamed, with ETag revalidation and paths kept inside the directory |
+| `ws` | native, wasm, js | WebSocket connect, upgrade and typed connectors; opt-in permessage-deflate on native/wasm, host-managed compression on JS |
+| `files` | native, wasm | `static_files`: streamed GET/HEAD, ETags and paths kept inside the directory; `ranges=true` adds preconditions and Range 206/416 |
 | `fetch` | js | `fetch_handler`: a handler as a JavaScript `fetch` export |
 | `runtime` | native, wasm, js | Clocks, timers, an admission gate and coordination for `gaato/mttp_core`'s runtime ports |
-| `codings` | native, wasm, js | Bounded content codecs, `Decompress` for clients and `compress` for handlers |
+| `codings` | native, wasm, js | Bounded content codecs, `Decompress`, opt-in `CompressRequests` and `compress` for handlers |
 | `conn` | native, wasm | TCP and TLS dialing, including CONNECT tunnels |
 | `trust` | native, wasm, js | `Trust`: which TLS roots a socket backend accepts |
+
+Add `gaato/mttp_core` for these portable packages:
+
+- `ws`: sessions, messages and limits shared by the network and in-process adapters.
+- `client/httpcache`: an opt-in RFC 9111 private cache with Vary, revalidation and bounded memory.
+- `representation`: media negotiation, validators, preconditions and byte-range selection.
+- `apispec/diff`: structural OpenAPI compatibility reports from client and server viewpoints.
+- `multipart`: streamed form-data writing and bounded reading, including typed endpoint inputs.
+- `router`: dispatch, CORS and middleware such as `rate_limit` with RateLimit headers, `secure_headers` and signed-cookie `sessions`.
 
 The module also ships host shims (`hosts/`), JavaScript files that connect a
 `fetch` export to Workers, Deno, Bun, Node, Fastly, Vercel and Lambda; they

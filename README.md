@@ -6,9 +6,11 @@
 [![mooncakes](https://img.shields.io/badge/mooncakes-gaato%2Fmttp-blue)](https://mooncakes.io/docs/gaato/mttp)
 [![MoonBit 0.10.21+06da1ed44](https://img.shields.io/badge/MoonBit-0.10.21%2B06da1ed44-blue)](https://www.moonbitlang.com)
 
-HTTP for [MoonBit](https://www.moonbitlang.com/) in which one endpoint
-definition is your server, your typed client and your OpenAPI document, and
-whose client retries within a budget and keeps deadlines without being asked.
+HTTP for [MoonBit](https://www.moonbitlang.com/) — client, server and
+WebSockets, on native, wasm and JS hosts. One endpoint definition is your
+handler, your typed client and your OpenAPI document, with external suites
+across the stack, fuzzing of protocol readers and proofs for the HTTP/1
+number core.
 
 [gaato/mttp](https://mooncakes.io/docs/gaato/mttp) ·
 [gaato/mttp_core](https://mooncakes.io/docs/gaato/mttp_core) ·
@@ -40,6 +42,27 @@ fn main {
       Err(failure) => println("\{reply.status}: \{failure}")
     }
   })
+}
+```
+
+Serve a handler with `gaato/mttp/server`. This is
+[examples/serve](examples/serve); run it with
+`moon run examples/serve -- 127.0.0.1:8080`:
+
+<!-- source: examples/serve/main.mbt -->
+```moonbit
+///|
+async fn main {
+  let args = @env.args()
+  guard args.length() == 2 else {
+    println("usage: serve <address>")
+    @env.exit(2)
+  }
+  @server.serve(
+    _ => @mttp.Response::new(200, body=Bytes(b"hello\n")),
+    addr=args[1],
+    on_listen=addr => println("listening on \{addr}"),
+  )
 }
 ```
 
@@ -177,23 +200,29 @@ line and adds no dependency. mttp is for what grows around that call:
 
 | | `moonbitlang/core/async/http` | mttp |
 |---|---|---|
-| Retries with a budget | No | On by default: idempotent requests on 408, 409, 429, 500, 502, 503 and 504 and on network failures, honouring `Retry-After`, within a retry budget so that a failing server is not flooded |
-| Deadlines per attempt and total | None built in; wrap a call in `@async.with_timeout` | On by default: 30 s per attempt, 120 s per call with its retries |
-| Rate limits | No | `limiter=`: windows, pacing, global quotas and limits read from the server's headers |
+| Retries, deadlines and admission | Wrap calls in `@async.with_timeout`; no retry or admission policy | Budgeted retries and 30 s / 120 s deadlines by default; opt-in window, pacing and header-driven rate limits |
 | Redirects | Not followed on native and wasm; on js the host's `fetch` follows them | Up to 10 hops, never from HTTPS to HTTP, credentials dropped across origins |
-| Cookies | `Set-Cookie` parsed into `ResponseHeader.cookies`; no jar | An RFC 6265 jar (`cookies=`), applied on every redirect hop |
-| Decompression | gzip on native and wasm | gzip, deflate, br and zstd on native and wasm |
-| Connection reuse | `Client` opens a connection per request (its README says pooling is planned) | Pooled connections per Client |
-| Typed failures | Errors are raised; a 404 is a response like any other | An HTTP failure (a status, a body that does not decode) is a value in `reply.body`; a network failure is a `TransportError` that says in which phase it happened and whether the request was sent |
-| Typed endpoints and OpenAPI | No | One definition gives the handler, the client call and an OpenAPI 3.1 document |
-| Server | HTTP/1.1 on native and wasm; a handler writes the response head and body to the connection | HTTP/1.1 on native and wasm; a handler is `async (Request) -> Response`, with bounded connections, heads and bodies and a graceful shutdown |
-| JS hosts | The client, over `fetch` | The client, over `fetch`; handlers as a `fetch` export for Cloudflare Workers, Deno, Bun, Node, Fastly, Vercel and AWS Lambda |
-| Testing without the network | No backend to swap: test against a local server | Any `Backend`: a function, `BackendStub` or a Router; a virtual clock for retries and deadlines |
-| wasm-gc | No: native, wasm and js | `gaato/mttp_core` builds and tests there; the program provides the runtime's ports, as no network backend ships for it |
+| Cookies | `Set-Cookie` parsed on native/wasm; no jar | An RFC 6265 jar (`cookies=`), applied on every redirect hop |
+| Content codings | gzip response decoding on native and wasm; no request compressor | gzip, deflate, br and zstd decoding; opt-in request body compression |
+| Connection reuse | `Client` opens a connection per request | Pooled connections per Client |
+| Typed failures | Errors raised; a 404 is an ordinary response | HTTP/decoding failures in `reply.body`; `TransportError` identifies phase and whether the request was sent |
+| Typed endpoints and OpenAPI | No | One definition gives handler, client and OpenAPI 3.1 or 3.2; structural compatibility diff |
+| Server | HTTP/1.1 on native and wasm; writes head and body to a connection | Native/wasm engine: HTTP/1.1; JS fetch/server: host-negotiated versions. HTTP/2 engine awaits ALPN in core/tls. Bounded `Request -> Response` handlers, graceful shutdown |
+| WebSockets | Separate `core/async/websocket`: client and server on native/wasm; no extensions | Client and server; opt-in permessage-deflate on native/wasm; Autobahn both directions; JS host sessions |
+| Server middleware | No policy layer | `rate_limit` with RateLimit headers, `secure_headers`, signed-cookie sessions, CORS |
+| Representations | Raw headers and bodies; no selection or file handler | Accept negotiation and 406; conditionals 304/412; static files with opt-in Range 206/416 |
+| Private HTTP cache | No cache policy; JS fetch is host-managed | Opt-in RFC 9111 cache: Vary, validators, credential partitions and bounded memory |
+| Resilience and observation | No resilience policies or client events | Circuit breaker, credential refresh, SSE reconnection; client events and W3C trace context |
+| Testing without the network | No swappable backend | Function backends, `BackendStub`, Router and virtual clocks |
+| wasm-gc | No: native, wasm and js | All of `gaato/mttp_core`; supply runtime ports for I/O |
 
 On js both clients send through the host's `fetch`, which decompresses and
 reuses connections itself; mttp's Client still follows redirects by the rules
-above.
+above. mttp exports handlers for Cloudflare Workers, Deno, Bun, Node,
+Fastly, Vercel and AWS Lambda. WebSocket upgrades are available on Workers,
+Deno and Bun; see the [host matrix](mttp/hosts/README.md#websockets).
+The standard-library column describes the toolchain pinned in
+[moonbit-version](moonbit-version), including its separate WebSocket package.
 
 ## Modules
 
@@ -208,21 +237,32 @@ above.
 `gaato/mttp_digest` adds Digest authentication to either. The split follows
 Scala's [sttp](https://sttp.softwaremill.com/) family.
 
+Packages to look for (paths below are under `gaato/mttp_core` unless noted):
+
+- `ws`: portable WebSocket sessions and codecs; `gaato/mttp/ws` connects and upgrades them, with permessage-deflate.
+- `client/httpcache`: the opt-in private HTTP cache.
+- `representation`: content negotiation, validators, preconditions and byte ranges; `gaato/mttp/files` applies them to files.
+- `apispec/diff`: structural OpenAPI compatibility reports for clients and servers.
+- `multipart`: streamed form-data writing and bounded reading, also used by typed endpoint inputs.
+- `router`: dispatch and middleware, including rate limits, security headers and signed-cookie sessions.
+
 ### Examples
 
 - [examples/tour](examples/tour): the endpoint above, served, called and
   documented.
 - [examples/retries](examples/retries): the retries above.
 - [examples/get](examples/get): one GET request, on native, wasm and js.
-- [examples/serve](examples/serve): an HTTP/1.1 server.
+- [examples/serve](examples/serve): the server above.
 - [examples/fetch](examples/fetch): a `fetch` export for JavaScript hosts,
   with a [Cloudflare Workers app](examples/fetch/workers).
 
 ## How it is checked
 
-[`scripts/gates.sh full`](scripts/gates.sh) runs all of the following but
-the last, in CI on every push and pull request and daily on the latest and
-nightly toolchains:
+[`scripts/gates.sh full`](scripts/gates.sh) checks all supported targets,
+documentation and ledgers, plus the Workers example on real workerd, on
+pushes and pull requests. Daily canaries repeat this on latest and nightly
+toolchains; separate pinned-toolchain jobs run interop, sanitizers, fuzzing
+and benchmarks. Mutation testing and proofs are manual gates.
 
 - The modules without I/O, `gaato/mttp_core` and `gaato/mttp_digest`, run the same
   tests on wasm-gc, wasm, js and native.
@@ -244,22 +284,38 @@ nightly toolchains:
   in-memory doubles and against `gaato/mttp`'s adapters.
 - [TEST_COVERAGE.md](TEST_COVERAGE.md) names a reason for every line the
   tests do not cover.
-- The [Cloudflare Workers app](examples/fetch/workers) runs on real workerd,
-  through the wrangler version its lockfile pins.
 - The code and outputs in this README are those of the examples;
   [scripts/readme_check.mbtx](scripts/readme_check.mbtx) compares them.
 - Daily, the native tests of `gaato/mttp_core` and `gaato/mttp`, with the
   C they link, run under AddressSanitizer (`scripts/gates.sh sanitize`).
-- The [interop suite](interop) runs the client against nginx, Caddy and
-  Apache httpd, and the server under curl, Go, Python httpx, Node, Bun and
-  Deno and behind the three servers as reverse proxies, daily in CI
-  (`scripts/gates.sh interop`).
+- The [interop suite](interop) checks the client against nginx, Caddy and
+  Apache, and the server against curl, Go, httpx, Node, Bun and Deno, directly
+  and through reverse proxies. Http11Probe probes protocol compliance;
+  Schemathesis checks typed endpoints against their OpenAPI document.
+  [HTTP Garden](interop/README.md#http-garden) has a manual differential
+  testing adapter.
+- Autobahn checks WebSockets in both directions, including permessage-deflate.
+  The [recorded native client run](interop/README.md) has 460 passes,
+  57 exact known verdicts and 0 unexpected failures. Known compression cases
+  in both directions reflect the fixed 15-bit encoding window; raw suite
+  verdicts, including FAILED, remain visible rather than becoming passes.
+- [Coverage-guided fuzzing](fuzz) runs the HTTP/1 reader and WebSocket frame
+  parser through libFuzzer and AddressSanitizer. The manual
+  [mutation sample](scripts/mutate.mbtx) checks HTTP/1 framing regressions.
+- [Proofs](mttp_core/src/h1/PROOFS.md) with Z3 and CVC5 cover the integer
+  core used for Content-Length and chunk-size, including overflow rejection.
+  Strings, byte conversion and the rest of framing are tested integration
+  code outside the proof.
 - The [transport benchmarks](benchmarks/README.md) compare mttp with
   core/async/http, Go and Node on pinned loopback workloads; CI records the
   daily table as an artifact without treating performance as a pass/fail
   threshold (`scripts/gates.sh bench`).
 
 ## Status
+
+The engine mttp runs on native and wasm speaks HTTP/1.1; on JS hosts the
+host's fetch and server use whatever version they negotiate. An HTTP/2
+engine awaits ALPN in core/tls.
 
 The modules are at 0.x: a minor release (0.1 → 0.2) may break the API, and a
 patch release never does. Each module's changelog, such as

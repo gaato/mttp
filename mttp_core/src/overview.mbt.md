@@ -1,11 +1,17 @@
 # gaato/mttp_core
 
-HTTP for [MoonBit](https://www.moonbitlang.com/) without I/O: the types,
-an HTTP/1.1 codec and connection engines, a client with retries under a
-budget, deadlines, rate limits, redirects and cookies, server-sent events and
-multipart bodies, and typed endpoints with a router and OpenAPI documents.
-It depends on `moonbitlang/core` alone and builds on wasm-gc, wasm, js and
-native, with the same tests on each.
+HTTP for [MoonBit](https://www.moonbitlang.com/) without I/O — client, server
+and WebSocket building blocks on wasm-gc, wasm, JS and native. One endpoint
+definition is your handler, your typed client and your OpenAPI document.
+External suites check the stack through its runtime adapters, fuzzing probes
+protocol readers, and proofs check the HTTP/1 number core. See the
+[verification overview](https://github.com/gaato/mttp#how-it-is-checked).
+
+It depends on `moonbitlang/core` alone, with the same tests on every target:
+the message types and codecs, connection engines, a client with budgeted
+retries, deadlines, rate limits, redirects and cookies, a private HTTP cache,
+server-sent events, multipart bodies, and typed endpoints with a router and
+OpenAPI documents. Apps supply I/O through `gaato/mttp` or another backend.
 
 Building an app? Start with [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp):
 it sends requests over the network with sensible defaults and re-exports the
@@ -169,12 +175,15 @@ The router is itself a `Backend`, as above, and its `handler()` is what
 | Package | What it holds |
 |---|---|
 | `gaato/mttp_core` | The vocabulary: methods, headers, URLs, requests, responses and bodies, `Backend` and `SendOptions`, `TransportError`, URL, form and HTTP-date (parse and format) helpers |
-| `gaato/mttp_core/client` | Request and response plans with Result-valued readers, the `Client` loop (defaults, admission, deadlines, decoded-body limits, redirects, cookies, retries and the `RetryBudget`), `FollowRedirects`, `Paginator`, Retry-After and `Link` helpers |
+| `gaato/mttp_core/client` | Request/response plans, the Client loop, retries and budgets, deadlines, redirects, cookies, pagination; opt-in circuit breaker, credential refresh, SSE reconnection, events and trace context |
 | `gaato/mttp_core/client/retry` | Retry rules and decisions as data |
 | `gaato/mttp_core/client/ratelimit` | Bounded window state, pacing, global quotas and header-driven admission |
 | `gaato/mttp_core/client/cookies` | `Cookies`, the cookie-jar backend wrapper a Client with `cookies=` uses, for stacks built by hand |
+| `gaato/mttp_core/client/httpcache` | Opt-in RFC 9111 private cache: Vary, validators, credential partitions and bounded memory |
+| `gaato/mttp_core/ws` | Portable WebSocket sessions, complete messages, limits and extension ports; frame and handshake codecs in subpackages |
 | `gaato/mttp_core/sse` | A bounded `text/event-stream` parser, reader and encoder |
-| `gaato/mttp_core/multipart` | A `multipart/form-data` writer with streamed parts |
+| `gaato/mttp_core/multipart` | Streamed form-data writing and bounded reading, including typed endpoint inputs |
+| `gaato/mttp_core/representation` | Accept negotiation, validators, preconditions for 304/412 and byte-range selection for 206/416 |
 | `gaato/mttp_core/cookie` | An RFC 6265 cookie jar on an injected clock |
 | `gaato/mttp_core/cache` | RFC 9111 freshness and age, and RFC 5861's stale-while-revalidate and stale-if-error, as pure functions |
 | `gaato/mttp_core/dictionary` | RFC 9842 compression dictionaries: `Use-As-Dictionary`, and a bounded, partitioned client store that chooses which dictionary a request offers |
@@ -183,9 +192,10 @@ The router is itself a `Backend`, as above, and its `handler()` is what
 | `gaato/mttp_core/jsonkit` | `Presence`, an object builder, field decoders and open enums for JSON models |
 | `gaato/mttp_core/schema` | Text, JSON and body codecs that carry their JSON Schema, and validators |
 | `gaato/mttp_core/endpoint` | Typed endpoint inputs and outputs, client calls and bounded server dispatch |
-| `gaato/mttp_core/router` | Path and method dispatch, server policy, middleware, CORS; also a `Backend` |
+| `gaato/mttp_core/router` | Dispatch, CORS, `rate_limit` with RateLimit headers, `secure_headers`, signed-cookie `sessions`; also a `Backend` |
 | `gaato/mttp_core/openapi` | OpenAPI documents projected from endpoints, reference checks and a docs endpoint |
 | `gaato/mttp_core/apispec` | OpenAPI document records with their JSON codecs (3.1, and 3.2's fields) |
+| `gaato/mttp_core/apispec/diff` | Structural OpenAPI compatibility reports from client and server viewpoints |
 | `gaato/mttp_core/endpoint/testkit` | Typed endpoint stubs and the definition checker |
 | `gaato/mttp_core/testing` | `BackendStub`, canned answers and fault injection for client tests |
 | `gaato/mttp_core/h1` | The sans-IO HTTP/1.1 codec: bounded decoders, strict parsers that refuse request smuggling, wire writers |
