@@ -892,7 +892,10 @@ async fn run_schemathesis(env : Env) -> Unit {
     env.engine,
     env.run_args(
       "schemathesis",
-      [..schemathesis_user(env), ..env.mount(schemathesis_work, "/work", writable=true)],
+      [
+        ..schemathesis_user(env),
+        ..env.mount(schemathesis_work, "/work", writable=true),
+      ],
       [
         "run",
         "http://\{openapi_server_addr}/openapi.json",

@@ -2,7 +2,7 @@
 
 Internal arithmetic for HTTP/1's Content-Length and chunk-size. This package
 has no imports: its executable step and digit-array fold are checked by
-`moon prove`. See [the proof record](../../h1/PROOFS.md) for the model,
+`moon prove`. See [the proof record](https://github.com/gaato/mttp/blob/main/mttp_core/src/h1/PROOFS.md) for the model,
 toolchain, trust boundary and commands.
 
 Digits are integer values, not ASCII codes. `fold` accepts bases 10 and 16

@@ -222,10 +222,10 @@ gaato/mttp_core	gaato/mttp_core/apispec/diff	native	25
 gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm	25
 gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm-gc	25
 gaato/mttp-cache-conformance	gaato/mttp-cache-conformance/proxy	native	0
-gaato/mttp_core	gaato/mttp_core/client/httpcache	js	35
-gaato/mttp_core	gaato/mttp_core/client/httpcache	native	35
-gaato/mttp_core	gaato/mttp_core/client/httpcache	wasm	35
-gaato/mttp_core	gaato/mttp_core/client/httpcache	wasm-gc	35
+gaato/mttp_core	gaato/mttp_core/client/httpcache	js	37
+gaato/mttp_core	gaato/mttp_core/client/httpcache	native	37
+gaato/mttp_core	gaato/mttp_core/client/httpcache	wasm	37
+gaato/mttp_core	gaato/mttp_core/client/httpcache	wasm-gc	37
 gaato/mttp_core	gaato/mttp_core/internal/number	js	4
 gaato/mttp_core	gaato/mttp_core/internal/number	native	4
 gaato/mttp_core	gaato/mttp_core/internal/number	wasm	4
