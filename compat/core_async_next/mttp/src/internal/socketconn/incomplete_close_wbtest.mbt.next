@@ -86,6 +86,8 @@ fn unclean_conn(
     eof: false,
     incomplete: false,
     pending: b"",
+    read_buffer: [],
+    read_size: 4096,
     cancel_read: None,
     cancel_write: None,
     lower_sends: if tls {

@@ -1,0 +1,6 @@
+///|
+/// The canary replaces only cleanup, keeping the file tests and their counts
+/// identical while using the newer recursive removal API.
+async fn remove_tree(path : String) -> Unit nocancel {
+  @fs.remove(path, recursive=true)
+}

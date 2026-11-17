@@ -63,11 +63,19 @@ async fn main {
     }) catch {
       // Some negotiation cases intentionally fail the opening handshake.
       // Continue so Autobahn can report that exact verdict and later cases.
-      error => println("Autobahn case \{case} ended: \{error}")
+      @core_ws.WsError(kind~, detail~) =>
+        println("Autobahn case \{case} ended: \{Repr(kind)}: \{detail}")
+      error => println("Autobahn case \{case} ended: \{Repr(error)}")
     }
     println("Autobahn case \{case}/\{count} completed")
   }
-  ignore(control(base, "/updateReports?agent=mttp-client"))
+  // Autobahn can end this control connection after writing its reports.
+  // The adapter checks reports/index.json to decide whether it succeeded.
+  ignore(control(base, "/updateReports?agent=mttp-client")) catch {
+    @core_ws.WsError(kind~, detail~) =>
+      println("Autobahn updateReports ended: \{Repr(kind)}: \{detail}")
+    error => println("Autobahn updateReports ended: \{Repr(error)}")
+  }
 }
 
 ///|

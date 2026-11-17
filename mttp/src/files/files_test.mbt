@@ -35,7 +35,7 @@ async fn with_tree(body : async (String) -> Unit) -> Unit {
   @fs.write_text("\{root}/sub/.hidden", "hidden")
   @fs.symlink(target="style.css", "\{root}/inside")
   @fs.symlink(target="../secret.txt", "\{root}/leak")
-  defer @fs.rmdir(dir, recursive=true)
+  defer remove_tree(dir)
   body(root)
 }
 

@@ -217,8 +217,16 @@ fn usv_escapes(text : String) -> String {
     guard i + 6 <= chars.length() && chars[i] == '\\' && chars[i + 1] == 'u' else {
       return -1
     }
-    let hex = String::from_array(chars[i + 2:i + 6])
-    let v = @string.parse_int(hex, base=16) catch { _ => return -1 }
+    let mut v = 0
+    for c in chars[i + 2:i + 6] {
+      let digit = match c {
+        '0'..<='9' => c.to_int() - '0'.to_int()
+        'a'..<='f' => c.to_int() - 'a'.to_int() + 10
+        'A'..<='F' => c.to_int() - 'A'.to_int() + 10
+        _ => return -1
+      }
+      v = v * 16 + digit
+    }
     if v >= 0xD800 && v <= 0xDFFF {
       v
     } else {

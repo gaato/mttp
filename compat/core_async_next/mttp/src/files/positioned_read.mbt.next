@@ -1,0 +1,11 @@
+///|
+/// FileView replaces File::read_at after MoonBit 0.10.20. The canary copies
+/// this file over the pinned implementation, preserving bounded reads.
+async fn positioned_read(
+  file : @fs.File,
+  buffer : FixedArray[Byte],
+  position : Int64,
+  len : Int32,
+) -> Int32 {
+  file.at(position).read_into(buffer, max_len=len)
+}

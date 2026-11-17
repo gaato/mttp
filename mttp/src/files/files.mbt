@@ -378,7 +378,7 @@ impl @mttp_core.BodyStream for FileBody with fn read_some(self) {
       buffer
     }
   }
-  let n = self.file.read_at(buffer, position=self.position, len=want) catch {
+  let n = positioned_read(self.file, buffer, self.position, want) catch {
     error => {
       @mttp_core.BodyStream::close(self)
       raise @mttp_core.TransportError(

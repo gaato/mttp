@@ -59,6 +59,16 @@ fn vectors(table : String) -> Array[Vector] raise {
 }
 
 ///|
+fn hex_digit(c : Char) -> Int32 raise {
+  match c {
+    '0'..<='9' => c.to_int() - '0'.to_int()
+    'a'..<='f' => c.to_int() - 'a'.to_int() + 10
+    'A'..<='F' => c.to_int() - 'A'.to_int() + 10
+    _ => fail("bad hex digit: \{c}")
+  }
+}
+
+///|
 /// The bytes a vector line spells with `\\`, `\r`, `\n`, `\t` and `\xHH`.
 fn unescape(text : StringView) -> Bytes raise {
   let out = Buffer()
@@ -76,8 +86,11 @@ fn unescape(text : StringView) -> Bytes raise {
       Some('n') => out.write_byte(b'\n')
       Some('t') => out.write_byte(b'\t')
       Some('x') => {
-        let hex = text[i + 2:i + 4].to_owned()
-        out.write_byte(@string.parse_int(hex, base=16).to_byte())
+        guard text.get_char(i + 2) is Some(hi) &&
+          text.get_char(i + 3) is Some(lo) else {
+          fail("short hex escape in \{text}")
+        }
+        out.write_byte((hex_digit(hi) * 16 + hex_digit(lo)).to_byte())
         i += 2
       }
       _ => fail("bad escape in \{text}")
