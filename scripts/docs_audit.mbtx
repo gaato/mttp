@@ -30,6 +30,10 @@ permission(fs: { "read": [".."] })
 /// 6. Doc comments: every top-level `pub` declaration in a published, hand
 ///    written package has a `///` doc comment. A file whose first line says
 ///    `DO NOT EDIT` is generated and skipped.
+/// 7. Local paths: no Markdown line, in prose or in code, names a home
+///    directory (`/home/<name>`, `/Users/<name>`, `C:\Users\<name>`). The
+///    repositories are public: such a path shows a contributor's machine and
+///    works on no other. Write `$HOME`, a placeholder or a relative path.
 ///
 /// The published modules and generated sources are listed in
 /// `scripts/docs_audit.json`; what a module leaves out of its package comes
@@ -104,9 +108,7 @@ fn mod_field(moon_mod : String, key : String) -> String? {
     let rest = line[key.length():].trim()
     guard rest.has_prefix("=") else { continue }
     let value = rest[1:].trim()
-    guard value.length() >= 2 &&
-      value.has_prefix("\"") &&
-      value.has_suffix("\"") else {
+    guard value.length() >= 2 && value.has_prefix("\"") && value.has_suffix("\"") else {
       continue
     }
     return Some(value[1:value.length() - 1].to_owned())
@@ -225,13 +227,16 @@ fn resolve(file : String, target : String) -> String {
 }
 
 ///|
-/// Rules 1–3: fences and links in every Markdown file.
+/// Rules 1–3 and 7: fences, links and local paths in every Markdown file.
 fn scan_markdown(repo : Repo, found : Map[String, String]) -> Unit {
   for file in repo.markdown {
     let (path, text) = file
     let published = published_module(repo, path) is Some(_)
     let mut in_fence = false
     for index, line in text.split("\n").to_array() {
+      if has_local_path(line.to_owned()) {
+        found["\{path} local-path:\{index + 1}"] = "a home directory; the repository is public, so write $HOME, a placeholder or a relative path"
+      }
       let trimmed = line.trim().to_owned()
       if trimmed.has_prefix("```") {
         if !in_fence && trimmed.has_prefix("```fish") {
@@ -255,6 +260,34 @@ fn scan_markdown(repo : Repo, found : Map[String, String]) -> Unit {
       }
     }
   }
+}
+
+///|
+/// Prefixes of a home directory on Linux, macOS and Windows. Each counts
+/// only when a letter follows, so a bare `/home/` or `/users/@me` passes.
+let local_path_prefixes : Array[String] = ["/home/", "/Users/", "C:\\Users\\"]
+
+///|
+/// Whether `line` names a home directory (rule 7).
+fn has_local_path(line : String) -> Bool {
+  let chars = line.to_array()
+  for prefix in local_path_prefixes {
+    let p = prefix.to_array()
+    for i in 0..<(chars.length() - p.length()) {
+      let mut matches = true
+      for j in 0..<p.length() {
+        if chars[i + j] != p[j] {
+          matches = false
+          break
+        }
+      }
+      let next = chars[i + p.length()]
+      if matches && ((next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z')) {
+        return true
+      }
+    }
+  }
+  false
 }
 
 ///|
@@ -302,8 +335,7 @@ fn scan_modules(repo : Repo, found : Map[String, String]) -> Unit {
     }
     let overview = join(root, "overview.mbt.md")
     match (markdown_text(repo, readme), markdown_text(repo, overview)) {
-      (None, _) =>
-        found["\{readme} missing"] = "a published module needs a README.md"
+      (None, _) => found["\{readme} missing"] = "a published module needs a README.md"
       (Some(_), None) =>
         found["\{readme} overview"] = "keep the README in \{overview} so its examples compile, and link README.md to it"
       (Some(text), Some(overview_text)) => {
@@ -512,13 +544,13 @@ async fn main {
       []
     }
     let moon_mod = @fs.read_text(join(dir, "moon.mod"))
-    modules.push({ dir, ignored, moon_mod, })
+    modules.push({ dir, ignored, moon_mod })
   }
   if self_test {
     run_self_test()
     println("Docs audit self-tests: OK")
   }
-  let repo : Repo = { markdown, sources, existing, modules, generated, }
+  let repo : Repo = { markdown, sources, existing, modules, generated }
   audit(repo, @fs.read_text("scripts/docs_audit.allow"))
   println("Docs audit: OK")
 }
@@ -553,8 +585,8 @@ let selftest_mod : String =
 fn selftest(
   repo : Repo,
   markdown~ : Array[(String, String)],
-  sources~ : Array[(String, String)] = [],
-  moon_mod~ : String = selftest_mod,
+  sources? : Array[(String, String)] = [],
+  moon_mod? : String = selftest_mod,
 ) -> Repo {
   let existing = repo.existing.copy()
   for file in markdown {
@@ -564,9 +596,7 @@ fn selftest(
     markdown: repo.markdown.copy()..push_iter(markdown.iter()),
     sources: repo.sources.copy()..push_iter(sources.iter()),
     existing,
-    modules: repo.modules
-    .copy()
-    ..push({ dir: "selftest", ignored: ["test"], moon_mod, }),
+    modules: repo.modules.copy()..push({ dir: "selftest", ignored: ["test"], moon_mod }),
     generated: repo.generated.copy()..push("selftest/src/gen"),
   }
 }
@@ -592,19 +622,35 @@ fn run_self_test() -> Unit raise {
   // A fish fence fails; one inside another fence's body does not open one.
   must_fail(() => {
     audit(
-      selftest(
-        repo,
-        markdown=good.copy()..push(("guide/x.md", "```fish\nls\n```\n")),
-      ),
+      selftest(repo, markdown=good.copy()..push(("guide/x.md", "```fish\nls\n```\n"))),
       allow,
     )
   })
   audit(
-    selftest(
-      repo,
-      markdown=good.copy()..push(("guide/x.md", "```sh\nls\n```\n")),
-    ),
+    selftest(repo, markdown=good.copy()..push(("guide/x.md", "```sh\nls\n```\n"))),
     allow,
+  )
+  // A home directory fails in prose and in code; $HOME, a bare prefix and
+  // an API path such as /users/@me pass.
+  must_fail(() => {
+    audit(
+      selftest(repo, markdown=good.copy()..push(("guide/x.md", "```sh\nexport PATH=/home/alice/bin:$PATH\n```\n"))),
+      allow,
+    )
+  })
+  must_fail(() => {
+    audit(
+      selftest(repo, markdown=good.copy()..push(("guide/x.md", "Built in /Users/Alice/src.\n"))),
+      allow,
+    )
+  })
+  audit(
+    selftest(repo, markdown=good.copy()..push(("guide/x.md", "Use $HOME/.moonup, /home/ and GET /users/@me.\n"))),
+    allow,
+  )
+  audit(
+    selftest(repo, markdown=good.copy()..push(("guide/x.md", "See /home/alice.\n"))),
+    allow + "\nguide/x.md local-path:1 # self-test\n",
   )
   // A relative link to an existing file fails in a published file and
   // passes in a directory the package leaves out or outside any module.
@@ -622,53 +668,37 @@ fn run_self_test() -> Unit raise {
     ),
     allow,
   )
+  audit(selftest(repo, markdown=good.copy()..push(("other/x.md", relative))), allow)
   audit(
-    selftest(repo, markdown=good.copy()..push(("other/x.md", relative))),
-    allow,
-  )
-  audit(
-    selftest(
-      repo,
-      markdown=good
-        .copy()
-        ..push(
-          (
-            "selftest/x.md", "See [it](https://github.com/gaato/x/blob/main/a.md#b).\n",
-          ),
-        ),
+    selftest(repo, 
+      markdown=good.copy()..push(
+        ("selftest/x.md", "See [it](https://github.com/gaato/x/blob/main/a.md#b).\n"),
+      ),
     ),
     allow,
   )
   // A missing target fails; links in code spans and blocks are ignored.
   must_fail(() => {
     audit(
-      selftest(
-        repo,
-        markdown=good.copy()..push(("guide/x.md", "[gone](missing.md)\n")),
-      ),
+      selftest(repo, markdown=good.copy()..push(("guide/x.md", "[gone](missing.md)\n"))),
       allow,
     )
   })
   audit(
-    selftest(
-      repo,
-      markdown=good.copy()..push(("guide/x.md", "`[gone](missing.md)`\n")),
-    ),
+    selftest(repo, markdown=good.copy()..push(("guide/x.md", "`[gone](missing.md)`\n"))),
     allow,
   )
   audit(
-    selftest(
-      repo,
-      markdown=good
-        .copy()
-        ..push(("guide/x.md", "```text\n[gone](missing.md)\n```\n")),
+    selftest(repo, 
+      markdown=good.copy()..push(
+        ("guide/x.md", "```text\n[gone](missing.md)\n```\n"),
+      ),
     ),
     allow,
   )
   // Allow entries cover one key each and go stale when it goes away; a
   // link's fragment is part of its key, not the start of the reason.
-  let gone = selftest(
-    repo,
+  let gone = selftest(repo, 
     markdown=good.copy()..push(("guide/x.md", "[gone](missing.md#part)\n")),
   )
   audit(gone, allow + "\nguide/x.md missing.md#part # self-test\n")
@@ -682,21 +712,14 @@ fn run_self_test() -> Unit raise {
   // The module README: readme field, overview, title and sections.
   must_fail(() => {
     audit(
-      selftest(
-        repo,
-        markdown=good,
-        moon_mod="name = \"gaato/selftest\"\n\nsource = \"src\"\n",
-      ),
+      selftest(repo, markdown=good, moon_mod="name = \"gaato/selftest\"\n\nsource = \"src\"\n"),
       allow,
     )
   })
   must_fail(() => audit(selftest(repo, markdown=[good[0]]), allow))
   must_fail(() => {
     audit(
-      selftest(repo, markdown=[
-        good[0],
-        ("selftest/src/overview.mbt.md", "# other\n"),
-      ]),
+      selftest(repo, markdown=[good[0], ("selftest/src/overview.mbt.md", "# other\n")]),
       allow,
     )
   })
@@ -724,8 +747,7 @@ fn run_self_test() -> Unit raise {
   // A README of the root package would be shown a second time.
   must_fail(() => {
     audit(
-      selftest(
-        repo,
+      selftest(repo, 
         markdown=good.copy()..push(("selftest/src/README.mbt.md", overview)),
       ),
       allow,
@@ -740,13 +762,13 @@ fn run_self_test() -> Unit raise {
   )
   let bare = "///|\npub(all) struct Point {\n  x : Int\n}\n"
   must_fail(() => {
-    audit(
-      selftest(repo, markdown=good, sources=[("selftest/src/lib.mbt", bare)]),
-      allow,
-    )
+    audit(selftest(repo, markdown=good, sources=[("selftest/src/lib.mbt", bare)]), allow)
   })
   audit(
-    selftest(repo, markdown=good, sources=[("selftest/src/lib.mbt", bare)]),
+    selftest(repo, 
+      markdown=good,
+      sources=[("selftest/src/lib.mbt", bare)],
+    ),
     allow + "\nselftest/src/lib.mbt doc:pub(all) struct Point # self-test\n",
   )
   audit(
@@ -758,9 +780,7 @@ fn run_self_test() -> Unit raise {
     allow,
   )
   audit(
-    selftest(repo, markdown=good, sources=[
-      ("selftest/src/lib.mbt", "///|\nfn helper() -> Unit {\n  ()\n}\n"),
-    ]),
+    selftest(repo, markdown=good, sources=[("selftest/src/lib.mbt", "///|\nfn helper() -> Unit {\n  ()\n}\n")]),
     allow,
   )
 }
