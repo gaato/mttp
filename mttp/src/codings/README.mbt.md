@@ -13,6 +13,69 @@ body with unknown length. Its source closes on EOF, failure, cancellation or
 explicit close. The caller must set Content-Encoding and remove Content-Length
 when writing that body. Buffered bodies are read in 64 KiB pieces.
 
+## Opt-in request compression
+
+`CompressRequests::new(inner)` is a Backend wrapper; the default client does
+not install it. Defaults are `coding=Gzip`, `min_bytes=1024`,
+`content_types=["application/json", "application/*+json", "text/*",
+"application/xml", "application/x-www-form-urlencoded"]`, `streams=false`
+and `fallback_on_415=true`. Dcb and Dcz raise Invalid. Media matching ignores
+case and Content-Type parameters; patterns support one `*` matching at least
+one character. An absent or repeated Content-Type is skipped. A negative
+threshold clamps to zero, but known-empty bodies are always skipped.
+
+Requests with Content-Encoding, Content-Digest, Repr-Digest, Content-MD5 or
+Signature-Input pass through unchanged, since transforming them could break
+their integrity or authentication. Bytes are compressed synchronously to
+Bytes, retaining replayability; Content-Length is replaced with the coded
+length. With `streams=true`, eligible streams are taken once and compressed
+lazily without prefetch. Known lengths below the threshold are skipped;
+unknown lengths are eligible. Encoded streams have unknown length (HTTP/1.1
+uses chunked framing). Old Content-Length and Transfer-Encoding are removed.
+
+On 415, the wrapper resends the original uncompressed request once only if
+the response's Accept-Encoding excludes the coding used and the original
+body is replayable. This follows the diagnostic distinction in
+[RFC 7694 section 3](https://www.rfc-editor.org/rfc/rfc7694.html#section-3).
+Missing or malformed Accept-Encoding never triggers a resend. A present empty
+field, `identity`, an explicit `q=0`, or a list omitting the coding without
+an accepting wildcard excludes it; an explicit coding overrides `*`.
+The discarded response is closed before resending. Taken streams cannot be
+replayed, even if the server refused before reading. Acceptance is never
+remembered for later requests or origins.
+
+Stack as `Client -> CompressRequests -> DigestScheme -> transport`: outside
+DigestScheme, so auth-int hashes the actual sent bytes. The Client's retries
+recompress per attempt. To compress Bytes once up front, use
+`compress_request(request, coding, min_bytes=1024)` instead. This helper uses
+the default media patterns and also opts a single eligible stream into lazy
+compression; it does not buffer a stream up front or implement 415 fallback.
+SendOptions pass unchanged to the inner backend on both sends. The wrapper
+owns closing that backend, as Decompress does.
+
+Buffered compression uses about twice the body size (original plus encoded
+bytes), with transient output collection and codec state. There is no new body
+size limit: the caller chooses the buffered body size. Stream memory follows
+the existing 64 KiB encoder-output row in RESOURCE_BOUNDS.md; a caller-owned
+input chunk and the codec windows remain bounded as documented there.
+
+```mbt check
+///|
+test "compress a request once before constructing a Client call" {
+  let original = @mttp_core.Request::post("https://example.test/upload").body_json({
+      "message": "hello",
+    },
+  )
+  let request = @codings.compress_request(original, Gzip, min_bytes=0)
+  assert_eq(request.headers.get("content-encoding"), Some("gzip"))
+  assert_true(request.body.is_replayable())
+  assert_eq(
+    request.headers.get("content-length"),
+    request.body.length().map(length => length.to_string()),
+  )
+}
+```
+
 ```mbt check
 ///|
 test "negotiate a response encoding" {

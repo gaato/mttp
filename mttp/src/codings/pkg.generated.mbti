@@ -16,6 +16,8 @@ pub fn coding_plan_fields(Array[String]) -> CodingPlan raise @mttp_core.Transpor
 
 pub fn compress(async (@mttp_core.Request) -> @mttp_core.Response noraise, min_bytes? : Int32) -> async (@mttp_core.Request) -> @mttp_core.Response noraise
 
+pub fn compress_request(@mttp_core.Request, Coding, min_bytes? : Int32) -> @mttp_core.Request raise @mttp_core.TransportError
+
 pub fn decode_head(@mttp_core.ResponseHead, dictionary? : @dictionary.Dictionary) -> (@mttp_core.ResponseHead, ContentDecoder?) raise @mttp_core.TransportError
 
 pub fn dictionary_allowed(@mttp_core.Headers, @mttp_core.Headers) -> Bool
@@ -58,6 +60,14 @@ pub struct CodingPlan {
   undo : Array[Coding]
   remaining : String?
 }
+
+pub struct CompressRequests {
+  // private fields
+}
+pub fn CompressRequests::close(Self) -> Unit
+pub fn CompressRequests::new(&@mttp_core.Backend, coding? : Coding, min_bytes? : Int32, content_types? : Array[String], streams? : Bool, fallback_on_415? : Bool) -> Self raise @mttp_core.TransportError
+pub async fn CompressRequests::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
+pub impl @mttp_core.Backend for CompressRequests
 
 pub struct ContentDecoder {
   // private fields

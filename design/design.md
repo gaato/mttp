@@ -1436,7 +1436,7 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | Backend / StreamBackend / SyncBackend | `@mttp_core.Backend` (always pull bodies; `BodyTiming` says buffered or streamed); no sync split |
 | WebSocketBackend, WebSocketStub | later (§5.4) |
 | RequestOptions, maxRedirects, redirectToGet | `@mttp_core.SendOptions` (set by the Client from its defaults and per-request overrides); `RedirectConfig` on FollowRedirects + the `redirect_limit` attribute |
-| compressBody / compression | `@codings.Decompress` (client) and `@codings.compress` (server) in gaato/mttp; request compression later |
+| compressBody / compression | `@codings.Decompress` (client responses), opt-in `@codings.CompressRequests` (client requests; outside DigestScheme), `@codings.compress_request` (once up front), and `@codings.compress` (server) in gaato/mttp. Bytes stay replayable; streams opt in; a 415 with an excluding Accept-Encoding permits one replayable uncompressed resend. |
 | SttpClientException / ResponseException | `TransportError` (raised) / `ResponseFailure` (a value) |
 | FollowRedirectsBackend | `FollowRedirects` (final URL and history as response attributes) |
 | DigestAuthenticationBackend | `gaato/mttp_digest` (`DigestScheme`) |
