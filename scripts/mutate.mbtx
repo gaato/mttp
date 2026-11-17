@@ -309,7 +309,7 @@ async fn main {
   }
   let root = @fs.tmpdir(prefix="mttp-mutate-")
   println("mutate: disposable copy at " + root)
-  defer @fs.rmdir(root, recursive=true)
+  defer @fs.remove(root, recursive=true)
   let source = copy_source(root)
   let moon = command("which", ["moon"]).stdout().trim().to_owned()
   let baseline = run_tests(moon, source)

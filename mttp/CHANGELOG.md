@@ -24,6 +24,10 @@ never does.
   `FirstByte`); JS fetch cannot see them and reports none.
 ### Changed
 
+- Pin MoonBit 0.10.21+06da1ed44. Adopt its core/async IO traits, typed IO
+  errors and positioned FileView reads in the regular tree; TLS closes
+  without close_notify now report IncompleteClose on the pinned toolchain.
+  Remove the canary compatibility overlay and 0.10.20 API bridges.
 - Run socket I/O and supervised primary work in their task group's existing
   child. Close starts a cancellation child only for an outstanding direction;
   normal I/O and supervision each use one fewer task while retaining close

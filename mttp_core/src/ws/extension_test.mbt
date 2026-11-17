@@ -98,7 +98,7 @@ test "encoded output obeys frame and wire message bounds and carries RSV1" {
           assert_true(
             p.next()
             is Some(
-              Head({ fin: true, rsv1: true, opcode: Binary, length: 3L, .. })
+              Head({ fin: true, rsv1: true, opcode: Binary, length: 3L, .. }),
             ),
           )
         } else {

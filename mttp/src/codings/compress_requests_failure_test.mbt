@@ -38,7 +38,7 @@ test "415 fallback failures cannot claim the original exchange was unsent" {
           @mttp_core.TransportError(
             kind=actual_kind,
             phase=actual_phase,
-            detail~
+            detail~,
           ) as error =>
             if fail_at == 1 {
               assert_eq(actual_kind, kind)

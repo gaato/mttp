@@ -203,10 +203,9 @@ async fn test_directory() -> String {
 }
 
 ///|
-/// `rm -rf`, like `mktemp` above: `@fs.rmdir` is deprecated on newer
-/// toolchains, and `@fs.remove` is not recursive on the pinned 0.10.20.
+/// Remove the fixture tree after generation, including nested outputs.
 async fn remove_test_directory(dir : String) -> Unit {
-  @shell.Cmd("rm", ["-rf", "--", dir]).output().check()
+  @fs.remove(dir, recursive=true)
 }
 
 ///|

@@ -238,6 +238,6 @@ async fn main {
   }
   let root = @fs.tmpdir(prefix="mttp-sanitize-")
   println("sanitize: disposable copy at " + root)
-  defer @fs.rmdir(root, recursive=true)
+  defer @fs.remove(root, recursive=true)
   sanitize(root)
 }

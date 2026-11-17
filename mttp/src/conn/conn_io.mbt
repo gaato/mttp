@@ -13,10 +13,8 @@ priv struct ConnIo {
   /// so every later write on it is refused too.
   mut sends : Int64
   /// The last error `inner` raised to the TLS layer, which `SocketConn`
-  /// reports in place of an error the session wraps. MoonBit 0.10.20's
-  /// core/async passes such an error up through `Tls` unchanged; later
-  /// toolchains wrap it in `@io.ReaderError` or `@io.WriterError`, which
-  /// source that builds on both cannot match. The session keeps a read's
+  /// reports in place of the session's `@io.ReaderError` or
+  /// `@io.WriterError` wrapper. The session keeps a read's
   /// error and raises it again from later operations, so once `inner` has
   /// failed, the session's failures stem from the last error here.
   mut failure : @mttp_core.TransportError?

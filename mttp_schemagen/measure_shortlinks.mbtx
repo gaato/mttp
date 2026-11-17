@@ -18,7 +18,7 @@ async fn main {
   }
   let original = @fs.read_text(args[1])
   let scratch = args[2]
-  @fs.mkdir(scratch, recursive=true, allow_exist=true)
+  @fs.mkdir(scratch, recursive=true, allow_existing=true)
   @fs.write_text(scratch + "/original.mbt.txt", original)
   let mut source = original
   let mut removed = 0

@@ -1,6 +1,6 @@
 ///|
-/// Short names that keep `Canned::Factory` on one line: formatters before and
-/// after MoonBit 0.10.20 disagree on a trailing comma after a long one.
+/// Short names keep `Canned::Factory` on one line and reduce formatting
+/// churn when the nightly canary changes long-signature layout.
 using @mttp_core {
   type Request,
   type SendOptions,

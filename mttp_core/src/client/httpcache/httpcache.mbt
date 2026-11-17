@@ -341,7 +341,7 @@ pub async fn HttpCache::send(
         Collected::{
           read,
           close_,
-          buffer: Buffer(size_hint=0),
+          buffer: Buffer(capacity=0),
           limit: self.max_entry_bytes,
           over: false,
           closed: false,

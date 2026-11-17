@@ -486,12 +486,12 @@ async fn check() -> Unit {
       }
     }
     if @fs.exists(consumer + "/_build") {
-      @fs.rmdir(consumer + "/_build", recursive=true)
+      @fs.remove(consumer + "/_build", recursive=true)
     }
   }
   // The staged registry and the packaged sources are large; a failure above
   // leaves them for inspection.
-  @fs.rmdir(scratch, recursive=true)
+  @fs.remove(scratch, recursive=true)
   println(
     "resolver gate: OK (\{modules.length()} modules; isolated registry; no workspace overrides)",
   )
@@ -548,7 +548,7 @@ async fn run_with_local_module(
     eprintln(result.stderr())
   }
   let exit_code = result.exit_code()
-  @fs.rmdir(scratch, recursive=true)
+  @fs.remove(scratch, recursive=true)
   if exit_code != 0 {
     raise GateError("local script failed: " + script_path)
   }
@@ -649,11 +649,7 @@ async fn main {
 
 ///|
 /// Creates directory `path` and its parents unless it is a directory
-/// already. `@fs.mkdir`'s flag for that is `allow_exist` on MoonBit 0.10.20
-/// and `allow_existing` later; asking first needs neither, and a file in
-/// the way still makes `mkdir` fail.
+/// already; a file in the way still makes `mkdir` fail.
 async fn make_dir(path : String) -> Unit {
-  if !(@fs.exists(path) && @fs.kind(path) is Directory) {
-    @fs.mkdir(path, recursive=true)
-  }
+  @fs.mkdir(path, recursive=true, allow_existing=true)
 }

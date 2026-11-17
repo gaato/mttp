@@ -34,28 +34,6 @@ fn dial_error(error : Error) -> @mttp_core.TransportError {
 }
 
 ///|
-/// A port number in the type `@socket.Tcp::connect_to_host` takes: `Int` on
-/// MoonBit 0.10.20, `UInt16` on later toolchains. The parameter's type picks
-/// the impl, so `connect` builds on both; each toolchain leaves the other
-/// impl unused.
-priv trait SocketPort {
-  fn of_port(Int32) -> Self
-}
-
-///|
-#warnings("-unused_value")
-impl SocketPort for Int32 with fn of_port(port) {
-  port
-}
-
-///|
-/// `connect` refuses a port outside 0..=65535 first, so none wraps here.
-#warnings("-unused_value")
-impl SocketPort for UInt16 with fn of_port(port) {
-  port.to_uint16()
-}
-
-///|
 /// Connects to a host; TCP and name-resolution failures are Connect/Dial,
 /// and a port outside 0..=65535 is Invalid/Dial.
 pub impl @rt.Dialer for TcpDialer with fn connect(self, host~, port~) {
@@ -68,7 +46,7 @@ pub impl @rt.Dialer for TcpDialer with fn connect(self, host~, port~) {
   }
   let tcp = try {
     if self.refuse_internal {
-      let addr = @socket.Addr::resolve(host, port=SocketPort::of_port(port))
+      let addr = @socket.Addr::resolve(host, port=port.to_uint16())
       if internal_address(addr) {
         raise @mttp_core.TransportError(
           kind=Invalid,
@@ -79,7 +57,7 @@ pub impl @rt.Dialer for TcpDialer with fn connect(self, host~, port~) {
       // Connect this exact answer, never resolve a second time (DNS rebinding).
       @socket.Tcp::connect(addr)
     } else {
-      @socket.Tcp::connect_to_host(host, port=SocketPort::of_port(port))
+      @socket.Tcp::connect_to_host(host, port=port.to_uint16())
     }
   } catch {
     @mttp_core.TransportError(_) as error => raise error

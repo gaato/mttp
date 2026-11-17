@@ -19,7 +19,40 @@ Items still marked **[needs-prototype]** are settled during implementation; rema
 | Consumer ports (discord REST, GitHub, OpenAI SSE, URL join, bridge) | `wf2/consumer-migration` | 4 targets × 2 toolchains |
 | Final-review probes | `v4/ne`, `v4/rev` | F52–F54 |
 
-Toolchain now: MoonBit 0.10.20 (`moon version --all` reports `0.10.20+65efd5b93`), the first stable release with `moonbitlang/core/async`. It is pinned; `moon self-update` is not used, and newer toolchains are tried by canaries only (§5.6).
+Toolchain now: MoonBit 0.10.21 (`moon version --all` reports `0.10.21+06da1ed44`), moved from 0.10.20 on 2026-11-17. It is pinned; `moon self-update` is not used, and newer toolchains are tried by canaries only (§5.6).
+
+The upgrade was checked against the bundled core sources and interfaces versus
+0.10.20+65efd5b93. The bundled core changelog has no 0.10.21 section (it is
+unchanged from 0.10.20); the docs record [core/async example migration](https://github.com/moonbitlang/moonbit-docs/commit/919d3bdb98)
+and [trait diagnostics](https://github.com/moonbitlang/moonbit-docs/commit/a54598676e) rather than a
+versioned release note. Source differences determine the adoption below:
+
+- Adopt `Buffer(capacity=...)`, `AbortController()`, `mkdir(allow_existing=...)`
+  and recursive `fs.remove`: their predecessors warn or no longer compile.
+- Adopt the IO traits' `name` and `flush_partial_data`, typed ReaderError and
+  WriterError wrapping, `File::at(...).read_into(max_len=...)`, and TLS's
+  default `require_shutdown=true`. The former canary overlay is now ordinary
+  source, so missing close_notify is tested as IncompleteClose on the pin too.
+- Adopt Addr's UInt16 ports and readable fields; remove the old port-type
+  bridge and textual address conversion. Keep the adapter's recorded lower
+  failure because TLS retains an IO failure and rethrows it on later operations.
+- Regenerate JSON interfaces with core's `DecodeContext` name. Keep `JsonPath`
+  in source: core explicitly retains it as a nondeprecated alias for decoders.
+  Context nodes may now be reused by collection decoders; mttp's codecs use
+  them only during decoding and propagate failures immediately, without
+  retaining contexts in decoded values.
+- Keep mttp's bounded HTTP codec, TLS test server and entropy source. Core's
+  HTTP/socket/TLS changes do not supply our HTTP bounds or ALPN, additive roots,
+  mTLS, Unix sockets or write-half shutdown; TLS server and crypto helpers
+  were removed from its public surface. New IO memory pipes and lexbuf scanners
+  are unused and do not replace the bounded Driver/Conn abstractions.
+- Compiler/formatter changes are adopted by regenerating interfaces, formatting
+  and schemagen goldens. Example overviews have no MoonBit test blocks, so they
+  are ordinary Markdown, avoiding main-package blackbox warnings. Canary
+  formatting/interface notes remain for future nightly differences.
+- Adopt the script diagnostics too: use `radix=` for integer parsing and
+  nocancel recursive removal with `allow_missing=true` in fixture defers.
+  An async existence check in a defer could itself be cancelled before cleanup.
 
 ---
 
@@ -77,13 +110,13 @@ Made by the user on 2026-11-08. They supersede the 2026-10-24 rows marked † in
 | Policy layer | **`gaato/mttp` 0.1.0** depends on gaato/http and core only: client, retry, rate limits, cookies, SSE reader, multipart, schema, endpoint, router, OpenAPI, test stubs. **`gaato/mttp_digest` 0.1.0** stays as it is. | M-01 |
 | Facade | **`quick` is dropped**, together with `client.quick_request` and the root `new_client` factory. One-liners belong to `moonbitlang/core/async/http`. That client has no bound on the response head, accepts Content-Length together with Transfer-Encoding and decodes only gzip, so it is for trusted, throwaway use only; this document and the READMEs say so. | §0.2 "Facade"; M-06, Q3 |
 | Why core/async/http is not the foundation | No head-size bound, CL+TE accepted, gzip only, connection reuse still provisional (F65). A general lower layer cannot be built on it; gaato/http keeps its own codec and engines and uses core/async only through http-async's adapters. | — |
-| Runtime | **Stage R executes now**, on MoonBit 0.10.20 and `moonbitlang/core/async`. `moonbitlang/async` is forbidden in every module (gate, §5.13). Old-stack graphs (anything still on gaato/http ≤ 0.5 or http-async ≤ 0.5) are frozen: they are not patched onto core/async (Q15, G-06 answered with option (b)). | the former Stage R; G-06, Q15 |
+| Runtime | **Stage R executes now**, on MoonBit 0.10.21 and `moonbitlang/core/async`. `moonbitlang/async` is forbidden in every module (gate, §5.13). Old-stack graphs (anything still on gaato/http ≤ 0.5 or http-async ≤ 0.5) are frozen: they are not patched onto core/async (Q15, G-06 answered with option (b)). | the former Stage R; G-06, Q15 |
 | Metadata | Request and response metadata stay `Attributes` with typed keys. MoonBit has no TypeId, so a type-keyed map in the style of hyper's Extensions cannot be built soundly. | — |
 | Compression | Engines move raw bytes only. Decoding is the `@codings.Decompress` Backend wrapper, encoding the `@codings.compress` Handler wrapper, both in http-async. Bounds are two-level: the engine counts wire bytes, the mttp Client counts decoded bytes (§5.2). RFC 9842 dictionaries ride on the same wrappers: `Decompress` given a `@dictionary.DictionaryStore` (mttp_core, I/O-free, with `cache`, `urlpattern` and `sf` beneath it), and `dictionary_compress`, a superset of `compress`. | C-13 (`decompress` option) |
 | Experimental packages | A stable module may hold experimental packages. They declare `options(experimental: true)` in moon.pkg, and every importer opts in by listing them, as in `options("allow-experimental-packages": ["gaato/http/h1client"])` (list form only; `true` is refused by the gate; the workspace PR confirms the list form). gaato/http's `h1client`, `h1server` and `driver` start experimental, and so do mttp's endpoint layer, router, apispec and openapi. | principle 8 (old) |
 | PRs | **PR #2 is superseded** by a stack of PRs from `main`, each ≲ 5k lines and passing every gate on its own (§7.1). They merge after the gates pass and the Codex review findings are resolved. PR #2 is closed with a link to the stack; its branch stays as the reference. Nothing is published from the PRs; publishing is a separate, owner-approved step: the train of §8.2, and since 2026-11-12 a pushed release tag (§5.8). | §0.2 "PRs" (kept in spirit) |
 | Rewrite or keep | Chosen per component by quality, from "move as is" to "rewrite" (§7.2). Starting from zero is allowed where the reference is weak. | — |
-| Toolchain | 0.10.20+65efd5b93, pinned. The `%async` intrinsics used by the Driver exist in 0.10.20 and are confined to one file (§5.6). | §5.6 toolchain pins |
+| Toolchain | 0.10.21+06da1ed44, pinned. The `%async` intrinsics used by the Driver exist in 0.10.20 and are confined to one file (§5.6). | §5.6 toolchain pins |
 | OpenAPI version | (2026-11-11) **3.1 now, ready for 3.2.** Code generators cannot read 3.2 yet: openapi-generator's parser, swagger-parser 2.1.48, rejects a 3.2 document, and Redoc reads up to 3.1. A document other languages cannot generate clients from loses the point of one definition for server, client and docs. Ready for 3.2 means each sequential item is already described in 3.2's shape: an SSE event is `x-oai-itemSchema` (the OpenAPI Initiative's registered extension for `itemSchema` before 3.2) with string `event`/`data`/`id`, integer `retry` and the JSON payload as `contentSchema` of `data`. Moving to 3.2 renames that member to `itemSchema` and changes the version field. | P-11 (3.1-only needs-user-input), the OpenAPI half of open question 2 (§12), `x-mttp-sse-data-schema` |
 
 ### 0.2 Original decisions (2026-10-24)
@@ -1302,7 +1335,7 @@ CI lists packages per target and **asserts the test count per package and target
 
 ### 5.6 Churn policy
 
-- **Toolchain.** Pinned to 0.10.20+65efd5b93 (`moonbit-version`); `moon self-update` is not used. Daily canaries run the latest toolchain and diff `driver/intrinsics.mbt` against core's `async_primitive.mbt`, so an intrinsic change is seen before it breaks the Driver.
+- **Toolchain.** Pinned to 0.10.21+06da1ed44 (`moonbit-version`); `moon self-update` is not used. Daily canaries run the latest toolchain and diff `driver/intrinsics.mbt` against core's `async_primitive.mbt`, so an intrinsic change is seen before it breaks the Driver.
 - **Warnings.** `moon check --deny-warn` on all targets. Async-typed parameters take arrow lambdas (F6, F54); the driver package sets `-unused_async`.
 - **Deprecated forms** the toolchain warns about (`#derive`, `clamped_view`, `Map([])`, `Json(v)`, `to_owned`, Debug instead of Show) are fixed at once, and the generators emit the new forms.
 - **Snapshots.** mbti per package and target; diffs are reviewed in every PR.
@@ -1673,7 +1706,7 @@ The log of 2026-10-24, with statuses updated by §0.1. Ids are kept so that §10
 | T-02 | Conformance: corpora, ledgers, the cross-layer e2e gate, per-target test counts. | proposed | I-16, RT-15, R-08. |
 | T-03 | FakeClock in mttp/clock/fake; VirtualClock in mttp-net/runtime. | superseded: FakeClock in `gaato/http/sim`, VirtualClock in `http-async/runtime` | — |
 | T-04 | `testing` (model + client only) separate from `endpoint/testkit`. | decided; contract checkers move to `gaato/http/sim` (§4.1) | S-06. |
-| T-05 | `moon check --deny-warn` on all 4 targets with both toolchains is a Stage 0 exit criterion and a CI gate. | decided; one pinned toolchain (0.10.20) | wf3/rev has 84 warnings today (F53). |
+| T-05 | `moon check --deny-warn` on all 4 targets with both toolchains is a Stage 0 exit criterion and a CI gate. | decided; one pinned toolchain (0.10.21) | wf3/rev has 84 warnings today (F53). |
 | B-01 | Bounds as in §5.2. | proposed | — |
 | B-02 | A sans-IO HTTP/1.1 codec (`gaato/mttp/h1`) replaces the stock server parsers: version, 100-continue, chunked decoder reporting end, trailers and consumed bytes; later also used by AsyncBackend for responses. | decided: `gaato/http/h1`, used by both engines (§4.5) | RT-04, RT-06, RT-13; RESOURCE_BOUNDS client-side known gap. |
 | B-03 | Server body limit = `min(adapter ceiling, endpoint override or router default)`; both adapter ceilings 1 MiB; an override above a known ceiling is an advisory definition problem. | proposed | Four knobs without a stated precedence. |

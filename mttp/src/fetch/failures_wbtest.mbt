@@ -1,6 +1,6 @@
 ///|
 async test "abort after response creation ends the output quietly and closes the source once" {
-  let controller = @js_async.AbortController::new()
+  let controller = @js_async.AbortController()
   let source = OutputSource::{ reads: 0, closes: 0, }
   let probe = Probe::new()
   let adapter = fetch_handler(_ => {
@@ -147,10 +147,7 @@ async test "caught malformed input during response prefetch stays 400 for fallba
         400,
       )
     }
-    let request = InputProbe::new(
-      @js_async.AbortController::new().signal(),
-      true,
-    )
+    let request = InputProbe::new(@js_async.AbortController().signal(), true)
     caught_prefetch(request.request(), fallback, 400)
   }
 }
@@ -294,7 +291,7 @@ async test "empty request chunks have a finite processing budget and large chunk
     }
     let reply = awaited(
       adapter(
-        streaming_request(chunks, @js_async.AbortController::new().signal()),
+        streaming_request(chunks, @js_async.AbortController().signal()),
         probe.callback(),
       ),
     ).wait()
@@ -306,7 +303,7 @@ async test "empty request chunks have a finite processing budget and large chunk
 
 ///|
 async test "already aborted requests still enter cleanup and settle the aggregate promise" {
-  let controller = @js_async.AbortController::new()
+  let controller = @js_async.AbortController()
   controller.abort()
   let probe = Probe::new()
   let entered = Ref(false)
@@ -359,7 +356,7 @@ extern "js" fn InputProbe::cancels(self : InputProbe) -> Int32 =
 ///|
 async test "host read failure maps to 400 and cancellation releases an active request reader once" {
   for failing in [false, true] {
-    let controller = @js_async.AbortController::new()
+    let controller = @js_async.AbortController()
     let input = InputProbe::new(controller.signal(), failing)
     let probe = Probe::new()
     let started = Ref(false)

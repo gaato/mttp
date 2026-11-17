@@ -499,5 +499,5 @@ async fn main {
   )
   probe_interfaces(root, "internal runtime handle accepted", false)
   // The copy holds native build output; keep it only when a probe fails.
-  @fs.rmdir(root, recursive=true)
+  @fs.remove(root, recursive=true)
 }

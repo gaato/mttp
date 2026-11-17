@@ -67,7 +67,7 @@ let collected_block_bytes : Int32 = 64 * 1024
 fn CollectedBody::flush_block(self : CollectedBody) -> Unit {
   if self.block.length() > 0 {
     self.collected.push(self.block.to_bytes())
-    self.block = Buffer(size_hint=collected_block_bytes)
+    self.block = Buffer(capacity=collected_block_bytes)
   }
 }
 
@@ -87,7 +87,7 @@ impl @mttp_core.BodyStream for CollectedBody with fn read_some(self) {
           self.over = true
           self.collected = []
           self.collected_bytes = 0
-          self.block = Buffer(size_hint=0)
+          self.block = Buffer(capacity=0)
         } else {
           self.collected_bytes += chunk.length()
           if chunk.length() >= collected_block_bytes {
@@ -105,7 +105,7 @@ impl @mttp_core.BodyStream for CollectedBody with fn read_some(self) {
       // Only a body read to its end becomes a dictionary.
       if !self.over {
         self.flush_block()
-        let body = Buffer(size_hint=self.collected_bytes)
+        let body = Buffer(capacity=self.collected_bytes)
         for part in self.collected {
           body.write_bytes(part)
         }
@@ -124,7 +124,7 @@ impl @mttp_core.BodyStream for CollectedBody with fn close(self) {
     self.closed = true
     self.collected = []
     self.collected_bytes = 0
-    self.block = Buffer(size_hint=0)
+    self.block = Buffer(capacity=0)
     (self.close_)()
   }
 }
@@ -260,7 +260,7 @@ pub impl @mttp_core.Backend for Decompress with fn send(self, request, options) 
             close_,
             collected: [],
             collected_bytes: 0,
-            block: Buffer(size_hint=0),
+            block: Buffer(capacity=0),
             limit: store.max_dictionary_bytes(),
             over: false,
             on_end: body => {

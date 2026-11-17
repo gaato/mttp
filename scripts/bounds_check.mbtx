@@ -337,7 +337,7 @@ async fn check_all(module_root : String, verbose~ : Bool) -> Bool {
 ///|
 async fn self_test() -> Unit {
   let root = @fs.tmpdir(prefix="mttp-ledger-check-")
-  defer @fs.rmdir(root, recursive=true)
+  defer @fs.remove(root, recursive=true)
   @fs.write_text(root + "/exists_test.mbt", "test \"exists\" {\n}\n")
   @fs.write_text(
     root + "/RESOURCE_BOUNDS.md",

@@ -19,7 +19,7 @@ pub(all) enum ClientEvent {
     send_id~ : Int64,
     request~ : @mttp_core.RequestHead,
     attempt~ : Int32,
-    bucket~ : String
+    bucket~ : String,
   )
   /// The backend reached `phase` in attempt `attempt`.
   Phase(send_id~ : Int64, attempt~ : Int32, phase~ : @mttp_core.PhaseEvent)

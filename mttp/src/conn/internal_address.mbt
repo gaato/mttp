@@ -28,61 +28,18 @@ fn internal_v4(b : ArrayView[Int32]) -> Bool {
 }
 
 ///|
-/// Parse only the runtime's canonical numeric Addr output, not user input.
-/// The text seam works across toolchains where Addr's accessors changed.
+/// Bytes in network order, as exposed by core/async's numeric address.
 fn address_bytes(addr : @socket.Addr) -> Array[Int32] {
-  let text = addr.to_string()
-  if !text.has_prefix("[") {
-    let host = text[:text.rev_find(":").unwrap()]
-    return host
-      .split(".")
-      .map(part => part.iter().fold(init=0, (n, c) => n * 10 + c.to_int() - 48))
-      .to_array()
+  match addr.ip {
+    Ipv4(ip) =>
+      [
+        (ip >> 24).reinterpret_as_int(),
+        ((ip >> 16) & 255).reinterpret_as_int(),
+        ((ip >> 8) & 255).reinterpret_as_int(),
+        (ip & 255).reinterpret_as_int(),
+      ]
+    Ipv6(bytes, ..) => bytes.iter().map(b => b.to_int()).to_array()
   }
-  let host = text[1:text.find("]").unwrap()]
-  let host = host[:host.find("%").unwrap_or(host.length())]
-  let halves = host.split("::").to_array()
-  let parsed : Array[Array[Int32]] = []
-  for half in halves {
-    let groups = []
-    for part in half.split(":") {
-      if part.is_empty() {
-        continue
-      }
-      if part.contains(".") {
-        let b = part
-          .split(".")
-          .map(p => p.iter().fold(init=0, (n, c) => n * 10 + c.to_int() - 48))
-          .to_array()
-        groups.push(b[0] * 256 + b[1])
-        groups.push(b[2] * 256 + b[3])
-      } else {
-        groups.push(
-          part
-          .iter()
-          .fold(init=0, (n, c) => {
-            n * 16 + (if c <= '9' { c.to_int() - 48 } else { c.to_int() - 87 })
-          }),
-        )
-      }
-    }
-    parsed.push(groups)
-  }
-  let groups = if parsed.length() == 2 {
-    [
-      ..parsed[0],
-      ..Array::make(8 - parsed[0].length() - parsed[1].length(), 0),
-      ..parsed[1],
-    ]
-  } else {
-    parsed[0]
-  }
-  let bytes = []
-  for group in groups {
-    bytes.push(group >> 8)
-    bytes.push(group & 255)
-  }
-  bytes
 }
 
 ///|

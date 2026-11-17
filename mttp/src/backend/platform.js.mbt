@@ -223,7 +223,7 @@ impl @mttp_core.Backend for FetchDriver with fn send(self, request, options) {
     port.to_string() +
     (if url.path.is_empty() { "/" } else { url.path }) +
     url.query.map(q => "?" + q).unwrap_or("")
-  let abort = @js_async.AbortController::new()
+  let abort = @js_async.AbortController()
   let mut transferred = false
   defer (if !transferred { abort.abort() })
   let response = timer.run(Unknown, () => {

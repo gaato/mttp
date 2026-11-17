@@ -1592,7 +1592,7 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
   // Remove the entire previous layout, including reports from batches that
   // are no longer selected, before the first server is started.
   if @fs.exists(dir) {
-    @fs.rmdir(dir, recursive=true)
+    @fs.remove(dir, recursive=true)
   }
   make_dir(dir)
   let template = @fs.read_text("interop/servers/autobahn-client.json")
@@ -2204,7 +2204,7 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
   let dir = "\{work}/autobahn"
   // Clear stale reports, including batches absent from a focused run.
   if @fs.exists(dir) {
-    @fs.rmdir(dir, recursive=true)
+    @fs.remove(dir, recursive=true)
   }
   make_dir(dir)
   // The inventory probe uses the existing native client without running cases.
@@ -2421,7 +2421,7 @@ async fn self_test_containers() -> Unit {
   )
   let dir = "\{work}/container-cancel-test"
   if @fs.exists(dir) {
-    @fs.rmdir(dir, recursive=true)
+    @fs.remove(dir, recursive=true)
   }
   let template = @fs.read_text("interop/servers/autobahn-client.json")
   let cancelled = @async.with_timeout_opt(1500, () => {
@@ -2631,14 +2631,14 @@ async fn self_test_autobahn() -> Unit {
     }
   }
   let first = autobahn_fixture_dir()
-  defer (if @fs.exists(first) { @fs.rmdir(first, recursive=true) })
+  defer @fs.remove(first, recursive=true, allow_missing=true)
   let second = autobahn_fixture_dir()
-  defer (if @fs.exists(second) { @fs.rmdir(second, recursive=true) })
+  defer @fs.remove(second, recursive=true, allow_missing=true)
   assert_true(first != second, msg="Autobahn runs must own separate fixtures")
   @fs.write_text("\{first}/index.json", "first run")
   @fs.write_text("\{second}/index.json", "second run")
   assert_eq(@fs.read_text("\{first}/index.json"), "first run")
-  @fs.rmdir(first, recursive=true)
+  @fs.remove(first, recursive=true)
   assert_eq(@fs.read_text("\{second}/index.json"), "second run")
   let fixture = "\{second}/index.json"
   for agent in ["mttp", "mttp-client"] {
@@ -2754,11 +2754,7 @@ async fn autobahn_fixture_dir() -> String {
 
 ///|
 /// Creates directory `path` and its parents unless it is a directory
-/// already. `@fs.mkdir`'s flag for that is `allow_exist` on MoonBit 0.10.20
-/// and `allow_existing` later; asking first needs neither, and a file in
-/// the way still makes `mkdir` fail.
+/// already; a file in the way still makes `mkdir` fail.
 async fn make_dir(path : String) -> Unit {
-  if !(@fs.exists(path) && @fs.kind(path) is Directory) {
-    @fs.mkdir(path, recursive=true)
-  }
+  @fs.mkdir(path, recursive=true, allow_existing=true)
 }

@@ -8,7 +8,7 @@ pub fn encode_head(head : FrameHead, mask? : Bytes) -> Bytes raise FrameError {
     (mask is Some(key) && key.length() != 4) {
     raise protocol("head mask flag and four-byte key must agree")
   }
-  let out = Buffer(size_hint=14)
+  let out = Buffer(capacity=14)
   let first = (if head.fin { 0x80 } else { 0 }) |
     (if head.rsv1 { 0x40 } else { 0 }) |
     head.opcode.wire()

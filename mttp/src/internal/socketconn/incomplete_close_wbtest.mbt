@@ -1,19 +1,118 @@
-// What MoonBit 0.10.20's TLS client does when its peer closes without
-// close_notify. Later toolchains report that close, and
-// compat/core_async_next keeps their tests in a file of this name, which
-// the canary copies over this one (.github/workflows/canary.yml); both
-// files hold as many tests, so scripts/test_manifest.tsv fits either.
-
 ///|
-test "MoonBit 0.10.20 has no report of a missing close_notify" {
-  assert_false(incomplete_close(Failure("closed")))
+/// A TLS session as core/async's client is after its peer closed the
+/// connection beneath without close_notify: every read raises
+/// `@io.UnexpectedEof`.
+priv struct UncleanIo {
+  reader : @io.BinaryReaderController
+  writer : @io.BinaryWriterController
+  mut reads : Int32
 }
 
 ///|
-/// Without that report a close without close_notify is EOF, which the
-/// client cannot tell from a clean end (RFC 9112, section 9.8, needs it).
+impl @io.BinaryReaderImpl for UncleanIo with fn name(_) {
+  "UncleanIo"
+}
+
+///|
+impl @io.BinaryReaderImpl for UncleanIo with fn get_controller(self) {
+  self.reader
+}
+
+///|
+impl @io.BinaryReaderImpl for UncleanIo with fn raw_read_impl(
+  self,
+  _out,
+  offset~,
+  max_len~,
+) {
+  ignore(offset)
+  ignore(max_len)
+  self.reads += 1
+  raise @io.UnexpectedEof
+}
+
+///|
+impl @io.BinaryWriterImpl for UncleanIo with fn name(_) {
+  "UncleanIo"
+}
+
+///|
+impl @io.BinaryWriterImpl for UncleanIo with fn get_controller(self) {
+  self.writer
+}
+
+///|
+impl @io.BinaryWriterImpl for UncleanIo with fn raw_write_impl(
+  _,
+  _bytes,
+  offset~,
+  len~,
+) {
+  ignore(offset)
+  len
+}
+
+///|
+impl @io.BinaryWriterImpl for UncleanIo with fn flush_partial_data(_) {
+
+}
+
+///|
+impl @io.BinaryReader for UncleanIo
+
+///|
+impl @io.BinaryWriter for UncleanIo
+
+///|
+/// A SocketConn over `io`, as `from_tls` builds one when `tls` is true and
+/// as `from_tcp` does otherwise.
+fn unclean_conn(
+  io : UncleanIo,
+  tls~ : Bool,
+) -> SocketConn[UncleanIo, UncleanIo] {
+  {
+    reader: io,
+    writer: io,
+    close_: () => (),
+    closed: false,
+    eof: false,
+    incomplete: false,
+    pending: b"",
+    read_buffer: [],
+    read_size: 4096,
+    cancel_read: None,
+    cancel_write: None,
+    lower_sends: if tls {
+      Some(() => 0L)
+    } else {
+      None
+    },
+    lower_failure: if tls {
+      Some(() => None)
+    } else {
+      None
+    },
+  }
+}
+
+///|
+/// The predicate, and a real TLS session whose server drops the connection
+/// without close_notify: its reads raise IncompleteClose, again after the
+/// first.
 #cfg(not(platform="windows"))
-async test "a TLS session closed without close_notify reads as EOF on MoonBit 0.10.20" {
+async test "the toolchain's report of a missing close_notify is recognised" {
+  assert_true(incomplete_close(@io.UnexpectedEof))
+  assert_true(
+    incomplete_close(
+      @io.ReaderError::TransportError(@io.UnexpectedEof, context="@tls.Tls"),
+    ),
+  )
+  assert_false(incomplete_close(@io.LengthLimitExceeded))
+  assert_false(
+    incomplete_close(
+      @mttp_core.TransportError(kind=Network, phase=Unknown, detail="reset"),
+    ),
+  )
   let cert = "src/conn/testdata/localhost.pem"
   @async.with_timeout(5000, () => {
     let listener = @socket.TcpServer(@socket.Addr::parse("127.0.0.1:0"))
@@ -38,7 +137,54 @@ async test "a TLS session closed without close_notify reads as EOF on MoonBit 0.
       let conn = from_tls(tls, from_tcp(tcp), lower_sends=() => 0L)
       defer conn.close()
       assert_eq(conn.read(max_len=16), Some(b"bye"))
-      assert_eq(conn.read(max_len=16), None)
+      for _ in 0..<2 {
+        try conn.read(max_len=16) |> ignore catch {
+          @mttp_core.TransportError(kind=IncompleteClose, ..) => ()
+          error => raise error
+        } noraise {
+          _ => fail("a close without close_notify read as EOF")
+        }
+      }
     })
   })
+}
+
+///|
+/// RFC 9112, section 9.8: a TLS session closed without close_notify is
+/// `IncompleteClose`, and stays so for later reads until close, as
+/// `rt.Conn` asks. TCP has no such signal to miss, so there the same error
+/// is an ordinary failure.
+async test "a TLS session closed without close_notify reads as IncompleteClose" {
+  let io = UncleanIo::{
+    reader: @io.BinaryReaderController(),
+    writer: @io.BinaryWriterController(),
+    reads: 0,
+  }
+  let conn : &@rt.Conn = unclean_conn(io, tls=true)
+  for _ in 0..<2 {
+    try conn.read(max_len=16) catch {
+      @mttp_core.TransportError(kind=IncompleteClose, phase=Unknown, ..) => ()
+      error => raise error
+    } noraise {
+      _ => fail("the read after an unclean close succeeded")
+    }
+  }
+  // The second read did not go back to the session.
+  assert_eq(io.reads, 1)
+  conn.close()
+  assert_eq(conn.read(max_len=16), None)
+  let tcp : &@rt.Conn = unclean_conn(
+    {
+      reader: @io.BinaryReaderController(),
+      writer: @io.BinaryWriterController(),
+      reads: 0,
+    },
+    tls=false,
+  )
+  try tcp.read(max_len=16) catch {
+    @mttp_core.TransportError(kind=Network, phase=Unknown, ..) => ()
+    error => raise error
+  } noraise {
+    _ => fail("the read after an unclean close succeeded")
+  }
 }

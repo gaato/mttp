@@ -75,9 +75,8 @@ async fn write_output(path : String, output : String, check~ : Bool) -> Unit {
 }
 
 ///|
-// Use the active compiler's formatter: parser 0.4.8's formatter can emit
-// newer syntax than moonc 0.10.20 understands. Stdin avoids temporary files
-// and keeps --check read-only.
+// Use the active compiler's formatter so generated code uses the pinned
+// toolchain's canonical syntax. Stdin keeps --check read-only.
 async fn formatted(source : String) -> String {
   let result = @shell.Cmd("moonfmt", ["-"], stdin=Text(source)).output(
     timeout_ms=30000,

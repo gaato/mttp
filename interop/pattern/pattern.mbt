@@ -21,7 +21,7 @@ pub fn binary(n : Int32) -> Bytes {
 /// `n` bytes of compressible text: numbered lines of the same sentence, so
 /// every server's encoder has something to shrink.
 pub fn text(n : Int32) -> Bytes {
-  let out = Buffer(size_hint=n + 64)
+  let out = Buffer(capacity=n + 64)
   let mut line = 0
   while out.length() < n {
     line += 1

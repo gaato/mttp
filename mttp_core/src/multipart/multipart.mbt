@@ -452,7 +452,7 @@ pub fn encode_segments_fresh(
 /// Joins encoded segments into one buffer, preserving their order.
 pub fn join_segments(segments : Array[Bytes]) -> Bytes {
   let size = segments.fold(init=0, (size, segment) => size + segment.length())
-  let buffer = Buffer(size_hint=size)
+  let buffer = Buffer(capacity=size)
   for segment in segments {
     buffer.write_bytes(segment)
   }

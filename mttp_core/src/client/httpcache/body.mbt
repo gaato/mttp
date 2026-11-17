@@ -54,7 +54,7 @@ impl @mttp_core.BodyStream for Collected with fn read_some(self) {
       if !self.over {
         if bytes.length() > self.limit - self.buffer.length() {
           self.over = true
-          self.buffer = Buffer(size_hint=0)
+          self.buffer = Buffer(capacity=0)
         } else {
           self.buffer.write_bytes(bytes)
         }
@@ -75,7 +75,7 @@ impl @mttp_core.BodyStream for Collected with fn read_some(self) {
 impl @mttp_core.BodyStream for Collected with fn close(self) {
   if !self.closed {
     self.closed = true
-    self.buffer = Buffer(size_hint=0)
+    self.buffer = Buffer(capacity=0)
     (self.close_)()
   }
 }

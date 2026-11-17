@@ -1,17 +1,7 @@
 ///|
-/// The port `addr` is bound to, read from its text, which ends in `:port`.
-/// core/async's `Addr` has a `port()` method on MoonBit 0.10.20 and a
-/// `port` field on later toolchains; the text is what both share.
+/// The port the listener is bound to, widened for the portable dialer.
 fn port_of(addr : @socket.Addr) -> Int32 {
-  let text = addr.to_string()
-  guard text.rev_find(":") is Some(colon) else {
-    abort("no port in the address \{text}")
-  }
-  let mut port = 0
-  for digit in text[colon + 1:] {
-    port = port * 10 + (digit.to_int() - '0'.to_int())
-  }
-  port
+  addr.port.to_int()
 }
 
 ///|

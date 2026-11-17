@@ -7,6 +7,11 @@ never does.
 
 ## [Unreleased]
 
+### Changed
+
+- Pin MoonBit 0.10.21+06da1ed44, migrate Buffer capacity hints and regenerate
+  the schemagen fixtures and interfaces with the pinned formatter.
+
 ### Added
 
 - `client/httpcache`: RFC 9111 private `HttpCache` Backend wrapper with

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Regenerate fixtures with the pinned MoonBit 0.10.21+06da1ed44 formatter
+  and use core/async's recursive file removal API for test cleanup.
+
 ## [0.1.0] - 2026-11-17
 
 ### Added

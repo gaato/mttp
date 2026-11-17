@@ -71,7 +71,7 @@ async test "a Response is marked exactly when close_on_shutdown is true and it h
     let source = BlockedSource::{ first: b"data: 1\n\n", reads: 0, closes: 0, }
     let adapter = fetch_handler(_ => streamed(source, cut))
     let probe = Probe::new()
-    let controller = @js_async.AbortController::new()
+    let controller = @js_async.AbortController()
     let reply = awaited(
       adapter(signalled_request(verb, controller.signal()), probe.callback()),
     ).wait()
@@ -136,7 +136,7 @@ async test "shutdown or a request abort ends a body cleanly while its read waits
     let source = BlockedSource::{ first: b"data: 1\n\n", reads: 0, closes: 0, }
     let adapter = fetch_handler(_ => streamed(source, Some(true)))
     let probe = Probe::new()
-    let controller = @js_async.AbortController::new()
+    let controller = @js_async.AbortController()
     let reply = awaited(
       adapter(signalled_request("GET", controller.signal()), probe.callback()),
     ).wait()
@@ -223,7 +223,7 @@ async test "aborts after a completed body cancel nothing and close nothing twice
     let source = OutputSource::{ reads: 0, closes: 0, }
     let probe = Probe::new()
     let adapter = fetch_handler(_ => streamed(source, Some(cut)))
-    let controller = @js_async.AbortController::new()
+    let controller = @js_async.AbortController()
     let reply = awaited(
       adapter(signalled_request("GET", controller.signal()), probe.callback()),
     ).wait()

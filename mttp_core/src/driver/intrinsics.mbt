@@ -1,6 +1,6 @@
 // The only file in the repository that names the compiler's `%async`
 // intrinsics (scripts/test_layout.mbtx enforces this). They are undocumented
-// compiler builtins. On 0.10.20 their types match the declarations in
+// compiler builtins. On 0.10.21 their types match the declarations in
 // moonbitlang/core/async/internal/coroutine/async_primitive.mbt one for one;
 // only the local names differ (core: `run_async`, `async_suspend`,
 // `raise_cancellation_signal`, `capture_cancellation`). A toolchain that

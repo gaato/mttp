@@ -193,9 +193,7 @@ async fn port_free(addr : String) -> Unit {
 
 ///|
 async fn make_dir(path : String) -> Unit {
-  if !(@fs.exists(path) && @fs.kind(path) is Directory) {
-    @fs.mkdir(path, recursive=true)
-  }
+  @fs.mkdir(path, recursive=true, allow_existing=true)
 }
 
 ///|

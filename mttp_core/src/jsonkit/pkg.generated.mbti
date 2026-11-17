@@ -7,17 +7,17 @@ import {
 }
 
 // Values
-pub fn expect_object(@json.Json, @json.JsonPath) -> Map[String, @json.Json] raise @json.JsonDecodeError
+pub fn expect_object(@json.Json, @json.DecodeContext) -> Map[String, @json.Json] raise @json.JsonDecodeError
 
-pub fn[T : @json.FromJson] field(Map[String, @json.Json], String, @json.JsonPath) -> T raise @json.JsonDecodeError
+pub fn[T : @json.FromJson] field(Map[String, @json.Json], String, @json.DecodeContext) -> T raise @json.JsonDecodeError
 
-pub fn[T] open_int(@json.Json, @json.JsonPath, (Int32) -> T?, (Int32) -> T) -> T raise @json.JsonDecodeError
+pub fn[T] open_int(@json.Json, @json.DecodeContext, (Int32) -> T?, (Int32) -> T) -> T raise @json.JsonDecodeError
 
-pub fn[T] open_string(@json.Json, @json.JsonPath, (String) -> T?, (String) -> T) -> T raise @json.JsonDecodeError
+pub fn[T] open_string(@json.Json, @json.DecodeContext, (String) -> T?, (String) -> T) -> T raise @json.JsonDecodeError
 
-pub fn[T : @json.FromJson] opt_field(Map[String, @json.Json], String, @json.JsonPath) -> T? raise @json.JsonDecodeError
+pub fn[T : @json.FromJson] opt_field(Map[String, @json.Json], String, @json.DecodeContext) -> T? raise @json.JsonDecodeError
 
-pub fn[T : @json.FromJson] presence_field(Map[String, @json.Json], String, @json.JsonPath) -> Presence[T] raise @json.JsonDecodeError
+pub fn[T : @json.FromJson] presence_field(Map[String, @json.Json], String, @json.DecodeContext) -> Presence[T] raise @json.JsonDecodeError
 
 // Errors
 

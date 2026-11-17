@@ -595,7 +595,7 @@ async fn publish_dry_run(modules : Array[String]) -> Unit {
     }
     pending.push(name)
   }
-  @fs.rmdir(scratch, recursive=true)
+  @fs.remove(scratch, recursive=true)
   @env.exit(status)
 }
 
@@ -654,7 +654,7 @@ async fn publish_module(
     stderr=AppendToFile(log),
   ).status()
   let out = read(log).trim_end(chars="\n").to_owned()
-  @fs.rmdir(scratch, recursive=true)
+  @fs.remove(scratch, recursive=true)
   if out != "" {
     println(out)
   }

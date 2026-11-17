@@ -304,7 +304,7 @@ async test "socket adapter translates runtime I O failures and preserves transpo
 
 ///|
 /// A TLS session fails with an error of its own, or wraps the error of
-/// the connection beneath on toolchains after MoonBit 0.10.20. The adapter
+/// the connection beneath. The adapter
 /// reports the last failure beneath for an error that is not a
 /// `TransportError`, and keeps a `TransportError` as it is.
 async test "a TLS failure reports the last failure beneath instead of a wrapped one" {
@@ -344,8 +344,7 @@ async test "a TLS failure reports the last failure beneath instead of a wrapped 
 ///|
 /// Over TLS, a read failure that the toolchain does not report as a close
 /// without close_notify keeps its kind. Once a read found such a close
-/// (`incomplete`, which a toolchain after MoonBit 0.10.20 sets; the test
-/// of that is in compat/core_async_next), later reads raise
+/// (`incomplete`, tested in incomplete_close_wbtest.mbt), later reads raise
 /// `IncompleteClose` again without reading beneath, until close.
 async test "an unclean TLS close stays IncompleteClose until close" {
   let sending : () -> Int64 = () => 0L

@@ -220,8 +220,8 @@ fn enum_code(
               label: None,
               ..
             },
-            tail=Empty
-          )
+            tail=Empty,
+          ),
         )) {
         reject(
           case_.loc,

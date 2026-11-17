@@ -1,7 +1,7 @@
 ///|
 /// Encodes UTF-8 with replacement for lone surrogates.
 pub fn encode_utf8(text : String) -> Bytes {
-  let buffer = Buffer(size_hint=text.length())
+  let buffer = Buffer(capacity=text.length())
   let units = text.length()
   for i = 0; i < units; {
     let unit = text.code_unit_at(i).to_int()

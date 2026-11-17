@@ -194,10 +194,8 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
 /// The error to report for `error`, which the reader or writer raised.
 ///
 /// A TLS session fails because the connection beneath it did, or on its
-/// own. MoonBit 0.10.20's core/async raises the error from beneath as it
-/// is, a `TransportError`. Later toolchains wrap it in `@io.ReaderError`
-/// or `@io.WriterError`, which source that builds on both toolchains
-/// cannot match, so an error other than a `TransportError` stands for the
+/// own. core/async wraps errors from beneath in `@io.ReaderError`
+/// or `@io.WriterError`, so an error other than a `TransportError` stands for the
 /// last failure beneath, if there was one: the session raises that failure
 /// again from every operation after it.
 fn[R, W] SocketConn::cause(self : SocketConn[R, W], error : Error) -> Error {

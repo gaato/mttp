@@ -249,7 +249,7 @@ async test "send and close waits are bounded and oversized sends do not write" {
   let socket = fake_socket()
   let handle = attach(socket, 4, 2048)
   let waiting = observe_receive(
-    handle.wait(@js_async.AbortController::new().signal()),
+    handle.wait(@js_async.AbortController().signal()),
   )
   let sent = observe_send(handle.send("ok", b"", false))
   for _ in 0..<1024 {

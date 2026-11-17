@@ -42,7 +42,7 @@ pub async fn websocket_connect(
     .iter()
     .map(pair => FixedArray::from_array([pair.0, pair.1]))
     .collect()
-  let controller = @js_async.AbortController::new()
+  let controller = @js_async.AbortController()
   errdefer controller.abort()
   // Start host I/O before the timeout's task group can yield to another
   // request's scheduler turn. Cancellation still owns the in-flight upgrade.
@@ -94,7 +94,7 @@ impl @ws.Session for HostSession with fn recv(self) {
   defer {
     self.receiving = false
   }
-  let controller = @js_async.AbortController::new()
+  let controller = @js_async.AbortController()
   self.handle.wait(controller.signal()).wait(abort_controller=controller) catch {
     _ => raise @ws.WsError(kind=Protocol, detail="host receive failed")
   }

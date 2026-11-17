@@ -26,27 +26,6 @@ jobs:
       # tests before its static registry refresh (as in ci.yml).
       - name: Update registry index before testing
         run: moon update
-      # MoonBit after 0.10.20 adds methods to core/async's IO traits that
-      # 0.10.20 refuses, and `@io.UnexpectedEof`, which its TLS client
-      # raises for a peer that closed without close_notify; mttp's code
-      # that needs them cannot sit in the tree yet. compat/core_async_next
-      # keeps it at the paths it takes in the tree, with `.next` appended:
-      # new files (the impls) and files that replace in-tree versions for
-      # 0.10.20, which cannot tell a close without close_notify
-      # (incomplete_close.mbt, and the tests of it in socketconn and backend,
-      # whose in-tree versions hold as many tests, so the test manifest fits
-      # either toolchain). This copies them in on a toolchain that has the
-      # methods; both changes are in the same nightlies, so one check serves.
-      - name: Adopt core/async's newer IO traits if this toolchain has them
-        run: |
-          traits="${MOON_HOME:-$HOME/.moon}/lib/core/async/io/pkg.generated.mbti"
-          if grep -q 'fn name(Self) -> String' "$traits"; then
-            cd compat/core_async_next
-            find . -name '*.mbt.next' | while read -r next; do
-              cp "$next" "../../${next%.next}"
-              echo "adopted ${next%.next}"
-            done
-          fi
       - name: Validate all targets and ledgers
         run: scripts/gates.sh full
 

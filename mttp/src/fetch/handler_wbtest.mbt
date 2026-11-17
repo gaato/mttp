@@ -265,7 +265,7 @@ async test "fetch response backpressure bounds chunks and closes sources on EOF 
 async test "request abort cancels a blocked handler and settles its background registration" {
   let started = @cond_var.Cond()
   let cleaned = Ref(false)
-  let controller = @js_async.AbortController::new()
+  let controller = @js_async.AbortController()
   let probe = Probe::new()
   let adapter = fetch_handler(_ => {
     defer {

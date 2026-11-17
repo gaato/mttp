@@ -40,8 +40,8 @@ fn ranges(source : String, property : String) -> Array[(Int32, Int32)] raise {
     }
     guard prop == property else { continue }
     let (lo, hi) = match codes.split("..").collect() {
-      [a] => (@string.parse_int(a, base=16), @string.parse_int(a, base=16))
-      [a, b] => (@string.parse_int(a, base=16), @string.parse_int(b, base=16))
+      [a] => (@string.parse_int(a, radix=16), @string.parse_int(a, radix=16))
+      [a, b] => (@string.parse_int(a, radix=16), @string.parse_int(b, radix=16))
       _ => fail("bad line \{line}")
     }
     found.push((lo, hi))
