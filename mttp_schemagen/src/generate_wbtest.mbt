@@ -203,9 +203,16 @@ async fn test_directory() -> String {
 }
 
 ///|
+/// `rm -rf`, like `mktemp` above: `@fs.rmdir` is deprecated on newer
+/// toolchains, and `@fs.remove` is not recursive on the pinned 0.10.20.
+async fn remove_test_directory(dir : String) -> Unit {
+  @shell.Cmd("rm", ["-rf", "--", dir]).output().check()
+}
+
+///|
 async test "only marked files are replaced and check never writes" {
   let dir = test_directory()
-  defer @fs.rmdir(dir, recursive=true)
+  defer @async.protect_from_cancel(() => remove_test_directory(dir))
   let path = dir + "/model_schema.mbt"
   @fs.write_text(path, "// user code\nlet sentinel = 1\n")
   let marked = generated_marker + " v0.1.0; moonc test. Do not edit.\n"
@@ -260,7 +267,7 @@ async test "only marked files are replaced and check never writes" {
 ///|
 async test "freshly generated collision and response fixtures compile and execute" {
   let dir = test_directory()
-  defer @fs.rmdir(dir, recursive=true)
+  defer @async.protect_from_cancel(() => remove_test_directory(dir))
   let source = @fs.read_text("release.input") +
     "\n" +
     (
