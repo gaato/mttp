@@ -57,7 +57,8 @@ wildcards, duplicate cases, and unexpected cases all fail. IDs and verdicts
 remain unchanged; numeric `/runCase` indices restart in each batch.
 
 Each fuzzing server defaults to a 5 GiB memory cap without swap;
-`INTEROP_AUTOBAHN_MEMORY` overrides it (for example, `3g` for a pressure test).
+`INTEROP_AUTOBAHN_MEMORY` overrides it (`0` removes the per-container cap,
+or use `3g` for a pressure test).
 Restarting the server releases PyPy's retained case data and compression
 state. Canary run 44022015993 confirmed OOMKilled/137 during old full-suite
 case 367 (12.4.12), followed by connection refused and no reports. In that
@@ -65,11 +66,29 @@ old ordering section 12 started at 302 and section 13 at 392. Local unsplit
 3 GiB runs also OOM-killed the server at varying positions; increasing the
 report wait did not address that failure.
 
-Local validation on 2026-11-17 used Docker with `--memory=5g` and
-`--memory-swap=5g` on every server: all 517 cases produced reports, with
-460 passed, 57 exact known verdicts, 0 failed, and no OOM in any batch.
-The complete command took 360.61 seconds after acquiring the gates lock,
-including inventory discovery, all three batches, cleanup and aggregation.
+Cleanup validation on 2026-11-17 used Docker without per-container memory
+limits (`INTEROP_AUTOBAHN_MEMORY=0`): all 517 cases produced reports, with
+460 passed, 57 exact known verdicts and 0 failed. The complete command took
+314.86 seconds after acquiring the gates lock. With container tracing enabled,
+the observed peak was one running container, and every inventory/batch
+boundary showed zero. Separate lifecycle tests started all four HTTP servers
+together (peak four), then verified all four were removed; normal, failed,
+CLI-cancelled and batch-cancelled paths also ended with zero containers.
+
+Container ownership is independent of the `docker run`/`podman run` client
+process. Every invocation has a unique name. Group cleanup runs after CLI
+children have terminated and executes `rm -f NAME` protected from cancellation,
+then queries the daemon to verify the name is absent. It retries transient
+removal failures and aborts if absence cannot be verified, before another
+batch can start. The `state.txt` snapshot is explicitly **before removal**;
+`Running=true` there does not establish that the container survived cleanup.
+Foreground tools (including Http11Probe builds/runs and Autobahn's server
+direction), HTTP servers, SOCKS proxies and WebSocket hosts use the same
+checked cleanup. `INTEROP_CONTAINER_TRACE=1` prints `docker ps`/`podman ps`
+tables and the observed peak count at lifecycle boundaries.
+`moon run interop/run.mbtx -- --self-test-containers` exercises real normal,
+failed, cancelled and unverifiable-daemon cleanup, including cancellation of
+a fuzzing-server batch. Run it under the same gates lock as other interop runs.
 
 Client-run failures print outcome counts and first/last full errors per kind,
 the container state (including `OOMKilled`), and each affected fuzzing server's
@@ -294,6 +313,13 @@ nginx node_stdlib` and `./garden.sh repl`. For example:
 ```text
 payload 'POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n0\n\r\n' | fanout mttp gunicorn go_stdlib hyper nginx node_stdlib | grid mttp gunicorn go_stdlib hyper nginx node_stdlib
 ```
+
+Garden is managed by Compose in that external checkout, not by this runner.
+After normal or interrupted work, run `./garden.sh stop` (`docker compose down`)
+and verify `docker compose ps -a` is empty before restarting, so retained origin
+containers do not consume the next run's memory. For concurrent sessions use
+distinct `COMPOSE_PROJECT_NAME` values and the same value when stopping each
+session, so cleanup does not remove another session's containers.
 
 Keep the input and full `fanout` output, not just the grid: Garden normalizes
 some header differences, including Content-Length and Transfer-Encoding, and

@@ -38,6 +38,19 @@ suberror RunError {
 }
 
 ///|
+suberror ContainerCleanupError {
+  ContainerCleanupError(String)
+}
+
+///|
+priv struct ContainerTrace {
+  mut peak : Int32
+}
+
+///|
+let container_trace : ContainerTrace = { peak: 0, }
+
+///|
 /// The name of the module in interop/moon.mod, which moon's build paths
 /// follow. The modules under test are named only in interop/moon.mod, the
 /// moon.pkg files and scripts/modules.tsv.
@@ -456,8 +469,156 @@ async fn capture(
   args : Array[String],
   timeout_ms~ : Int32 = 600000,
 ) -> (Int32, String, String) {
+  // --rm only removes a container after its process exits. Killing the
+  // foreground engine CLI need not stop that process in the daemon.
+  if args.get(0) == Some("run") &&
+    (
+      program == "docker" ||
+      program == "podman" ||
+      @env.get_env_var("INTEROP_ENGINE") == Some(program)
+    ) {
+    let name = run_container_name(args).unwrap_or_else(() => {
+      container_name("job")
+    })
+    let args = if run_container_name(args) is Some(_) {
+      args
+    } else {
+      ["run", "--name", name, ..args[1:]]
+    }
+    if args.contains("-d") || args.contains("--detach") {
+      return capture_raw(program, args, timeout_ms~)
+    }
+    return with_containers(program, [name], () => {
+      capture_raw(program, args, timeout_ms~)
+    })
+  }
+  capture_raw(program, args, timeout_ms~)
+}
+
+///|
+async fn capture_raw(
+  program : String,
+  args : Array[String],
+  timeout_ms~ : Int32 = 600000,
+) -> (Int32, String, String) {
   let out = @shell.Cmd(program, args).output(timeout_ms~)
   (out.exit_code(), out.stdout(), out.stderr())
+}
+
+///|
+fn container_name(role : String) -> String {
+  "mttp-interop-\{role}-" +
+  @env.rand(12).unwrap().to_array().map(b => b.to_int().to_string()).join("-")
+}
+
+///|
+fn run_container_name(args : Array[String]) -> String? {
+  for i in 0..<args.length() {
+    if args[i] == "--name" {
+      return args.get(i + 1)
+    }
+  }
+  None
+}
+
+///|
+async fn container_present(engine : String, name : String) -> Bool {
+  // A successful daemon query distinguishes absence from an unavailable
+  // daemon; an inspect error alone cannot establish that cleanup succeeded.
+  let (status, out, err) = capture_raw(
+    engine,
+    ["ps", "-a", "--filter", "name=\{name}", "--quiet"],
+    timeout_ms=10000,
+  )
+  guard status == 0 else {
+    raise ContainerCleanupError(
+      "cannot verify removal of \{name}: ps exit \{status}: \{err[:2048]}",
+    )
+  }
+  !out.trim().is_empty()
+}
+
+///|
+async fn trace_containers(engine : String, phase : String) -> Unit {
+  if @env.get_env_var("INTEROP_CONTAINER_TRACE") != Some("1") {
+    return
+  }
+  let (status, out, err) = capture_raw(engine, ["ps"], timeout_ms=10000)
+  guard status == 0 else {
+    raise ContainerCleanupError("container trace failed: \{err[:2048]}")
+  }
+  let count = (out.split("\n").filter(line => !line.trim().is_empty()).count() -
+  1).max(0)
+  container_trace.peak = container_trace.peak.max(count)
+  println(
+    "Containers \{phase}: running=\{count}, peak=\{container_trace.peak}\n\{out}",
+  )
+}
+
+///|
+async fn remove_container(engine : String, name : String) -> Unit {
+  @async.protect_from_cancel(() => {
+    let mut problem = ""
+    for attempt in 0..<3 {
+      let (status, out, err) = capture_raw(
+        engine,
+        ["rm", "-f", name],
+        timeout_ms=10000,
+      ) catch {
+        error => (-1, "", "\{Repr(error)}")
+      }
+      problem = "rm -f exit \{status}: \{(out + err)[:2048]}"
+      let present = container_present(engine, name) catch {
+        ContainerCleanupError(message) => {
+          problem += "; \{message}"
+          true
+        }
+        error => {
+          problem += "; \{Repr(error)}"
+          true
+        }
+      }
+      if !present {
+        println("Container removed; verified absent: \{name}")
+        trace_containers(engine, "after removal of \{name}")
+        return
+      }
+      if attempt < 2 {
+        @async.sleep(200)
+      }
+    }
+    raise ContainerCleanupError(
+      "container still present or removal unverifiable: \{name}; \{problem}",
+    )
+  })
+}
+
+///|
+async fn remove_containers(engine : String, names : Array[String]) -> Unit {
+  @async.protect_from_cancel(() => {
+    let problems = []
+    for name in names {
+      remove_container(engine, name) catch {
+        ContainerCleanupError(message) => problems.push(message)
+        error => problems.push("\{name}: \{Repr(error)}")
+      }
+    }
+    if !problems.is_empty() {
+      raise ContainerCleanupError(problems.join("\n"))
+    }
+  })
+}
+
+///|
+/// Ownership encloses the task group/CLI operation, so removal runs after
+/// the CLI has terminated even when startup, the body or cancellation fails.
+async fn[X] with_containers(
+  engine : String,
+  names : Array[String],
+  body : async () -> X,
+) -> X {
+  defer @async.protect_from_cancel(() => remove_containers(engine, names))
+  body()
 }
 
 ///|
@@ -665,10 +826,10 @@ async fn make_certs() -> Unit {
 
 ///|
 /// Starts the three servers and waits for their ports.
-async fn start_servers(env : Env) -> Unit {
-  for server in servers {
-    let name = "interop-\{server.name}"
-    ignore(capture(env.engine, ["rm", "-f", name]))
+async fn start_servers(env : Env, names : Array[String]) -> Unit {
+  for i in 0..<servers.length() {
+    let server = servers[i]
+    let name = names[i]
     ignore(
       must(
         env.engine,
@@ -689,25 +850,16 @@ async fn start_servers(env : Env) -> Unit {
       ),
     )
   }
-  for server in servers {
+  for i in 0..<servers.length() {
+    let server = servers[i]
     for port in [server.port, server.port + 1] {
       wait_port("127.0.0.1:\{port}", server.name) catch {
         error => {
-          let (_, out, err) = capture(env.engine, [
-            "logs",
-            "interop-\{server.name}",
-          ])
+          let (_, out, err) = capture(env.engine, ["logs", names[i]])
           raise RunError("\{error}\n\{out}\{err}")
         }
       }
     }
-  }
-}
-
-///|
-async fn stop_servers(env : Env) -> Unit {
-  for server in servers {
-    ignore(capture(env.engine, ["rm", "-f", "interop-\{server.name}"]))
   }
 }
 
@@ -852,6 +1004,7 @@ async fn run_http11probe(env : Env) -> Unit {
       ],
     ),
   ) catch {
+    ContainerCleanupError::_ as error => raise error
     error => (-1, "", "\{error}")
   }
   @fs.write_text(
@@ -929,6 +1082,7 @@ async fn run_schemathesis(env : Env) -> Unit {
       ],
     ),
   ) catch {
+    ContainerCleanupError::_ as error => raise error
     error => (-1, "", "\{error}")
   }
   @fs.write_text(
@@ -1109,6 +1263,7 @@ async fn run_one(
 ) -> Unit {
   let (program, args) = command
   let (output, problem) = try capture(program, args, timeout_ms=600000) catch {
+    ContainerCleanupError::_ as error => raise error
     error => ("", "\{program} did not finish: \{error}")
   } noraise {
     (status, out, err) => {
@@ -1210,7 +1365,7 @@ async fn autobahn_client_state(env : Env, container : String) -> (String, Bool) 
   }
   let state = (out + err).trim().to_owned().split("\n").to_array().join("\\n")
   (
-    "Autobahn container state (\{status}): \{state[:4096]}",
+    "Autobahn container state before removal (\{status}): \{state[:4096]}",
     status == 0 && healthy,
   )
 }
@@ -1226,22 +1381,31 @@ async fn autobahn_client_batch(
 ) -> Int32 {
   port_free("127.0.0.1:39050")
   port_free("127.0.0.1:39051")
+  trace_containers(env.engine, "before \{dir}")
   make_dir("\{dir}/reports")
   @fs.write_text("\{dir}/client.log", "")
   let config_path = "\{dir}/config.json"
   @fs.write_text(config_path, config)
   // A cancelled Docker CLI can finish creating its container later. Give each
   // run a distinct name so an old cleanup cannot remove the next run's server.
-  let container = "mttp-interop-ws-client-" +
-    @env.rand(8).unwrap().to_array().map(b => b.to_int().to_string()).join("-")
+  let container = container_name("ws-client")
   @fs.write_text("\{dir}/container.txt", container)
   let mut complete = false
   @async.with_task_group(group => {
-    defer @async.protect_from_cancel(() => {
-      ignore(capture(env.engine, ["rm", "-f", container]))
+    // Group cleanup runs after every CLI child has terminated. A lexical
+    // defer in the group body would run before those children are joined.
+    group.add_defer(() => {
+      @async.protect_from_cancel(() => remove_container(env.engine, container))
     })
     let memory = @env.get_env_var("INTEROP_AUTOBAHN_MEMORY").unwrap_or("5g")
-    println("Autobahn fuzzingserver \{dir}: memory=\{memory}, swap disabled")
+    let memory_args = if memory == "0" {
+      []
+    } else {
+      ["--memory", memory, "--memory-swap", memory]
+    }
+    println(
+      "Autobahn fuzzingserver \{dir}: container=\{container}, memory=\{memory} (0=no container cap)",
+    )
     let server = @process.spawn(
       group,
       env.engine,
@@ -1253,10 +1417,7 @@ async fn autobahn_client_batch(
           container,
           "--env",
           "PYTHONUNBUFFERED=1",
-          "--memory",
-          memory,
-          "--memory-swap",
-          memory,
+          ..memory_args,
           ..env.user,
           ..env.mount(config_path, "/config/fuzzingserver.json"),
           ..env.mount("\{dir}/reports", "/reports", writable=true),
@@ -1287,6 +1448,7 @@ async fn autobahn_client_batch(
     })
     // Container startup can outlast the ordinary 30 s port probe under load.
     wait_port("127.0.0.1:39050", "Autobahn fuzzingserver", attempts=900)
+    trace_containers(env.engine, "started \{dir}")
     // Sections 12/13 multiply the large-message matrix; the former ten-minute
     // command ceiling expires before the compression cases can finish.
     let client = @process.spawn(
@@ -1440,6 +1602,7 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
       batch_dir,
       autobahn_batch_config(template, batch),
     ) catch {
+      ContainerCleanupError::_ as error => raise error
       error => {
         println("Autobahn batch \{name} failed: \{Repr(error)}")
         1
@@ -1554,7 +1717,11 @@ async fn main_run(filters : Array[String]) -> Int32 {
   }
   prepare_clients(env, filters)
   let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+  let names = servers.map(server => container_name(server.name))
   @async.with_task_group(group => {
+    group.add_defer(() => {
+      @async.protect_from_cancel(() => remove_containers(env.engine, names))
+    })
     let server = @process.spawn(
       group,
       native_server,
@@ -1573,9 +1740,7 @@ async fn main_run(filters : Array[String]) -> Int32 {
     )
     defer api.cancel()
     wait_port(openapi_server_addr, "the mttp endpoint/OpenAPI interop server")
-    // Cleanup first, so that a start failing partway removes what started.
-    defer @async.protect_from_cancel(() => stop_servers(env))
-    start_servers(env)
+    start_servers(env, names)
     for runtime in runtimes {
       for server in servers {
         for scheme in schemes {
@@ -1663,12 +1828,8 @@ async fn run_socks5h(
   for image in ["nginx", "socks5"] {
     ignore(must(env.engine, ["pull", "--quiet", env.image(image)]))
   }
-  let names = ["mttp-c1-socks", "mttp-c1-socks-origin"]
-  defer @async.protect_from_cancel(() => {
-    for name in names {
-      ignore(capture(env.engine, ["rm", "-f", name]))
-    }
-  })
+  let names = [container_name("socks"), container_name("socks-origin")]
+  defer @async.protect_from_cancel(() => remove_containers(env.engine, names))
   ignore(
     must(
       env.engine,
@@ -1848,37 +2009,41 @@ async fn run_js_websockets(env : Env?) -> Int32 {
         "interop/clients/js/websocket.mjs",
         [],
       )
+      let name = container_name("ws-\{runtime}")
       let args = match env {
-        Some(_) =>
-          [args[0], args[1], "--name", "mttp-w7-ws-\{runtime}", ..args[2:]]
+        Some(_) => [args[0], args[1], "--name", name, ..args[2:]]
         None => args
       }
-      defer @async.protect_from_cancel(() => {
-        if env is Some(env) {
-          ignore(capture(env.engine, ["rm", "-f", "mttp-w7-ws-\{runtime}"]))
-        }
+      let (engine, names) = match env {
+        Some(env) => (env.engine, [name])
+        None => ("", [])
+      }
+      @async.with_task_group(host_group => {
+        host_group.add_defer(() => {
+          @async.protect_from_cancel(() => remove_containers(engine, names))
+        })
+        let server = @process.spawn(
+          host_group,
+          program,
+          args,
+          stdout=ToFile("\{work}/ws-\{runtime}.log"),
+          stderr=ToFile("\{work}/ws-\{runtime}.log"),
+        )
+        defer server.cancel()
+        wait_port("127.0.0.1:\{port}", "\{runtime} WebSocket echo")
+        let run = "\{runtime}/websocket"
+        let expected = rows_of(rows, "server", run).filter(row => {
+          row.id == "websocket"
+        })
+        run_one(
+          tally,
+          "server",
+          run,
+          expected,
+          plan(expected),
+          command("node", client, ["ws://127.0.0.1:\{port}/ws?shutdown"]),
+        )
       })
-      let server = @process.spawn(
-        group,
-        program,
-        args,
-        stdout=ToFile("\{work}/ws-\{runtime}.log"),
-        stderr=ToFile("\{work}/ws-\{runtime}.log"),
-      )
-      defer server.cancel()
-      wait_port("127.0.0.1:\{port}", "\{runtime} WebSocket echo")
-      let run = "\{runtime}/websocket"
-      let expected = rows_of(rows, "server", run).filter(row => {
-        row.id == "websocket"
-      })
-      run_one(
-        tally,
-        "server",
-        run,
-        expected,
-        plan(expected),
-        command("node", client, ["ws://127.0.0.1:\{port}/ws?shutdown"]),
-      )
     }
   })
   println("WebSocket hosts: \{tally.pass} passed, \{tally.fail} failed")
@@ -1932,16 +2097,13 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
     )
     defer server.cancel()
     wait_port(address, "mttp WebSocket echo server")
-    defer @async.protect_from_cancel(() => {
-      ignore(capture(env.engine, ["rm", "-f", "mttp-interop-ws-server"]))
-    })
     let (status, stdout, stderr) = capture(
       env.engine,
       env.run_args(
         "autobahn",
         [
           "--name",
-          "mttp-interop-ws-server",
+          container_name("ws-server"),
           ..env.user,
           ..env.mount(dir, "/work", writable=true),
         ],
@@ -1982,7 +2144,15 @@ async fn main {
     self_test_autobahn()
     return
   }
+  if filters == ["--self-test-containers"] {
+    self_test_containers()
+    return
+  }
   let status = main_run(filters) catch {
+    ContainerCleanupError(message) => {
+      println("interop: \{message}")
+      2
+    }
     RunError(message) => {
       println("interop: \{message}")
       2
@@ -1993,6 +2163,123 @@ async fn main {
     }
   }
   @env.exit(status)
+}
+
+///|
+/// Exercise daemon ownership with real containers: --sig-proxy=false makes
+/// a killed foreground CLI leave its workload alive unless cleanup owns it.
+async fn self_test_containers() -> Unit {
+  let engine = find_engine()
+  let images = read_images()
+  let image = images["autobahn"]
+  let normal = container_name("test-normal")
+  let (status, _, problem) = capture(engine, [
+    "run", "--rm", "--name", normal, "--entrypoint", "sleep", image, "0.1",
+  ])
+  assert_eq(status, 0, msg=problem)
+  assert_false(container_present(engine, normal))
+  let failed = container_name("test-failed")
+  let (status, _, _) = capture(engine, [
+    "run", "--rm", "--name", failed, "--entrypoint", "false", image,
+  ])
+  assert_true(status != 0)
+  assert_false(container_present(engine, failed))
+  let interrupted = container_name("test-interrupted")
+  let mut timed_out = false
+  @async.with_task_group(group => {
+    group.spawn_bg(() => {
+      ignore(
+        capture(
+          engine,
+          [
+            "run", "--sig-proxy=false", "--name", interrupted, "--entrypoint", "sleep",
+            image, "60",
+          ],
+          timeout_ms=2000,
+        ),
+      ) catch {
+        ContainerCleanupError::_ as error => raise error
+        _ => timed_out = true
+      }
+    })
+    @async.with_timeout(1500, () => {
+      while !container_present(engine, interrupted) {
+        @async.sleep(50)
+      }
+    })
+    trace_containers(engine, "foreground CLI cancellation test")
+  })
+  assert_true(timed_out)
+  assert_false(container_present(engine, interrupted))
+  let errored = container_name("test-body-error")
+  let body_failed = try {
+    with_containers(engine, [errored], () => {
+      ignore(
+        must(engine, [
+          "run", "-d", "--name", errored, "--entrypoint", "sleep", image, "60",
+        ]),
+      )
+      assert_true(container_present(engine, errored))
+      trace_containers(engine, "body error test")
+      raise RunError("intentional body error")
+    })
+    false
+  } catch {
+    RunError("intentional body error") => true
+    error => raise error
+  }
+  assert_true(body_failed)
+  assert_false(container_present(engine, errored))
+  // Failure to contact the daemon must never be mistaken for absence.
+  let rejected = try {
+    remove_container("false", "unverifiable-container")
+    false
+  } catch {
+    ContainerCleanupError(_) => true
+    error => raise error
+  }
+  assert_true(rejected)
+  let root = @fs.realpath(".")
+  let env = { engine, images, root, user: [], }
+  ignore(must("moon", ["build", "--target", "native", "interop/mttp_server"]))
+  make_dir(work)
+  ignore(must(native_server, ["www", "\{work}/www"]))
+  make_certs()
+  let server_names = servers.map(server => container_name("test-\{server.name}"))
+  with_containers(engine, server_names, () => {
+    start_servers(env, server_names)
+    for name in server_names {
+      assert_true(container_present(engine, name))
+    }
+    trace_containers(engine, "HTTP servers ready")
+  })
+  for name in server_names {
+    assert_false(container_present(engine, name))
+  }
+  ignore(
+    must("moon", [
+      "build", "--release", "--target", "native", "interop/ws_client",
+    ]),
+  )
+  let dir = "\{work}/container-cancel-test"
+  if @fs.exists(dir) {
+    @fs.rmdir(dir, recursive=true)
+  }
+  let template = @fs.read_text("interop/servers/autobahn-client.json")
+  let cancelled = @async.with_timeout_opt(1500, () => {
+    autobahn_client_batch(
+      env,
+      dir,
+      autobahn_batch_config(template, ["12.1.18"]),
+    )
+  })
+  assert_true(cancelled is None, msg="batch completed before cancellation test")
+  let name = @fs.read_text("\{dir}/container.txt")
+  assert_false(container_present(engine, name))
+  trace_containers(engine, "container self-tests complete")
+  println(
+    "Container lifecycle self-tests: OK; peak running=\{container_trace.peak}",
+  )
 }
 
 ///|
