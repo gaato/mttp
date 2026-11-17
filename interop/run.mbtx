@@ -1138,6 +1138,11 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
       "build", "--release", "--target", "native", "interop/ws_client",
     ]),
   )
+  // The client tolerates a failed final updateReports call and lets the
+  // adapter judge the reports, so a previous run's reports must not remain.
+  if @fs.exists("\{work}/autobahn-client/reports") {
+    @fs.rmdir("\{work}/autobahn-client/reports", recursive=true)
+  }
   make_dir("\{work}/autobahn-client/reports")
   let config = @fs.read_text("interop/servers/autobahn-client.json")
   let config = if compression_only() {
