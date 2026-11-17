@@ -1,5 +1,5 @@
 ///|
-/// Negotiates gzip, deflate, Brotli or zstd for a response, preferring them
+/// Negotiates zstd, Brotli, gzip or deflate for a response, preferring them
 /// in that order at equal weights. Known bodies smaller
 /// than min_bytes (default 1024, negatives clamp to zero) are passed through;
 /// unknown-length streams are compressed without prefetching. Every input

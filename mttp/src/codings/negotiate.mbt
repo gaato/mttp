@@ -20,8 +20,8 @@ pub extend EncodingChoice with @debug.Debug::{to_repr}
 /// Negotiates gzip, deflate, Brotli and zstd using RFC 9110 quality
 /// weights. Missing or empty Accept-Encoding selects identity. Explicit
 /// exclusions override wildcard weights, repeated names use their lowest
-/// weight, and ties prefer gzip, deflate, Brotli, then zstd. An explicit higher identity weight
-/// wins; Unacceptable means identity and every available encoder are refused.
+/// weight, and ties prefer zstd, Brotli, gzip, then deflate, as Caddy and
+/// @fastify/compress do. An explicit higher identity weight wins; Unacceptable means identity and every available encoder are refused.
 /// At most 16 KiB of field values and 128 nonempty entries are accepted.
 pub fn negotiate_encoding(
   headers : @mttp_core.Headers,
@@ -105,7 +105,7 @@ fn choose_encoding(
   let mut best : Coding? = None
   let mut score = 0
   // In the order ties prefer.
-  for candidate in [(0, Gzip), (1, Deflate), (2, Brotli), (5, Zstd)] {
+  for candidate in [(5, Zstd), (2, Brotli), (0, Gzip), (1, Deflate)] {
     let (index, coding) = candidate
     let weight = weights[index].unwrap_or(wildcard)
     if weight > score {

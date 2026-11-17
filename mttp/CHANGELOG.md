@@ -34,6 +34,11 @@ never does.
 
 - Requires `gaato/mttp_core` 0.3.0; its changelog lists the breaking
   changes, which reach apps that use the re-exported types or typed endpoints.
+- `compress` and `negotiate_encoding` break ties in Accept-Encoding weights
+  by preferring zstd, then Brotli, gzip and deflate, as Caddy and
+  @fastify/compress do. Browsers list all four at equal weight, so they now
+  get zstd where they got gzip. A client that weighs gzip higher still gets
+  gzip.
 - Pin MoonBit 0.10.21+06da1ed44. Adopt its core/async IO traits, typed IO
   errors and positioned FileView reads in the regular tree; TLS closes
   without close_notify now report IncompleteClose on the pinned toolchain.

@@ -9,20 +9,22 @@ test "encoding negotiation honors weights exclusions aliases and identity" {
       ("", @codings.Identity),
       ("gzip", @codings.Encoded(Gzip)),
       ("gzip;q=0.2, br;q=0.8", @codings.Encoded(Brotli)),
-      ("gzip;q=0, *;q=0.5", @codings.Encoded(Deflate)),
+      ("gzip;q=0, *;q=0.5", @codings.Encoded(Zstd)),
       ("gzip;q=0.4, identity;q=0.5", @codings.Identity),
       ("*;q=0", @codings.Unacceptable),
       ("zstd", @codings.Encoded(Zstd)),
       ("zstd, identity;q=0", @codings.Encoded(Zstd)),
       ("gzip;q=0.5, zstd", @codings.Encoded(Zstd)),
-      // At equal weights, the earlier codings win, so that answers to
-      // clients that offered zstd before it was served do not change.
-      ("zstd, br, deflate, gzip", @codings.Encoded(Gzip)),
-      ("zstd;q=0.9, br;q=0.9", @codings.Encoded(Brotli)),
+      // At equal weights zstd, Brotli, gzip and deflate win in that order,
+      // whatever order the client lists them in.
+      ("gzip, deflate, br, zstd", @codings.Encoded(Zstd)),
+      ("gzip, deflate, br", @codings.Encoded(Brotli)),
+      ("deflate, gzip", @codings.Encoded(Gzip)),
+      ("br;q=0.9, zstd;q=0.9", @codings.Encoded(Zstd)),
       ("compress, identity;q=0", @codings.Unacceptable),
       ("*;q=0, identity;q=0.1", @codings.Identity),
       ("GZIP;q=0, x-gzip;q=1", @codings.Identity),
-      ("br;q=1.000, deflate;q=1.", @codings.Encoded(Deflate)),
+      ("br;q=1.000, deflate;q=1.", @codings.Encoded(Brotli)),
       ("gzip;q=0.", @codings.Identity),
     ] {
     assert_eq(

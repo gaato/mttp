@@ -182,9 +182,9 @@ test "serve a dictionary, then responses coded with it" {
 }
 ```
 
-`compress(handler, min_bytes=1024)` negotiates gzip, deflate, Brotli or zstd
-and returns a Handler. At equal weights it prefers them in that order, so a
-client that offers several gets the same coding it got before zstd was served. It skips HEAD, 1xx, 204, 304, Range requests, 206 and
+`compress(handler, min_bytes=1024)` negotiates zstd, Brotli, gzip or deflate
+and returns a Handler. At equal weights it prefers them in that order, the
+smaller output first, as Caddy and @fastify/compress do. It skips HEAD, 1xx, 204, 304, Range requests, 206 and
 Content-Range responses, already encoded responses and `Cache-Control:
 no-transform`. A known length below the threshold stays unencoded when
 identity is allowed; unknown-length streams are compressed without prefetching.
