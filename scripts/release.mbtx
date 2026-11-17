@@ -24,7 +24,8 @@ let usage : String =
   #|section 5.8).
   #|
   #|  moon run scripts/release.mbtx -- bump <module> <version>
-  #|      set a module's version and its import in every moon.work member,
+  #|      set a module's version and its import in every moon.work member
+  #|      and template,
   #|      and move its CHANGELOG [Unreleased] entries under <version>
   #|      (local edit)
   #|  moon run scripts/release.mbtx -- note <module> <section> <text>
@@ -50,6 +51,10 @@ let usage : String =
 
 ///|
 let modules_tsv : String = "scripts/modules.tsv"
+
+///|
+/// Copyable starter modules, outside moon.work; see `module_files`.
+let templates_dir : String = "templates"
 
 ///|
 let release_workflow : String = ".github/workflows/release.yml"
@@ -227,6 +232,9 @@ async fn work_members() -> Array[String] {
 /// The moon.mod of every workspace member, in byte order, so that a bump
 /// reaches nested members such as examples/get as well as top-level ones.
 /// A member without a moon.mod stops the bump before anything is edited.
+/// The copyable templates stay outside moon.work but pin the released
+/// versions, and scripts/templates_gate.mbtx requires those pins to match,
+/// so a bump rewrites their imports too.
 async fn module_files() -> Array[String] {
   let out = []
   for entry in work_members() {
@@ -235,6 +243,13 @@ async fn module_files() -> Array[String] {
       die(2, "release.mbtx: moon.work member \{entry} has no moon.mod")
     }
     out.push(path)
+  }
+  let templates = @fs.readdir(templates_dir, sort=true) catch { _ => [] }
+  for entry in templates {
+    let path = "\{templates_dir}/\{entry}/moon.mod"
+    if is_file(path) {
+      out.push(path)
+    }
   }
   out.sort_by(lexical)
   out
