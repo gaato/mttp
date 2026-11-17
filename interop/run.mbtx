@@ -965,9 +965,11 @@ async fn build_http11probe(env : Env) -> Unit {
 ///|
 /// The .NET settings of both Http11Probe containers: a home and NuGet cache
 /// in the work directory, no telemetry and no first-run banner.
+/// Set HOME too: .NET's named mutexes use it, independently of
+/// DOTNET_CLI_HOME; Docker's numeric non-root user has no writable home.
 let http11probe_env : Array[String] = [
-  "-e", "DOTNET_CLI_HOME=/work/home", "-e", "NUGET_PACKAGES=/work/nuget", "-e", "DOTNET_CLI_TELEMETRY_OPTOUT=1",
-  "-e", "DOTNET_NOLOGO=1",
+  "-e", "HOME=/work/home", "-e", "DOTNET_CLI_HOME=/work/home", "-e", "NUGET_PACKAGES=/work/nuget",
+  "-e", "DOTNET_CLI_TELEMETRY_OPTOUT=1", "-e", "DOTNET_NOLOGO=1",
 ]
 
 ///|
