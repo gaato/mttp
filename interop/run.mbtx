@@ -989,6 +989,8 @@ async fn run_http11probe(env : Env) -> Unit {
     None => (server_addr, "80")
   }
   println("+ http11probe \{host}:\{port}")
+  // Outwait h1server's default five-second head/body deadlines so stall
+  // verdicts observe its 408, rather than racing the probe's own timer.
   let (status, stdout, stderr) = capture(
     env.engine,
     env.run_args(
@@ -1002,7 +1004,7 @@ async fn run_http11probe(env : Env) -> Unit {
       ],
       [
         "/work/bin/Http11Probe.Cli.dll", "--host", host, "--port", port, "--output",
-        "/work/out/report.json",
+        "/work/out/report.json", "--timeout", "15",
       ],
     ),
   ) catch {

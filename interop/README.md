@@ -171,7 +171,9 @@ third-party implementations instead:
   ([build.sh](clients/http11probe/build.sh)), and
   [adapter.py](clients/http11probe/adapter.py) reads its report. The
   build is kept in `_build/interop/http11probe`, so later runs with the same
-  pin need no network for it.
+  pin need no network for it. The probe's connect/read timeout is 15 s,
+  longer than the server's default 5 s head/body deadlines, so stalled
+  requests observe the server's 408 rather than race the probe's timer.
 - **The typed endpoint layer** served by
   [openapi_server](openapi_server/main.mbt), with its own OpenAPI 3.1 document,
   driven directly by Schemathesis 4.33.4. Its four operations cover

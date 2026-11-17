@@ -173,6 +173,10 @@ server	expect-early-answer	raw/*	pass
 # lowercased>, decided by the last row that names it, `h11p-*` included.
 # Only directly: through a proxy its verdicts would be the proxy's.
 server	h11p-*	http11probe/direct	pass
+server	h11p-rfc9112-2.3-http09-request	http11probe/direct	known	RFC 9110 section 15.5.9 permits 408 when a request is not completed in time; the probe sends GET / followed by one CRLF without completing the head and accepts only 400 or a close/timeout without a response
+server	h11p-comp-post-cl-undersend	http11probe/direct	known	RFC 9110 section 15.5.9 permits 408 when a request is not completed in time; the probe sends fewer bytes than Content-Length and accepts only 400 or a close/timeout without a response
+server	h11p-comp-chunked-no-final	http11probe/direct	known	RFC 9110 section 15.5.9 permits 408 when a request is not completed in time; the probe omits the final zero chunk and accepts only 400 or a close/timeout without a response
+server	h11p-mal-incomplete-request	http11probe/direct	known	RFC 9110 section 15.5.9 permits 408 when a request is not completed in time; the probe leaves the head incomplete and accepts only 400 or a close/timeout without a response
 server	h11p-cook-parsed-*	http11probe/direct	n/a	the /cookie tests check a framework's Cookie parser; mttp's server has none (cookies are the client's jar only), so an endpoint for them would test the interop server's own parsing
 
 # Schemathesis 4 drives the dedicated endpoint/OpenAPI server directly. Its
