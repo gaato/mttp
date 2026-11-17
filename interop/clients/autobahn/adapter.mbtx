@@ -10,11 +10,15 @@ import {
 ///|
 async fn main {
   let args = @env.args().filter(a => a != "--")
-  let aggregate = args.get(1) == Some("--client-reports")
+  let mode = args.get(1)
+  let aggregate = mode == Some("--client-reports") ||
+    mode == Some("--server-reports")
   let expected : Map[String, Bool] = Map([])
   let paths = if aggregate {
     guard args.length() >= 4 else {
-      fail("expected --client-reports inventory.txt index.json...")
+      fail(
+        "expected --client-reports or --server-reports inventory.txt index.json...",
+      )
     }
     for line in @fs.read_text(args[2]).split("\n") {
       let id = line.trim().to_owned()
@@ -34,8 +38,10 @@ async fn main {
     }
     [args[1]]
   }
-  let agent = if aggregate {
+  let agent = if mode == Some("--client-reports") {
     "mttp-client"
+  } else if aggregate {
+    "mttp"
   } else {
     args.get(2).unwrap_or("mttp")
   }

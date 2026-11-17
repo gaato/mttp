@@ -2074,39 +2074,66 @@ async fn run_js_websockets(env : Env?) -> Int32 {
 }
 
 ///|
-/// Autobahn's report decides individual cases; a missing report never passes.
-async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
-  let dir = "\{work}/autobahn"
-  make_dir(dir)
+/// Preserve the server direction's selected sections when using the full
+/// inventory: sections outside this list are not part of its existing plan.
+fn autobahn_server_ids(
+  ids : Array[String],
+  compression~ : Bool,
+) -> Array[String] {
+  ids.filter(id => {
+    let section = id.split(".").take(1).collect().join("")
+    if compression {
+      section == "12" || section == "13"
+    } else {
+      ["1", "2", "3", "4", "5", "6", "7", "9", "10", "12", "13"].contains(
+        section,
+      )
+    }
+  })
+}
+
+///|
+async fn autobahn_server_diagnostics(dir : String) -> Unit {
+  println("Autobahn diagnostics: \{dir}")
+  if @fs.exists("\{dir}/state.txt") {
+    println(@fs.read_text("\{dir}/state.txt"))
+  }
+  for
+    (name, log) in [
+      ("Autobahn fuzzingclient", "console.log"),
+      ("mttp WebSocket server", "server.log"),
+    ] {
+    println("\{name} log tail (at most 80 lines / 16 KiB):")
+    let (_, out, err) = capture(
+      "tail",
+      ["-c", "16384", "\{dir}/\{log}"],
+      timeout_ms=10000,
+    ) catch {
+      error => (-1, "", "\{Repr(error)}")
+    }
+    let lines = (out + err).split("\n").to_array()
+    for line in lines[(lines.length() - 80).max(0):] {
+      println(line.to_owned())
+    }
+  }
+}
+
+///|
+/// Each batch releases the fuzzingclient's retained case data before the
+/// next one starts, while keeping state inspection inside checked cleanup.
+async fn autobahn_server_batch(
+  env : Env,
+  dir : String,
+  config : String,
+) -> Int32 {
+  trace_containers(env.engine, "before \{dir}")
+  make_dir("\{dir}/reports")
   let address = "127.0.0.1:39505"
   port_free(address)
-  // Compression matrices exercise hundreds of MiB per case; use optimized
-  // binaries so the verdict measures interoperability within suite deadlines.
-  ignore(
-    must("moon", [
-      "build", "--release", "--target", "native", "interop/mttp_server",
-    ]),
-  )
-  let image = env.image("autobahn")
-  if capture(env.engine, ["image", "inspect", image]).0 != 0 {
-    ignore(must(env.engine, ["pull", image]))
-  }
-  let config =
-    #|{"outdir":"/work/reports","servers":[{"agent":"mttp","url":"ws://127.0.0.1:39505"}],"cases":["1.*","2.*","3.*","4.*","5.*","6.*","7.*","9.*","10.*","12.*","13.*"],"exclude-cases":[],"exclude-agent-cases":{}}
-  let config = if compression_only() {
-    config.replace(
-      old="\"1.*\",\"2.*\",\"3.*\",\"4.*\",\"5.*\",\"6.*\",\"7.*\",\"9.*\",\"10.*\",",
-      new="",
-    )
-  } else {
-    config
-  }
   @fs.write_text("\{dir}/config.json", config)
   let report = "\{dir}/reports/index.json"
-  if @fs.exists(report) {
-    @fs.remove(report)
-  }
   let container = container_name("ws-server")
+  @fs.write_text("\{dir}/container.txt", container)
   let mut complete = false
   @fs.write_text("\{dir}/console.log", "")
   with_containers(env.engine, [container], () => {
@@ -2120,23 +2147,8 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
           println("\{dir}: \{state}")
           complete = complete && healthy
           if !complete {
-            for
-              (name, log) in [
-                ("Autobahn fuzzingclient", "console.log"),
-                ("mttp WebSocket server", "server.log"),
-              ] {
-              println("\{name} log tail (at most 80 lines / 16 KiB):")
-              let (_, out, err) = capture(
-                "tail",
-                ["-c", "16384", "\{dir}/\{log}"],
-                timeout_ms=10000,
-              ) catch {
-                error => (-1, "", "\{Repr(error)}")
-              }
-              let lines = (out + err).split("\n").to_array()
-              for line in lines[(lines.length() - 80).max(0):] {
-                println(line.to_owned())
-              }
+            autobahn_server_diagnostics(dir) catch {
+              error => println("Autobahn diagnostics failed: \{Repr(error)}")
             }
           }
         })
@@ -2172,14 +2184,91 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
         stderr=DuplicateStdout,
       )
       defer client.cancel()
+      trace_containers(env.engine, "started \{dir}")
       let status = @async.with_timeout(3600000, () => client.wait())
       println("Autobahn fuzzingclient exit \{status}")
       complete = status == 0 && @fs.exists(report)
     })
   })
-  let (status, output, problem) = capture("moon", [
-    "run", "interop/clients/autobahn/adapter.mbtx", "--", report,
-  ])
+  if complete {
+    0
+  } else {
+    1
+  }
+}
+
+///|
+/// Autobahn's reports decide individual cases; validate every selected ID
+/// across disjoint batches so partial wildcard reports cannot pass.
+async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
+  let dir = "\{work}/autobahn"
+  // Clear stale reports, including batches absent from a focused run.
+  if @fs.exists(dir) {
+    @fs.rmdir(dir, recursive=true)
+  }
+  make_dir(dir)
+  // The inventory probe uses the existing native client without running cases.
+  // Release binaries keep compression cases within the suite's deadlines.
+  ignore(
+    must("moon", [
+      "build", "--release", "--target", "native", "interop/mttp_server", "interop/ws_client",
+    ]),
+  )
+  let image = env.image("autobahn")
+  if capture(env.engine, ["image", "inspect", image]).0 != 0 {
+    ignore(must(env.engine, ["pull", image]))
+  }
+  guard autobahn_client_batch(
+      env,
+      "\{dir}/inventory",
+      @fs.read_text("interop/servers/autobahn-client.json"),
+      inventory=true,
+    ) ==
+    0 else {
+    raise RunError("Autobahn server case inventory failed")
+  }
+  let ids = autobahn_server_ids(
+    autobahn_inventory(@fs.read_text("\{dir}/inventory/client.log")),
+    compression=compression_only(),
+  )
+  guard !ids.is_empty() else { raise RunError("no selected Autobahn cases") }
+  let inventory = "\{dir}/expected.txt"
+  @fs.write_text(inventory, ids.join("\n") + "\n")
+  let template =
+    #|{"outdir":"/work/reports","servers":[{"agent":"mttp","url":"ws://127.0.0.1:39505"}],"cases":[],"exclude-cases":[],"exclude-agent-cases":{}}
+  let reports = []
+  let completed = []
+  let mut failures = 0
+  for (name, batch) in autobahn_batches(ids) {
+    let batch_dir = "\{dir}/\{name}"
+    reports.push("\{batch_dir}/reports/index.json")
+    println(
+      "Autobahn batch \{name}: \{batch.length()} cases, fresh fuzzingclient",
+    )
+    let status = autobahn_server_batch(
+      env,
+      batch_dir,
+      autobahn_batch_config(template, batch),
+    ) catch {
+      ContainerCleanupError::_ as error => raise error
+      error => {
+        println("Autobahn batch \{name} failed: \{Repr(error)}")
+        1
+      }
+    }
+    if status != 0 {
+      failures += 1
+    } else {
+      completed.push(batch_dir)
+    }
+  }
+  let (status, output, problem) = capture(
+    "moon",
+    [
+      "run", "interop/clients/autobahn/adapter.mbtx", "--", "--server-reports", inventory,
+      ..reports,
+    ],
+  )
   let rows = rows_of(all_rows, "server", "autobahn/direct")
   let tally = { pass: 0, fail: 0, known: 0, failures: [], }
   tally.report(
@@ -2190,10 +2279,15 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
     output,
     "adapter exit \{status}: \{problem}",
   )
+  if tally.fail > 0 || status != 0 {
+    for batch_dir in completed {
+      autobahn_server_diagnostics(batch_dir)
+    }
+  }
   println(
-    "autobahn: \{tally.pass} passed, \{tally.known} known, \{tally.fail} failed",
+    "autobahn: \{tally.pass} passed, \{tally.known} known, \{tally.fail} failed; \{failures} batch failures",
   )
-  if tally.fail > 0 || !complete {
+  if tally.fail > 0 || status != 0 || failures > 0 {
     1
   } else {
     0
@@ -2371,6 +2465,37 @@ async fn self_test_autobahn() -> Unit {
     ],
   )
   assert_eq(autobahn_batches(["13.7.18"]), [("13.7", ["13.7.18"])])
+  let server_inventory = [
+    "1.1.1", "2.1", "3.1", "4.1", "5.1", "6.1.1", "7.1.6", "8.1", "9.1.1", "10.1.1",
+    "11.1", "12.1.1", "12.2.1", "12.3.1", "12.4.1", "12.5.1", "13.1.1", "13.2.1",
+    "13.3.1", "13.4.1", "13.5.1", "13.6.1", "13.7.1", "14.1",
+  ]
+  let server_ids = autobahn_server_ids(server_inventory, compression=false)
+  let compression_ids = autobahn_server_ids(server_inventory, compression=true)
+  let server_batches = autobahn_batches(server_ids)
+  assert_eq(server_batches.map(batch => batch.0), [
+    "basic", "12.1", "12.2", "12.3", "12.4", "12.5", "13.1", "13.2", "13.3", "13.4",
+    "13.5", "13.6", "13.7",
+  ])
+  assert_eq(server_batches[0].1, [
+    "1.1.1", "2.1", "3.1", "4.1", "5.1", "6.1.1", "7.1.6", "9.1.1", "10.1.1",
+  ])
+  assert_eq(autobahn_batches(compression_ids), server_batches[1:].to_owned())
+  for (name, batch) in server_batches {
+    let config = @json.parse(
+      autobahn_batch_config(
+        "{\"cases\":[\"*\"],\"outdir\":\"/work/reports\"}", batch,
+      ),
+    )
+    assert_eq(
+      config,
+      {
+        "cases": Json::array(batch.map(id => Json::string(id))),
+        "outdir": "/work/reports",
+      },
+      msg="wrong configuration for \{name}",
+    )
+  }
   for
     invalid in [
       "", "Autobahn expected 1.1.1\nAutobahn inventory complete 2\n", "Autobahn expected 1.1.1\nAutobahn expected 1.1.1\nAutobahn inventory complete 2\n",
@@ -2549,64 +2674,76 @@ async fn self_test_autobahn() -> Unit {
   @fs.write_text(inventory, "7.1.6\n12.1.1\n12.1.2\n13.1.1\n")
   let first_report = "\{first}/index.json"
   let second_report = "\{second}/index.json"
-  @fs.write_text(
-    first_report, "{\"mttp-client\":{\"7.1.6\":{\"behavior\":\"INFORMATIONAL\",\"behaviorClose\":\"INFORMATIONAL\"}}}",
-  )
   for
-    (report, expected) in [
-      (
-        "{\"mttp-client\":{\"12.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"},\"12.1.2\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"},\"13.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"}}}",
-        true,
-      ),
-      // One result disappearing under a nonempty wildcard must fail too.
-      (
-        "{\"mttp-client\":{\"12.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"},\"13.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"}}}",
-        false,
-      ),
-      (
-        "{\"mttp-client\":{\"7.1.6\":{},\"12.1.1\":{},\"12.1.2\":{},\"13.1.1\":{}}}",
-        false,
-      ),
-      (
-        "{\"mttp-client\":{\"12.1.1\":{},\"12.1.2\":{},\"13.1.1\":{},\"13.1.2\":{}}}",
-        false,
-      ),
-      ("{\"mttp-client\":{}}", false),
-      ("invalid json", false),
+    (agent, mode, prefix) in [
+      ("mttp", "--server-reports", "ab"),
+      ("mttp-client", "--client-reports", "autobahn"),
     ] {
-    @fs.write_text(second_report, report)
-    let (status, output, problem) = capture("moon", [
-      "run", "interop/clients/autobahn/adapter.mbtx", "--", "--client-reports", inventory,
-      first_report, second_report,
-    ])
-    assert_eq(status == 0, expected, msg=problem)
-    if expected {
-      assert_true(output.contains("CASE autobahn-13.1.1 ok"), msg=output)
-      assert_true(
-        output.contains("CASE autobahn-7.1.6 INFORMATIONAL/INFORMATIONAL"),
-        msg=output,
+    @fs.write_text(
+      first_report,
+      "{\"\{agent}\":{\"7.1.6\":{\"behavior\":\"INFORMATIONAL\",\"behaviorClose\":\"INFORMATIONAL\"}}}",
+    )
+    for
+      (report, expected) in [
+        (
+          "{\"mttp-client\":{\"12.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"},\"12.1.2\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"},\"13.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"}}}",
+          true,
+        ),
+        // One result disappearing under a nonempty wildcard must fail too.
+        (
+          "{\"mttp-client\":{\"12.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"},\"13.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"}}}",
+          false,
+        ),
+        (
+          "{\"mttp-client\":{\"7.1.6\":{},\"12.1.1\":{},\"12.1.2\":{},\"13.1.1\":{}}}",
+          false,
+        ),
+        (
+          "{\"mttp-client\":{\"12.1.1\":{},\"12.1.2\":{},\"13.1.1\":{},\"13.1.2\":{}}}",
+          false,
+        ),
+        ("{\"mttp-client\":{}}", false),
+        ("{}", false),
+        ("invalid json", false),
+      ] {
+      @fs.write_text(
+        second_report,
+        report.replace(old="mttp-client", new=agent),
       )
-    } else {
-      assert_false(
-        output.contains("CASE "),
-        msg="partial results escaped validation",
-      )
+      let (status, output, problem) = capture("moon", [
+        "run", "interop/clients/autobahn/adapter.mbtx", "--", mode, inventory, first_report,
+        second_report,
+      ])
+      assert_eq(status == 0, expected, msg=problem)
+      if expected {
+        assert_true(output.contains("CASE \{prefix}-13.1.1 ok"), msg=output)
+        assert_true(
+          output.contains("CASE \{prefix}-7.1.6 INFORMATIONAL/INFORMATIONAL"),
+          msg=output,
+        )
+        assert_eq(output.contains("CASE ab-run ok"), agent == "mttp")
+      } else {
+        assert_false(
+          output.contains("CASE "),
+          msg="partial results escaped validation",
+        )
+      }
     }
+    let (status, output, _) = capture("moon", [
+      "run",
+      "interop/clients/autobahn/adapter.mbtx",
+      "--",
+      mode,
+      inventory,
+      first_report,
+      "\{second}/missing/index.json",
+    ])
+    assert_true(status != 0, msg="missing batch report accepted")
+    assert_false(
+      output.contains("CASE "),
+      msg="partial results escaped missing-report validation",
+    )
   }
-  let (status, output, _) = capture("moon", [
-    "run",
-    "interop/clients/autobahn/adapter.mbtx",
-    "--",
-    "--client-reports",
-    inventory,
-    first_report,
-    "\{second}/missing/index.json",
-  ])
-  assert_true(status != 0, msg="missing batch report accepted")
-  assert_false(
-    output.contains("CASE "),
-    msg="partial results escaped missing-report validation",
-  )
   println("Autobahn verdict self-tests: OK")
 }
 
