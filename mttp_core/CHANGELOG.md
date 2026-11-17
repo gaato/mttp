@@ -77,13 +77,12 @@ never does.
   undefined security names, duplicate webhook names and cross-document schema,
   security-scheme and operation-ID conflicts are refused. Public operations
   retain explicit empty security requirements.
+
 ### Changed
 
 - Reduce header copies in construction, snapshot iteration and HTTP/1 head
   serialization. Input arrays remain isolated, derived headers retain their
   snapshots, and replaced framing fields are still validated.
-### Changed
-
 - HTTP/1 Content-Length and chunk-size now delegate numeric arithmetic to
   the dependency-free `internal/number` core, proved with Z3 4.16.0 and
   CVC5 1.4.2 against a recursive positional-value model. Public signatures,
