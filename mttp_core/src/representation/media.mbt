@@ -1,4 +1,5 @@
 ///|
+/// Accept negotiation result: a zero-based offer index or no acceptable offer.
 #non_exhaustive
 #derive(Eq, Debug)
 pub(all) enum MediaChoice {
@@ -7,9 +8,11 @@ pub(all) enum MediaChoice {
 }
 
 ///|
+/// Compares media negotiation results.
 pub extend MediaChoice with Eq::{equal, not_equal}
 
 ///|
+/// Formats a media negotiation result for debugging.
 pub extend MediaChoice with @debug.Debug::{to_repr}
 
 ///|

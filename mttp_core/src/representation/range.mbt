@@ -1,4 +1,5 @@
 ///|
+/// Range selection result; Partial carries inclusive byte offsets.
 #non_exhaustive
 #derive(Eq, Debug)
 pub(all) enum RangeChoice {
@@ -8,9 +9,11 @@ pub(all) enum RangeChoice {
 }
 
 ///|
+/// Compares range selection results.
 pub extend RangeChoice with Eq::{equal, not_equal}
 
 ///|
+/// Formats a range selection result for debugging.
 pub extend RangeChoice with @debug.Debug::{to_repr}
 
 ///|

@@ -16,6 +16,8 @@ pub struct HttpCache {
 }
 
 ///|
+/// Creates a private cache, using a bounded MemoryStore when no store is supplied.
+/// Takes ownership of closing the wrapped backend; negative limits clamp to zero.
 pub fn HttpCache::new(
   inner : &@mttp_core.Backend,
   clock~ : &@rt.Clock,
@@ -136,6 +138,8 @@ async fn HttpCache::invalidate(
 }
 
 ///|
+/// Sends a request through the cache and records its cache status on the response.
+/// Closes request streams on every exit; sends after close raise Closed.
 pub async fn HttpCache::send(
   self : HttpCache,
   request : @mttp_core.Request,
@@ -350,6 +354,7 @@ pub async fn HttpCache::send(
 }
 
 ///|
+/// Closes the wrapped backend once and prevents later sends and cache writes.
 pub fn HttpCache::close(self : HttpCache) -> Unit {
   if !self.closed {
     self.closed = true
@@ -359,11 +364,13 @@ pub fn HttpCache::close(self : HttpCache) -> Unit {
 }
 
 ///|
+/// Sends through the cache using the Backend interface.
 pub impl @mttp_core.Backend for HttpCache with fn send(self, request, options) {
   self.send(request, options)
 }
 
 ///|
+/// Closes the cache and its wrapped backend using the Backend interface.
 pub impl @mttp_core.Backend for HttpCache with fn close(self) {
   self.close()
 }

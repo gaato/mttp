@@ -20,6 +20,7 @@ pub(all) enum CacheStatus {
 }
 
 ///|
+/// Response attribute key for the cache decision made by HttpCache.
 pub let cache_status : @mttp_core.AttributeKey[CacheStatus] = @mttp_core.AttributeKey::new(
   "httpcache.status",
 )
@@ -35,18 +36,23 @@ pub struct CacheKey {
 }
 
 ///|
+/// Compares credential caching modes.
 pub extend CredentialMode with Eq::{equal, not_equal}
 
 ///|
+/// Formats a credential caching mode for debugging.
 pub extend CredentialMode with @debug.Debug::{to_repr}
 
 ///|
+/// Compares cache decisions.
 pub extend CacheStatus with Eq::{equal, not_equal}
 
 ///|
+/// Formats a cache decision for debugging.
 pub extend CacheStatus with @debug.Debug::{to_repr}
 
 ///|
+/// Compares cache keys by URL and credential value.
 pub extend CacheKey with Eq::{equal, not_equal}
 
 ///|

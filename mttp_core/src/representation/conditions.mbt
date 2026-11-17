@@ -12,6 +12,7 @@ pub fn Validators::new(etag? : String, last_modified_ms? : Int64) -> Validators 
 }
 
 ///|
+/// Outcome of evaluating request preconditions for an existing representation.
 #non_exhaustive
 #derive(Eq, Debug)
 pub(all) enum Precondition {
@@ -21,9 +22,11 @@ pub(all) enum Precondition {
 }
 
 ///|
+/// Compares precondition outcomes.
 pub extend Precondition with Eq::{equal, not_equal}
 
 ///|
+/// Formats a precondition outcome for debugging.
 pub extend Precondition with @debug.Debug::{to_repr}
 
 ///|

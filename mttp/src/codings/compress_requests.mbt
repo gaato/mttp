@@ -146,6 +146,7 @@ pub fn CompressRequests::new(
 }
 
 ///|
+/// Exposes request compression and closing through the Backend interface.
 pub extend CompressRequests with @mttp_core.Backend::{send, close}
 
 ///|

@@ -17,6 +17,7 @@ pub struct MemoryStore {
 }
 
 ///|
+/// Creates an empty LRU store; negative entry and byte budgets clamp to zero.
 pub fn MemoryStore::new(
   max_entries~ : Int32 = 1024,
   max_bytes~ : Int64 = 16777216L,
@@ -30,6 +31,7 @@ pub fn MemoryStore::new(
 }
 
 ///|
+/// Exposes cache lookup, insertion and invalidation on the in-memory store.
 pub extend MemoryStore with CacheStore::{lookup, insert, remove}
 
 ///|
@@ -48,6 +50,7 @@ fn stored_size(key : CacheKey, stored : Stored) -> Int64 {
 }
 
 ///|
+/// Returns matching variants oldest first and marks them as recently used.
 pub impl CacheStore for MemoryStore with fn lookup(self, key) {
   let found = []
   let keep = []
@@ -65,6 +68,7 @@ pub impl CacheStore for MemoryStore with fn lookup(self, key) {
 }
 
 ///|
+/// Replaces an equal Vary selection and evicts oldest entries to fit the budgets.
 pub impl CacheStore for MemoryStore with fn insert(self, key, stored) {
   let bytes = stored_size(key, stored)
   let keep = []
@@ -90,6 +94,7 @@ pub impl CacheStore for MemoryStore with fn insert(self, key, stored) {
 }
 
 ///|
+/// Removes every variant of the URL across all credential partitions.
 pub impl CacheStore for MemoryStore with fn remove(self, key) {
   let keep = []
   for entry in self.entries {
