@@ -76,6 +76,19 @@ async fn main {
   let base = args.get(1).unwrap_or("ws://127.0.0.1:39050")
   let count = @string.parse_int(control(base, "/getCaseCount"))
   println("Autobahn: \{count} cases")
+  if args.get(2) == Some("--list-cases") {
+    // Discover the pinned suite's whole inventory before selecting batches:
+    // a lost result inside a wildcard row must still fail the aggregate run.
+    for case in 1..<=count {
+      let info = @json.parse(control(base, "/getCaseInfo?case=\{case}"))
+      guard info is { "id": String(id), .. } else {
+        fail("Autobahn case \{case}: missing case id")
+      }
+      println("Autobahn expected \{id}")
+    }
+    println("Autobahn inventory complete \{count}")
+    return
+  }
   for case in 1..<=count {
     // Compression cases allow up to 480 s in Autobahn itself.
     let (kind, detail) = @async.with_timeout(600000, () => {

@@ -10,25 +10,65 @@ import {
 ///|
 async fn main {
   let args = @env.args().filter(a => a != "--")
-  guard args.length() is (2 | 3) else {
-    fail("expected Autobahn index.json [agent]")
+  let aggregate = args.get(1) == Some("--client-reports")
+  let expected : Map[String, Bool] = Map([])
+  let paths = if aggregate {
+    guard args.length() >= 4 else {
+      fail("expected --client-reports inventory.txt index.json...")
+    }
+    for line in @fs.read_text(args[2]).split("\n") {
+      let id = line.trim().to_owned()
+      if id.is_empty() {
+        continue
+      }
+      guard !expected.contains(id) else {
+        fail("duplicate expected case \{id}")
+      }
+      expected[id] = true
+    }
+    guard !expected.is_empty() else { fail("empty expected case inventory") }
+    args[3:].to_owned()
+  } else {
+    guard args.length() is (2 | 3) else {
+      fail("expected Autobahn index.json [agent]")
+    }
+    [args[1]]
   }
-  let agent = args.get(2).unwrap_or("mttp")
+  let agent = if aggregate {
+    "mttp-client"
+  } else {
+    args.get(2).unwrap_or("mttp")
+  }
   guard agent is ("mttp" | "mttp-client") else {
     fail("unknown Autobahn agent")
   }
   let prefix = if agent == "mttp" { "ab" } else { "autobahn" }
-  let report = @json.parse(@fs.read_text(args[1]))
-  guard report is Object(agents) &&
-    agents.get(agent) is Some(Object(cases)) &&
-    !cases.is_empty() else {
-    fail("missing or empty \{agent} report")
+  let results : Map[String, Json] = Map([])
+  // Validate every input before emitting CASE lines. Otherwise a late missing
+  // report could leave enough partial PASS rows for a caller to accept it.
+  for path in paths {
+    let report = @json.parse(@fs.read_text(path))
+    guard report is Object(agents) &&
+      agents.get(agent) is Some(Object(cases)) &&
+      !cases.is_empty() else {
+      fail("missing or empty \{agent} report: \{path}")
+    }
+    for id, result in cases {
+      guard !results.contains(id) else { fail("duplicate reported case \{id}") }
+      if aggregate && !expected.contains(id) {
+        fail("unexpected reported case \{id}")
+      }
+      results[id] = result
+    }
+  }
+  for id, _ in expected {
+    guard results.contains(id) else { fail("missing reported case \{id}") }
   }
   if agent == "mttp" {
     println("CASE ab-run ok Autobahn report present")
   }
   let sections : Map[String, (Int32, Int32)] = Map([])
-  for id, result in cases {
+  for id, result in results {
     let behavior = match result {
       { "behavior": String(s), .. } => s
       _ => "missing"

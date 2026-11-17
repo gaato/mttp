@@ -10,6 +10,7 @@ import {
   "gaato/mttp/backend",
   "gaato/mttp_core/h1client",
   "moonbitlang/core/string",
+  "moonbitlang/core/json",
 }
 
 supported_targets = "native+js"

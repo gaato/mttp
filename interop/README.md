@@ -34,40 +34,49 @@ decline offers constraining its encoder below 15; §7.1.2.2 responses that
 constrain the client encoder below 15 fail the client handshake.
 Set `INTEROP_WS_COMPRESSION_ONLY=1` for a focused run of sections 12 and 13
 in either direction; it retains exact verdict checking and leaves the default
-full suite unchanged. The Autobahn process ceiling is one hour because the
-compression matrix can outlast the ordinary ten-minute command ceiling.
+full suite unchanged. The Autobahn process ceiling is one hour per batch
+because the compression matrix can outlast the ordinary ten-minute ceiling.
 Both Autobahn directions use native release builds; the client permits
 600 seconds per case, beyond the suite's longest 480-second case deadline.
-Client-run failures, including missing reports, print outcome counts and the
-first/last outcome of each error kind, the container state (including
-`OOMKilled`), and the fuzzing server's last 80 log lines (at most 16 KiB).
-Full error representations escape newlines so CI retains the whole error on
-one line. These observations include intentionally rejected frames and
-handshakes; the reports still decide the protocol verdicts. Logs remain in
-`_build/interop/autobahn-client/{client,server}.log`, including when the client
-times out. A stopped fuzzing server ends the report wait immediately.
-Set `INTEROP_AUTOBAHN_MEMORY=3g` to limit the client run's fuzzing server to
-3 GiB without swap, for a resource-pressure reproduction; this changes no cases.
 
-For the full client configuration and pinned image, cases 302–391 are section
-12 and 392–517 are section 13. Case 367 is 12.4.12 and case 368 is 12.4.13:
-1000 compressed HTML messages, 32768 bytes each, fragmented into 256-byte
-frames. Thus failure from case 368 starts partway through section 12.
-On 2026-11-17, a Docker run capped at 7 GiB and 2 CPUs after startup passed
-all 517 cases (460 passed, 57 exact known verdicts). At 3 GiB without swap the server
-was OOM-killed in 13.2.9 (case 418); case 419 onward and `updateReports`
-failed with connection refused, and no index was written. The server had
-only 14 open descriptors in late section 12. This reproduces the CI failure
-pattern under memory pressure, but does not prove the historical CI cause.
-A later full 3 GiB run died earlier, in 12.1.17 (case 318), so the failure
-position is not fixed. Its 517 outcomes and final control error occupied
-exactly 519 log lines, retaining each complete error on one line.
-A fresh compression-only run at 3 GiB also OOM-killed the server in 13.2.9;
-simply separating sections 12/13 together is insufficient at that limit.
-The option preserving all coverage is to budget more server memory (the
-7 GiB capped run passed), or investigate finer batches with fresh servers
-and retain every case verdict. Batching adds startup and report aggregation
-work; lowering message limits would sacrifice coverage and is not enabled.
+The native client suite restarts its fuzzing server between three batches:
+`basic` (sections 1–11, 301 cases), `12` (90 cases), and `13` (126 cases).
+The pinned suite currently has no cases in sections 8 or 11. A short initial
+`inventory` server only answers `/getCaseCount` and `/getCaseInfo`; it runs no
+test cases. Its complete case inventory is partitioned without exclusions,
+so new non-compression cases also go into `basic`. Compression-only mode
+selects the 216 compression cases from that same inventory.
+
+Each batch owns `_build/interop/autobahn-client/<batch>/reports/index.json`
+and its own `client.log`, `server.log`, and `state.txt`. The previous layout
+is removed before discovery. `expected.txt` lists every selected case ID.
+The adapter reads every batch report with `--client-reports expected.txt
+index.json...` and validates the complete union before emitting CASE lines:
+missing files, empty/malformed reports, missing cases even inside nonempty
+wildcards, duplicate cases, and unexpected cases all fail. IDs and verdicts
+remain unchanged; numeric `/runCase` indices restart in each batch.
+
+Each fuzzing server defaults to a 5 GiB memory cap without swap;
+`INTEROP_AUTOBAHN_MEMORY` overrides it (for example, `3g` for a pressure test).
+Restarting the server releases PyPy's retained case data and compression
+state. Canary run 44022015993 confirmed OOMKilled/137 during old full-suite
+case 367 (12.4.12), followed by connection refused and no reports. In that
+old ordering section 12 started at 302 and section 13 at 392. Local unsplit
+3 GiB runs also OOM-killed the server at varying positions; increasing the
+report wait did not address that failure.
+
+Local validation on 2026-11-17 used Docker with `--memory=5g` and
+`--memory-swap=5g` on every server: all 517 cases produced reports, with
+460 passed, 57 exact known verdicts, 0 failed, and no OOM in any batch.
+The complete command took 360.61 seconds after acquiring the gates lock,
+including inventory discovery, all three batches, cleanup and aggregation.
+
+Client-run failures print outcome counts and first/last full errors per kind,
+the container state (including `OOMKilled`), and each affected fuzzing server's
+last 80 log lines (at most 16 KiB). Newlines in full error representations
+are escaped. Logs survive client timeouts, and a stopped server ends the
+report wait immediately. These observations include intentional frame and
+handshake rejections; the reports still decide protocol verdicts.
 Only exact documented INFORMATIONAL/NON-STRICT cases belong in known rows;
 all other non-OK results fail, except the fixed-window cases below.
 Autobahn rows use `known:INFORMATIONAL/INFORMATIONAL` to require both exact
@@ -93,7 +102,7 @@ response still selects client window 9. These raw failures remain recorded
 as FAILED/FAILED; they are not converted to strict passes. The runner admits
 only these specific groups and exact verdict pairs, with self-tests rejecting
 different, missing or duplicate verdicts. Reports are under
-`_build/interop/autobahn/reports` and `_build/interop/autobahn-client/reports`.
+`_build/interop/autobahn/reports` and the client batch directories above.
 
 This uses the upstream
 [Autobahn fuzzingclient interface](https://github.com/crossbario/autobahn-testsuite)
@@ -300,9 +309,11 @@ in fuzzingserver mode (`interop/servers/autobahn-client.json`):
 INTEROP_ENGINE=docker moon run interop/run.mbtx -- client/native/autobahn
 ```
 
-The native `ws_client` asks for every case, echoes messages, and requests the
-JSON report; `clients/autobahn/adapter.mbtx` converts both behavior and close verdicts
-to CASE lines. Raw reports remain in `_build/interop/autobahn-client/reports`.
+The native `ws_client` discovers every case, then echoes messages and requests
+reports in the three fresh-server batches described above.
+`clients/autobahn/adapter.mbtx` validates their full union and converts both
+behavior and close verdicts to CASE lines. Raw reports remain in
+`_build/interop/autobahn-client/{basic,12,13}/reports`.
 The [upstream configuration](https://github.com/crossbario/autobahn-testsuite)
 selects sections 1–7, 9, 10, 12 and 13, including permessage-deflate.
 Section 9 uses explicit 64 MiB frame/message limits and a raised empty-frame

@@ -6,6 +6,7 @@ import {
   "moonbitlang/core/async/shell",
   "moonbitlang/core/async/socket",
   "moonbitlang/core/env",
+  "moonbitlang/core/json",
 }
 ----
 
@@ -1161,8 +1162,8 @@ fn autobahn_outcome_summary(output : String) -> Array[String] {
 }
 
 ///|
-async fn autobahn_client_diagnostics(env : Env, container : String) -> Unit {
-  let dir = "\{work}/autobahn-client"
+async fn autobahn_client_diagnostics(dir : String) -> Unit {
+  println("Autobahn diagnostics: \{dir}")
   if @fs.exists("\{dir}/client.log") {
     let log = @fs.read_text("\{dir}/client.log") catch {
       error => {
@@ -1176,15 +1177,9 @@ async fn autobahn_client_diagnostics(env : Env, container : String) -> Unit {
   } else {
     println("Autobahn client log missing (client did not start)")
   }
-  let (status, out, err) = capture(
-    env.engine,
-    ["inspect", "--format", "{{json .State}}", container],
-    timeout_ms=10000,
-  ) catch {
-    error => (-1, "", "\{Repr(error)}")
+  if @fs.exists("\{dir}/state.txt") {
+    println(@fs.read_text("\{dir}/state.txt"))
   }
-  let state = (out + err).trim().to_owned().split("\n").to_array().join("\\n")
-  println("Autobahn container state (\{status}): \{state[:4096]}")
   println("Autobahn fuzzingserver log tail (at most 80 lines / 16 KiB):")
   let (_, out, err) = capture(
     "tail",
@@ -1200,55 +1195,53 @@ async fn autobahn_client_diagnostics(env : Env, container : String) -> Unit {
 }
 
 ///|
-/// Autobahn's fuzzingserver drives the native mttp WebSocket client. The
-/// JSON adapter preserves every raw verdict; cases.tsv owns known outcomes.
-async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
-  let run = "native/autobahn"
-  let rows = rows_of(rows, "client", run)
-  let cases = plan(rows)
+async fn autobahn_client_state(env : Env, container : String) -> (String, Bool) {
+  let (status, out, err) = capture(
+    env.engine,
+    ["inspect", "--format", "{{json .State}}", container],
+    timeout_ms=10000,
+  ) catch {
+    error => (-1, "", "\{Repr(error)}")
+  }
+  let parsed = @json.parse(out) catch { _ => Json::null() }
+  let healthy = match parsed {
+    { "OOMKilled": False, "ExitCode": Number(code, ..), .. } => code == 0.0
+    _ => false
+  }
+  let state = (out + err).trim().to_owned().split("\n").to_array().join("\\n")
+  (
+    "Autobahn container state (\{status}): \{state[:4096]}",
+    status == 0 && healthy,
+  )
+}
+
+///|
+/// One fresh fuzzing server owns one report directory and is removed before
+/// the next batch starts, releasing PyPy's retained compression-case memory.
+async fn autobahn_client_batch(
+  env : Env,
+  dir : String,
+  config : String,
+  inventory~ : Bool = false,
+) -> Int32 {
   port_free("127.0.0.1:39050")
   port_free("127.0.0.1:39051")
-  ignore(
-    must("moon", [
-      "build", "--release", "--target", "native", "interop/ws_client",
-    ]),
-  )
-  // The client tolerates a failed final updateReports call and lets the
-  // adapter judge the reports, so a previous run's reports must not remain.
-  if @fs.exists("\{work}/autobahn-client/reports") {
-    @fs.rmdir("\{work}/autobahn-client/reports", recursive=true)
-  }
-  make_dir("\{work}/autobahn-client/reports")
-  // Startup failure must not summarize the preceding run's client output.
-  @fs.write_text("\{work}/autobahn-client/client.log", "")
-  let config = @fs.read_text("interop/servers/autobahn-client.json")
-  let config = if compression_only() {
-    config.replace(
-      old="\"cases\": [\"*\"]",
-      new="\"cases\": [\"12.*\", \"13.*\"]",
-    )
-  } else {
-    config
-  }
-  let config_path = "\{work}/autobahn-client/config.json"
+  make_dir("\{dir}/reports")
+  @fs.write_text("\{dir}/client.log", "")
+  let config_path = "\{dir}/config.json"
   @fs.write_text(config_path, config)
-  let image = env.image("autobahn")
-  if capture(env.engine, ["image", "inspect", image]).0 != 0 {
-    ignore(must(env.engine, ["pull", "--quiet", image]))
-  }
-  let tally = { pass: 0, fail: 0, known: 0, failures: [], }
   // A cancelled Docker CLI can finish creating its container later. Give each
   // run a distinct name so an old cleanup cannot remove the next run's server.
   let container = "mttp-interop-ws-client-" +
     @env.rand(8).unwrap().to_array().map(b => b.to_int().to_string()).join("-")
-  @fs.write_text("\{work}/autobahn-client/container.txt", container)
+  @fs.write_text("\{dir}/container.txt", container)
+  let mut complete = false
   @async.with_task_group(group => {
     defer @async.protect_from_cancel(() => {
       ignore(capture(env.engine, ["rm", "-f", container]))
     })
-    let memory = @env.get_env_var("INTEROP_AUTOBAHN_MEMORY")
-      .map(value => ["--memory", value, "--memory-swap", value])
-      .unwrap_or([])
+    let memory = @env.get_env_var("INTEROP_AUTOBAHN_MEMORY").unwrap_or("5g")
+    println("Autobahn fuzzingserver \{dir}: memory=\{memory}, swap disabled")
     let server = @process.spawn(
       group,
       env.engine,
@@ -1260,19 +1253,18 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
           container,
           "--env",
           "PYTHONUNBUFFERED=1",
-          ..memory,
+          "--memory",
+          memory,
+          "--memory-swap",
+          memory,
           ..env.user,
           ..env.mount(config_path, "/config/fuzzingserver.json"),
-          ..env.mount(
-            "\{work}/autobahn-client/reports",
-            "/reports",
-            writable=true,
-          ),
+          ..env.mount("\{dir}/reports", "/reports", writable=true),
         ],
         [],
       )
       .filter(arg => arg != "--rm"),
-      stdout=ToFile("\{work}/autobahn-client/server.log"),
+      stdout=ToFile("\{dir}/server.log"),
       stderr=DuplicateStdout,
     )
     defer server.cancel()
@@ -1280,8 +1272,15 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
     // Keep the stopped container until this runs, so OOMKilled and ExitCode
     // survive. Diagnostics also run for startup, client and adapter errors.
     defer @async.protect_from_cancel(() => {
+      let (state, healthy) = autobahn_client_state(env, container)
+      // A server can die while writing detail reports after index.json.
+      // A complete-looking index must not hide an OOM or failed container.
+      complete = complete && healthy
+      diagnose = diagnose || !healthy
+      @fs.write_text("\{dir}/state.txt", state)
+      println("\{dir}: \{state}")
       if diagnose {
-        autobahn_client_diagnostics(env, container) catch {
+        autobahn_client_diagnostics(dir) catch {
           error => println("Autobahn diagnostics failed: \{Repr(error)}")
         }
       }
@@ -1293,13 +1292,17 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
     let client = @process.spawn(
       group,
       "_build/native/release/build/\{interop_module}/ws_client/ws_client.exe",
-      [],
-      stdout=ToFile("\{work}/autobahn-client/client.log"),
+      if inventory {
+        ["ws://127.0.0.1:39050", "--list-cases"]
+      } else {
+        []
+      },
+      stdout=ToFile("\{dir}/client.log"),
       stderr=DuplicateStdout,
     )
     defer client.cancel()
     let status = @async.with_timeout(3600000, () => client.wait())
-    let stdout = @fs.read_text("\{work}/autobahn-client/client.log")
+    let stdout = @fs.read_text("\{dir}/client.log")
     if status != 0 {
       // The outcome summary skips fatal messages such as a failed
       // /getCaseCount, and CI keeps no client.log: show its last lines.
@@ -1312,6 +1315,11 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
       }
       raise RunError("Autobahn client exited \{status}; last lines:\n\{tail}")
     }
+    if inventory {
+      diagnose = false
+      complete = true
+      return
+    }
     for line in stdout.split("\n") {
       if line.has_prefix("Autobahn updateReports") {
         println(line.to_owned())
@@ -1321,36 +1329,152 @@ async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
     // arrives, which takes minutes on a CI runner with sections 12 and 13;
     // the client's connection can end first. Wait for the index rather than
     // reading an absent one.
-    let index = "\{work}/autobahn-client/reports/index.json"
+    let index = "\{dir}/reports/index.json"
     for waited = 0; !@fs.exists(index) && waited < 900; waited = waited + 1 {
       if server.try_wait() is Some(_) {
         break
       }
       @async.sleep(1000)
     }
-    run_one(
-      tally,
-      "client",
-      run,
-      rows,
-      cases,
-      (
-        "moon",
-        [
-          "run",
-          "interop/clients/autobahn/adapter.mbtx",
-          "--",
-          "\{work}/autobahn-client/reports/index.json",
-          "mttp-client",
-        ],
-      ),
-    )
-    diagnose = tally.fail > 0 || !@fs.exists(index)
+    diagnose = !@fs.exists(index)
+    complete = !diagnose
   })
-  println(
-    "Autobahn client: \{tally.pass} passed, \{tally.known} known, \{tally.fail} failed",
+  if complete {
+    0
+  } else {
+    1
+  }
+}
+
+///|
+fn autobahn_inventory(output : String) -> Array[String] raise RunError {
+  let ids : Array[String] = []
+  let seen : Map[String, Bool] = Map([])
+  for line in output.split("\n") {
+    if line.strip_prefix("Autobahn expected ") is Some(id) {
+      let id = id.to_owned()
+      guard !id.is_empty() && !seen.contains(id) else {
+        raise RunError("empty or duplicate Autobahn inventory case: \{id}")
+      }
+      seen[id] = true
+      ids.push(id)
+    }
+  }
+  guard !ids.is_empty() &&
+    output
+    .split("\n")
+    .any(line => line == "Autobahn inventory complete \{ids.length()}") else {
+    raise RunError("incomplete Autobahn case inventory")
+  }
+  ids
+}
+
+///|
+fn autobahn_batches(ids : Array[String]) -> Array[(String, Array[String])] {
+  [
+    ("basic", ids.filter(id => !id.has_prefix("12.") && !id.has_prefix("13."))),
+    ("12", ids.filter(id => id.has_prefix("12."))),
+    ("13", ids.filter(id => id.has_prefix("13."))),
+  ].filter(batch => !batch.1.is_empty())
+}
+
+///|
+fn autobahn_batch_config(
+  template : String,
+  ids : Array[String],
+) -> String raise {
+  guard @json.parse(template) is Object(fields) else {
+    raise RunError("Autobahn configuration must be an object")
+  }
+  fields["cases"] = Json::array(ids.map(id => Json::string(id)))
+  Json::object(fields).stringify()
+}
+
+///|
+/// Discover the full inventory, then run disjoint groups on fresh servers.
+/// The adapter requires every report and every discovered case, so a missing
+/// result within a broad cases.tsv wildcard cannot silently disappear.
+async fn run_autobahn_client(env : Env, rows : Array[Row]) -> Int32 {
+  let run = "native/autobahn"
+  let rows = rows_of(rows, "client", run)
+  let cases = plan(rows)
+  ignore(
+    must("moon", [
+      "build", "--release", "--target", "native", "interop/ws_client",
+    ]),
   )
-  if tally.fail == 0 {
+  let image = env.image("autobahn")
+  if capture(env.engine, ["image", "inspect", image]).0 != 0 {
+    ignore(must(env.engine, ["pull", "--quiet", image]))
+  }
+  let dir = "\{work}/autobahn-client"
+  // Remove the entire previous layout, including reports from batches that
+  // are no longer selected, before the first server is started.
+  if @fs.exists(dir) {
+    @fs.rmdir(dir, recursive=true)
+  }
+  make_dir(dir)
+  let template = @fs.read_text("interop/servers/autobahn-client.json")
+  guard autobahn_client_batch(env, "\{dir}/inventory", template, inventory=true) ==
+    0 else {
+    raise RunError("Autobahn inventory failed")
+  }
+  let ids = autobahn_inventory(@fs.read_text("\{dir}/inventory/client.log")).filter(id => {
+      !compression_only() || id.has_prefix("12.") || id.has_prefix("13.")
+    },
+  )
+  guard !ids.is_empty() else { raise RunError("no selected Autobahn cases") }
+  let inventory = "\{dir}/expected.txt"
+  @fs.write_text(inventory, ids.join("\n") + "\n")
+  let reports = []
+  let completed = []
+  let mut failures = 0
+  for (name, batch) in autobahn_batches(ids) {
+    let batch_dir = "\{dir}/\{name}"
+    reports.push("\{batch_dir}/reports/index.json")
+    println(
+      "Autobahn batch \{name}: \{batch.length()} cases, fresh fuzzingserver",
+    )
+    let status = autobahn_client_batch(
+      env,
+      batch_dir,
+      autobahn_batch_config(template, batch),
+    ) catch {
+      error => {
+        println("Autobahn batch \{name} failed: \{Repr(error)}")
+        1
+      }
+    }
+    if status != 0 {
+      failures += 1
+    } else {
+      completed.push(batch_dir)
+    }
+  }
+  let tally = { pass: 0, fail: 0, known: 0, failures: [], }
+  run_one(
+    tally,
+    "client",
+    run,
+    rows,
+    cases,
+    (
+      "moon",
+      [
+        "run", "interop/clients/autobahn/adapter.mbtx", "--", "--client-reports",
+        inventory, ..reports,
+      ],
+    ),
+  )
+  if tally.fail > 0 {
+    for batch_dir in completed {
+      autobahn_client_diagnostics(batch_dir)
+    }
+  }
+  println(
+    "Autobahn client: \{tally.pass} passed, \{tally.known} known, \{tally.fail} failed; \{failures} batch failures",
+  )
+  if tally.fail == 0 && failures == 0 {
     0
   } else {
     1
@@ -1875,6 +1999,26 @@ async fn main {
 /// A known Autobahn case must never hide protocol failures or absent verdicts,
 /// on either side of the transport. Exercise the real reporting path.
 async fn self_test_autobahn() -> Unit {
+  let inventory_output = "Autobahn expected 1.1.1\nAutobahn expected 12.1.1\nAutobahn expected 13.1.1\nAutobahn inventory complete 3\n"
+  let inventory_ids = autobahn_inventory(inventory_output)
+  assert_eq(inventory_ids, ["1.1.1", "12.1.1", "13.1.1"])
+  assert_eq(autobahn_batches(inventory_ids), [
+    ("basic", ["1.1.1"]),
+    ("12", ["12.1.1"]),
+    ("13", ["13.1.1"]),
+  ])
+  for
+    invalid in [
+      "", "Autobahn expected 1.1.1\nAutobahn inventory complete 2\n", "Autobahn expected 1.1.1\nAutobahn expected 1.1.1\nAutobahn inventory complete 2\n",
+    ] {
+    let rejected = try {
+      ignore(autobahn_inventory(invalid))
+      false
+    } catch {
+      RunError(_) => true
+    }
+    assert_true(rejected, msg="incomplete/duplicate inventory accepted")
+  }
   assert_eq(
     autobahn_outcome_summary(
       "Autobahn: 3 cases\n" +
@@ -2036,6 +2180,69 @@ async fn self_test_autobahn() -> Unit {
       )
     }
   }
+  make_dir(first)
+  let inventory = "\{first}/expected.txt"
+  @fs.write_text(inventory, "7.1.6\n12.1.1\n12.1.2\n13.1.1\n")
+  let first_report = "\{first}/index.json"
+  let second_report = "\{second}/index.json"
+  @fs.write_text(
+    first_report, "{\"mttp-client\":{\"7.1.6\":{\"behavior\":\"INFORMATIONAL\",\"behaviorClose\":\"INFORMATIONAL\"}}}",
+  )
+  for
+    (report, expected) in [
+      (
+        "{\"mttp-client\":{\"12.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"},\"12.1.2\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"},\"13.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"}}}",
+        true,
+      ),
+      // One result disappearing under a nonempty wildcard must fail too.
+      (
+        "{\"mttp-client\":{\"12.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"},\"13.1.1\":{\"behavior\":\"OK\",\"behaviorClose\":\"OK\"}}}",
+        false,
+      ),
+      (
+        "{\"mttp-client\":{\"7.1.6\":{},\"12.1.1\":{},\"12.1.2\":{},\"13.1.1\":{}}}",
+        false,
+      ),
+      (
+        "{\"mttp-client\":{\"12.1.1\":{},\"12.1.2\":{},\"13.1.1\":{},\"13.1.2\":{}}}",
+        false,
+      ),
+      ("{\"mttp-client\":{}}", false),
+      ("invalid json", false),
+    ] {
+    @fs.write_text(second_report, report)
+    let (status, output, problem) = capture("moon", [
+      "run", "interop/clients/autobahn/adapter.mbtx", "--", "--client-reports", inventory,
+      first_report, second_report,
+    ])
+    assert_eq(status == 0, expected, msg=problem)
+    if expected {
+      assert_true(output.contains("CASE autobahn-13.1.1 ok"), msg=output)
+      assert_true(
+        output.contains("CASE autobahn-7.1.6 INFORMATIONAL/INFORMATIONAL"),
+        msg=output,
+      )
+    } else {
+      assert_false(
+        output.contains("CASE "),
+        msg="partial results escaped validation",
+      )
+    }
+  }
+  let (status, output, _) = capture("moon", [
+    "run",
+    "interop/clients/autobahn/adapter.mbtx",
+    "--",
+    "--client-reports",
+    inventory,
+    first_report,
+    "\{second}/missing/index.json",
+  ])
+  assert_true(status != 0, msg="missing batch report accepted")
+  assert_false(
+    output.contains("CASE "),
+    msg="partial results escaped missing-report validation",
+  )
   println("Autobahn verdict self-tests: OK")
 }
 
