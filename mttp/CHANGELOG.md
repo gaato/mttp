@@ -34,6 +34,9 @@ never does.
 
 - Requires `gaato/mttp_core` 0.3.0; its changelog lists the breaking
   changes, which reach apps that use the re-exported types or typed endpoints.
+- Requires gaato/deflate 0.4.0 and gaato/zstd 0.6.0, the latest releases.
+  Their changes are new higher levels; mttp encodes at the same levels and
+  its output does not change.
 - `compress` and `negotiate_encoding` break ties in Accept-Encoding weights
   by preferring zstd, then Brotli, gzip and deflate, as Caddy and
   @fastify/compress do. Browsers list all four at equal weight, so they now

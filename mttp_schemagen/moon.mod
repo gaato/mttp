@@ -3,7 +3,7 @@ name = "gaato/mttp_schemagen"
 version = "0.1.0"
 
 import {
-  "moonbitlang/parser@0.4.8",
+  "moonbitlang/parser@0.4.9",
   "moonbitlang/lexer@0.4.5",
 }
 
