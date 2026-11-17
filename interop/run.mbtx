@@ -1354,7 +1354,10 @@ async fn autobahn_client_diagnostics(dir : String) -> Unit {
 }
 
 ///|
-async fn autobahn_client_state(env : Env, container : String) -> (String, Bool) {
+async fn autobahn_container_state(
+  env : Env,
+  container : String,
+) -> (String, Bool) {
   let (status, out, err) = capture(
     env.engine,
     ["inspect", "--format", "{{json .State}}", container],
@@ -1437,7 +1440,7 @@ async fn autobahn_client_batch(
     // Keep the stopped container until this runs, so OOMKilled and ExitCode
     // survive. Diagnostics also run for startup, client and adapter errors.
     defer @async.protect_from_cancel(() => {
-      let (state, healthy) = autobahn_client_state(env, container)
+      let (state, healthy) = autobahn_container_state(env, container)
       // A server can die while writing detail reports after index.json.
       // A complete-looking index must not hide an OOM or failed container.
       complete = complete && healthy
@@ -2103,31 +2106,76 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
   if @fs.exists(report) {
     @fs.remove(report)
   }
-  @async.with_task_group(group => {
-    let server = @process.spawn(
-      group,
-      "_build/native/release/build/\{interop_module}/mttp_server/mttp_server.exe",
-      ["websocket", address],
-      stdout=ToFile("\{dir}/server.log"),
-      stderr=ToFile("\{dir}/server.log"),
-    )
-    defer server.cancel()
-    wait_port(address, "mttp WebSocket echo server")
-    let (status, stdout, stderr) = capture(
-      env.engine,
-      env.run_args(
-        "autobahn",
-        [
-          "--name",
-          container_name("ws-server"),
-          ..env.user,
-          ..env.mount(dir, "/work", writable=true),
-        ],
-        ["wstest", "-m", "fuzzingclient", "-s", "/work/config.json"],
-      ),
-      timeout_ms=3600000,
-    )
-    @fs.write_text("\{dir}/console.log", "exit \{status}\n\{stdout}\n\{stderr}")
+  let container = container_name("ws-server")
+  let mut complete = false
+  @fs.write_text("\{dir}/console.log", "")
+  with_containers(env.engine, [container], () => {
+    @async.with_task_group(group => {
+      // Inspect after the engine CLI is joined, but before the outer owner
+      // removes the container, preserving OOMKilled even on cancellation.
+      group.add_defer(() => {
+        @async.protect_from_cancel(() => {
+          let (state, healthy) = autobahn_container_state(env, container)
+          @fs.write_text("\{dir}/state.txt", state)
+          println("\{dir}: \{state}")
+          complete = complete && healthy
+          if !complete {
+            for
+              (name, log) in [
+                ("Autobahn fuzzingclient", "console.log"),
+                ("mttp WebSocket server", "server.log"),
+              ] {
+              println("\{name} log tail (at most 80 lines / 16 KiB):")
+              let (_, out, err) = capture(
+                "tail",
+                ["-c", "16384", "\{dir}/\{log}"],
+                timeout_ms=10000,
+              ) catch {
+                error => (-1, "", "\{Repr(error)}")
+              }
+              let lines = (out + err).split("\n").to_array()
+              for line in lines[(lines.length() - 80).max(0):] {
+                println(line.to_owned())
+              }
+            }
+          }
+        })
+      })
+      let server = @process.spawn(
+        group,
+        "_build/native/release/build/\{interop_module}/mttp_server/mttp_server.exe",
+        ["websocket", address],
+        stdout=ToFile("\{dir}/server.log"),
+        stderr=DuplicateStdout,
+      )
+      defer server.cancel()
+      wait_port(address, "mttp WebSocket echo server")
+      println("Autobahn fuzzingclient \{dir}: container=\{container}")
+      let client = @process.spawn(
+        group,
+        env.engine,
+        env
+        .run_args(
+          "autobahn",
+          [
+            "--name",
+            container,
+            "--env",
+            "PYTHONUNBUFFERED=1",
+            ..env.user,
+            ..env.mount(dir, "/work", writable=true),
+          ],
+          ["wstest", "-m", "fuzzingclient", "-s", "/work/config.json"],
+        )
+        .filter(arg => arg != "--rm"),
+        stdout=ToFile("\{dir}/console.log"),
+        stderr=DuplicateStdout,
+      )
+      defer client.cancel()
+      let status = @async.with_timeout(3600000, () => client.wait())
+      println("Autobahn fuzzingclient exit \{status}")
+      complete = status == 0 && @fs.exists(report)
+    })
   })
   let (status, output, problem) = capture("moon", [
     "run", "interop/clients/autobahn/adapter.mbtx", "--", report,
@@ -2145,7 +2193,7 @@ async fn run_autobahn(env : Env, all_rows : Array[Row]) -> Int32 {
   println(
     "autobahn: \{tally.pass} passed, \{tally.known} known, \{tally.fail} failed",
   )
-  if tally.fail > 0 {
+  if tally.fail > 0 || !complete {
     1
   } else {
     0
@@ -2307,9 +2355,22 @@ async fn self_test_autobahn() -> Unit {
   assert_eq(inventory_ids, ["1.1.1", "12.1.1", "13.1.1"])
   assert_eq(autobahn_batches(inventory_ids), [
     ("basic", ["1.1.1"]),
-    ("12", ["12.1.1"]),
-    ("13", ["13.1.1"]),
+    ("12.1", ["12.1.1"]),
+    ("13.1", ["13.1.1"]),
   ])
+  assert_eq(
+    autobahn_batches([
+      "12.1.1", "1.1.1", "12.2.1", "12.1.2", "13.1.1", "13.7.18", "13.1.2",
+    ]),
+    [
+      ("basic", ["1.1.1"]),
+      ("12.1", ["12.1.1", "12.1.2"]),
+      ("12.2", ["12.2.1"]),
+      ("13.1", ["13.1.1", "13.1.2"]),
+      ("13.7", ["13.7.18"]),
+    ],
+  )
+  assert_eq(autobahn_batches(["13.7.18"]), [("13.7", ["13.7.18"])])
   for
     invalid in [
       "", "Autobahn expected 1.1.1\nAutobahn inventory complete 2\n", "Autobahn expected 1.1.1\nAutobahn expected 1.1.1\nAutobahn inventory complete 2\n",

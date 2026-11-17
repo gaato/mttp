@@ -25,6 +25,11 @@ WebSocket servers are checked with the digest-pinned Autobahn TestSuite in
 fuzzingclient mode: `scripts/gates.sh interop server/autobahn`. The runner
 starts `mttp_server websocket 127.0.0.1:39505`, writes its configuration and
 reports under `_build/interop/autobahn`, and adapts every result to CASE lines.
+Before removing the fuzzingclient container, the runner records its exit and
+OOM state in `state.txt`. If the container fails or `reports/index.json` is
+missing, it prints that state and the last 80 lines (at most 16 KiB each) of
+both `console.log` (fuzzingclient) and `server.log` (mttp WebSocket server).
+The console log is written during the run so it survives timeouts too.
 Sections 1–7 and 10 run normally; section 9 raises the echo server's frame and
 message limits to 128 MiB. Sections 12–13 run with opt-in permessage-deflate
 in both directions (`client/native/autobahn` checks the mttp client). Only
