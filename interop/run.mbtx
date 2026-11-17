@@ -1397,7 +1397,7 @@ async fn autobahn_client_batch(
     group.add_defer(() => {
       @async.protect_from_cancel(() => remove_container(env.engine, container))
     })
-    let memory = @env.get_env_var("INTEROP_AUTOBAHN_MEMORY").unwrap_or("5g")
+    let memory = @env.get_env_var("INTEROP_AUTOBAHN_MEMORY").unwrap_or("0")
     let memory_args = if memory == "0" {
       []
     } else {

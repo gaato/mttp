@@ -56,9 +56,10 @@ missing files, empty/malformed reports, missing cases even inside nonempty
 wildcards, duplicate cases, and unexpected cases all fail. IDs and verdicts
 remain unchanged; numeric `/runCase` indices restart in each batch.
 
-Each fuzzing server defaults to a 5 GiB memory cap without swap;
-`INTEROP_AUTOBAHN_MEMORY` overrides it (`0` removes the per-container cap,
-or use `3g` for a pressure test).
+Each fuzzing server runs without a per-container memory cap by default:
+canary run 44040380746 showed a 5 GiB cap killing section 12's server about
+20 s in on a GitHub runner, which has 16 GB. `INTEROP_AUTOBAHN_MEMORY` sets a
+cap for experiments (for example `5g`, or `3g` for a pressure test).
 Restarting the server releases PyPy's retained case data and compression
 state. Canary run 44022015993 confirmed OOMKilled/137 during old full-suite
 case 367 (12.4.12), followed by connection refused and no reports. In that
