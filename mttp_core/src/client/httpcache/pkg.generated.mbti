@@ -1,0 +1,79 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/client/httpcache"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub let cache_status : @mttp_core.AttributeKey[CacheStatus]
+
+// Errors
+
+// Types and methods
+#derive(Eq)
+pub struct CacheKey {
+  url : String
+  credential : String?
+}
+pub fn CacheKey::equal(Self, Self) -> Bool
+pub fn CacheKey::not_equal(Self, Self) -> Bool
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum CacheStatus {
+  Hit
+  Revalidated
+  Miss
+  Stale
+  Bypass
+}
+pub fn CacheStatus::equal(Self, Self) -> Bool
+pub fn CacheStatus::not_equal(Self, Self) -> Bool
+pub fn CacheStatus::to_repr(Self) -> @debug.Repr
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum CredentialMode {
+  Partition
+  Bypass
+}
+pub fn CredentialMode::equal(Self, Self) -> Bool
+pub fn CredentialMode::not_equal(Self, Self) -> Bool
+pub fn CredentialMode::to_repr(Self) -> @debug.Repr
+
+pub struct HttpCache {
+  // private fields
+}
+pub fn HttpCache::close(Self) -> Unit
+pub fn HttpCache::new(&@mttp_core.Backend, clock~ : &@rt.Clock, store? : &CacheStore, heuristic_percent? : Int32, credentials? : CredentialMode, max_entry_bytes? : Int32, max_variants? : Int32) -> Self
+pub async fn HttpCache::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
+pub impl @mttp_core.Backend for HttpCache
+
+pub struct MemoryStore {
+  // private fields
+}
+pub async fn MemoryStore::insert(Self, CacheKey, Stored) -> Unit
+pub async fn MemoryStore::lookup(Self, CacheKey) -> Array[Stored]
+pub fn MemoryStore::new(max_entries? : Int32, max_bytes? : Int64) -> Self
+pub async fn MemoryStore::remove(Self, CacheKey) -> Unit
+pub impl CacheStore for MemoryStore
+
+pub struct Stored {
+  vary_headers : @mttp_core.Headers
+  head : @mttp_core.ResponseHead
+  body : Bytes
+  request_time_ms : Int64
+  response_time_ms : Int64
+}
+
+// Type aliases
+
+// Traits
+pub(open) trait CacheStore {
+  async fn lookup(Self, CacheKey) -> Array[Stored]
+  async fn insert(Self, CacheKey, Stored) -> Unit
+  async fn remove(Self, CacheKey) -> Unit
+}

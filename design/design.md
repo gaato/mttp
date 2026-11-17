@@ -1442,7 +1442,7 @@ Module-level allowed imports live in `scripts/modules.tsv`; the gates read it, s
 | DigestAuthenticationBackend | `gaato/mttp_digest` (`DigestScheme`) |
 | ResolveRelativeUrisBackend | `Client` base_url (prefix join, not RFC 3986) |
 | ListenerBackend, LoggingBackend, OTel/Prometheus | `Client` observer (per attempt) + `from_fn`; `on_attempt_start`, header redaction helper later |
-| CachingBackend | later, as a bounded Backend wrapper, or an explicit omission |
+| CachingBackend (C7) | `client/httpcache.HttpCache`: RFC 9111 private GET cache, HEAD reuse, lazy EOF storage, 304 validation and stale-if-error; Authorization partitions, bounded LRU, body bytes and Vary selections. Compose `AuthRefresh(HttpCache(Decompress(engine)))`. |
 | RetryWhen, resilience | `RetryDecider` over the decoded outcome + `client/retry` + the Client loop |
 | EitherBackend, TryBackend, MappedEffectBackend | omitted: they exist only for F[_] |
 | BackendStub / RecordingBackend | `testing.BackendStub` (`sent` replaces RecordingBackend) |

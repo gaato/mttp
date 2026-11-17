@@ -9,6 +9,14 @@ never does.
 
 ### Added
 
+- `client/httpcache`: RFC 9111 private `HttpCache` Backend wrapper with
+  clock-injected freshness, EOF-only GET storage, HEAD reuse, Vary,
+  conditional validation, stale-if-error, only-if-cached, unsafe-method
+  invalidation, Authorization partitions and bounded `MemoryStore` LRU.
+  `cache.heuristic_lifetime` supplies optional Last-Modified heuristics.
+  A pinned external cache-tests forward-proxy runner is provided under
+  `conformance/cache-tests` for manual comparison.
+
 - `client.ReconnectPolicy` and `ReconnectDecision`: when to reconnect a
   long-lived stream, as data (`decide`, `next_attempts`; default 1 s to 30 s
   with jitter, unlimited, count reset after a connection that lived 60 s,

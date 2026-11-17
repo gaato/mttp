@@ -1,0 +1,88 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/process",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/env",
+}
+----
+
+///|
+const REVISION : String = "7e2c53785f41eedc57aa73c8cc19a6729eef39ed"
+
+///|
+const NODE : String = "docker.io/library/node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5"
+
+///|
+async fn ready(port : Int32) -> Unit {
+  for _ in 0..<300 {
+    let conn = @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:\{port}")) catch {
+      _ => { @async.sleep(100); continue }
+    }
+    conn.close()
+    return
+  }
+  fail("cache-tests port \{port} did not become ready")
+}
+
+///|
+/// Run from repository root. Builds the native forward proxy, installs the
+/// commit-pinned suite in a container, starts its server, then runs its CLI.
+/// Raw results remain for review; known.tsv is a scope ledger, not a filter.
+async fn main {
+  let engine = @env.get_env_var("INTEROP_ENGINE").unwrap_or("podman")
+  let root = @fs.realpath(".")
+  let work = "\{root}/_build/cache-tests"
+  @fs.mkdir(work, recursive=true, allow_exist=true)
+  for port in [39080, 8000] {
+    let busy = try {
+      @socket.Tcp::connect(@socket.Addr::parse("127.0.0.1:\{port}")).close()
+      true
+    } catch { _ => false }
+    if busy { fail("cache-tests port \{port} is already in use") }
+  }
+  @shell.Cmd("moon", ["build", "--target", "native", "conformance/cache-tests/proxy"]).run()
+  // curl and tar are host prerequisites, as in the other external runners.
+  @shell.Cmd("curl", ["-fL", "https://codeload.github.com/http-tests/cache-tests/tar.gz/\{REVISION}", "-o", "\{work}/suite.tar.gz"]).run()
+  let suite = "\{work}/suite"
+  @fs.mkdir(suite, recursive=true, allow_exist=true)
+  @shell.Cmd("tar", ["-xzf", "\{work}/suite.tar.gz", "--strip-components=1", "-C", suite]).run()
+  // Node's built-in fetch does not reliably honor HTTP_PROXY. Explicitly
+  // use Undici with a ProxyAgent, including interim-response test dispatchers.
+  let preload =
+    #|import { fetch, ProxyAgent, setGlobalDispatcher } from 'undici'
+    #|setGlobalDispatcher(new ProxyAgent(process.env.HTTP_PROXY))
+    #|globalThis.fetch = fetch
+    #|
+  @fs.write_text("\{suite}/proxy-setup.mjs", preload)
+  let test_path = "\{suite}/test-engine/client/test.mjs"
+  let test_source = @fs.read_text(test_path)
+  if !test_source.contains("new undici.Agent()") { fail("cache-tests interim dispatcher changed; review the pin") }
+  @fs.write_text(test_path, test_source.replace_all(old="new undici.Agent()",
+    new="new undici.ProxyAgent(process.env.HTTP_PROXY)"))
+  let common = ["run", "--rm", "--network", "host", "-v", "\{suite}:/suite:z", "-w", "/suite"]
+  // The upstream commit pins its dependency declarations; generated npm lock
+  // and install logs remain in _build/cache-tests for reproducibility review.
+  @shell.Cmd(engine, [..common, NODE, "npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"]).run()
+  @async.with_task_group(group => {
+    let proxy = @process.spawn(group,
+      "_build/native/debug/build/gaato/mttp-cache-conformance/proxy/proxy.exe", [],
+      stdout=ToFile("\{work}/proxy.log"), stderr=DuplicateStdout)
+    defer proxy.cancel()
+    ready(39080)
+    let server = @process.spawn(group, engine,
+      [..common, NODE, "npm", "run", "server"],
+      stdout=ToFile("\{work}/server.log"), stderr=DuplicateStdout)
+    defer server.cancel()
+    ready(8000)
+    let result = @process.run(engine,
+      [..common, "-e", "HTTP_PROXY=http://127.0.0.1:39080",
+        "-e", "NODE_OPTIONS=--import=/suite/proxy-setup.mjs", NODE,
+        "npm", "run", "--silent", "cli", "--base=http://127.0.0.1:8000"],
+      stdout=ToFile("\{work}/results.json"), stderr=ToFile("\{work}/client.log"))
+    if result.exit_code != 0 { fail("cache-tests CLI exited \{result.exit_code}; see \{work}/client.log") }
+  })
+  println("cache-tests results: \{work}/results.json; compare with conformance/cache-tests/known.tsv")
+}

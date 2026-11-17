@@ -250,3 +250,11 @@ what a configured deadline then does.
 | `mttp_core/multipart` total wire bytes | 64 MiB including preamble and epilogue, configurable `max_total_bytes`; Router additionally applies its smaller request ceiling | `mttp_core/src/multipart/reader_test.mbt`: "multipart exceeds every configured resource bound" |
 | `mttp_core/multipart` candidate boundary and transport padding | 64 KiB, configurable `max_buffer_bytes` (minimum 78); ordinary payload is delivered without retaining a line. A returned payload chunk is at most 64 KiB plus this candidate bound; the reader retains at most one caller-owned source chunk | `mttp_core/src/multipart/reader_test.mbt`: "multipart exceeds every configured resource bound" |
 | `mttp_core/multipart` synchronous buffered part payload | 16 MiB, configurable `max_part_bytes`; live reader payloads are streamed | `mttp_core/src/multipart/reader_test.mbt`: "multipart exceeds every configured resource bound" |
+
+## Private HTTP cache
+
+| Structure | Bound | At the bound | Tests |
+|---|---|---|---|
+| `mttp_core/client/httpcache` MemoryStore entries and total bytes | 1024 representations, 16 MiB including body and URL/credential/header UTF-16 storage by default; LRU across keys | An insertion evicts oldest keys until both limits fit; an entry larger than the byte limit is skipped | `mttp_core/src/client/httpcache/httpcache_test.mbt`: "LRU entry and total byte bounds evict past capacity" |
+| `mttp_core/client/httpcache` collected body bytes | `max_entry_bytes`, 1 MiB by default | Collection is discarded immediately past the limit; delivery continues; abandoned bodies never commit | `mttp_core/src/client/httpcache/httpcache_test.mbt`: "abandoned body is not stored; EOF commits; entry bytes bound" |
+| `mttp_core/client/httpcache` Vary variants | `max_variants`, 8 per URL/credential key by default | Oldest selection evicted before inserting past the bound; overlapping offers may be skipped | `mttp_core/src/client/httpcache/httpcache_test.mbt`: "variants bound evicts oldest selection" |

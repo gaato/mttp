@@ -1,0 +1,10 @@
+# Expected scope differences, not observed passes/failures: C7 did not run the suite.
+# Literal test IDs or a trailing-star family match; retain raw results for review.
+test	expectation	reason
+cc-resp-private-shared	known	Private responses are storable in this private cache (RFC 9111 section 3); this test requires a shared cache.
+other-authorization-public	known	Public permission does not remove Authorization partitioning; a subsequent anonymous request uses a different key.
+other-authorization-must-revalidate	known	Must-revalidate does not remove Authorization partitioning; a subsequent anonymous request uses a different key.
+other-authorization-smaxage	known	Private caches ignore s-maxage; a shared-cache permission and freshness lifetime do not apply here (section 5.2.2.10).
+partial-*	known	Range requests bypass and 206 is never stored; partial reuse and range assembly are out of scope.
+stale-while-revalidate	known	No background revalidation; stale responses validate synchronously.
+stale-while-revalidate-window	known	Depends on the out-of-scope background stale-while-revalidate behavior.
