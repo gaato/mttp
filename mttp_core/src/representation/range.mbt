@@ -77,7 +77,9 @@ pub fn choose_range(
       return Full
     }
   }
-  guard field.has_prefix("bytes=") else { return Full }
+  guard field.length() >= 6 && field[:6].to_owned().to_lower() == "bytes=" else {
+    return Full
+  }
   let spec = field[6:].trim(chars=" \t")
   guard spec.find("-") is Some(dash) else { return Full }
   let left = spec[:dash]

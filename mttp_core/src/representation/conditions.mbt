@@ -54,42 +54,54 @@ fn seconds(ms : Int64) -> Int64 {
 }
 
 ///|
-fn tag_matches(field : String, validators : Validators, strong : Bool) -> Bool {
-  if field.trim(chars=" \t") == "*" {
+fn tag_matches(
+  fields : Array[String],
+  validators : Validators,
+  strong : Bool,
+) -> Bool {
+  if fields is [field] && field.trim(chars=" \t") == "*" {
     return true
   }
   guard validators.etag is Some(tag) else { return false }
   // Quoted opaque tags may contain commas, so do not split a tag list on commas.
-  let mut i = 0
-  while i < field.length() {
-    while i < field.length() &&
-          (field[i] == ' ' || field[i] == '\t' || field[i] == ',') {
+  let mut matched = false
+  for field in fields {
+    let mut i = 0
+    while i < field.length() {
+      while i < field.length() &&
+            (field[i] == ' ' || field[i] == '\t' || field[i] == ',') {
+        i += 1
+      }
+      if i == field.length() {
+        break
+      }
+      let start = i
+      if field[i:].has_prefix("W/") {
+        i += 2
+      }
+      guard i < field.length() && field[i] == '"' else { return false }
       i += 1
-    }
-    let start = i
-    if field[i:].has_prefix("W/") {
-      i += 2
-    }
-    guard i < field.length() && field[i] == '"' else { return false }
-    i += 1
-    while i < field.length() && field[i] != '"' {
+      while i < field.length() && field[i] != '"' {
+        let c = field[i]
+        if c < 0x21 || c == 0x7f || c > 0xff {
+          return false
+        }
+        i += 1
+      }
+      guard i < field.length() else { return false }
       i += 1
-    }
-    guard i < field.length() else { return false }
-    i += 1
-    let candidate = field[start:i]
-    if (!strong || (!candidate.has_prefix("W/") && !tag.has_prefix("W/"))) &&
-      tag_value(candidate) == tag_value(tag[:]) {
-      return true
-    }
-    guard i == field.length() ||
-      field[i] == ',' ||
-      field[i] == ' ' ||
-      field[i] == '\t' else {
-      return false
+      let candidate = field[start:i]
+      while i < field.length() && (field[i] == ' ' || field[i] == '\t') {
+        i += 1
+      }
+      guard i == field.length() || field[i] == ',' else { return false }
+      if (!strong || (!candidate.has_prefix("W/") && !tag.has_prefix("W/"))) &&
+        tag_value(candidate) == tag_value(tag[:]) {
+        matched = true
+      }
     }
   }
-  false
+  matched
 }
 
 ///|
@@ -101,10 +113,7 @@ pub fn evaluate_preconditions(
 ) -> Precondition {
   let headers = head.headers
   if headers.contains("if-match") {
-    if !headers
-      .get_all("if-match")
-      .iter()
-      .any(v => tag_matches(v, validators, true)) {
+    if !tag_matches(headers.get_all("if-match"), validators, true) {
       return Failed
     }
   } else if headers.get("if-unmodified-since") is Some(value) &&
@@ -115,10 +124,7 @@ pub fn evaluate_preconditions(
   }
   let safe = head.meth is Get || head.meth is Head
   if headers.contains("if-none-match") {
-    if headers
-      .get_all("if-none-match")
-      .iter()
-      .any(v => tag_matches(v, validators, false)) {
+    if tag_matches(headers.get_all("if-none-match"), validators, false) {
       return if safe { NotModified } else { Failed }
     }
   } else if safe &&

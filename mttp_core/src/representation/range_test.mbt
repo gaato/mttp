@@ -106,3 +106,42 @@ test "Range bounds accept 1 KiB ignore 1 KiB plus one and 101 ranges" {
     @representation.Full,
   )
 }
+
+///|
+test "byte range units are case insensitive without weakening range syntax" {
+  let validators = @representation.Validators::new()
+  for unit in ["bytes", "Bytes", "BYTES", "bYtEs"] {
+    assert_eq(
+      @representation.choose_range(
+        head([("range", unit + "=0-1")]),
+        10L,
+        validators,
+      ),
+      @representation.Partial(start=0L, end=1L),
+    )
+    assert_eq(
+      @representation.choose_range(
+        head([("range", unit + "=0-1,3-4")]),
+        10L,
+        validators,
+      ),
+      @representation.Full,
+    )
+    assert_eq(
+      @representation.choose_range(
+        head([("range", unit + "=1-x")]),
+        10L,
+        validators,
+      ),
+      @representation.Full,
+    )
+  }
+  assert_eq(
+    @representation.choose_range(
+      head([("range", "BytesX=0-1")]),
+      10L,
+      validators,
+    ),
+    @representation.Full,
+  )
+}

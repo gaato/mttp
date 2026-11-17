@@ -187,3 +187,59 @@ test "strong If-Match weak If-None-Match wildcard methods and date precision" {
   assert_eq(response.headers.get("vary"), Some("Accept"))
   assert_eq(response.headers.get("content-length"), None)
 }
+
+///|
+test "malformed matching entity tag items and lists never satisfy conditions" {
+  let validators = @representation.Validators::new(etag="\"v1\"")
+  for
+    field in [
+      "\"v1\"garbage", "\"v1\" garbage", "\"v1\" \"v2\"", "\"v1\", garbage", "\"v1\", \"unclosed",
+      "\"v1\", *", "\"v1\", \"has space\"", "\"v1\", \"\u{7f}\"", "\"v1\", \"\u{100}\"",
+    ] {
+    assert_eq(
+      @representation.evaluate_preconditions(
+        head([("if-match", field)]),
+        validators,
+      ),
+      @representation.Failed,
+      msg=field,
+    )
+    for meth in [@mttp_core.Get, Head, Post] {
+      assert_eq(
+        @representation.evaluate_preconditions(
+          head([("if-none-match", field)], meth~),
+          validators,
+        ),
+        @representation.Proceed,
+        msg=field,
+      )
+    }
+  }
+  for name in ["if-match", "if-none-match"] {
+    assert_eq(
+      @representation.evaluate_preconditions(
+        head([(name, "\"v1\""), (name, "garbage")]),
+        validators,
+      ),
+      if name == "if-match" {
+        @representation.Failed
+      } else {
+        @representation.Proceed
+      },
+    )
+  }
+  assert_eq(
+    @representation.evaluate_preconditions(
+      head([("if-match", ",, \"v2\", \"v1\", ,")]),
+      validators,
+    ),
+    @representation.Proceed,
+  )
+  assert_eq(
+    @representation.evaluate_preconditions(
+      head([("if-match", "\"v1\" , \"v2\"")]),
+      validators,
+    ),
+    @representation.Proceed,
+  )
+}

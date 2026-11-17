@@ -339,12 +339,22 @@ fn[T, M] Out::encode(
     if candidates.is_empty() {
       return None
     }
-    // Bodyless outputs have no representation to negotiate.
-    if candidates[0].media_type is None && !candidates[0].dynamic_media {
+    let first = candidates[0]
+    let first_status = match first.status_of {
+      Some(status_of) => status_of(v)
+      None => first.status
+    }
+    // Bodyless statuses have no representation even when the variant normally
+    // carries one. Keep the usual ordered selection and discard its body below.
+    if first_status == 204 ||
+      first_status == 304 ||
+      (first.media_type is None && !first.dynamic_media) {
       variants = [candidates[0]]
     } else {
       let encoded = candidates.map(variant => {
-        if variant.dynamic_media {
+        // Streaming encoders transfer ownership without pulling the source.
+        // Cache them too so every negotiation rejection can close the body.
+        if variant.dynamic_media || variant.decode_stream is Some(_) {
           Some((variant.encode)(v))
         } else {
           None

@@ -457,9 +457,10 @@ test "declare a typed multipart input" {
 projection matches. It adds `Vary: Accept`, including 406 when no offer is
 acceptable and 400 for malformed or oversized Accept. `one_of` alone keeps
 its first matching variant. Bodyless outputs do not negotiate a media type;
-dynamic body outputs use their actual Content-Type. Dynamic encoders are
-called once for selection; unselected encoded bodies are discarded and
-closed. Output transformations preserve the negotiation setting. OpenAPI
+dynamic body outputs use their actual Content-Type. Runtime statuses 204/304
+bypass negotiation and discard their body. Dynamic and streaming encoders are
+called once for selection without pulling streams; unselected encoded bodies
+are discarded and closed. Output transformations preserve the negotiation setting. OpenAPI
 includes Vary and the additional bodyless responses.
 
 ```mbt check

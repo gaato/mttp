@@ -5,8 +5,10 @@ Pure representation selection from [RFC 9110](https://www.rfc-editor.org/rfc/rfc
 If-Match uses strong comparison and suppresses If-Unmodified-Since;
 If-None-Match uses weak comparison and suppresses If-Modified-Since.
 Dates compare whole seconds. A matching If-None-Match returns NotModified for
-GET/HEAD, Failed for other methods. Missing validators cannot match explicit
-entity tags; `*` refers to existence, which this API assumes.
+GET/HEAD, Failed for other methods. Tag lists are validated completely across
+repeated field lines before a matching item can satisfy a condition.
+Missing validators cannot match explicit entity tags; `*` refers to existence,
+which this API assumes.
 `not_modified` builds a bodyless 304 with validators and caller cache metadata.
 
 `choose_range` supports one inclusive bytes range on GET. HEAD ignores Range.
