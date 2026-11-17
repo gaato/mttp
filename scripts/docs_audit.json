@@ -1,4 +1,4 @@
 {
-  "modules": ["mttp", "mttp_core", "mttp_digest"],
+  "modules": ["mttp", "mttp_core", "mttp_digest", "mttp_schemagen"],
   "generated": []
 }

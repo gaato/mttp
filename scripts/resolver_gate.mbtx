@@ -330,7 +330,9 @@ async fn workspace_modules(root : String) -> Array[Module] {
       is [dir, _, kind, targets, ..] else {
       raise GateError("scripts/modules.tsv: malformed row: " + line)
     }
-    if kind == "example" || kind == "benchmark" {
+    // Standalone tools resolve and test in their own module. Staging their
+    // parser dependencies alongside consumer libraries would defeat isolation.
+    if kind == "example" || kind == "benchmark" || kind == "tool" {
       continue
     }
     if @fs.exists(root + "/" + dir + "/moon.mod") {

@@ -64,7 +64,7 @@ async fn main {
   let attributes = source.split("\n").filter(line => line.trim().has_prefix("#mttp.")).count()
   let wrapper_lines = wrapper.split("\n").filter(line => line != "" && !line.has_prefix("#mttp.")).count()
   @fs.write_text(scratch + "/api.mbt", source)
-  @shell.Cmd("moon", ["-C", args[3], "run", ".", "--target", "wasm", "--",
+  @shell.Cmd("moon", ["-C", args[3], "run", "src", "--target", "wasm", "--",
     scratch + "/api_schema.mbt", scratch + "/api.mbt"]).run()
   let generated = @fs.read_text(scratch + "/api_schema.mbt")
   let codecs = generated.split("\n").filter(line => line.contains(" : @schema.JsonCodec[")).count()

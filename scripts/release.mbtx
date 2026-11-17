@@ -19,7 +19,7 @@ import {
 
 ///|
 let usage : String =
-  #|Release helper for the workspace: each library module of scripts/modules.tsv
+  #|Release helper for the repository: each release module of scripts/modules.tsv
   #|is released on its own, by pushing its tag `<module>-v<version>` (design,
   #|section 5.8).
   #|

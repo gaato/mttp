@@ -76,6 +76,7 @@ let skipped_dirs : Array[String] = [
 /// One row of `scripts/modules.tsv`.
 struct Row {
   example : Bool
+  isolated : Bool
   dir : String
   name : String
   module_deps : Array[String]
@@ -118,7 +119,7 @@ fn parse_rows(text : String) -> Array[Row] raise {
       ] else {
       fail("scripts/modules.tsv: expected 8 tab-separated cells: \{line}")
     }
-    guard kind is ("four-target" | "runtime" | "example" | "benchmark") else {
+    guard kind is ("four-target" | "runtime" | "example" | "benchmark" | "tool") else {
       fail("scripts/modules.tsv: unknown kind \{kind}: \{line}")
     }
     guard release is ("yes" | "no") else {
@@ -126,6 +127,7 @@ fn parse_rows(text : String) -> Array[Row] raise {
     }
     rows.push({
       example: kind == "example" || kind == "benchmark",
+      isolated: kind == "tool",
       dir,
       name,
       module_deps: cell_list(module_deps),
@@ -377,6 +379,15 @@ fn audit(files : Map[String, String]) -> Array[String] raise {
   let rows = parse_rows(files.get("scripts/modules.tsv").unwrap_or(""))
   // Members and module manifests.
   let dirs_in_work = work_members(files.get("moon.work").unwrap_or(""))
+  for row in rows {
+    if row.isolated && dirs_in_work.contains(row.dir) {
+      note(
+        "moon.work",
+        "module",
+        "standalone tool \{row.dir} must resolve independently with moon -C; its parser dependencies must not enter the runtime workspace",
+      )
+    }
+  }
   for work_dir in dirs_in_work {
     if !rows.any(row => row.dir == work_dir) {
       note(
@@ -617,6 +628,11 @@ fn run_self_test(files : Map[String, String]) -> Unit raise {
     "a legacy package manifest",
     [("mttp_core/src/x/moon.pkg.json", "{}")],
     "legacy-manifest",
+  )
+  rejects(
+    "a standalone tool in the runtime workspace",
+    [("moon.work", "members = [\"mttp_core\", \"mttp_schemagen\"]\n")],
+    "module",
   )
   // Package imports.
   rejects(

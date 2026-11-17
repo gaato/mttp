@@ -215,6 +215,36 @@ async fn probe_release(parent : String) -> Unit {
     checked.stdout().contains("OK (1 changelogs)") else {
     raise SelfTestFailed("release check included a private module or app")
   }
+  // A publishable CLI stays outside moon.work so its parser runtime cannot
+  // affect the libraries, but still needs release selection, tags and bumps.
+  @fs.write_text(
+    root + "/scripts/modules.tsv",
+    @fs.read_text(root + "/scripts/modules.tsv") +
+    "generator\tprobe/generator\ttool\twasm\t-\t*\t-\tyes\n",
+  )
+  @fs.mkdir(root + "/generator")
+  @fs.write_text(
+    root + "/generator/moon.mod",
+    "name = \"probe/generator\"\nversion = \"0.0.1\"\n",
+  )
+  @fs.write_text(
+    root + "/generator/CHANGELOG.md",
+    "# Changelog\n\n## [Unreleased]\n\n- CLI.\n",
+  )
+  @fs.write_text(
+    workflow, "on:\n  push:\n    tags:\n      - 'library-v*'\n      - 'generator-v*'\n",
+  )
+  let with_tool = release(root, ["check"])
+  guard with_tool.exit_code() == 0 &&
+    with_tool.stdout().contains("OK (2 changelogs)") else {
+    raise SelfTestFailed("standalone release tool was not registered")
+  }
+  let tool_bump = release(root, ["bump", "generator", "0.0.2"])
+  guard tool_bump.exit_code() == 0 &&
+    @fs.read_text(root + "/generator/moon.mod").contains("version = \"0.0.2\"") &&
+    !@fs.read_text(root + "/moon.work").contains("generator") else {
+    raise SelfTestFailed("standalone tool bump required workspace membership")
+  }
   // A real publish needs the release workflow's tag, and only a release
   // module is published; a dry run needs the version's changelog section.
   refused(root, "publish without a module", ["publish"], 2, "publish takes")

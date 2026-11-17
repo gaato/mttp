@@ -78,10 +78,10 @@ gaato/mttp_core	gaato/mttp_core/multipart	js	46
 gaato/mttp_core	gaato/mttp_core/multipart	native	46
 gaato/mttp_core	gaato/mttp_core/multipart	wasm	46
 gaato/mttp_core	gaato/mttp_core/multipart	wasm-gc	46
-gaato/mttp_core	gaato/mttp_core/openapi	js	90
-gaato/mttp_core	gaato/mttp_core/openapi	native	90
-gaato/mttp_core	gaato/mttp_core/openapi	wasm	90
-gaato/mttp_core	gaato/mttp_core/openapi	wasm-gc	90
+gaato/mttp_core	gaato/mttp_core/openapi	js	93
+gaato/mttp_core	gaato/mttp_core/openapi	native	93
+gaato/mttp_core	gaato/mttp_core/openapi	wasm	93
+gaato/mttp_core	gaato/mttp_core/openapi	wasm-gc	93
 gaato/mttp_core	gaato/mttp_core/router	js	70
 gaato/mttp_core	gaato/mttp_core/router	native	70
 gaato/mttp_core	gaato/mttp_core/router	wasm	70
@@ -90,10 +90,10 @@ gaato/mttp_core	gaato/mttp_core/rt	js	7
 gaato/mttp_core	gaato/mttp_core/rt	native	7
 gaato/mttp_core	gaato/mttp_core/rt	wasm	7
 gaato/mttp_core	gaato/mttp_core/rt	wasm-gc	7
-gaato/mttp_core	gaato/mttp_core/schema	js	51
-gaato/mttp_core	gaato/mttp_core/schema	native	51
-gaato/mttp_core	gaato/mttp_core/schema	wasm	51
-gaato/mttp_core	gaato/mttp_core/schema	wasm-gc	51
+gaato/mttp_core	gaato/mttp_core/schema	js	56
+gaato/mttp_core	gaato/mttp_core/schema	native	56
+gaato/mttp_core	gaato/mttp_core/schema	wasm	56
+gaato/mttp_core	gaato/mttp_core/schema	wasm-gc	56
 gaato/mttp_core	gaato/mttp_core/sim	js	62
 gaato/mttp_core	gaato/mttp_core/sim	native	62
 gaato/mttp_core	gaato/mttp_core/sim	wasm	62
@@ -221,3 +221,4 @@ gaato/mttp_core	gaato/mttp_core/apispec/diff	js	25
 gaato/mttp_core	gaato/mttp_core/apispec/diff	native	25
 gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm	25
 gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm-gc	25
+gaato/mttp_schemagen	gaato/mttp_schemagen	wasm	7

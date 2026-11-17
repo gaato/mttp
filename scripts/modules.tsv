@@ -1,15 +1,18 @@
 # The workspace modules and what each may depend on. Every gate reads this
-# file instead of naming modules itself, so adding a module is one row here
-# and one member in moon.work (scripts/architecture_gate.mbtx checks that
-# both agree). Rows are in dependency order: scripts/resolver_gate.mbtx stages
+# file instead of naming modules itself. Libraries also join moon.work;
+# standalone tools stay outside its dependency resolution so build-time parser
+# dependencies cannot change the runtime graph. Rows are in dependency order: scripts/resolver_gate.mbtx stages
 # them into its registry top to bottom.
 #
 # Columns, separated by one tab:
-#   dir              the module directory, as moon.work lists it
+#   dir              the module directory (tools deliberately stay out of moon.work)
 #   name             the module name in its moon.mod
 #   kind             four-target: every package builds and tests on wasm-gc,
 #                    wasm, js and native with the same tests and public API;
 #                    async tests are not allowed (wasm-gc skips them).
+#                    tool: an independently resolved executable in src/;
+#                    tested with moon -C, packaged by the release workflow,
+#                    excluded from library-consumer resolution and coverage.
 #                    runtime: the module runs on `targets` only; a package may
 #                    narrow them with supported_targets in its moon.pkg.
 #                    example: an unpublished executable at the module root,
@@ -29,7 +32,7 @@
 #                    package name, a `prefix*` pattern, or `test:` before
 #                    either for a package only the tests may import (`-` for
 #                    none)
-#   release          yes: a library in the coordinated release train; no:
+#   release          yes: a library or standalone tool in the release train; no:
 #                    an unpublished harness or app. This is separate from
 #                    kind so private modules keep their test/target rules
 #                    and resolver coverage without becoming release candidates.
@@ -60,6 +63,7 @@ dir	name	kind	targets	module_deps	package_imports	experimental	release
 mttp_core	gaato/mttp_core	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core,!moonbitlang/core/async,!moonbitlang/core/compress	gaato/mttp_core/driver	yes
 mttp	gaato/mttp	runtime	native,wasm,js	gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/mttp_core/driver	yes
 mttp_digest	gaato/mttp_digest	four-target	wasm-gc,wasm,js,native	gaato/mttp_core,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core,moonbitlang/x	test:gaato/mttp_core/driver	yes
+mttp_schemagen	gaato/mttp_schemagen	tool	wasm	moonbitlang/parser,moonbitlang/lexer	moonbitlang/core,moonbitlang/parser,moonbitlang/lexer	moonbitlang/core/async*	yes
 conformance	gaato/mttp-conformance	four-target	wasm-gc,wasm,js,native	gaato/mttp_core	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core	-	no
 examples/get	gaato/mttp-example-get	example	native,wasm,js	gaato/mttp	*	*	no
 examples/serve	gaato/mttp-example-serve	example	native	gaato/mttp	*	*	no

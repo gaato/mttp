@@ -19,7 +19,7 @@ struct Envelope {
   label : String?
   #mttp.example("1")
   #mttp.example("2")
-  #mttp.default(default_count)
+  #mttp.schema_default(default_count)
   count : Int32
 }
 

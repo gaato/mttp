@@ -36,6 +36,10 @@ struct Attributes {
   mut rename : String?
   mut codec : String?
   mut omittable : Bool
+  mut nullable : Bool
+  mut discriminator : String?
+  mut tag : String?
+  mut unknown : Bool
   examples : Array[String]
   mut default_ : String?
 }
@@ -44,6 +48,7 @@ struct Attributes {
 fn attributes(
   attrs : @list.List[@attribute.Attribute],
   on_type~ : Bool,
+  on_case~ : Bool = false,
 ) -> Attributes raise GenerationError {
   let result = Attributes::{
     schema: false,
@@ -51,6 +56,10 @@ fn attributes(
     rename: None,
     codec: None,
     omittable: false,
+    nullable: false,
+    discriminator: None,
+    tag: None,
+    unknown: false,
     examples: [],
     default_: None,
   }
@@ -96,10 +105,18 @@ fn attributes(
           }
         }
       }
-      "rename" if !on_type => result.rename = Some(string_payload())
-      "codec" if !on_type && payload != "" => result.codec = Some(payload)
-      "omittable" if !on_type && open is None => result.omittable = true
-      "example" if !on_type => {
+      "discriminator" if on_type =>
+        result.discriminator = Some(string_payload())
+      "tag" if on_case => result.tag = Some(string_payload())
+      "unknown" if on_case && open is None => result.unknown = true
+      "rename" if !on_type && !on_case => result.rename = Some(string_payload())
+      "codec" if !on_type && !on_case && payload != "" =>
+        result.codec = Some(payload)
+      "omittable" if !on_type && !on_case && open is None =>
+        result.omittable = true
+      "nullable" if !on_type && !on_case && open is None =>
+        result.nullable = true
+      "example" if !on_type && !on_case => {
         let text = string_payload()
         let value = @json.parse(text) catch {
           _ => {
@@ -109,13 +126,25 @@ fn attributes(
         }
         result.examples.push(value.stringify())
       }
-      "default" if !on_type =>
+      "schema_default" if !on_type && !on_case =>
         match attr.parsed {
           Some(Apply(_, More(Expr(Ident(id)), tail=Empty))) =>
             result.default_ = Some(Show::to_string(id))
-          _ => reject(attr.loc, "default requires an identifier")
+          _ => reject(attr.loc, "schema_default requires an identifier")
         }
+      "default" =>
+        reject(
+          attr.loc,
+          "#mttp.default was documentation only; use #mttp.schema_default(identifier)",
+        )
       _ => reject(attr.loc, "unsupported #mttp.\{name} on this declaration")
+    }
+  }
+  if result.omittable && result.nullable {
+    for attr in attrs {
+      if attr.raw.has_prefix("#mttp.") {
+        reject(attr.loc, "omittable and nullable are mutually exclusive")
+      }
     }
   }
   result

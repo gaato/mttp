@@ -121,6 +121,13 @@ static_gates() {
   step moon update
   step script scripts/release.mbtx -- check
   fmt_check
+  # Standalone tools are intentionally not in moon.work: resolve their
+  # compiler/parser dependencies separately from the HTTP runtime modules.
+  # Like fmt_check, formatting is enforced on the pinned toolchain only.
+  if moon version --all | grep -qF -- "$(cat moonbit-version)"; then
+    step moon -C mttp_schemagen fmt --check
+  fi
+  fmt_check mttp_schemagen/measure_shortlinks.mbtx
   # The scripts too, except docs_audit.mbtx: it is shared verbatim with every
   # gaato MoonBit repository and changes only there.
   local file
@@ -131,6 +138,7 @@ static_gates() {
   local before after
   before=$(mbti_snapshot)
   step moon info
+  step moon -C mttp_schemagen info --target wasm
   after=$(mbti_snapshot)
   if [ "$before" != "$after" ]; then
     diff <(echo "$before") <(echo "$after") | grep -E '^[<>]' >&2 || true
@@ -146,6 +154,11 @@ static_gates() {
   fi
   # Generated sources must match their generators byte for byte.
   step script scripts/gen_schema_objects.mbtx -- --check
+  # The header records the active compiler and moonfmt output is versioned.
+  # Canary compilers report their differences without rewriting pinned goldens.
+  if moon version --all | grep -qF -- "$(cat moonbit-version)"; then
+    step script scripts/check_schemagen.mbtx
+  fi
   step script scripts/gen_apispec.mbtx -- --check
   step script scripts/gen_endpoint_maps.mbtx -- --check
   # The HTTP/1 vectors, from the upstream cases kept in conformance/data/,

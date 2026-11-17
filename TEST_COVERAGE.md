@@ -40,8 +40,10 @@ four false contracts with either pinned solver, outside quick/static/full.
 ### What is measured
 
 - Sources: every non-test `.mbt` under `<module>/src/` of every library or
-  conformance module. Example and benchmark executables are excluded: their
-  output and timings are not library behavior covered by this ledger.
+  conformance module. Example, benchmark and standalone tool executables are
+  excluded: their output, timings and compiler host are not native library
+  behavior covered by this ledger. `mttp_schemagen` instead runs Wasm tests,
+  including fresh generation followed by compilation and execution.
 - Test drivers: every package of those modules.
 - Counts are Coveralls lines: lines with at least one instrumented point,
   covered when any point on them ran.
@@ -298,7 +300,7 @@ further 10 minutes each (1.30M h1 inputs at 2,200 exec/s, 0.70M ws at
 | mttp_core/src/schema/collection.mbt | 1 | Encoding precondition: encoding through a recursive codec inside its own construction body aborts, as the codec it delegates to does not exist yet; decoding there is a tested `Malformed`. |
 | mttp_core/src/schema/decoder.mbt | 1 | Saturation of the default step budget for an input of more than 8 388 607 JSON values, which keeps 256 steps per value from overflowing `Int`; reaching it needs a tree of that size in memory. |
 | mttp_core/src/schema/primitives.mbt | 1 | Defensive arm: `double` checks decimal syntax first, which has no `inf` or `NaN`, and `@string.parse_double` raises on overflow, so the finite check cannot fail. |
-| mttp_core/src/schema/union.mbt | 3 | Encoding preconditions: exhaustive case projections and object payload encoders for tagged unions. Violating them is an application definition error that aborts; all untrusted-input decoding paths return tested structured errors. |
+| mttp_core/src/schema/union.mbt | 4 | Encoding preconditions: exhaustive case projections, object payload encoders and an unknown fallback encoder producing an object with an unknown string tag. Violating them is an application definition error that aborts; all untrusted-input decoding paths return tested structured errors. Narrow schema coverage confirms only these four aborts are uncovered. |
 | mttp_core/src/endpoint/client_interp.mbt | 6 | Defensive alternatives after head selection: decode_reply cannot find no candidate; an error-only branch cannot decode success; a streaming branch always has a stream decoder; any_status cannot produce the reader's status rejection. Unknown buffered-decoder exception arms preserve future decoder effects; current public codecs raise only DecodeFailure, translated to DecodeError. Overlapping output/error fallback is covered by review_regression_test.mbt. |
 | mttp_core/src/endpoint/dynamic_output.mbt | 2 | Named-cookie selection filters on the exact name prefix before decoding, so neither the subsequent prefix guard nor its decoding-error catch can fail. Missing and repeated named cookies are covered. |
 | mttp_core/src/endpoint/input.mbt | 3 | BodyValue alternatives in raw_body, stream_body and buffered body finishers: dispatch supplies the representation their staged metadata requested, so the other alternatives cannot reach these built-in finishers. External custom finishers and the absence checks are covered. |

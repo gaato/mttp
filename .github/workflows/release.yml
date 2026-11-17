@@ -1,7 +1,8 @@
 name: Release
 
 # Publishes one module to mooncakes.io when its release tag is pushed:
-# `mttp_core-v<version>`, `mttp-v<version>` or `mttp_digest-v<version>`. The
+# `mttp_core-v<version>`, `mttp-v<version>`, `mttp_digest-v<version>` or
+# `mttp_schemagen-v<version>`. The
 # module's directory is the tag before `-v`.
 # Pushing the tag is the approval; nothing else publishes. The tag must name a
 # release module of scripts/modules.tsv at the version in its moon.mod and
@@ -31,6 +32,7 @@ on:
       - 'mttp_core-v*'
       - 'mttp-v*'
       - 'mttp_digest-v*'
+      - 'mttp_schemagen-v*'
   workflow_dispatch:
     inputs:
       tag:

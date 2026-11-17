@@ -27,6 +27,18 @@ let handwritten_note : @schema.JsonCodec[Note] = @schema.object2(
 )
 
 ///|
+test "generated open response enum has resolvable OpenAPI discriminator mappings" {
+  let endpoint = @endpoint.endpoint
+    .get("/server-event")
+    .output(@endpoint.json_out(server_event_codec.body()))
+  let spec = @openapi.to_openapi(
+    [endpoint.doc()],
+    @apispec.Info::new("Events", "1"),
+  )
+  assert_eq(@openapi.check_references(spec), [])
+}
+
+///|
 test "generated Note equals handwritten schema OpenAPI issues and round trips" {
   assert_eq(note_codec.schema(), handwritten_note.schema())
   let hand = @endpoint.endpoint

@@ -1,0 +1,35 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/env",
+}
+----
+
+// Toolchain-specific formatting and the recorded compiler version make these
+// golden files part of a toolchain bump. Keep regeneration and byte checks in
+// one command so the gate cannot accidentally omit a committed fixture.
+// Run from the repository root; --update rewrites marked outputs only.
+async fn main {
+  let arguments = @env.args()[1:]
+  guard arguments is ([] | ["--update"]) else {
+    fail("usage: moon run scripts/check_schemagen.mbtx [-- --update]")
+  }
+  let update = arguments is ["--update"]
+  let root = @fs.realpath(".")
+  guard @fs.read_text("mttp_schemagen/release.input") == @fs.read_text("mttp_core/src/openapi/schemagen_release_test.mbt") else {
+    fail("release fixture source differs: sync mttp_schemagen/release.input with the core test")
+  }
+  for (output, input) in [
+    ("mttp_schemagen/note.golden", "mttp_schemagen/note.input"),
+    ("mttp_core/src/openapi/note_schema_test.mbt", "mttp_schemagen/note.input"),
+    ("mttp_core/src/openapi/shapes_schema_test.mbt", "mttp_core/src/openapi/schemagen_shapes_test.mbt"),
+    ("mttp_core/src/openapi/release_schema_test.mbt", "mttp_core/src/openapi/schemagen_release_test.mbt"),
+  ] {
+    let mode = if update { [] } else { ["--check"] }
+    @shell.Cmd("moon", ["-C", root + "/mttp_schemagen", "run", "src", "--target", "wasm", "--",
+      ..mode, root + "/" + output, root + "/" + input]).run(timeout_ms=600000)
+  }
+  println("schemagen fixtures: \{if update { "regenerated" } else { "byte-identical" }}")
+}

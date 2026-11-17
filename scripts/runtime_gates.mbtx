@@ -89,6 +89,7 @@ struct Package {
   four_target : Bool
   example : Bool
   benchmark : Bool
+  isolated_module : String?
 }
 
 ///|
@@ -179,6 +180,11 @@ async fn packages() -> Array[Package] {
         four_target: kind == "four-target",
         example: kind == "example",
         benchmark: kind == "benchmark",
+        isolated_module: if kind == "tool" {
+          Some(dir)
+        } else {
+          None
+        },
       })
     }
   }
@@ -244,28 +250,33 @@ async fn run_tests(
   let failed : Map[String, Unit] = Map([])
   for target in targets {
     let selected = pkgs.filter(pkg => pkg.targets.contains(target))
+    let workspace = selected.filter(pkg => pkg.isolated_module is None)
     if selected.is_empty() {
       continue
     }
-    println(
-      "+ moon check --deny-warn --target \{target} (\{selected.length()} packages)",
-    )
-    let checked = @shell.Cmd(
-      "moon",
-      [
-        "check",
-        "--deny-warn",
-        "--no-mbti",
-        "--target",
-        target,
-        ..selected.map(pkg => pkg.dir),
-      ],
-      env=moon_env(target),
-    ).output(timeout_ms=timeout_ms())
-    let log = checked.stdout() + checked.stderr()
-    if checked.exit_code() != 0 || log.contains(experimental_warning) {
-      println(log)
-      failures.push("moon check on \{target}")
+    // No paths means the whole workspace to moon, so a tool-only selection
+    // must skip this command rather than checking unrelated runtime modules.
+    if !workspace.is_empty() {
+      println(
+        "+ moon check --deny-warn --target \{target} (\{workspace.length()} packages)",
+      )
+      let checked = @shell.Cmd(
+        "moon",
+        [
+          "check",
+          "--deny-warn",
+          "--no-mbti",
+          "--target",
+          target,
+          ..workspace.map(pkg => pkg.dir),
+        ],
+        env=moon_env(target),
+      ).output(timeout_ms=timeout_ms())
+      let log = checked.stdout() + checked.stderr()
+      if checked.exit_code() != 0 || log.contains(experimental_warning) {
+        println(log)
+        failures.push("moon check on \{target}")
+      }
     }
     // Export smoke tests import the linked example, not the test bundle.
     // Build examples before package tests so a clean checkout has artifacts.
@@ -282,6 +293,20 @@ async fn run_tests(
       }
     }
     for pkg in selected {
+      if pkg.isolated_module is Some(module_dir) {
+        let checked = @shell.Cmd(
+          "moon",
+          [
+            "-C", module_dir, "check", "--deny-warn", "--no-mbti", "--target", target,
+          ],
+          env=moon_env(target),
+        ).output(timeout_ms=timeout_ms())
+        let log = checked.stdout() + checked.stderr()
+        if checked.exit_code() != 0 || log.contains(experimental_warning) {
+          println(log)
+          failures.push("isolated moon check \{pkg.name} on \{target}")
+        }
+      }
       if pkg.benchmark {
         // Link the executable as well as checking it; executing a benchmark
         // here would turn host-dependent timings into a CI workload.
@@ -302,7 +327,20 @@ async fn run_tests(
       let key = key_of(pkg, target)
       let result = @shell.Cmd(
         "moon",
-        ["test", "--deny-warn", "--target", target, pkg.dir],
+        match pkg.isolated_module {
+          Some(module_dir) =>
+            [
+              "-C",
+              module_dir,
+              "test",
+              "--deny-warn",
+              "--target",
+              target,
+              "-p",
+              pkg.name,
+            ]
+          None => ["test", "--deny-warn", "--target", target, pkg.dir]
+        },
         env=moon_env(target),
       ).output(timeout_ms=timeout_ms())
       let log = result.stdout() + result.stderr()
@@ -474,7 +512,16 @@ async fn update_manifest() -> Unit {
 /// The interface moon generated for `pkg` on `target`.
 async fn interface(pkg : Package, target : String) -> String {
   let last = pkg.name.split("/").last().map(s => s.to_owned()).unwrap_or("")
-  let path = "_build/\{target}/debug/check/\{pkg.name}/\{last}.mbti"
+  let path = match pkg.isolated_module {
+    Some(dir) => {
+      let suffix = pkg.name[pkg.module_name.length():]
+        .trim_start(chars="/")
+        .to_owned()
+      let name = if suffix == "" { last } else { suffix + "/" + last }
+      "\{dir}/_build/\{target}/debug/check/\{name}.mbti"
+    }
+    None => "_build/\{target}/debug/check/\{pkg.name}/\{last}.mbti"
+  }
   guard @fs.exists(path) else {
     raise GateError("no interface for \{pkg.name} on \{target} at \{path}")
   }
@@ -532,6 +579,22 @@ async fn interfaces() -> Unit {
   if info.exit_code() != 0 {
     println(info.stderr())
     raise GateError("moon info --target all failed")
+  }
+  let isolated : Map[String, Unit] = Map([])
+  for pkg in pkgs {
+    if pkg.isolated_module is Some(dir) && !isolated.contains(dir) {
+      isolated[dir] = ()
+      let info = @shell.Cmd("moon", [
+        "-C",
+        dir,
+        "info",
+        "--target",
+        pkg.targets.join("+"),
+      ]).output(timeout_ms=timeout_ms())
+      if info.exit_code() != 0 {
+        raise GateError("isolated moon info failed: \{dir}")
+      }
+    }
   }
   for pkg in pkgs {
     let seen : Array[(String, String)] = []
