@@ -1,0 +1,7 @@
+#mttp.schema
+struct Note {
+  /// The note title, at most 20 characters.
+  #mttp.codec(title_codec)
+  title : String
+  stars : Int
+}

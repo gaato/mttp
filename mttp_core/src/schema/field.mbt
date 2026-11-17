@@ -4,6 +4,7 @@ pub struct Field[T, A] {
   priv name : String
   priv codec : JsonCodec[A]
   priv get : (T) -> A
+  priv description : String?
 }
 
 ///|
@@ -12,8 +13,9 @@ pub fn[T, A] field(
   name : String,
   codec : JsonCodec[A],
   get : (T) -> A,
+  description? : String,
 ) -> Field[T, A] {
-  { name, codec, get, }
+  { name, codec, get, description, }
 }
 
 ///|
@@ -61,17 +63,29 @@ fn[T, A] Field::encode_field(
 ///|
 fn object_schema(
   name : String,
-  fields : Array[(String, Schema, Bool)],
+  fields : Array[(String, Schema, Bool, String?)],
 ) -> Schema {
   let defs : Map[String, Json] = Map([])
   let props : Map[String, Json] = Map([])
   let required = []
   let problems = []
-  for (key, schema, need) in fields {
+  for (key, schema, need, description) in fields {
     if props.contains(key) {
       problems.push("duplicate object field \{key}")
     }
-    props[key] = schema.reference(defs, problems~)
+    let reference = schema.reference(defs, problems~)
+    props[key] = match description {
+      None => reference
+      Some(text) =>
+        match reference {
+          Object(properties) => {
+            let properties = properties.copy()
+            properties["description"] = Json(text)
+            Json::object(properties)
+          }
+          _ => { "allOf": [reference], "description": Json(text) }
+        }
+    }
     if need {
       required.push(key)
     }
@@ -90,9 +104,9 @@ fn object_schema(
 
 ///|
 /// What `object_schema` needs of a field: its name, its schema, and whether
-/// it is required (its codec has no value for a missing field).
-fn[T, A] Field::describe(self : Field[T, A]) -> (String, Schema, Bool) {
-  (self.name, self.codec.schema_, self.codec.missing_ is None)
+/// it is required (its codec has no value for a missing field), and its description.
+fn[T, A] Field::describe(self : Field[T, A]) -> (String, Schema, Bool, String?) {
+  (self.name, self.codec.schema_, self.codec.missing_ is None, self.description)
 }
 
 ///|

@@ -1,0 +1,21 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_schemagen"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+#derive(@debug.Debug)
+type GenerationError
+
+// Types and methods
+type Attributes
+
+type Declaration
+
+// Type aliases
+
+// Traits

@@ -40,6 +40,24 @@ encoders omit absent values, and none of the three fields is `required`.
 larger records while keeping the generated source modest (about 1,100 lines);
 fixed arities avoid runtime casts for heterogeneous fields.
 
+`JsonCodec::with_description` describes a value's schema. A field's optional
+`description` describes that use of the value; for a named child it sits next
+to `$ref` (JSON Schema 2020-12 / OpenAPI 3.1), keeping the shared definition
+unchanged. Both annotations preserve validation, absence and encoding.
+
+```mbt check
+///|
+test {
+  let text = @schema.jstring.with_description("A name")
+  let codec = @schema.object1(
+    "Label",
+    @schema.field("name", text, name => name, description="Display name"),
+    name => name,
+  )
+  assert_eq(codec.from_json({ "name": "Moon" }), "Moon")
+}
+```
+
 Decoding untrusted JSON is bounded:
 
 - JSON bodies refuse duplicate keys and nesting beyond 128, and keep number

@@ -41,6 +41,15 @@ pub fn[T] JsonCodec::schema(self : JsonCodec[T]) -> Schema {
 }
 
 ///|
+/// Documents the decoded value without changing decoding or missing values.
+pub fn[T] JsonCodec::with_description(
+  self : JsonCodec[T],
+  description : String,
+) -> JsonCodec[T] {
+  { ..self, schema_: self.schema_.patch({ "description": Json(description) }), }
+}
+
+///|
 /// Adds JSON Schema examples without changing decoding or missing values.
 pub fn[T] JsonCodec::with_examples(
   self : JsonCodec[T],

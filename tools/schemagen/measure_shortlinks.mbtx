@@ -1,0 +1,75 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/env",
+}
+----
+
+// Reads the trial without writing it; every transformed file stays in scratch.
+// Count all physical lines in the five codec declarations, including their
+// ///| markers. Charge the ErrorBody wrapper and map adapter as added lines
+// as well as attributes, since the original codec's MoonBit value is String.
+async fn main {
+  let args = @env.args()
+  guard args.length() == 4 else {
+    fail("usage: measure_shortlinks.mbtx ORIGINAL_API SCRATCH TOOL_MODULE")
+  }
+  let original = @fs.read_text(args[1])
+  let scratch = args[2]
+  @fs.mkdir(scratch, recursive=true, allow_exist=true)
+  @fs.write_text(scratch + "/original.mbt.txt", original)
+  let mut source = original
+  let mut removed = 0
+  for (name, visibility) in [
+    ("link_codec", "pub "), ("link_patch_codec", "pub "),
+    ("new_link_codec", "pub "), ("created_codec", "pub "),
+    ("error_body", ""),
+  ] {
+    let marker = "///|\n\{visibility}let \{name} :"
+    let start = source.find(marker).unwrap()
+    let length = source[start:].find("\n)\n").unwrap() + 2
+    let block = source[start:start + length].to_owned()
+    let lines = block.split("\n").count()
+    println("\{name}: removed \{lines} physical lines")
+    removed += lines
+    source = source.replace_all(old=block, new="")
+  }
+  for type_ in ["Link", "LinkPatch", "NewLink", "Created"] {
+    source = source.replace_all(old="pub(all) struct \{type_} {",
+      new="#mttp.schema\npub(all) struct \{type_} {")
+  }
+  source = source.replace_all(old="pub(all) struct LinkPatch {\n  url : String?\n  note : @jsonkit.Presence[String]",
+    new="pub(all) struct LinkPatch {\n  #mttp.codec(url_json)\n  #mttp.omittable\n  url : String?\n  #mttp.codec(note_json)\n  note : @jsonkit.Presence[String]")
+  source = source.replace_all(old="pub(all) struct NewLink {\n  url : String\n  code : String?",
+    new="pub(all) struct NewLink {\n  #mttp.codec(url_json)\n  url : String\n  #mttp.codec(code_json)\n  code : String?")
+  let wrapper =
+    #|///|
+    #|#mttp.schema
+    #|priv struct ErrorBody {
+    #|  code : String
+    #|}
+    #|
+    #|///|
+    #|let error_body : @schema.JsonCodec[String] = error_body_codec.map(
+    #|  body => body.code,
+    #|  code => ErrorBody::{ code, },
+    #|)
+    #|
+  source += "\n" + wrapper
+  let formatted = @shell.Cmd("moonfmt", ["-"], stdin=Text(source)).output()
+  formatted.check()
+  source = formatted.stdout()
+  let attributes = source.split("\n").filter(line => line.trim().has_prefix("#mttp.")).count()
+  let wrapper_lines = wrapper.split("\n").filter(line => line != "" && !line.has_prefix("#mttp.")).count()
+  @fs.write_text(scratch + "/api.mbt", source)
+  @shell.Cmd("moon", ["-C", args[3], "run", ".", "--target", "wasm", "--",
+    scratch + "/api_schema.mbt", scratch + "/api.mbt"]).run()
+  let generated = @fs.read_text(scratch + "/api_schema.mbt")
+  let codecs = generated.split("\n").filter(line => line.contains(" : @schema.JsonCodec[")).count()
+  assert_eq(codecs, 5)
+  let report = "handwritten_lines_removed=\{removed}\nattribute_lines_added=\{attributes}\nwrapper_and_adapter_lines_added=\{wrapper_lines}\nnet_lines_removed=\{removed - attributes - wrapper_lines}\ncodecs_generated=\{codecs}\n"
+  @fs.write_text(scratch + "/measurement.txt", report)
+  println(report)
+}
