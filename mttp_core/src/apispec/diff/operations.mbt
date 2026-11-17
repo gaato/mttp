@@ -250,6 +250,8 @@ fn State::operation(
       side: Request,
       context: "parameters",
       uncertain: false,
+      old_source: Source::new(pointer(p, "parameters")),
+      new_source: Source::new(pointer(p, "parameters")),
     },
     at,
     bt,

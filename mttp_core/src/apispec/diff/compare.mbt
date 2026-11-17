@@ -46,6 +46,47 @@ fn keys(a : Json, b : Json) -> Iter[String] {
 }
 
 ///|
+priv struct Source {
+  root : String
+  overrides : Map[String, String]
+}
+
+///|
+fn Source::new(root : String) -> Source {
+  { root, overrides: Map([]), }
+}
+
+///|
+fn Source::at(self : Source, relative : String) -> String {
+  for key, origin in self.overrides {
+    let prefix = pointer("", key)
+    if relative == prefix || relative.has_prefix(prefix + "/") {
+      return origin + relative[prefix.length():].to_owned()
+    }
+  }
+  self.root + relative
+}
+
+///|
+fn reference_source(
+  source : Source,
+  reference : String?,
+  wrapper : Json,
+  merged : Bool,
+) -> Source {
+  guard reference is Some(reference) else { return source }
+  let overrides : Map[String, String] = Map([])
+  if merged {
+    for key in obj(wrapper).keys() {
+      if key != "$ref" {
+        overrides[key] = source.at(pointer("", key))
+      }
+    }
+  }
+  { root: reference[1:].to_owned(), overrides, }
+}
+
+///|
 priv struct Work {
   old : Json
   new : Json
@@ -53,6 +94,8 @@ priv struct Work {
   side : Side
   context : String
   uncertain : Bool
+  old_source : Source
+  new_source : Source
 }
 
 ///|
@@ -64,6 +107,44 @@ priv struct State {
   mut used : Int32
   mut stopped : Bool
   mut uncertain : Bool
+  mut active : Work?
+}
+
+///|
+fn relative_path(root : String, path : String) -> String? {
+  if path == root || path.has_prefix(root + "/") {
+    Some(path[root.length():].to_owned())
+  } else {
+    None
+  }
+}
+
+///|
+fn State::source_at(s : State, path : String, old : Bool) -> Source {
+  guard s.active is Some(w) && relative_path(w.path, path) is Some(relative) else {
+    return Source::new(path)
+  }
+  let source = if old { w.old_source } else { w.new_source }
+  if relative == "" {
+    source
+  } else {
+    Source::new(source.at(relative))
+  }
+}
+
+///|
+fn State::change_path(s : State, path : String) -> String {
+  guard s.active is Some(w) && relative_path(w.path, path) is Some(relative) else {
+    return path
+  }
+  // Select the side that actually owns the changed member before mapping its
+  // provenance. Removed sibling members must retain their old wrapper location.
+  if resolve(w.new, "#" + relative) == None &&
+    resolve(w.old, "#" + relative) != None {
+    w.old_source.at(relative)
+  } else {
+    w.new_source.at(relative)
+  }
 }
 
 ///|
@@ -78,6 +159,7 @@ fn State::emit(
   if s.stopped {
     return
   }
+  let path = s.change_path(path)
   if s.used >= s.max {
     s.stopped = true
     let limit = {
@@ -124,6 +206,8 @@ fn State::push(
   side : Side,
   context : String,
   uncertain? : Bool,
+  old_source? : Source,
+  new_source? : Source,
 ) -> Unit {
   if s.stopped {
     return
@@ -139,6 +223,8 @@ fn State::push(
       side,
       context,
       uncertain: uncertain.unwrap_or(s.uncertain),
+      old_source: old_source.unwrap_or(s.source_at(path, true)),
+      new_source: new_source.unwrap_or(s.source_at(path, false)),
     })
   }
 }
@@ -272,6 +358,7 @@ pub fn compare(
     used: 0,
     stopped: false,
     uncertain: false,
+    active: None,
   }
   let ar = old.to_json()
   let br = new.to_json()
@@ -343,6 +430,7 @@ pub fn compare(
   let mut i = 0
   while i < s.queue.length() && !s.stopped {
     let w = s.queue[i]
+    s.active = Some(w)
     s.uncertain = w.uncertain
     i += 1
     let xref = text(field(w.old, "$ref"))
@@ -360,7 +448,11 @@ pub fn compare(
       let key = w.side.to_json().stringify() +
         w.uncertain.to_string() +
         Json::array([optional_string(xref), optional_string(yref)]).stringify() +
-        (if xref == None || yref == None { w.path } else { "" })
+        (if xref == None || yref == None {
+          strings_json([w.old_source.root, w.new_source.root]).stringify()
+        } else {
+          ""
+        })
       if !s.refs.contains(key) {
         s.refs[key] = true
         let a = match xref {
@@ -384,6 +476,22 @@ pub fn compare(
             } else {
               (b, false)
             }
+            if ac || bc {
+              // Do not traverse synthetic allOf members: they have no source
+              // pointers and their interaction has not been proved equivalent.
+              s.emit(
+                w.side,
+                w.path,
+                KeywordChanged(
+                  keyword="reference-conjunction",
+                  old=Some(a),
+                  new=Some(b),
+                ),
+                Warning,
+                Warning,
+              )
+              continue
+            }
             s.push(
               a,
               b,
@@ -394,6 +502,18 @@ pub fn compare(
               w.side,
               w.context,
               uncertain=w.uncertain || ac || bc,
+              old_source=reference_source(
+                w.old_source,
+                xref,
+                w.old,
+                one_ref && w.context == "schema",
+              ),
+              new_source=reference_source(
+                w.new_source,
+                yref,
+                w.new,
+                one_ref && w.context == "schema",
+              ),
             )
           }
           _ =>

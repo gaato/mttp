@@ -209,15 +209,20 @@ fn State::schema(s : State, w : Work) -> Unit {
 }
 
 ///|
-// Siblings are conjunctive constraints. Disjoint keys can be combined exactly;
-// overlapping unequal constraints retain their conjunction and warn rather than
-// pretending that one constraint overwrites the other.
+// Flatten only known context-independent assertions/annotations. Disjoint
+// applicator keys can still interact (properties/additionalProperties, for
+// example), so all other combinations retain their conjunction and warn.
 fn reference_schema(target : Json, wrapper : Json) -> (Json, Bool) {
   let siblings = obj(wrapper).filter((k, _) => k != "$ref")
   if siblings.is_empty() {
     return (target, false)
   }
   let mut conflict = !(target is Object(_))
+  for key in keys(target, Json::object(siblings)) {
+    if !independent_keyword(key) {
+      conflict = true
+    }
+  }
   for k, v in siblings {
     if obj(target).get(k) is Some(old) && old != v {
       conflict = true
@@ -231,4 +236,14 @@ fn reference_schema(target : Json, wrapper : Json) -> (Json, Bool) {
     merged[k] = v
   }
   (Json::object(merged), false)
+}
+
+///|
+fn independent_keyword(key : String) -> Bool {
+  [
+    "type", "enum", "const", "format", "pattern", "minimum", "maximum", "exclusiveMinimum",
+    "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "minItems", "maxItems",
+    "uniqueItems", "minProperties", "maxProperties", "required", "title", "description",
+    "default", "examples", "example", "deprecated", "readOnly", "writeOnly",
+  ].contains(key)
 }

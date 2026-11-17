@@ -102,6 +102,8 @@ pub(all) enum ChangeKind {
   /// `nullable` and boolean `exclusiveMinimum`, are compared as JSON without
   /// 3.0 interpretation. Parameter serialization settings carry effective
   /// defaults. `unresolved-ref` is a warning diagnostic for a skipped target.
+  /// `reference-conjunction` warns about a preserved conjunction whose
+  /// equivalence to a flattened schema has not been established.
   KeywordChanged(keyword~ : String, old~ : Json?, new~ : Json?)
   /// The comparison spent its node budget and stopped here; the report is
   /// incomplete.
@@ -115,6 +117,8 @@ pub(all) enum ChangeKind {
 /// old one for something only the old document has. A change inside a schema
 /// reached through `$ref` is reported once per side and conservative context,
 /// at the referenced schema's own location.
+/// Sibling constraints retain their wrapper locations, and removed members
+/// use their old source locations.
 #derive(Eq, Debug)
 pub struct Change {
   side : Side

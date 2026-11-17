@@ -23,6 +23,9 @@ produces `{ "request": [...], "response": [...] }` with kebab-case kind names,
 `path`, `client`, `server`, and the kind's payload. Paths refer to the new
 source (old source for removals), except effective inherited settings are
 reported at their operation. Referenced schemas use their target pointer.
+Sibling constraints keep their wrapper pointers, including when compared with
+an inline schema. Removed members retain their old source pointers; nested
+schema traversal carries the source locations on both sides.
 
 The Client view assumes strict generated response decoders: adding response
 enum values or nullability is breaking; removing a response required guarantee
@@ -54,8 +57,13 @@ Local reference resolution accepts object members and canonical zero-based
 array indices as specified in [RFC 6901](https://www.rfc-editor.org/rfc/rfc6901.html#section-4).
 Unresolved path-item targets warn at the path's pointer instead of hiding
 the skipped operations. Ref/inline schema pairs compare the resolved value
-with sibling constraints; conflicting overlapping siblings remain a
-conjunction and warn rather than arbitrarily overwriting a constraint.
+with sibling constraints. Flattening is restricted to a known set of
+context-independent assertions and annotations with no unequal overlapping
+values. Disjoint applicator keywords can still interact: for example,
+`additionalProperties` cannot see `properties` declared inside a referenced
+schema. All combinations not proved safe retain their conjunction and produce
+a `KeywordChanged("reference-conjunction", ...)` warning at the wrapper,
+without traversing synthetic `allOf` members that have no source location.
 
 `max_nodes` defaults to 100000; visited paths, copied parameters, metadata
 reference steps, queued work and emitted changes consume the same budget.
@@ -65,6 +73,9 @@ maps, and output entry counts are bounded by this budget. Individual JSON
 payloads, strings, type/enum/scope sets, temporary reference conjunctions and
 linear member scans are bounded by the
 already decoded input's size, rather than by its number of work entries.
+Per-work source overrides cover at most the 26 supported independent keywords
+on each side; queued provenance is bounded by 52 times `max_nodes` entries
+(plus temporary argument construction for one attempted enqueue).
 The walk is iterative
 so deep schemas do not grow the comparator call stack. Document conversion
 and JSON equality use the core JSON implementation; decode limits should be

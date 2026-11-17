@@ -63,9 +63,9 @@ budgets are conservative until the coordinator's next combined measurement.
 
 | File | Budget | Reason |
 |---|---:|---|
-| mttp_core/src/apispec/diff/compare.mbt | 16 | Remaining malformed string fallback, root/non-object JSON Pointer targets, metadata-reference cycles and budget stops, and response-header-only alternatives. Review regression tests now cover array pointers (including invalid indices), unresolved path-item refs, additional operations, ref/inline transitions and conservative reference contexts. Budget retained pending the coordinator's combined native measurement. |
+| mttp_core/src/apispec/diff/compare.mbt | 16 | Remaining malformed string fallback, root/non-object JSON Pointer targets, metadata-reference cycles and budget stops, and response-header-only alternatives. Review regression tests cover array pointers, unresolved path-item refs, additional operations, ref/inline transitions, conservative contexts and both sides' source provenance (including nested arrays, removals and budget overflow). Budget retained pending the coordinator's combined native measurement. |
 | mttp_core/src/apispec/diff/operations.mbt | 6 | Parameter-copy budget-stop guards are not individually driven. Requiredness relaxation, body additions, parameter serialization/defaults, literal path capture matching and scope-set matching have regression tests; budget retained pending the combined measurement. |
-| mttp_core/src/apispec/diff/schema.mbt | 6 | Absent or malformed type values, malformed nonnumeric bounds, primitive boolean schemas, and stopping between schema keywords. Structured variance, negated nested/reference traversal and overlapping ref/inline sibling constraints have regression tests. |
+| mttp_core/src/apispec/diff/schema.mbt | 6 | Absent or malformed type values, malformed nonnumeric bounds, primitive boolean schemas, and stopping between schema keywords. Structured variance, negated nested/reference traversal, overlapping constraints and disjoint-but-interacting reference sibling conjunctions have regression tests. |
 
 The listener adapter is exercised over real loopback sockets on native and
 wasm, including shutdown, streaming responses, admission, deadlines and
