@@ -211,7 +211,7 @@ grows around that call:
 | Retries, deadlines and admission | Wrap calls in `@async.with_timeout`; no retry or admission policy | Budgeted retries and 30 s / 120 s deadlines by default; opt-in window, pacing and header-driven rate limits |
 | Redirects | Not followed on native and wasm; on js the host's `fetch` follows them | Up to 10 hops, never from HTTPS to HTTP, credentials dropped across origins |
 | Cookies | `Set-Cookie` parsed on native/wasm; no jar | An RFC 6265 jar (`cookies=`), applied on every redirect hop |
-| Content codings | gzip response decoding on native and wasm; no request compressor | gzip, deflate, br and zstd decoding; opt-in request body compression |
+| Content codings | gzip response decoding on native and wasm; no server or request compression | gzip, deflate, br and zstd in both directions: client decoding, server `compress` and opt-in request body compression; RFC 9842 dictionaries (`dcb`, `dcz`) |
 | Connection reuse | `Client` opens a connection per request | Pooled connections per Client |
 | Typed failures | Errors raised; a 404 is an ordinary response | HTTP/decoding failures in `reply.body`; `TransportError` identifies phase and whether the request was sent |
 | Typed endpoints and OpenAPI | No | One definition gives handler, client and OpenAPI 3.1 or 3.2; structural compatibility diff |
