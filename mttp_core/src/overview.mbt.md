@@ -1,37 +1,13 @@
 # gaato/mttp_core
 
-HTTP for [MoonBit](https://www.moonbitlang.com/) without I/O — client, server
-and WebSocket building blocks on wasm-gc, wasm, JS and native. One endpoint
-definition is your handler, your typed client and your OpenAPI document.
-External suites check the stack through its runtime adapters, fuzzing probes
-protocol readers, and proofs check the HTTP/1 number core. See the
-[verification overview](https://github.com/gaato/mttp#how-it-is-checked).
+HTTP for [MoonBit](https://www.moonbitlang.com/) without I/O — the types,
+HTTP/1.1 engines, a client and typed endpoints with a router and OpenAPI, on
+wasm-gc, wasm, JS and native, depending on `moonbitlang/core` alone. See
+[how it is checked](https://github.com/gaato/mttp#how-it-is-checked).
 
-It depends on `moonbitlang/core` alone, with the same tests on every target:
-the message types and codecs, connection engines, a client with budgeted
-retries, deadlines, rate limits, redirects and cookies, a private HTTP cache,
-server-sent events, multipart bodies, and typed endpoints with a router and
-OpenAPI documents. Apps supply I/O through `gaato/mttp` or another backend.
-
-Building an app? Start with [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp):
-it sends requests over the network with sensible defaults and re-exports the
-types, request attributes and client functions an app uses. Add
-`gaato/mttp_core` beside it for the rest: typed endpoints, the router,
-OpenAPI documents, multipart bodies, rate limits and test stubs. Libraries,
-such as an SDK for some API, depend on this module alone, so the app
-decides how requests are sent and tests run without a network.
-
-Coming from `gaato/mttp` 0.2 or earlier? This is that module, renamed: from
-0.3, `gaato/mttp` is the module an app adds (formerly `gaato/mttp_async`).
-In a library, replace `gaato/mttp` with `gaato/mttp_core` in `moon.mod` and
-`moon.pkg`, and `@mttp.` with `@mttp_core.` in code; the
-[changelog](https://github.com/gaato/mttp/blob/main/mttp_core/CHANGELOG.md)
-has the details. Coming from `gaato/http` or `gaato/http-async`? They are
-now `gaato/mttp_core` and `gaato/mttp`.
-
-The design follows the split of Scala's [sttp](https://sttp.softwaremill.com/)
-family: a model, a client over swappable backends, and endpoint descriptions
-interpreted as a server, a client and documentation.
+Apps start with [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) and add
+this module for typed endpoints, the router and test stubs. Libraries such as
+SDKs depend on this module alone, so the app decides how requests are sent.
 
 ## Install
 
@@ -204,6 +180,20 @@ The router is itself a `Backend`, as above, and its `handler()` is what
 | `gaato/mttp_core/rt` | The ports a runtime provides: `Clock`, `Timer`, `Gate`, `Conn`, `Dialer`, `Signal`, `Coordination` |
 | `gaato/mttp_core/sim` | In-memory doubles of the ports and the contract checks every implementation passes |
 | `gaato/mttp_core/driver` | A deterministic task driver with virtual time and `run_sync` for plain tests (experimental: it relies on compiler intrinsics) |
+
+## Earlier names and design
+
+Coming from `gaato/mttp` 0.2 or earlier? This is that module, renamed: from
+0.3, `gaato/mttp` is the module an app adds (formerly `gaato/mttp_async`).
+In a library, replace `gaato/mttp` with `gaato/mttp_core` in `moon.mod` and
+`moon.pkg`, and `@mttp.` with `@mttp_core.` in code; the
+[changelog](https://github.com/gaato/mttp/blob/main/mttp_core/CHANGELOG.md)
+has the details. Coming from `gaato/http` or `gaato/http-async`? They are
+now `gaato/mttp_core` and `gaato/mttp`.
+
+The design follows the split of Scala's [sttp](https://sttp.softwaremill.com/)
+family: a model, a client over swappable backends, and endpoint descriptions
+interpreted as a server, a client and documentation.
 
 ## License
 

@@ -1,36 +1,13 @@
 # gaato/mttp
 
-HTTP for MoonBit — client, server and WebSockets, on native, wasm and JS
-hosts. With `gaato/mttp_core`, one endpoint definition is your handler,
-your typed client and your OpenAPI document. External suites check the stack,
-fuzzing probes protocol readers, and proofs check the HTTP/1 number core.
-See the repository's [verification overview](https://github.com/gaato/mttp#how-it-is-checked).
+HTTP for MoonBit — client, server and WebSockets on native, wasm and JS
+hosts. This is the module an app adds: a client with retries, deadlines,
+redirects, cookies and decompression on by default, and a server for plain
+handlers. See [how it is checked](https://github.com/gaato/mttp#how-it-is-checked).
 
-This is the module an app starts with: retries under a budget, deadlines,
-redirects, cookies, decompression and typed failures, on
-`moonbitlang/core/async`. An app that calls APIs and serves plain handlers
-needs no other module.
-
-Its root re-exports what such an app uses from
-[`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core), the part
-of the family without I/O: the messages (`Request`, `Response`, `Body`,
-`Headers`, `Method`, `Url`), `Handler`, request attributes such as
-`remote_addr` and `background`, streamed bodies, `Backend`, errors, and
-the client API (`Client`, `get`, `as_json` and the rest). Add
-`gaato/mttp_core` to the app as well when it uses the parts this module
-does not re-export: typed endpoints, the router and OpenAPI documents,
-multipart forms, server-sent events, the private HTTP cache, representation
-helpers, rate limits such as `WindowLimiter`, or the test doubles of
-`gaato/mttp_core/testing`.
-
-Writing a library, such as an SDK for some API? Depend on `gaato/mttp_core`
-only: it has the same types and client without any I/O, so it builds on
-every target, wasm-gc included, and the app chooses how requests are sent.
-
-Coming from `gaato/mttp_async`? It is this module, renamed in 0.3; up to
-0.2, `gaato/mttp` was the part without I/O, now `gaato/mttp_core`. The
-[changelog](https://github.com/gaato/mttp/blob/main/mttp/CHANGELOG.md) has
-a table of what to replace.
+Typed endpoints, OpenAPI documents, the router and test doubles come from
+[`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core); add it beside
+this module when you use them.
 
 ## Install
 
@@ -326,7 +303,16 @@ runtime ports.
 | `conn` | native, wasm | TCP and TLS dialing, including CONNECT tunnels |
 | `trust` | native, wasm, js | `Trust`: which TLS roots a socket backend accepts |
 
-Add `gaato/mttp_core` for these portable packages:
+The root re-exports what an app uses from
+[`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core), the part
+of the family without I/O: the messages (`Request`, `Response`, `Body`,
+`Headers`, `Method`, `Url`), `Handler`, request attributes such as
+`remote_addr` and `background`, streamed bodies, `Backend`, errors, and
+the client API (`Client`, `get`, `as_json` and the rest). Add
+`gaato/mttp_core` for what it does not re-export: typed endpoints, the router
+and OpenAPI documents, server-sent events, rate limits such as
+`WindowLimiter`, the test doubles of `gaato/mttp_core/testing`, and these
+portable packages:
 
 - `ws`: sessions, messages and limits shared by the network and in-process adapters.
 - `client/httpcache`: an opt-in RFC 9111 private cache with Vary, revalidation and bounded memory.
@@ -338,6 +324,17 @@ Add `gaato/mttp_core` for these portable packages:
 The module also ships host shims (`hosts/`), JavaScript files that connect a
 `fetch` export to Workers, Deno, Bun, Node, Fastly, Vercel and Lambda; they
 are not a MoonBit package.
+
+## Libraries and earlier names
+
+Writing a library, such as an SDK for some API? Depend on `gaato/mttp_core`
+only: it has the same types and client without any I/O, so it builds on
+every target, wasm-gc included, and the app chooses how requests are sent.
+
+Coming from `gaato/mttp_async`? It is this module, renamed in 0.3; up to
+0.2, `gaato/mttp` was the part without I/O, now `gaato/mttp_core`. The
+[changelog](https://github.com/gaato/mttp/blob/main/mttp/CHANGELOG.md) has
+a table of what to replace.
 
 ## License
 
