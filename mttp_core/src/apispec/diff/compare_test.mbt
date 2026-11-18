@@ -437,3 +437,55 @@ test "exact paths win over a sibling with the same parameter shape" {
   assert_eq(kinds(r), ["path-added"])
   assert_eq(r.breaking(Client).length(), 0)
 }
+
+///|
+test "report JSON keeps its documented shape" {
+  let a = doc({ "/x": { "get": { "responses": {} } } })
+  let b = doc({
+    "/x": {
+      "get": {
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": {} },
+        ],
+        "responses": {},
+      },
+    },
+  })
+  let r = @diff.compare(a, b)
+  inspect(
+    r.to_json().stringify(),
+    content=(
+      #|{"request":[{"path":"/paths/~1x/get/parameters/0","kind":"parameter-added","client":"breaking","server":"breaking","name":"q","in":"query","required":true}],"response":[]}
+    ),
+  )
+  inspect(
+    @diff.Request.to_json().stringify(),
+    content=(
+      #|"request"
+    ),
+  )
+  inspect(
+    @diff.Response.to_json().stringify(),
+    content=(
+      #|"response"
+    ),
+  )
+  inspect(
+    @diff.Breaking.to_json().stringify(),
+    content=(
+      #|"breaking"
+    ),
+  )
+  inspect(
+    @diff.Warning.to_json().stringify(),
+    content=(
+      #|"warning"
+    ),
+  )
+  inspect(
+    @diff.Info.to_json().stringify(),
+    content=(
+      #|"info"
+    ),
+  )
+}

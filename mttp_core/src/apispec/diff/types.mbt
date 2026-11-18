@@ -1,7 +1,7 @@
 ///|
 /// Which message a change affects. A request is read by the server and
 /// written by the caller; a response is read by the caller.
-#derive(Eq, Debug)
+#derive(Eq, Debug, ToJson(style="flat", rename_cases="lowercase"))
 pub(all) enum Side {
   Request
   Response
@@ -9,7 +9,7 @@ pub(all) enum Side {
 
 ///|
 /// How much a change matters to one reader.
-#derive(Eq, Debug)
+#derive(Eq, Debug, ToJson(style="flat", rename_cases="lowercase"))
 pub(all) enum Severity {
   /// A reader written against the old document can fail.
   Breaking
@@ -140,7 +140,7 @@ pub fn Change::severity(self : Change, view : View) -> Severity {
 ///|
 /// The differences between two documents, request side and response side
 /// apart, each in document order.
-#derive(Eq, Debug)
+#derive(Eq, Debug, ToJson)
 pub struct Report {
   request : Array[Change]
   response : Array[Change]
@@ -164,25 +164,6 @@ pub fn Report::complete(self : Report) -> Bool {
   .iter()
   .concat(self.response.iter())
   .any(change => change.kind is LimitReached(..))
-}
-
-///|
-/// Encode the message side as a lowercase JSON string.
-pub impl ToJson for Side with fn to_json(self) {
-  match self {
-    Request => "request"
-    Response => "response"
-  }
-}
-
-///|
-/// Encode the severity as a lowercase JSON string.
-pub impl ToJson for Severity with fn to_json(self) {
-  match self {
-    Breaking => "breaking"
-    Warning => "warning"
-    Info => "info"
-  }
 }
 
 ///|
@@ -347,15 +328,6 @@ pub impl ToJson for Change with fn to_json(self) {
   }
   self.kind.add_details(obj)
   Json::object(obj)
-}
-
-///|
-/// `{ "request": [...], "response": [...] }`.
-pub impl ToJson for Report with fn to_json(self) {
-  {
-    "request": Json::array(self.request.map(change => change.to_json())),
-    "response": Json::array(self.response.map(change => change.to_json())),
-  }
 }
 
 ///|

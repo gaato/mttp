@@ -217,10 +217,10 @@ gaato/mttp_core	gaato/mttp_core/internal/window	js	3
 gaato/mttp_core	gaato/mttp_core/internal/window	native	3
 gaato/mttp_core	gaato/mttp_core/internal/window	wasm	3
 gaato/mttp_core	gaato/mttp_core/internal/window	wasm-gc	3
-gaato/mttp_core	gaato/mttp_core/apispec/diff	js	29
-gaato/mttp_core	gaato/mttp_core/apispec/diff	native	29
-gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm	29
-gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm-gc	29
+gaato/mttp_core	gaato/mttp_core/apispec/diff	js	30
+gaato/mttp_core	gaato/mttp_core/apispec/diff	native	30
+gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm	30
+gaato/mttp_core	gaato/mttp_core/apispec/diff	wasm-gc	30
 gaato/mttp_schemagen	gaato/mttp_schemagen	wasm	11
 gaato/mttp-cache-conformance	gaato/mttp-cache-conformance/proxy	native	0
 gaato/mttp_core	gaato/mttp_core/client/httpcache	js	37

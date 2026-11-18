@@ -78,7 +78,7 @@ pub fn ChangeKind::to_json(Self) -> @json.Json
 pub fn ChangeKind::to_repr(Self) -> @debug.Repr
 pub impl @json.ToJson for ChangeKind
 
-#derive(Eq, @debug.Debug)
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub struct Report {
   request : Array[Change]
   response : Array[Change]
@@ -89,9 +89,8 @@ pub fn Report::equal(Self, Self) -> Bool
 pub fn Report::not_equal(Self, Self) -> Bool
 pub fn Report::to_json(Self) -> @json.Json
 pub fn Report::to_repr(Self) -> @debug.Repr
-pub impl @json.ToJson for Report
 
-#derive(Eq, @debug.Debug)
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub(all) enum Severity {
   Breaking
   Warning
@@ -101,9 +100,8 @@ pub fn Severity::equal(Self, Self) -> Bool
 pub fn Severity::not_equal(Self, Self) -> Bool
 pub fn Severity::to_json(Self) -> @json.Json
 pub fn Severity::to_repr(Self) -> @debug.Repr
-pub impl @json.ToJson for Severity
 
-#derive(Eq, @debug.Debug)
+#derive(Eq, @debug.Debug, @json.ToJson)
 pub(all) enum Side {
   Request
   Response
@@ -112,7 +110,6 @@ pub fn Side::equal(Self, Self) -> Bool
 pub fn Side::not_equal(Self, Self) -> Bool
 pub fn Side::to_json(Self) -> @json.Json
 pub fn Side::to_repr(Self) -> @debug.Repr
-pub impl @json.ToJson for Side
 
 #derive(Eq, @debug.Debug)
 pub(all) enum View {
