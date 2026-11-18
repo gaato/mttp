@@ -53,7 +53,8 @@ pub extend PhaseEvent with @debug.Debug::{to_repr}
 ///|
 /// Set on a request by the caller that wants its backend's `PhaseEvent`s:
 /// the backend calls it as the exchange reaches each point. A `Client`
-/// built with `events` sets it on every attempt. Wrappers pass request
+/// built with `events` sets it on every attempt, calling a callback the
+/// request already carries first, so both are told. Wrappers pass request
 /// attributes on, so it reaches the engine underneath.
 pub let on_phase : AttributeKey[(PhaseEvent) -> Unit] = AttributeKey::new(
   "on_phase",

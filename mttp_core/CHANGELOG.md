@@ -7,6 +7,12 @@ never does.
 
 ## [Unreleased]
 
+### Fixed
+
+- A `Client` built with `events` replaced a request's own `on_phase`
+  callback, so the caller's callback was silently never called. It is now
+  called before the Client's Phase event.
+
 ## [0.3.0] - 2026-11-18
 
 ### Changed

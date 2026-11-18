@@ -91,6 +91,8 @@ fn AttemptEvents::new(
 ///|
 /// `request` with this attempt's `on_phase` callback and the redirect
 /// callback `FollowRedirects` reports to, or unchanged when nobody listens.
+/// A caller's own `on_phase` on the request keeps being called, before the
+/// event, so `events` never silences it.
 fn AttemptEvents::attach(
   self : AttemptEvents,
   request : @mttp_core.Request,
@@ -98,8 +100,12 @@ fn AttemptEvents::attach(
   guard self.sink is Some(sink) else { return request }
   let attempt = self.attempt
   let send_id = self.send_id
+  let caller = request.attributes.get(@mttp_core.on_phase)
   let attributes = request.attributes
     .put(@mttp_core.on_phase, phase => {
+      if caller is Some(report) {
+        report(phase)
+      }
       if self.open {
         sink(Phase(send_id~, attempt~, phase~))
       }

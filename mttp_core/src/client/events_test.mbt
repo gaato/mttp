@@ -427,3 +427,27 @@ test "a Client without events adds no phase callback to the request" {
   assert_eq(reply.status, 204)
   assert_eq(seen, [false])
 }
+
+///|
+test "a request's own on_phase is still called beside the Client's events" {
+  let own = []
+  let log = []
+  let client = @client.Client::new(
+    reporting(_ => @mttp_core.Response::new(200)),
+    @sim.FakeClock::new(),
+    events=event => log.push(describe(event)),
+  )
+  let reply = @driver.run_sync(() => {
+    client.send(
+      @client.get("http://example.test/a").attribute(@mttp_core.on_phase, phase => {
+        own.push(phase)
+      }),
+    )
+  })
+  assert_eq(reply.status, 200)
+  assert_eq(own, [Written, FirstByte])
+  assert_eq(log, [
+    "start 0 GET http://example.test/a default", "phase 0 written", "phase 0 first-byte",
+    "end 0 200",
+  ])
+}
