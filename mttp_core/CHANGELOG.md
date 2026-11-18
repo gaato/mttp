@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-18
+
 ### Fixed
 
 - A `Client` built with `events` replaced a request's own `on_phase`
