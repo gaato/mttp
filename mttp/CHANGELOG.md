@@ -46,6 +46,10 @@ never does.
   errors and positioned FileView reads in the regular tree; TLS closes
   without close_notify now report IncompleteClose on the pinned toolchain.
   Remove the canary compatibility overlay and 0.10.20 API bridges.
+  gaato/mttp 0.4.0 and earlier do not build for native or wasm on 0.10.21
+  (`Type ConnIo does not implement trait ...BinaryReaderImpl`; js still
+  builds), and 0.5.0 needs 0.10.21: move to 0.5.0 together with the
+  toolchain.
 - Run socket I/O and supervised primary work in their task group's existing
   child. Close starts a cancellation child only for an outstanding direction;
   normal I/O and supervision each use one fewer task while retaining close

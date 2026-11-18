@@ -12,6 +12,7 @@ never does.
 ### Changed
 
 - Require gaato/mttp_core 0.3.0 and MoonBit 0.10.21+06da1ed44.
+  gaato/mttp_digest 0.4.0 still builds on 0.10.21.
 
 ## [0.4.0] - 2026-11-17
 

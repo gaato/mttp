@@ -14,7 +14,9 @@ never does.
 - Breaking (MoonBit 0.10.21): the `apispec` models' `from_json` now take
   `@json.DecodeContext` instead of `@json.JsonPath`, following core's
   `FromJson` trait. Code that calls them directly passes the context it
-  received; `@json.from_json` callers are unaffected.
+  received; `@json.from_json` callers are unaffected. 0.3.0 needs 0.10.21,
+  which added `DecodeContext`; gaato/mttp_core 0.2.0 still builds on 0.10.21
+  on every target.
 - Breaking: `apispec.MediaTypeObject` adds `encoding : Map[String, Json]`
   for multipart per-part encodings. Record literals must supply
   `encoding: {}`, or use `MediaTypeObject::new` (its `encoding?` argument is
