@@ -9,6 +9,7 @@ on `moonbitlang/x` for its hashes.
 
 ```sh
 moon add gaato/mttp_digest
+moon add gaato/mttp
 ```
 
 ## Usage

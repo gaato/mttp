@@ -7,6 +7,11 @@ never does.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The README's Install adds `gaato/mttp`**, which the example uses for its
+  client and backend.
+
 ## [0.5.0] - 2026-11-18
 
 ### Changed
