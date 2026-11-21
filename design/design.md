@@ -19,9 +19,26 @@ Items still marked **[needs-prototype]** are settled during implementation; rema
 | Consumer ports (discord REST, GitHub, OpenAI SSE, URL join, bridge) | `wf2/consumer-migration` | 4 targets × 2 toolchains |
 | Final-review probes | `v4/ne`, `v4/rev` | F52–F54 |
 
-Toolchain now: MoonBit 0.10.21 (`moon version --all` reports `0.10.21+06da1ed44`), moved from 0.10.20 on 2026-11-17. It is pinned; `moon self-update` is not used, and newer toolchains are tried by canaries only (§5.6).
+Toolchain now: MoonBit 0.10.22 (`moon version --all` reports `0.10.22+124d61d05`), moved from 0.10.21 on 2026-11-21. It is pinned; `moon self-update` is not used, and newer toolchains are tried by canaries only (§5.6).
 
-The upgrade was checked against the bundled core sources and interfaces versus
+The 0.10.22 upgrade was checked against the bundled core interfaces versus
+0.10.21+06da1ed44:
+
+- Adopt `read_into(MutArrayView[Byte])`: every core/async reader (`File`,
+  `FileView`, sockets, TLS, pipes, process and stdio streams) dropped
+  `read_into(FixedArray, offset?, max_len?)`, so the socket adapter and the
+  positioned file read pass `buffer.mut_view(end=...)`. gaato/mttp 0.5.1 and
+  earlier no longer build for native or wasm (js still builds).
+- `async fn main` no longer needs `moonbitlang/core/async` imported; the
+  import becomes `unused_package` under `--deny-warn`, so the serve example
+  and the cache-tests proxy drop it and its experimental opt-in.
+- Not used by mttp: core/async/gzip is removed (compress/gzip gains
+  `StreamDecoder` and `StreamEncoder`), core/async/http and websocket take a
+  `Proxy` instead of a `ClientConnection`, `Iter::new` becomes the deprecated
+  alias of `Iter::Iter`, and `Utf8Reader::read_line`/`read_lines` and
+  `fs.read_lines` are new.
+
+The 0.10.21 upgrade (2026-11-17) was checked against the bundled core sources and interfaces versus
 0.10.20+65efd5b93. The bundled core changelog has no 0.10.21 section (it is
 unchanged from 0.10.20); the docs record [core/async example migration](https://github.com/moonbitlang/moonbit-docs/commit/919d3bdb98)
 and [trait diagnostics](https://github.com/moonbitlang/moonbit-docs/commit/a54598676e) rather than a
@@ -116,7 +133,7 @@ Made by the user on 2026-11-08. They supersede the 2026-10-24 rows marked † in
 | Experimental packages | A stable module may hold experimental packages. They declare `options(experimental: true)` in moon.pkg, and every importer opts in by listing them, as in `options("allow-experimental-packages": ["gaato/http/h1client"])` (list form only; `true` is refused by the gate; the workspace PR confirms the list form). gaato/http's `h1client`, `h1server` and `driver` start experimental, and so do mttp's endpoint layer, router, apispec and openapi. | principle 8 (old) |
 | PRs | **PR #2 is superseded** by a stack of PRs from `main`, each ≲ 5k lines and passing every gate on its own (§7.1). They merge after the gates pass and the Codex review findings are resolved. PR #2 is closed with a link to the stack; its branch stays as the reference. Nothing is published from the PRs; publishing is a separate, owner-approved step: the train of §8.2, and since 2026-11-12 a pushed release tag (§5.8). | §0.2 "PRs" (kept in spirit) |
 | Rewrite or keep | Chosen per component by quality, from "move as is" to "rewrite" (§7.2). Starting from zero is allowed where the reference is weak. | — |
-| Toolchain | 0.10.21+06da1ed44, pinned. The `%async` intrinsics used by the Driver exist in 0.10.20 and are confined to one file (§5.6). When the pin moves, each module's changelog entry for that release says whether its previous release still builds on the new toolchain and on which targets, checked by building it from the registry: a downstream module otherwise meets a compile error inside our package with no pointer to the fix (requesto met `ConnIo` on gaato/mttp 0.4.0 under 0.10.21). | §5.6 toolchain pins |
+| Toolchain | 0.10.22+124d61d05, pinned. The `%async` intrinsics used by the Driver exist in 0.10.20 and are confined to one file (§5.6). When the pin moves, each module's changelog entry for that release says whether its previous release still builds on the new toolchain and on which targets, checked by building it from the registry: a downstream module otherwise meets a compile error inside our package with no pointer to the fix (requesto met `ConnIo` on gaato/mttp 0.4.0 under 0.10.21). | §5.6 toolchain pins |
 | OpenAPI version | (2026-11-11) **3.1 now, ready for 3.2.** Code generators cannot read 3.2 yet: openapi-generator's parser, swagger-parser 2.1.48, rejects a 3.2 document, and Redoc reads up to 3.1. A document other languages cannot generate clients from loses the point of one definition for server, client and docs. Ready for 3.2 means each sequential item is already described in 3.2's shape: an SSE event is `x-oai-itemSchema` (the OpenAPI Initiative's registered extension for `itemSchema` before 3.2) with string `event`/`data`/`id`, integer `retry` and the JSON payload as `contentSchema` of `data`. Moving to 3.2 renames that member to `itemSchema` and changes the version field. | P-11 (3.1-only needs-user-input), the OpenAPI half of open question 2 (§12), `x-mttp-sse-data-schema` |
 
 ### 0.2 Original decisions (2026-10-24)
@@ -1335,7 +1352,7 @@ CI lists packages per target and **asserts the test count per package and target
 
 ### 5.6 Churn policy
 
-- **Toolchain.** Pinned to 0.10.21+06da1ed44 (`moonbit-version`); `moon self-update` is not used. Daily canaries run the latest toolchain and diff `driver/intrinsics.mbt` against core's `async_primitive.mbt`, so an intrinsic change is seen before it breaks the Driver.
+- **Toolchain.** Pinned to 0.10.22+124d61d05 (`moonbit-version`); `moon self-update` is not used. Daily canaries run the latest toolchain and diff `driver/intrinsics.mbt` against core's `async_primitive.mbt`, so an intrinsic change is seen before it breaks the Driver.
 - **Warnings.** `moon check --deny-warn` on all targets. Async-typed parameters take arrow lambdas (F6, F54); the driver package sets `-unused_async`.
 - **Deprecated forms** the toolchain warns about (`#derive`, `clamped_view`, `Map([])`, `Json(v)`, `to_owned`, Debug instead of Show) are fixed at once, and the generators emit the new forms.
 - **Snapshots.** mbti per package and target; diffs are reviewed in every PR.
@@ -1706,7 +1723,7 @@ The log of 2026-10-24, with statuses updated by §0.1. Ids are kept so that §10
 | T-02 | Conformance: corpora, ledgers, the cross-layer e2e gate, per-target test counts. | proposed | I-16, RT-15, R-08. |
 | T-03 | FakeClock in mttp/clock/fake; VirtualClock in mttp-net/runtime. | superseded: FakeClock in `gaato/http/sim`, VirtualClock in `http-async/runtime` | — |
 | T-04 | `testing` (model + client only) separate from `endpoint/testkit`. | decided; contract checkers move to `gaato/http/sim` (§4.1) | S-06. |
-| T-05 | `moon check --deny-warn` on all 4 targets with both toolchains is a Stage 0 exit criterion and a CI gate. | decided; one pinned toolchain (0.10.21) | wf3/rev has 84 warnings today (F53). |
+| T-05 | `moon check --deny-warn` on all 4 targets with both toolchains is a Stage 0 exit criterion and a CI gate. | decided; one pinned toolchain (0.10.22) | wf3/rev has 84 warnings today (F53). |
 | B-01 | Bounds as in §5.2. | proposed | — |
 | B-02 | A sans-IO HTTP/1.1 codec (`gaato/mttp/h1`) replaces the stock server parsers: version, 100-continue, chunked decoder reporting end, trailers and consumed bytes; later also used by AsyncBackend for responses. | decided: `gaato/http/h1`, used by both engines (§4.5) | RT-04, RT-06, RT-13; RESOURCE_BOUNDS client-side known gap. |
 | B-03 | Server body limit = `min(adapter ceiling, endpoint override or router default)`; both adapter ceilings 1 MiB; an override above a known ceiling is an advisory definition problem. | proposed | Four knobs without a stated precedence. |

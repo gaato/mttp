@@ -4,7 +4,7 @@
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/gaato/mttp)
 [![License](https://img.shields.io/github/license/gaato/mttp)](LICENSE)
 [![mooncakes](https://img.shields.io/badge/mooncakes-gaato%2Fmttp-blue)](https://mooncakes.io/docs/gaato/mttp)
-[![MoonBit 0.10.21+06da1ed44](https://img.shields.io/badge/MoonBit-0.10.21%2B06da1ed44-blue)](https://www.moonbitlang.com)
+[![MoonBit 0.10.22+124d61d05](https://img.shields.io/badge/MoonBit-0.10.22%2B124d61d05-blue)](https://www.moonbitlang.com)
 
 [MoonBit](https://www.moonbitlang.com/) の HTTP です。クライアント、サーバー、WebSocket を native・wasm・JS ホストで使えます。一つのエンドポイント定義が、そのままハンドラーにも型付きクライアントにも OpenAPI 文書にもなります。全体を外部のテストスイートで照合し、プロトコルの読み取り部をファジングし、HTTP/1 の数値の中核を証明しています。
 

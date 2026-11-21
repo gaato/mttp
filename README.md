@@ -4,7 +4,7 @@
 [![Ask DeepWiki](https://img.shields.io/badge/Ask-DeepWiki-blue)](https://deepwiki.com/gaato/mttp)
 [![License](https://img.shields.io/github/license/gaato/mttp)](LICENSE)
 [![mooncakes](https://img.shields.io/badge/mooncakes-gaato%2Fmttp-blue)](https://mooncakes.io/docs/gaato/mttp)
-[![MoonBit 0.10.21+06da1ed44](https://img.shields.io/badge/MoonBit-0.10.21%2B06da1ed44-blue)](https://www.moonbitlang.com)
+[![MoonBit 0.10.22+124d61d05](https://img.shields.io/badge/MoonBit-0.10.22%2B124d61d05-blue)](https://www.moonbitlang.com)
 
 HTTP for [MoonBit](https://www.moonbitlang.com/) — client, server and
 WebSockets, on native, wasm and JS hosts. One endpoint definition is your

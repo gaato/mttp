@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
-      image: ghcr.io/gaato/moonbit:0.10.21-06da1ed44
+      image: ghcr.io/gaato/moonbit:0.10.22-124d61d05
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
-      image: ghcr.io/gaato/moonbit:0.10.21-06da1ed44
+      image: ghcr.io/gaato/moonbit:0.10.22-124d61d05
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
-      image: ghcr.io/gaato/moonbit:0.10.21-06da1ed44
+      image: ghcr.io/gaato/moonbit:0.10.22-124d61d05
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     container:
-      image: ghcr.io/gaato/moonbit:0.10.21-06da1ed44
+      image: ghcr.io/gaato/moonbit:0.10.22-124d61d05
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

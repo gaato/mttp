@@ -5,11 +5,14 @@ import {
   "moonbitlang/lexer/basic",
   "moonbitlang/core/list",
   "moonbitlang/core/json",
-  "moonbitlang/core/async",
   "moonbitlang/core/async/fs",
   "moonbitlang/core/async/shell",
   "moonbitlang/core/env",
 }
+
+import {
+  "moonbitlang/core/async",
+} for "wbtest"
 
 pkgtype(kind: "executable")
 
