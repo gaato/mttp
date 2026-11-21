@@ -18,6 +18,12 @@
 #                                           bounds, interface and coverage
 #                                           audits, the manifest's own
 #                                           consistency, release.mbtx check
+#   scripts/gates.sh selftest               the self-test of this script and
+#                                           the resolver gate (with its own
+#                                           self-test): the parts of full
+#                                           that quick, static and workerd
+#                                           leave out, for CI to run them as
+#                                           a job of their own
 #   scripts/gates.sh workerd                the Workers example on real
 #                                           workerd: builds it, installs the
 #                                           wrangler its lockfile pins (npm
@@ -237,6 +243,13 @@ case "$mode" in
     step script scripts/resolver_gate.mbtx -- --self-test
     step script scripts/resolver_gate.mbtx
     workerd_gate
+    finish
+    ;;
+  selftest)
+    [ $# = 0 ] || usage
+    step script scripts/gate_selftest.mbtx
+    step script scripts/resolver_gate.mbtx -- --self-test
+    step script scripts/resolver_gate.mbtx
     finish
     ;;
   workerd)
