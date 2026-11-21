@@ -10,5 +10,5 @@ supported_targets = "native"
 
 import {
   "gaato/mttp_core@0.3.2",
-  "gaato/mttp@0.5.1",
+  "gaato/mttp@0.5.2",
 }
