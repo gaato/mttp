@@ -64,7 +64,7 @@ impl[R : @io.BinaryReader, W : @io.BinaryWriter] @rt.Conn for SocketConn[R, W] w
     if self.closed {
       return
     }
-    let n = self.reader.read_into(buffer, max_len=size)
+    let n = self.reader.read_into(buffer.mut_view(end=size))
     // Commit consumed bytes in the child before waking its waiter. A
     // cancelled read-ahead waiter must not discard the next request.
     if n == 0 {

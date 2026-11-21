@@ -4,13 +4,8 @@ import {
   "gaato/mttp/backend",
   "gaato/mttp/runtime",
   "gaato/mttp/server",
-  "moonbitlang/core/async",
 }
 
 supported_targets = "native"
 
 pkgtype(kind: "executable")
-
-options(
-  "allow-experimental-packages": [ "moonbitlang/core/async" ],
-)

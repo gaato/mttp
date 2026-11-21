@@ -7,6 +7,16 @@ never does.
 
 ## [Unreleased]
 
+### Changed
+
+- Pin MoonBit 0.10.22+124d61d05. Its core/async readers take
+  `read_into(MutArrayView[Byte])` instead of `read_into(FixedArray, offset?,
+  max_len?)`, and the socket adapter and file reads pass a view. gaato/mttp
+  0.5.1 and earlier do not build for native or wasm on 0.10.22 (`Expr Type
+  Mismatch ... wanted : MutArrayView[Byte]` in `internal/socketconn`; js still
+  builds), and this release needs 0.10.22: move to it together with the
+  toolchain.
+
 ## [0.5.1] - 2026-11-21
 
 ### Changed

@@ -1,7 +1,7 @@
 # Migrating from `moonbitlang/core/async/http`
 
 This guide compares the HTTP package shipped with MoonBit
-`0.10.21+06da1ed44`, the toolchain pinned by this repository's
+`0.10.22+124d61d05`, the toolchain pinned by this repository's
 [moonbit-version](moonbit-version), with `gaato/mttp`. The before and after
 files are compiled together in [examples/migrate](examples/migrate).
 They use separate function names so you can keep both versions open.

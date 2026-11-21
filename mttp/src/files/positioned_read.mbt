@@ -6,5 +6,5 @@ async fn positioned_read(
   position : Int64,
   len : Int32,
 ) -> Int32 {
-  file.at(position).read_into(buffer, max_len=len)
+  file.at(position).read_into(buffer.mut_view(end=len))
 }
