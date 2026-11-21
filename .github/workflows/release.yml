@@ -6,8 +6,9 @@ name: Release
 # module's directory is the tag before `-v`.
 # Pushing the tag is the approval; nothing else publishes. The tag must name a
 # release module of scripts/modules.tsv at the version in its moon.mod and
-# point at a commit on main, which the publish job checks before it runs the
-# full gates. `scripts/release.mbtx publish <module>` then publishes that
+# point at a commit on main whose CI passed: the ci job waits for the CI run
+# of that commit, which runs every part of `scripts/gates.sh full`, instead of
+# running the full gates again. `scripts/release.mbtx publish <module>` then publishes that
 # module alone, built outside the workspace so it resolves its dependencies
 # from the registry as consumers do: a module whose new version imports
 # another's new version (mttp on mttp_core) is tagged after that one is
@@ -43,14 +44,44 @@ on:
 permissions:
   contents: read
 
-# One release at a time. GitHub keeps one waiting run per group and cancels
-# an older waiting one, so push the next tag after the previous run finished.
+# One run per tag. Tags of different modules release side by side; GitHub
+# keeps one waiting run per group and cancels an older waiting one, so a tag
+# pushed again waits for its earlier run instead.
 concurrency:
-  group: release
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  ci:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      actions: read
+    steps:
+      - name: Wait for CI on the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          # A tag is usually pushed right after main, so the CI run of the
+          # commit may not have started yet.
+          id=
+          for _ in $(seq 1 30); do
+            id=$(gh run list --workflow CI --commit "$SHA" --event push --limit 1 \
+              --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$id" ] && break
+            sleep 20
+          done
+          if [ -z "$id" ]; then
+            echo "no CI run on main for $SHA; nothing published" >&2
+            exit 1
+          fi
+          gh run watch "$id" --interval 30 --exit-status
+
   publish:
+    needs: ci
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -100,12 +131,6 @@ jobs:
           echo "module=$module" >> "$GITHUB_OUTPUT"
 
       - run: moon update
-      # Includes the resolver gate (real archives, an isolated registry and
-      # consumers outside the workspace) and, last, the Workers example on
-      # workerd: npm ci fetches the wrangler that
-      # examples/fetch/workers/package-lock.json pins, and the image's Node
-      # runs it.
-      - run: scripts/gates.sh full
 
       - name: Publish
         shell: bash
@@ -127,7 +152,7 @@ jobs:
           moon run scripts/release.mbtx -- publish "$MODULE"
 
   github-release:
-    needs: publish
+    needs: [ci, publish]
     # A manual run skips the publish and only creates the Release.
     if: >-
       !cancelled() && (needs.publish.result == 'success' ||
