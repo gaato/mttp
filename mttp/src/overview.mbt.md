@@ -175,6 +175,10 @@ pub async fn serve_echo() -> Unit {
 }
 ```
 
+The server also sets attributes on each request:
+`request.attributes.get(@mttp.remote_addr)` is the client's address, and
+`@mttp.background` schedules work that may outlive the response.
+
 By default the server takes 256 connections at once, request heads up to
 16 KiB and bodies up to 1 MiB, and gives a client 5 s to send a head and
 5 s for a body. When its task is cancelled it stops accepting, lets running
