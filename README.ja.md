@@ -59,7 +59,7 @@ async fn main {
 
 ## 一つの定義を三通りに使う
 
-型付きエンドポイントは、一家のうち I/O を持たない `gaato/mttp_core` にあります。定義を wasm-gc でビルドするコードとも共有できるようにするためです。使うアプリは gaato/mttp の隣に足します(`moon add gaato/mttp_core`):
+型付きエンドポイントは、mttp のモジュール群のうち I/O を持たない `gaato/mttp_core` にあります。定義を wasm-gc でビルドするコードとも共有できるようにするためです。使うアプリは gaato/mttp の隣に足します(`moon add gaato/mttp_core`):
 
 <!-- source: examples/tour/main.mbt -->
 ```moonbit
@@ -204,7 +204,7 @@ js ではどちらのクライアントもホストの `fetch` で送り、展�
 | [`gaato/mttp_digest`](https://mooncakes.io/docs/gaato/mttp_digest) | サーバーが HTTP Digest 認証を求めるとき。 |
 | [`gaato/mttp_schemagen`](https://mooncakes.io/docs/gaato/mttp_schemagen) | 注釈を付けた MoonBit の型から JSON のコーデックとスキーマを生成したいとき。`moonx` で動かすコマンドラインの生成器で、生成したコードは `gaato/mttp_core` を使う。 |
 
-`gaato/mttp_core` は I/O を持たない部分すべてで、どのターゲットでもビルドできます。`gaato/mttp` はそれを `moonbitlang/core/async` でネットワークにつなぎます。`gaato/mttp_digest` はどちらにも Digest 認証を足し、`gaato/mttp_schemagen` はどちらのスキーマにもコーデックを書きます。この分け方は Scala の [sttp](https://sttp.softwaremill.com/) 一家にならっています。
+`gaato/mttp_core` は I/O を持たない部分すべてで、どのターゲットでもビルドできます。`gaato/mttp` はそれを `moonbitlang/core/async` でネットワークにつなぎます。`gaato/mttp_digest` はどちらにも Digest 認証を足し、`gaato/mttp_schemagen` はどちらのスキーマにもコーデックを書きます。この分け方は Scala の [sttp](https://sttp.softwaremill.com/) のモジュール群にならっています。
 
 探すとよいパッケージ(注記のない限り `gaato/mttp_core` の下):
 
