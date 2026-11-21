@@ -1,6 +1,6 @@
 name = "gaato/mttp_digest"
 
-version = "0.5.0"
+version = "0.5.1"
 
 license = "Apache-2.0"
 
@@ -17,6 +17,6 @@ source = "src"
 preferred_target = "wasm-gc"
 
 import {
-  "gaato/mttp_core@0.3.0",
+  "gaato/mttp_core@0.3.2",
   "moonbitlang/x@0.5.7",
 }

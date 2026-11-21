@@ -38,9 +38,9 @@ pub struct Note {
 ```
 
 ```sh
-moonx gaato/mttp_schemagen@0.1.0 model_schema.mbt model.mbt
+moonx gaato/mttp_schemagen@0.1.1 model_schema.mbt model.mbt
 moon check --deny-warn
-moonx gaato/mttp_schemagen@0.1.0 --check model_schema.mbt model.mbt
+moonx gaato/mttp_schemagen@0.1.1 --check model_schema.mbt model.mbt
 ```
 
 This writes `model_schema.mbt` with a public `note_codec`. Doc comments become
@@ -61,7 +61,7 @@ To regenerate automatically, add a rule to `moon.pkg`:
 ```moonbit nocheck
 rule(
   name: "schema",
-  command: "moonx gaato/mttp_schemagen@0.1.0 $output $input",
+  command: "moonx gaato/mttp_schemagen@0.1.1 $output $input",
 )
 dev_build(rule: "schema", input: "model.mbt", output: "model_schema.mbt")
 ```

@@ -7,6 +7,12 @@ never does.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-21
+
+### Changed
+
+- **The README is rewritten**: writing a library against a `Client`, one endpoint definition for client, server and OpenAPI, and a table of which package to use for a task.
+
 ## [0.3.1] - 2026-11-18
 
 ### Fixed

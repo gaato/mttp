@@ -7,10 +7,16 @@ never does.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-21
+
 ### Fixed
 
 - **The README's Install adds `gaato/mttp`**, which the example uses for its
   client and backend.
+
+### Changed
+
+- **The README is rewritten**: which requests are answered, the secure random source the client nonces need, and the supported challenges.
 
 ## [0.5.0] - 2026-11-18
 

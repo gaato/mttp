@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-21
+
+### Changed
+
+- **The README is rewritten**: generating and checking a codec, how MoonBit types map to codecs, the attributes and the limits.
+
 ## [0.1.0] - 2026-11-18
 
 ### Added

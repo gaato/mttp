@@ -7,6 +7,12 @@ never does.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-21
+
+### Changed
+
+- **The README is rewritten**: a complete client example, a table of what `client()` does by default, a server handler that reads headers and the raw body, typed endpoints, tests over a stub, and the related gaato modules.
+
 ## [0.5.0] - 2026-11-18
 
 ### Added

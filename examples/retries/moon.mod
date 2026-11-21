@@ -15,5 +15,5 @@ preferred_target = "native"
 supported_targets = "native"
 
 import {
-  "gaato/mttp@0.5.0",
+  "gaato/mttp@0.5.1",
 }
