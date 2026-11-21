@@ -11,6 +11,7 @@ never does.
 
 ### Changed
 
+- **Depends on gaato/deflate 0.4.1, gaato/brotli 0.6.0, gaato/zstd 0.6.1 and gaato/codec_bytes 0.1.3**, which decode and encode faster with the same bytes out; the content codings and the client's decompression behave as before.
 - **The README is rewritten**: a complete client example, a table of what `client()` does by default, a server handler that reads headers and the raw body, typed endpoints, tests over a stub, and the related gaato modules.
 
 ## [0.5.0] - 2026-11-18
