@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-21
+
 ### Changed
 
 - Pin MoonBit 0.10.22+124d61d05. Its core/async readers take

@@ -15,5 +15,5 @@ preferred_target = "js"
 supported_targets = "js"
 
 import {
-  "gaato/mttp@0.5.1",
+  "gaato/mttp@0.5.2",
 }
