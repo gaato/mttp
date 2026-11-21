@@ -1,17 +1,41 @@
 # gaato/mttp_schemagen
 
-Generate ordinary `@schema.object1` to `object16`, enum and recursive codecs
-from annotated MoonBit types. Check the generated `<name>_schema.mbt` into
-source control. The consumer needs **gaato/mttp_core 0.3.0 or later**:
-earlier releases lack `field(description?)`, `with_description`, `nullable`
-and `tagged(unknown?)`.
+Generate JSON codecs, with their JSON Schema, from annotated MoonBit structs
+and enums. The generated codecs are the ordinary `gaato/mttp_core/schema`
+values that mttp endpoints use for validation and OpenAPI, so you write the
+model once instead of a hand-written codec per type.
+
+The generator is a command-line tool run with `moonx`. You check its output, a
+plain `.mbt` file, into your repository, so reviewers see every change to the
+wire format. Your program never depends on the generator or its parser.
 
 ## Install
 
-The generator is a separate Wasm executable. Its parser dependency never
-enters the consumer's module graph. Keep `moon`, `moonc` and `moonfmt` from
-the same toolchain on PATH, because output formatting and the recorded
-compiler version belong together.
+Your package needs `gaato/mttp_core` 0.3.0 or later and imports
+`gaato/mttp_core/schema`:
+
+```sh
+moon add gaato/mttp_core
+```
+
+Run the generator with `moonx`. Keep `moon`, `moonc` and `moonfmt` from the
+same toolchain on your `PATH`, because the output is formatted and stamped with
+that compiler's version.
+
+## Generate a codec for a model
+
+Put the annotated type in `model.mbt`:
+
+```moonbit nocheck
+///|
+#mttp.schema
+pub struct Note {
+  /// A short title.
+  title : String
+  #mttp.nullable
+  rating : Int32?
+}
+```
 
 ```sh
 moonx gaato/mttp_schemagen@0.1.0 model_schema.mbt model.mbt
@@ -19,20 +43,20 @@ moon check --deny-warn
 moonx gaato/mttp_schemagen@0.1.0 --check model_schema.mbt model.mbt
 ```
 
-Arguments: `[--check] OUTPUT INPUT [INPUT ...]`. Supply all annotated types
-from one package in a fixed order. Existing output is replaced only if line 1
-has this tool's generated-file marker; user-owned files are refused. Writes
-replace the complete file, and `--check` compares bytes without writing.
-There is no deletion command. The header records generator and compiler
-versions, so a toolchain bump regenerates the files in the same change.
+This writes `model_schema.mbt` with a public `note_codec`. Doc comments become
+schema descriptions. The `rating` key is required and accepts JSON `null`.
 
-## Generation and compilation
+- Arguments are `[--check] OUTPUT INPUT [INPUT ...]`. List every input file of
+  one package, in a stable order.
+- `moon check` is required: only the compiler can check custom codecs and
+  defaults, so a successful generator run is not enough.
+- `--check` compares the output byte for byte without writing, for CI.
+- The tool replaces only a file it generated (marked on line 1), and refuses to
+  overwrite anything else.
+- After a toolchain upgrade, regenerate in the same change, because the header
+  records the compiler version.
 
-Use a `moon.pkg` rule so `moon check`, `moon build` and `moon test` generate
-the file and then compile it as part of the consumer package. Compilation is
-required: attributes describe syntax, while only the compiler can check the
-types of custom codecs and defaults. A successful generator exit alone is
-not a compilation check.
+To regenerate automatically, add a rule to `moon.pkg`:
 
 ```moonbit nocheck
 rule(
@@ -42,65 +66,32 @@ rule(
 dev_build(rule: "schema", input: "model.mbt", output: "model_schema.mbt")
 ```
 
-For an unpublished local checkout, substitute this command (paths must be
-absolute because `-C` changes the tool's working directory):
+## How types map to codecs
 
-```moonbit nocheck
-command: "moon -C /absolute/path/to/mttp_schemagen run src --target wasm -- \"$mod_dir/$output\" \"$mod_dir/$input\""
-```
+| MoonBit type | Codec | JSON behaviour |
+|---|---|---|
+| `Int` / `Int32`, `Int64`, `Double`, `Bool`, `String`, `Json` | `jint`, `jint64`, `jdouble`, `jbool`, `jstring`, `jvalue` | |
+| `Array[T]`, `Map[String, T]` | `array`, `map_of` | |
+| `T?` | `option` | Absent and `null` both give `None`. `None` is omitted when encoding. |
+| `T?` with `#mttp.omittable` | `omittable` | Absent gives `None`. `null` goes to `T`'s codec. |
+| `T?` with `#mttp.nullable` | `nullable` | The key is required. `null` is `None`, and `None` encodes as `null`. |
+| `@jsonkit.Presence[T]` | `presence` | Absent, `null` and a value stay distinct. |
+| Another annotated type in the same package | its `<name>_codec` | |
 
-The generator itself stays outside the repository's `moon.work` to isolate
-parser's runtime dependencies. `scripts/modules.tsv` registers its `tool`
-kind for independent tests, packaging and release tags.
+## Attributes
 
-## Types and attributes
+- On a type: `#mttp.schema`, or `#mttp.schema(name="WireName")` to rename its
+  schema component.
+- On a field: `#mttp.rename("wire")`, `#mttp.codec(value)` for a hand-written
+  validator, `#mttp.omittable` or `#mttp.nullable` (not both), repeatable
+  `#mttp.example("<JSON text>")`, and `#mttp.schema_default(identifier)`.
+  Examples and defaults only document the schema: a required field stays
+  required, and nothing is filled in when decoding.
+- For JSON names that are not valid MoonBit names, rename an escaped field:
+  `#mttp.rename("true")` on `true_`.
 
-```moonbit nocheck
-///|
-#mttp.schema
-struct Note {
-  /// A title of at most 20 characters.
-  #mttp.codec(title_codec)
-  title : String
-  #mttp.nullable
-  rating : Int32?
-}
-```
-
-Doc comments become descriptions; `#mttp.schema(name="WireName")` changes
-the schema component name. Public types produce public `<snake_case>_codec`
-values. Validators are ordinary hand-written codecs selected by `codec(...)`.
-
-| Syntax | Codec |
-|---|---|
-| Int / Int32, Int64, Double, Bool, String, Json | jint, jint64, jdouble, jbool, jstring, jvalue |
-| Array[T], Map[String,T] | array, map_of |
-| T? | option: absent/null both None; None is omitted in objects |
-| `#mttp.omittable` on T? | omittable: absent is None; null goes to the child codec |
-| `#mttp.nullable` on T? | nullable: key required, null is None, None encodes as null |
-| @jsonkit.Presence[T] | presence: absent and null stay distinct |
-| Annotated same-package U | u_codec |
-
-Field attributes are `rename("wire")`, `codec(value)`, `omittable`,
-`nullable`, repeatable `example("<JSON text>")`, and
-`schema_default(identifier)`. `omittable` and `nullable` are mutually exclusive.
-`codec(...)` replaces the child codec inside `T?` / Presence wrappers;
-otherwise it replaces the whole value codec. Examples and schema defaults
-only document values: a required field remains required. The prototype's
-`#mttp.default` spelling is refused with a migration message because it could
-be mistaken for a default applied during decoding.
-
-MoonBit source identifiers must be valid MoonBit names. Escape reserved JSON
-names deterministically with an underscore and `rename`, for example
-`#mttp.rename("true")` on `true_`, `"false"` on `false_`, `"None"` on `none_`,
-and `"Json"` on `json_`. Wire names always remain quoted strings. Constructor
-arguments use indexed bindings and explicit field assignments, so fields
-named `value`, `self_codec` or `mttp_field_0` do not capture generated locals.
-The integration test generates, compiles and runs this fixture from scratch.
-
-Argument-less enums use `string_enum(...).map(...)`; `#mttp.tag("wire")`
-overrides each case's wire string. Tagged enums require one unlabeled,
-annotated same-package struct per known case:
+Enums without arguments become string enums, and `#mttp.tag("wire")` sets a
+case's string. Tagged enums wrap one annotated struct per case:
 
 ```moonbit nocheck
 ///|
@@ -114,52 +105,26 @@ enum Response {
 }
 ```
 
-The default discriminator is `type`, and the default wire tag is the case
-name. One optional `#mttp.unknown` case may carry exactly one Json. It retains
-the entire unknown tagged object and re-encodes it unchanged. It accepts only
-unknown string tags; invalid known payloads, missing/non-string discriminators
-and non-objects still fail. The schema includes an unknown-tag alternative
-without changing known discriminator mappings. `Unknown` is intended for
-values obtained from decoding: constructing it manually with a known tag
-violates the fallback encoder's precondition. The generated code uses
-`tagged(unknown=...)`, so both paths preserve the caller's decode budget.
+The discriminator defaults to `type`, and each tag to the case name. An
+optional `#mttp.unknown` case keeps an object with an unknown tag whole and
+encodes it back unchanged, so an older client can pass through newer data.
+Known tags with invalid payloads still fail.
 
-Self-recursive structs use `recursive`. Unsupported declarations/attributes,
-generics, tuple/empty structs, more than 16 fields, mixed enums, duplicate wire
-names/tags and malformed examples are hard errors with file:line:column.
-Enums have 1 to 64 cases. The tool does not raise object16's limit.
+## Limits
 
-`schema_default` is refused on any field whose generated codec encodes
-through its type's recursive proxy, including inside arrays/maps/options or
-Presence. Defaults encode their value while constructing the codec, before
-that proxy is initialized; the generator cannot inspect an identifier's
-value to prove it empty or None. Defaults on nonrecursive fields remain
-supported, as do explicit codec overrides that do not use the generated
-proxy. Use a hand-written codec for a recursive default annotation.
-Distinct types must also have distinct generated codec names: for example,
-`FooBar` and `Foo_bar` both map to `foo_bar_codec` and are refused together.
+- Structs have 1 to 16 named fields, the limit of `object16`. Enums have 1 to
+  64 cases.
+- Self-recursive structs are supported, but `schema_default` is refused on a
+  field encoded through the recursive type. Use a hand-written codec there.
+- Generics, tuple structs, mixed enums, duplicate wire names or tags, and
+  malformed examples are errors, reported with `file:line:column`.
 
-## Repository checks and releases
+## Links
 
-```sh
-moon -C mttp_schemagen test --target wasm --deny-warn
-moon run scripts/check_schemagen.mbtx
-moon run scripts/check_schemagen.mbtx -- --update
-```
-
-On the pinned toolchain, the static gate byte-checks all committed fixtures.
-After changing the compiler or generator version, regenerate and review the
-goldens in that same change; this detects formatting and emission drift.
-Update both `moon.mod` and the compiled `tool_version` when changing the tool
-version; a test checks that they agree.
-
-The module has its own CHANGELOG and the `mttp_schemagen-v*` release trigger.
-Publish the required core release first, and allow the tool's tag pattern in
-the GitHub `mooncakes` environment before tagging. Publishing and tagging are
-separate release actions; no publication happens while generating code.
-
-The adoption trial removed 42 hand-written shortlinks lines, added 10
-attribute lines and 9 wrapper/adapter lines, saving 23 lines (54.8%).
+- [Generator source and fixtures](https://github.com/gaato/mttp/tree/main/mttp_schemagen)
+- [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core): the schema
+  codecs and endpoints that use the output
+- [Changelog](https://github.com/gaato/mttp/blob/main/mttp_schemagen/CHANGELOG.md)
 
 ## License
 

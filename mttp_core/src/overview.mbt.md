@@ -1,13 +1,20 @@
 # gaato/mttp_core
 
-HTTP for [MoonBit](https://www.moonbitlang.com/) without I/O — the types,
-HTTP/1.1 engines, a client and typed endpoints with a router and OpenAPI, on
-wasm-gc, wasm, JS and native, depending on `moonbitlang/core` alone. See
-[how it is checked](https://github.com/gaato/mttp#how-it-is-checked).
+HTTP for MoonBit without I/O: request and response types, a client, HTTP/1.1
+engines, typed endpoints with a router, and OpenAPI generation. It depends
+only on `moonbitlang/core` and builds on Wasm GC, Wasm, JavaScript and native.
 
-Apps start with [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) and add
-this module for typed endpoints, the router and test stubs. Libraries such as
-SDKs depend on this module alone, so the app decides how requests are sent.
+Use it in two situations:
+
+- **You are writing a library, such as an API SDK.** Depend on this module and
+  take a `Client`. The application decides how requests are sent, and tests
+  can answer them with a plain function.
+- **You are writing an app with `gaato/mttp`** and want typed endpoints, the
+  router, OpenAPI, streaming downloads (`as_stream`) or test stubs. `gaato/mttp`
+  provides the network backends and does not re-export these.
+
+For a ready network client or socket server, start with
+[`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp).
 
 ## Install
 
@@ -15,53 +22,13 @@ SDKs depend on this module alone, so the app decides how requests are sent.
 moon add gaato/mttp_core
 ```
 
-## Requests and backends
+Import the subpackages you use by their full paths, such as
+`gaato/mttp_core/client` or `gaato/mttp_core/endpoint`.
 
-Values are immutable: each builder returns a copy.
-Use `credential(name, value)` for SDK-specific credentials. It adds the header
-and marks its lowercase name in `credential_headers`, so redirect following
-strips it on origin changes and `to_curl` hides it even with a default Client.
-Names and values use the same send-time validation as `header`.
-
-```mbt check
-///|
-test "describe a request" {
-  let request = @mttp_core.Request::post("https://api.example.com/v1/items")
-    .query("dry_run", "true")
-    .bearer("token")
-    .credential("X-SDK-Key", "secret")
-    .body_json({ "name": "first" })
-  assert_eq(request.url, "https://api.example.com/v1/items?dry_run=true")
-  assert_eq(request.headers.get("content-type"), Some("application/json"))
-  assert_eq(
-    request.attributes.get(@mttp_core.credential_headers),
-    Some(["x-sdk-key"]),
-  )
-  assert_false(@mttp_core.is_idempotent(request))
-}
-```
-
-A `Backend` sends one exchange and returns the response. Every failure is a
-`TransportError` whose phase says how far the exchange got, so `is_unsent`
-tells whether resending a non-idempotent request is safe.
-
-### On another runtime
-
-`gaato/mttp` provides the backends for `moonbitlang/core/async`, on
-native, wasm and js (through the host's `fetch`); wasm-gc has no runtime
-there. A program on wasm-gc or on another runtime uses this module directly:
-implement `Backend` over that runtime's HTTP client, or implement only the
-ports in `rt` and reuse the `h1client` engine, then pass the backend, a
-`Clock` and, for deadlines, a `Timer` to `Client::new`. The client, typed
-endpoints and server-sent events work unchanged. A framework on the registry
-module `moonbitlang/async` can share a program with `gaato/mttp`: from
-0.22.6 on, that module runs on `moonbitlang/core/async`'s runtime, so an app
-that needs it requires `moonbitlang/async@0.22.6` or later.
-
-## A client in a library
+## Write a library against a client
 
 A library takes a `Client` and leaves the backend to its caller. In a test,
-the backend is a function:
+the backend is a function.
 
 ```mbt check
 ///|
@@ -101,23 +68,31 @@ test "a library call against a test backend" {
 `@driver.run_sync` lists it in its `moon.pkg`:
 `options("allow-experimental-packages": [ "gaato/mttp_core/driver" ])`.
 
-`Client::new` sends nothing it is not told to: retries, deadlines and rate
-limits are opt-in here (`retry=`, `timeout_ms=`, `limiter=`), while
-`gaato/mttp`'s `client()` turns retries and deadlines on for apps.
-Redirects are followed by default, over any backend, a test function
-included (`redirect=` configures them, `RedirectConfig::none()` turns them
-off), and cookies are kept when the Client is given a jar (`cookies=`). The
-`gaato/mttp_core/client/ratelimit` section below shows a limiter that follows a
-server's quota headers.
+**`Client::new` sends only what it is told to.** Retries, deadlines and rate
+limits are opt-in (`retry=`, `timeout_ms=`, `limiter=`), while `gaato/mttp`'s
+`client()` turns retries and deadlines on for apps. Redirects are followed by
+default over any backend (`redirect=RedirectConfig::none()` turns them off).
+Cookies are kept only when the client is given a jar (`cookies=`). A deadline
+needs a `Timer` as well as the `Clock`.
 
-Every failure prints as a readable message: `"\{error}"` on a
-`TransportError`, or `failure.to_string()` on a `ResponseFailure`, summarises
-it (status, phase, cause) for logs and UIs.
+Standard response readers put rejected statuses and decoding failures in
+`reply.body`. Transport failures raise `TransportError`, whose phase says how
+far the exchange got. `is_unsent()` is true only when the request provably
+never reached the server, so resending it cannot duplicate it; false proves
+nothing either way. `"\{error}"` and `failure.to_string()` give
+readable messages for logs.
 
-## Typed endpoints
+Requests are immutable: keep the value each builder returns.
+`Request::get`, `post`, `put`, `patch`, `delete`, `options` and
+`Request::new(method, url)` start one, and `@client.request(...)` turns it into
+a plan the client sends. For an SDK-specific credential header, use
+`.credential(name, value)` instead of `.header`, so that redirects to another
+origin strip it and `to_curl` hides it.
+
+## Share an endpoint between a service and its client
 
 One definition gives a client call, a server handler behind a router and an
-OpenAPI document:
+OpenAPI document. The test runs without a network or a server.
 
 ```mbt check
 ///|
@@ -143,57 +118,45 @@ test "one definition for client, server and docs" {
 }
 ```
 
-The router is itself a `Backend`, as above, and its `handler()` is what
+The router is itself a `Backend`, as above. Its `handler()` is what
 `gaato/mttp`'s server or a JavaScript `fetch` export serves.
 
-## Packages
+## On another runtime
 
-| Package | What it holds |
-|---|---|
-| `gaato/mttp_core` | The vocabulary: methods, headers, URLs, requests, responses and bodies, `Backend` and `SendOptions`, `TransportError`, URL, form and HTTP-date (parse and format) helpers |
-| `gaato/mttp_core/client` | Request/response plans, the Client loop, retries and budgets, deadlines, redirects, cookies, pagination; opt-in circuit breaker, credential refresh, SSE reconnection, events and trace context |
-| `gaato/mttp_core/client/retry` | Retry rules and decisions as data |
-| `gaato/mttp_core/client/ratelimit` | Bounded window state, pacing, global quotas and header-driven admission |
-| `gaato/mttp_core/client/cookies` | `Cookies`, the cookie-jar backend wrapper a Client with `cookies=` uses, for stacks built by hand |
-| `gaato/mttp_core/client/httpcache` | Opt-in RFC 9111 private cache: Vary, validators, credential partitions and bounded memory |
-| `gaato/mttp_core/ws` | Portable WebSocket sessions, complete messages, limits and extension ports; frame and handshake codecs in subpackages |
-| `gaato/mttp_core/sse` | A bounded `text/event-stream` parser, reader and encoder |
-| `gaato/mttp_core/multipart` | Streamed form-data writing and bounded reading, including typed endpoint inputs |
-| `gaato/mttp_core/representation` | Accept negotiation, validators, preconditions for 304/412 and byte-range selection for 206/416 |
-| `gaato/mttp_core/cookie` | An RFC 6265 cookie jar on an injected clock |
-| `gaato/mttp_core/cache` | RFC 9111 freshness and age, and RFC 5861's stale-while-revalidate and stale-if-error, as pure functions |
-| `gaato/mttp_core/dictionary` | RFC 9842 compression dictionaries: `Use-As-Dictionary`, and a bounded, partitioned client store that chooses which dictionary a request offers |
-| `gaato/mttp_core/urlpattern` | WHATWG URL patterns without regular expressions, matched in linear time, for RFC 9842's `match` |
-| `gaato/mttp_core/sf` | RFC 9651 Structured Field Values: parsing and serializing Lists, Dictionaries and Items |
-| `gaato/mttp_core/jsonkit` | `Presence`, an object builder, field decoders and open enums for JSON models |
-| `gaato/mttp_core/schema` | Text, JSON and body codecs that carry their JSON Schema, and validators |
-| `gaato/mttp_core/endpoint` | Typed endpoint inputs and outputs, client calls and bounded server dispatch |
-| `gaato/mttp_core/router` | Dispatch, CORS, `rate_limit` with RateLimit headers, `secure_headers`, signed-cookie `sessions`; also a `Backend` |
-| `gaato/mttp_core/openapi` | OpenAPI documents projected from endpoints, reference checks and a docs endpoint |
-| `gaato/mttp_core/apispec` | OpenAPI document records with their JSON codecs (3.1, and 3.2's fields) |
-| `gaato/mttp_core/apispec/diff` | Structural OpenAPI compatibility reports from client and server viewpoints |
-| `gaato/mttp_core/endpoint/testkit` | Typed endpoint stubs and the definition checker |
-| `gaato/mttp_core/testing` | `BackendStub`, canned answers and fault injection for client tests |
-| `gaato/mttp_core/h1` | The sans-IO HTTP/1.1 codec: bounded decoders, strict parsers that refuse request smuggling, wire writers |
-| `gaato/mttp_core/h1client` | The HTTP/1.1 client engine over the `rt` ports: connection pool, bounded heads and bodies, phase deadlines, proxies |
-| `gaato/mttp_core/h1server` | The HTTP/1.1 server engine over the `rt` ports for one accepted connection |
-| `gaato/mttp_core/rt` | The ports a runtime provides: `Clock`, `Timer`, `Gate`, `Conn`, `Dialer`, `Signal`, `Coordination` |
-| `gaato/mttp_core/sim` | In-memory doubles of the ports and the contract checks every implementation passes |
-| `gaato/mttp_core/driver` | A deterministic task driver with virtual time and `run_sync` for plain tests (experimental: it relies on compiler intrinsics) |
+`gaato/mttp` provides backends for `moonbitlang/core/async` on native, wasm and
+js. A program on Wasm GC or on another runtime uses this module directly:
+implement `Backend` over that runtime's HTTP client, or implement only the
+ports in `rt` and reuse the `h1client` engine. Then pass the backend, a `Clock`
+and a `Timer` to `Client::new`. The client, typed endpoints and server-sent
+events work unchanged.
+[Backend and runtime contracts](https://github.com/gaato/mttp/blob/main/CONTRACT.md)
 
-## Earlier names and design
+## Find the package for a task
 
-Coming from `gaato/mttp` 0.2 or earlier? This is that module, renamed: from
-0.3, `gaato/mttp` is the module an app adds (formerly `gaato/mttp_async`).
-In a library, replace `gaato/mttp` with `gaato/mttp_core` in `moon.mod` and
-`moon.pkg`, and `@mttp.` with `@mttp_core.` in code; the
-[changelog](https://github.com/gaato/mttp/blob/main/mttp_core/CHANGELOG.md)
-has the details. Coming from `gaato/http` or `gaato/http-async`? They are
-now `gaato/mttp_core` and `gaato/mttp`.
+| Task | Where |
+| --- | --- |
+| Send requests with retries, budgets, quotas or a private cache | `client`, `client/retry`, `client/ratelimit`, `client/httpcache` |
+| Stream a response body | `client` (`as_stream`, `as_lines`) |
+| Stream server-sent events or multipart form data | `sse`, `multipart` |
+| Validate JSON, route requests, generate or compare OpenAPI | `schema`, `endpoint`, `router`, `openapi`, `apispec`, `apispec/diff` |
+| CORS, rate limits, secure headers, signed-cookie sessions on a server | `router` |
+| Conditional and range requests (304, 412, 206) | `representation` |
+| Compression dictionaries (RFC 9842): `Use-As-Dictionary`, a client dictionary store, URL patterns | `dictionary`, `urlpattern`. The coding itself, on client and server, is in `gaato/mttp`'s `codings` and `backend` packages. |
+| WebSocket sessions | `ws` |
+| Canned responses, fault injection, virtual time | `testing`, `sim`, `driver`, `endpoint/testkit` |
+| Implement a runtime or transport | `rt`, `h1`, `h1client`, `h1server` |
+| HTTP Digest authentication | the separate module [`gaato/mttp_digest`](https://mooncakes.io/docs/gaato/mttp_digest) |
+| Codecs and schemas generated from annotated types | the separate tool [`gaato/mttp_schemagen`](https://mooncakes.io/docs/gaato/mttp_schemagen) |
 
-The design follows the split of Scala's [sttp](https://sttp.softwaremill.com/)
-family: a model, a client over swappable backends, and endpoint descriptions
-interpreted as a server, a client and documentation.
+Smaller building blocks: `cookie` (RFC 6265 jar), `cache` (RFC 9111 freshness
+as pure functions), `sf` (RFC 9651 structured fields) and `jsonkit` (helpers
+for JSON models).
+
+## Links
+
+- [Changelog](https://github.com/gaato/mttp/blob/main/mttp_core/CHANGELOG.md)
+- [Migrating from MoonBit's built-in HTTP](https://github.com/gaato/mttp/blob/main/MIGRATING.md)
+- [Repository](https://github.com/gaato/mttp)
 
 ## License
 

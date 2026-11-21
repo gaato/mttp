@@ -15,7 +15,8 @@ number core.
 [gaato/mttp](https://mooncakes.io/docs/gaato/mttp) ·
 [gaato/mttp_core](https://mooncakes.io/docs/gaato/mttp_core) ·
 [examples](#examples) ·
-[backend contract](CONTRACT.md)
+[backend contract](CONTRACT.md) ·
+[日本語](README.ja.md)
 
 ## Start
 
@@ -239,10 +240,12 @@ The standard-library column describes the toolchain pinned in
 | [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) | you are building an app or a server: it sends requests over the network with the defaults above, serves handlers, and re-exports the types, request attributes and client functions an app uses. Add `gaato/mttp_core` beside it for typed endpoints, the router, OpenAPI documents, multipart bodies, rate limits and test stubs. |
 | [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core) | you are writing a library, such as an SDK for some API: it takes a `Client` and leaves the network to the app, so it builds on every target, wasm-gc included, and its tests run without a network. |
 | [`gaato/mttp_digest`](https://mooncakes.io/docs/gaato/mttp_digest) | a server asks for HTTP Digest authentication. |
+| [`gaato/mttp_schemagen`](https://mooncakes.io/docs/gaato/mttp_schemagen) | you want JSON codecs and schemas generated from annotated MoonBit types. It is a command-line generator run with `moonx`; the code it writes uses `gaato/mttp_core`. |
 
 `gaato/mttp_core` holds everything without I/O and builds on every target;
 `gaato/mttp` connects it to the network through `moonbitlang/core/async`;
-`gaato/mttp_digest` adds Digest authentication to either. The split follows
+`gaato/mttp_digest` adds Digest authentication to either, and
+`gaato/mttp_schemagen` writes codecs for the schemas of either. The split follows
 Scala's [sttp](https://sttp.softwaremill.com/) family.
 
 Packages to look for (paths below are under `gaato/mttp_core` unless noted):
@@ -326,7 +329,8 @@ host's fetch and server use whatever version they negotiate. An HTTP/2
 engine awaits ALPN in core/tls.
 
 The modules are at 0.x: a minor release (0.1 → 0.2) may break the API, and a
-patch release never does. Each module's changelog, such as
+patch release never does. Bugs and planned work are tracked in
+[Issues](https://github.com/gaato/mttp/issues). Each module's changelog, such as
 [mttp/CHANGELOG.md](mttp/CHANGELOG.md), says what changed and what to rename.
 
 One package is experimental: `gaato/mttp_core/driver`, the deterministic task
@@ -339,18 +343,6 @@ marks experimental. Its `run` and `client()` keep that opt-in out of an app's
 `moon.pkg`; code that imports core/async itself, to spawn tasks for example,
 lists it. The gates run on the toolchain that
 [moonbit-version](moonbit-version) pins.
-
-## Renamed modules
-
-Up to gaato/mttp 0.2, the name `gaato/mttp` was the part without I/O, and the
-module an app adds was `gaato/mttp_async`. From 0.3, `gaato/mttp` is the
-module an app adds (formerly gaato/mttp_async) and the part without I/O is
-`gaato/mttp_core`. The [changelog of gaato/mttp](mttp/CHANGELOG.md) has a
-table of what to replace, in which order.
-
-`gaato/http` and `gaato/http-async`, the modules before those, are now
-`gaato/mttp_core` and `gaato/mttp`; the
-[changelog of gaato/mttp_core](mttp_core/CHANGELOG.md) says what to rename.
 
 ## License
 

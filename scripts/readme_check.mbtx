@@ -8,7 +8,8 @@ import {
 ----
 
 ///|
-/// Keeps README.md and MIGRATING.md true to the code they show. These root
+/// Keeps README.md, its translation README.ja.md and MIGRATING.md true to the
+/// code they show. These root
 /// documents are read on GitHub only (mooncakes shows each module's own
 /// overview), so no doc test covers them; this script does.
 ///
@@ -22,7 +23,7 @@ import {
 ///   `moon run examples/tour` prints, in order, from its first line to its
 ///   last; a line that is `...` stands for any number of lines left out.
 ///
-/// The README must hold each kind at least once; MIGRATING must hold source
+/// Each README must hold each kind at least once; MIGRATING must hold source
 /// and output checks and mark every MoonBit fence. It needs no excerpt or
 /// badge: repeating its short output or the README's badge adds no evidence.
 /// These requirements keep removed comments from silently dropping checks.
@@ -32,7 +33,7 @@ import {
 /// Usage, from the repository root:
 ///   moon run scripts/readme_check.mbtx [-- [--self-test] [FILE ...]]
 ///
-/// With no FILE, both documents are checked. `--self-test` changes each in
+/// With no FILE, all three documents are checked. `--self-test` changes each in
 /// memory in ways that must fail (a line of each present kind, required
 /// comments, a link, and the README's badge) and fails if any change passes.
 
@@ -403,7 +404,7 @@ async fn main {
   let self_testing = args.contains("--self-test")
   let paths = args.filter(arg => arg != "--self-test")
   if paths.is_empty() {
-    paths.append(["README.md", "MIGRATING.md"])
+    paths.append(["README.md", "README.ja.md", "MIGRATING.md"])
   }
   let checker : Checker = {
     version: @fs.read_text("moonbit-version").trim().to_owned(),

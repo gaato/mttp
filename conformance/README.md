@@ -2,7 +2,7 @@
 
 This unpublished module checks `gaato/mttp_core` through public
 APIs on all four targets. It retains the HTTP-only suites from mbt-sdk
-(since renamed moonbit-sdks) commit `43f92f0`:
+(since renamed [moonbit-sdks](https://github.com/gaato/moonbit-sdks)) commit `43f92f0`:
 
 - URL parsing against 245 applicable WHATWG URL vectors, including all 19
   previously excluded IPv6/IPv4-tail rows. IPv6 serialization uses RFC 5952
@@ -30,7 +30,7 @@ APIs on all four targets. It retains the HTTP-only suites from mbt-sdk
 The SSE size-limit classification is `TransportError(kind=TooLarge)`, matching
 the new transport error vocabulary; event results and mutation counts remain
 unchanged. The tests use no runtime and no wall clock. Cookie time comes from
-the explicit FakeClock. JSON-RPC corpora remain in moonbit-sdks.
+the explicit FakeClock. JSON-RPC corpora remain in [moonbit-sdks](https://github.com/gaato/moonbit-sdks).
 
 See [NOTICE](NOTICE) for upstream revisions and licenses.
 [scripts/gen_vectors.mbtx](../scripts/gen_vectors.mbtx) writes every file
