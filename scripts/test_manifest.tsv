@@ -2,10 +2,10 @@
 # Regenerate with 'scripts/gates.sh manifest --update' after adding or
 # removing tests.
 module	package	target	count
-gaato/mttp_core	gaato/mttp_core	js	86
-gaato/mttp_core	gaato/mttp_core	native	86
-gaato/mttp_core	gaato/mttp_core	wasm	86
-gaato/mttp_core	gaato/mttp_core	wasm-gc	86
+gaato/mttp_core	gaato/mttp_core	js	85
+gaato/mttp_core	gaato/mttp_core	native	85
+gaato/mttp_core	gaato/mttp_core	wasm	85
+gaato/mttp_core	gaato/mttp_core	wasm-gc	85
 gaato/mttp_core	gaato/mttp_core/apispec	js	17
 gaato/mttp_core	gaato/mttp_core/apispec	native	17
 gaato/mttp_core	gaato/mttp_core/apispec	wasm	17
