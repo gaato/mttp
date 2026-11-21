@@ -46,7 +46,7 @@ struct User {
 
 ///|
 /// Prints a user's name, the HTTP failure, or the network failure.
-pub async fn show_user(id : Int) -> Unit {
+pub async fn show_user(id : Int32) -> Unit {
   let api = @mttp.client(base_url="https://api.example.com")
   defer api.close()
   let request = @mttp.get("/users/\{id}").response(@mttp.as_json())
@@ -86,7 +86,7 @@ budget. Close it when done.
 /// Renames a user with PATCH; true when the server answered 2xx.
 pub async fn rename_user(
   api : @mttp.Client,
-  id : Int,
+  id : Int32,
   name : String,
   token : String,
 ) -> Bool {
@@ -157,9 +157,9 @@ pub async fn echo(request : @mttp.Request) -> @mttp.Response noraise {
     TransportError(kind=TooLarge(..), ..) => return @mttp.Response::new(413)
     _ => return @mttp.Response::new(400)
   }
-  let content_type = request.headers.get("content-type").unwrap_or(
-    "application/octet-stream",
-  )
+  let content_type = request.headers
+    .get("content-type")
+    .unwrap_or("application/octet-stream")
   @mttp.Response::new(
     200,
     headers=@mttp.Headers::of([("content-type", content_type)]),
@@ -255,7 +255,7 @@ every default above. A plain `test` block runs the async code with `run`:
 ```mbt check
 ///|
 /// Reads a user's name; the Client is a parameter, so a test can pass a stub.
-pub async fn user_name(api : @mttp.Client, id : Int) -> String? {
+pub async fn user_name(api : @mttp.Client, id : Int32) -> String? {
   let user = @mttp.get("/users/\{id}").response(@mttp.as_json_value())
   match api.send(user).body {
     Ok({ "name": String(name), .. }) => Some(name)
