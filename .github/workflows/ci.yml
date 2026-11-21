@@ -13,21 +13,79 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# The parts of `scripts/gates.sh full` run as parallel jobs, so the run takes
+# as long as its slowest part instead of the sum of them. `gates` passes only
+# when every part passed, so it stays the one result to watch.
 jobs:
-  gates:
+  tests:
+    name: tests (${{ matrix.target }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.21-06da1ed44
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [native, js, wasm, wasm-gc]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: moon update
+      - name: Check and test every package on ${{ matrix.target }}
+        run: scripts/gates.sh quick --target ${{ matrix.target }}
+
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     container:
       image: ghcr.io/gaato/moonbit:0.10.21-06da1ed44
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The full gate runs target tests before its static registry refresh.
-      - name: Update registry index before testing
-        run: moon update
-      # full ends with the Workers example on workerd: npm ci fetches the
-      # wrangler that examples/fetch/workers/package-lock.json pins, and the
-      # image's Node runs it.
-      - name: Validate all targets and ledgers
-        run: scripts/gates.sh full
+      - name: Formatting, interfaces, generated sources, docs and ledgers
+        run: scripts/gates.sh static
+
+  selftest:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.21-06da1ed44
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: moon update
+      - name: The gate script's self-test and the resolver gate
+        run: scripts/gates.sh selftest
+
+  workerd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.21-06da1ed44
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: moon update
+      # npm ci fetches the wrangler that examples/fetch/workers/package-lock.json
+      # pins, and the image's Node runs it.
+      - name: The Workers example on workerd
+        run: scripts/gates.sh workerd
+
+  gates:
+    if: always()
+    needs: [tests, static, selftest, workerd]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Every part passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || exit 1
+          done
