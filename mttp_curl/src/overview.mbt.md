@@ -23,7 +23,8 @@ It links the system's libcurl, 7.85 or later, built with HTTP/2:
 - macOS: the libcurl that comes with the system
 
 HTTP/3 needs a libcurl built with it, such as Debian 13's; Apple's has
-none. It builds for the native target on Linux and macOS, not on Windows,
+none. The tests pass on libcurl 7.88.1 (Debian 12), 8.5.0 (Ubuntu 24.04),
+8.14.1 (Debian 13), 8.23.0 and macOS's. It builds for the native target on Linux and macOS, not on Windows,
 wasm or js. On js, gaato/mttp's backend is the host's `fetch`, which
 negotiates HTTP/2 and HTTP/3 itself.
 
@@ -86,6 +87,9 @@ The settings:
   refuses its HTTP/2 or HTTP/3 stream, or names it above a GOAWAY, up to
   five times, and the Client's retry budget does not count those. When all
   five are refused, the error is `Refused`, which also counts as unsent.
+  libcurl before 8.5 (7.88.1 was tried) does not send a stream above a
+  GOAWAY again and fails it as `Protocol` instead, which the Client resends
+  only for an idempotent request.
 - A final response that arrives while a streamed request body is still
   being sent stops the upload: the rest of the body is not read, the
   stream is closed, and that connection is not used again.

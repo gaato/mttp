@@ -21,7 +21,7 @@ impl @mttp_core.BodyStream for Endless with fn close(self) {
 ///|
 async test "an early final response stops the upload, over HTTP/2 and HTTP/1.1" {
   with_server(server => {
-    let h2 = h2c_backend()
+    let h2 = tls_backend()
     let h1 = CurlBackend::with_version(
       2,
       http3=false,
@@ -31,7 +31,7 @@ async test "an early final response stops the upload, over HTTP/2 and HTTP/1.1" 
       h2.close()
       h1.close()
     }
-    for case_ in [(h2, server.h2c, "h2"), (h1, server.tls, "http/1.1")] {
+    for case_ in [(h2, server.tls, "h2"), (h1, server.tls, "http/1.1")] {
       let (backend, base, protocol) = case_
       let source = Endless::{
         piece: Bytes::make(1000, b'x'),

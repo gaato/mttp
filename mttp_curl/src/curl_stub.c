@@ -737,3 +737,9 @@ MOONBIT_FFI_EXPORT void mttp_curl_transfer_release(transfer *t) {
 }
 
 MOONBIT_FFI_EXPORT int32_t mttp_curl_is_null(void *p) { return p == NULL; }
+
+// libcurl's version as 0xXXYYZZ, for the tests that differ by version.
+MOONBIT_FFI_EXPORT int32_t mttp_curl_version_num(void) {
+  pthread_once(&global_once, global_init);
+  return (int32_t)curl_version_info(CURLVERSION_NOW)->version_num;
+}

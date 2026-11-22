@@ -159,10 +159,10 @@ async test "a large body streams through the paused buffer" {
 ///|
 async test "closing a body early leaves the backend usable" {
   with_server(server => {
-    let backend = h2c_backend()
+    let backend = tls_backend()
     defer backend.close()
     let response = backend.send(
-      @mttp_core.Request::get(server.h2c + "/big/5000000"),
+      @mttp_core.Request::get(server.tls + "/big/5000000"),
       @mttp_core.SendOptions::default(),
     )
     guard response.body is Stream(stream) else { fail("not a stream") }
@@ -171,7 +171,7 @@ async test "closing a body early leaves the backend usable" {
     reader.close()
     reader.close()
     let again = backend.send(
-      @mttp_core.Request::get(server.h2c + "/hello"),
+      @mttp_core.Request::get(server.tls + "/hello"),
       @mttp_core.SendOptions::default(),
     )
     assert_eq(text(again), "hello")
@@ -210,14 +210,14 @@ async test "one connection carries the requests to an https origin" {
 async test "requests past SETTINGS_MAX_CONCURRENT_STREAMS still complete" {
   with_server(
     server => {
-      let backend = h2c_backend()
+      let backend = tls_backend()
       defer backend.close()
       let done = []
       @async.with_task_group(group => {
         for _ in 0..<4 {
           group.spawn_bg(() => {
             let response = backend.send(
-              @mttp_core.Request::post(server.h2c + "/wait/200"),
+              @mttp_core.Request::post(server.tls + "/wait/200"),
               @mttp_core.SendOptions::default(),
             )
             done.push(text(response))
@@ -233,17 +233,17 @@ async test "requests past SETTINGS_MAX_CONCURRENT_STREAMS still complete" {
 ///|
 async test "a cancelled send leaves the backend usable" {
   with_server(server => {
-    let backend = h2c_backend()
+    let backend = tls_backend()
     defer backend.close()
     let r = @async.with_timeout_opt(200, () => {
       backend.send(
-        @mttp_core.Request::get(server.h2c + "/hang"),
+        @mttp_core.Request::get(server.tls + "/hang"),
         @mttp_core.SendOptions::default(),
       )
     })
     assert_true(r is None)
     let again = backend.send(
-      @mttp_core.Request::get(server.h2c + "/hello"),
+      @mttp_core.Request::get(server.tls + "/hello"),
       @mttp_core.SendOptions::default(),
     )
     assert_eq(text(again), "hello")

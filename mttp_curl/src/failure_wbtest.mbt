@@ -66,18 +66,29 @@ async test "REFUSED_STREAM, after libcurl's own attempts, is Refused and unsent"
 ///|
 async test "a stream above GOAWAY is sent again by libcurl on a new connection" {
   with_server(server => {
-    let backend = h2c_backend()
+    let backend = tls_backend()
     defer backend.close()
     // A first stream, so that the GOAWAY can name it.
     backend.send(
-      @mttp_core.Request::get(server.h2c + "/hello"),
+      @mttp_core.Request::get(server.tls + "/hello"),
       @mttp_core.SendOptions::default(),
     ).body.read_all(max=100)
     |> ignore
     let response = backend.send(
-      @mttp_core.Request::post(server.h2c + "/goaway"),
+      @mttp_core.Request::post(server.tls + "/goaway"),
       @mttp_core.SendOptions::default(),
-    )
+    ) catch {
+      // libcurl 7.88 does not send it again and reports a framing error:
+      // not unsent, so mttp's Client resends only an idempotent request.
+      e => {
+        guard curl_version_num() < 0x080500 &&
+          e is @mttp_core.TransportError(kind=Protocol, ..) else {
+          fail("unexpected \{e.to_repr()}")
+        }
+        assert_false(e.is_unsent())
+        return
+      }
+    }
     assert_eq(text(response), "after goaway")
   })
 }
@@ -102,9 +113,9 @@ async test "a reset after the head fails in Body" {
 ///|
 async test "a deadline before the head is a Timeout after the request was sent" {
   with_server(server => {
-    let backend = h2c_backend()
+    let backend = tls_backend()
     defer backend.close()
-    let e = send_error(backend, @mttp_core.Request::get(server.h2c + "/hang"), options={
+    let e = send_error(backend, @mttp_core.Request::get(server.tls + "/hang"), options={
       ..@mttp_core.SendOptions::default(),
       timeout_ms: Some(300),
     })
@@ -118,7 +129,7 @@ async test "a deadline before the head is a Timeout after the request was sent" 
     assert_false(e.is_unsent())
     // The backend still works after the abandoned exchange.
     let response = backend.send(
-      @mttp_core.Request::get(server.h2c + "/hello"),
+      @mttp_core.Request::get(server.tls + "/hello"),
       @mttp_core.SendOptions::default(),
     )
     assert_eq(text(response), "hello")

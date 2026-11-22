@@ -80,7 +80,10 @@ async fn with_server(
 }
 
 ///|
-/// A backend speaking HTTP/2 to the h2c listener.
+/// A backend speaking HTTP/2 to the h2c listener. Only for tests of a
+/// single exchange: libcurl 7.88 fails a second request on a reused
+/// cleartext HTTP/2 connection, a path the public API never takes (it
+/// speaks HTTP/1.1 to http URLs), so tests of connection reuse use TLS.
 fn h2c_backend() -> CurlBackend {
   CurlBackend::with_version(
     CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE,
@@ -112,3 +115,7 @@ async fn text(response : @mttp_core.Response) -> String {
 fn knows_when_sent() -> Bool {
   (curl_features() & 4) != 0
 }
+
+///|
+/// The linked libcurl's version, as 0xXXYYZZ.
+extern "c" fn curl_version_num() -> Int32 = "mttp_curl_version_num"
