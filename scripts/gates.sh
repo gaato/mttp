@@ -2,13 +2,19 @@
 # Runs the repository's gates on one toolchain: the one moon on PATH runs,
 # which moonbit-version pins (CI uses the image of that version; canary.yml
 # runs these gates on the latest and nightly images). The modules and what
-# each may depend on are listed in scripts/modules.tsv.
+# each may depend on are listed in scripts/modules.tsv, whose gate column
+# says which of `full` and `curl` links and tests each module. Checks that
+# only read text or type-check (fmt, info, interfaces, architecture, docs)
+# cover every module in both.
 #
-#   scripts/gates.sh quick [--target T]...  moon check --deny-warn, then the
+#   scripts/gates.sh quick [--target T]... [--gate G]
+#                                           moon check --deny-warn, then the
 #                                           tests of each package on its own,
 #                                           on each target (default: all
 #                                           four) the package builds on,
-#                                           compared with the test manifest
+#                                           compared with the test manifest;
+#                                           the modules of gate G (default
+#                                           full)
 #   scripts/gates.sh static                 moon fmt --check, moon info and
 #                                           the mbti diff, the generated
 #                                           sources against their
@@ -64,10 +70,23 @@
 #                                           to redistribute and are not in CI
 #   scripts/gates.sh full                   quick on all four targets, static,
 #                                           the self-test of this script, the
-#                                           resolver gate and workerd
+#                                           resolver gate and workerd, for the
+#                                           modules of gate full
+#   scripts/gates.sh curl                   gaato/mttp_curl, which links the
+#                                           system's libcurl (with HTTP/2):
+#                                           its native tests, its coverage
+#                                           and its resolver consumer. CI runs
+#                                           it as a job of its own, the one
+#                                           that installs libcurl
+#   scripts/gates.sh curl-live              gaato/mttp_curl's tests against
+#                                           public HTTP/2 and HTTP/3 servers
+#                                           (needs the internet and a libcurl
+#                                           with HTTP/3)
 #   scripts/gates.sh manifest --update      runs every package's tests on
 #                                           every target and rewrites
-#                                           scripts/test_manifest.tsv
+#                                           scripts/test_manifest.tsv; every
+#                                           gate's modules, so it needs
+#                                           libcurl too
 #
 # This launcher is bash, unlike the .mbtx scripts beside it: it runs `moon`
 # itself, on every toolchain including nightly; it filters the experimental
@@ -185,7 +204,16 @@ static_gates() {
   step script interop/run.mbtx -- --self-test
   step script scripts/runtime_gates.mbtx -- interfaces
   step script scripts/runtime_gates.mbtx -- manifest --check
-  step script scripts/coverage_report.mbtx
+  # Measuring links the modules; the curl gate measures its own.
+  step script scripts/coverage_report.mbtx -- --gate full
+}
+
+# gaato/mttp_curl links the system's libcurl, so these run where it is
+# installed and nowhere else; a libcurl problem cannot fail the full gate.
+curl_gate() {
+  step script scripts/runtime_gates.mbtx -- tests --target native --gate curl
+  step script scripts/coverage_report.mbtx -- --gate curl
+  step script scripts/resolver_gate.mbtx -- --gate curl
 }
 
 # The Node tests of the fetch package run the host shims under Node, which
@@ -215,17 +243,19 @@ mode=${1:-}; shift || true
 case "$mode" in
   quick)
     args=()
+    gate=full
     while [ $# -gt 0 ]; do
       case "$1" in
         --target)
           t=${2:?--target needs a target}
           [[ " ${ALL_TARGETS[*]} " == *" $t "* ]] || { echo "unknown target: $t" >&2; exit 2; }
           args+=(--target "$t"); shift 2 ;;
+        --gate) gate=${2:?--gate needs a gate}; shift 2 ;;
         *) usage ;;
       esac
     done
     print_versions
-    step script scripts/runtime_gates.mbtx -- tests ${args[@]+"${args[@]}"}
+    step script scripts/runtime_gates.mbtx -- tests ${args[@]+"${args[@]}"} --gate "$gate"
     finish
     ;;
   static)
@@ -237,11 +267,11 @@ case "$mode" in
   full)
     [ $# = 0 ] || usage
     print_versions
-    step script scripts/runtime_gates.mbtx -- tests
+    step script scripts/runtime_gates.mbtx -- tests --gate full
     static_gates
     step script scripts/gate_selftest.mbtx
     step script scripts/resolver_gate.mbtx -- --self-test
-    step script scripts/resolver_gate.mbtx
+    step script scripts/resolver_gate.mbtx -- --gate full
     workerd_gate
     finish
     ;;
@@ -249,7 +279,19 @@ case "$mode" in
     [ $# = 0 ] || usage
     step script scripts/gate_selftest.mbtx
     step script scripts/resolver_gate.mbtx -- --self-test
-    step script scripts/resolver_gate.mbtx
+    step script scripts/resolver_gate.mbtx -- --gate full
+    finish
+    ;;
+  curl)
+    [ $# = 0 ] || usage
+    print_versions
+    curl_gate
+    finish
+    ;;
+  curl-live)
+    [ $# = 0 ] || usage
+    step env MTTP_CURL_LIVE=1 MOON_CC="${MOON_CC:-cc}" \
+      moon test --deny-warn --target native mttp_curl/src/live_test.mbt
     finish
     ;;
   workerd)
