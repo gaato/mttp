@@ -9,11 +9,12 @@
 /// `@mttp_core.Backend`, so it moves raw bytes: no redirects, retries,
 /// cookies or content decoding.
 ///
-/// `https` URLs go over TLS with ALPN `h2`; `http` URLs go over cleartext
-/// HTTP/2 with prior knowledge (h2c) only when built with `h2c=true`, for
-/// servers known to speak it, and are refused otherwise. A server that does
-/// not choose `h2` fails the send in phase Dial (`Connect`); the root
-/// package's `backend()` falls back to HTTP/1.1 instead.
+/// `https` URLs go over TLS offering `h2` and `http/1.1` by ALPN; a server
+/// that chooses `http/1.1`, or neither, gets the request over HTTP/1.1 on
+/// that same connection, through gaato/mttp_core's HTTP/1 client, and its
+/// origin keeps HTTP/1.1 for ten minutes. `http` URLs go over HTTP/1.1, or
+/// over cleartext HTTP/2 with prior knowledge (h2c) when built with
+/// `h2c=true`, for servers known to speak it.
 ///
 /// The engine never sends a request twice. A stream the server refused
 /// (REFUSED_STREAM, or above its GOAWAY's last stream) fails with `Refused`,
@@ -30,6 +31,10 @@ pub struct H2Backend {
   priv h2c : Bool
   priv max_connection_age_ms : Int32?
   priv origins : Map[String, Origin]
+  /// Origins whose server chose http/1.1, until when.
+  priv http11 : Map[String, Int64]
+  priv handoff : HandoffDialer
+  priv fallback : @h1client.Client
   /// Rung and replaced when a dial ends, for sends waiting on it.
   priv mut changed : &@rt.Signal
   priv mut closed : Bool
@@ -48,10 +53,14 @@ priv struct Origin {
 /// `trust`) and the given ports. The defaults are gaato/mttp's runtime and
 /// `@conn.TcpDialer::new()`. `config` gives the phase limits, the body
 /// ceiling, the response head bound (as SETTINGS_MAX_HEADER_LIST_SIZE) and
-/// how long a connection may stay idle (`idle_max_ms`); its proxy and its
-/// connection caps do not apply. `max_connection_age_ms` retires a
-/// connection at that age: it takes no new stream, and closes when its last
-/// one ends. `h2c` lets `http` URLs speak HTTP/2 with prior knowledge.
+/// how long a connection may stay idle (`idle_max_ms`); all of it, the proxy
+/// and the connection caps included, applies to the requests that go over
+/// HTTP/1.1. HTTP/2 is not sent through proxies: while the configuration
+/// has a proxy for a URL's scheme, its requests go over HTTP/1.1 through
+/// the HTTP/1 client, which tunnels them and applies NO_PROXY. `max_connection_age_ms`
+/// retires a connection at that age: it takes no new stream, and closes when
+/// its last one ends. `h2c` lets `http` URLs speak HTTP/2 with prior
+/// knowledge.
 ///
 /// `ClientTls::new` refuses no trust this backend accepts, so `new` does
 /// not raise; an unreadable PEM file fails each send in phase Dial.
@@ -81,9 +90,19 @@ pub fn H2Backend::new(
     Some(dialer) => dialer
     None => @conn.TcpDialer::new()
   }
-  // The ALPN list is fixed and valid, and every Trust case is known.
-  let tls = @tls.ClientTls::new(trust~, alpn=["h2"]) catch {
+  // The ALPN lists are fixed and valid, and every Trust case is known.
+  let tls = @tls.ClientTls::new(trust~, alpn=["h2", "http/1.1"]) catch {
     _ => abort("ClientTls::new refused a fixed configuration")
+  }
+  let http11_tls = @tls.ClientTls::new(trust~, alpn=["http/1.1"]) catch {
+    _ => abort("ClientTls::new refused a fixed configuration")
+  }
+  let handoff = {
+    tcp: dialer,
+    tls: http11_tls,
+    coordination,
+    parked: [],
+    handed: [],
   }
   {
     dialer,
@@ -99,13 +118,23 @@ pub fn H2Backend::new(
     h2c,
     max_connection_age_ms,
     origins: Map([]),
+    http11: Map([]),
+    handoff,
+    fallback: @h1client.Client::new(
+      dialer=handoff,
+      clock~,
+      timer~,
+      coordination~,
+      config~,
+      max_connection_age_ms?,
+    ),
     changed: coordination.signal(),
     closed: false,
   }
 }
 
 ///|
-/// Connections open over all origins, busy or idle.
+/// HTTP/2 connections open over all origins, busy or idle.
 pub fn H2Backend::connections(self : H2Backend) -> Int32 {
   let mut n = 0
   for _, origin in self.origins {
@@ -129,6 +158,8 @@ pub fn H2Backend::close(self : H2Backend) -> Unit {
     }
   }
   self.origins.clear()
+  self.fallback.close()
+  self.handoff.close()
   self.notify()
 }
 
@@ -178,14 +209,25 @@ fn H2Backend::sweep(self : H2Backend, origin : Origin) -> Unit {
 }
 
 ///|
+/// How a request goes.
+priv enum Route {
+  /// On a stream of this connection, which was already open or not.
+  H2(Connection, reused~ : Bool)
+  /// Over HTTP/1.1: the server chose it by ALPN on the connection this send
+  /// dialled, which waits in the hand-over dialer.
+  Http11
+}
+
+///|
 /// A connection to `target`'s origin with room for one more stream, which
-/// it reserves, and whether it was already open.
+/// it reserves, or `Http11` when the dial found that the server speaks
+/// HTTP/1.1 only.
 async fn H2Backend::connection(
   self : H2Backend,
   target : Target,
   timer : @attempt.AttemptTimer,
   phases : Phases,
-) -> (Connection, Bool) raise @mttp_core.TransportError {
+) -> Route raise @mttp_core.TransportError {
   let origin = match self.origins.get(target.origin) {
     Some(origin) => origin
     None => {
@@ -212,7 +254,7 @@ async fn H2Backend::connection(
       }
       if connection.has_room() {
         connection.reserved += 1
-        return (connection, true)
+        return H2(connection, reused=true)
       }
       // Every stream the server allows is in use: wait for one to end,
       // reading the connection meanwhile.
@@ -231,32 +273,35 @@ async fn H2Backend::connection(
       continue
     }
     origin.dialing = true
-    let connection = {
+    let dialed = {
       defer {
         origin.dialing = false
         self.notify()
       }
       timer.run(Dial, () => self.dial(target, phases))
     }
+    guard dialed is Some(connection) else { return Http11 }
     if self.closed {
       connection.close()
       raise closed_error()
     }
     origin.conns.push(connection)
     connection.reserved += 1
-    return (connection, false)
+    return H2(connection, reused=false)
   }
   abort("unreachable")
 }
 
 ///|
 /// Opens a connection to `target`: TCP through the dialer, then TLS with
-/// ALPN for `https`, or cleartext HTTP/2 for `http` with `h2c`.
+/// ALPN for `https`, or cleartext HTTP/2 for `http` with `h2c`. `None` when
+/// the server did not choose `h2`: the TLS connection is parked for the
+/// HTTP/1 client, and the origin remembered as HTTP/1.1.
 async fn H2Backend::dial(
   self : H2Backend,
   target : Target,
   phases : Phases,
-) -> Connection raise @mttp_core.TransportError {
+) -> Connection? raise @mttp_core.TransportError {
   let tcp = self.dialer.connect(host=target.host, port=target.port)
   let mut owned = true
   defer (if owned { tcp.close() })
@@ -270,12 +315,9 @@ async fn H2Backend::dial(
     owned = false
     phases.emit(TlsDone)
     if tls.alpn() != Some("h2") {
-      tls.close()
-      raise @mttp_core.TransportError(
-        kind=Connect,
-        phase=Dial,
-        detail="the server did not choose h2 by ALPN (\{tls.alpn().unwrap_or("none")})",
-      )
+      self.handoff.park(target.host, target.port, tls)
+      self.remember_http11(target.origin)
+      return None
     }
     (tls : &@rt.Conn)
   } else {
@@ -292,7 +334,9 @@ async fn H2Backend::dial(
       )
     }
   }
-  Connection::new(conn, session, self.coordination, self.timer, self.clock)
+  Some(
+    Connection::new(conn, session, self.coordination, self.timer, self.clock),
+  )
 }
 
 ///|
@@ -351,21 +395,24 @@ pub impl @mttp_core.Backend for H2Backend with fn close(self) {
 ///
 /// The request is validated before any I/O, and so are `options`. A stream
 /// body is taken and its first piece read before anything is written, and
-/// closed on every exit. CONNECT and protocol upgrades are refused with
-/// `Invalid`: HTTP/2 has neither in this engine. A final response before the
-/// whole request body was sent stops the upload; the stream is reset once
-/// the response ends, unless the server already ended it.
+/// closed on every exit. CONNECT and protocol upgrades go over HTTP/1.1,
+/// which has them. A final response before the whole request body was sent
+/// stops the upload; the stream is reset once the response ends, unless the
+/// server already ended it.
 pub async fn H2Backend::send(
   self : H2Backend,
   request : @mttp_core.Request,
   options : @mttp_core.SendOptions,
 ) -> @mttp_core.Response raise @mttp_core.TransportError {
-  // Taken first, so that every exit below closes it.
-  let source = match request.body {
-    Stream(cell) => Some(cell.take())
-    _ => None
-  }
-  defer (if source is Some(source) { source.close() })
+  // A stream body stays untaken until it is known which engine sends the
+  // request: every exit closes it, except a hand-over to the HTTP/1 client,
+  // which takes it itself.
+  let mut handed = false
+  let taken : Ref[&@mttp_core.BodyStream?] = Ref(None)
+  defer (match taken.val {
+    Some(source) => source.close()
+    None => if !handed && request.body is Stream(cell) { cell.close() }
+  })
   if self.closed {
     raise closed_error()
   }
@@ -379,16 +426,18 @@ pub async fn H2Backend::send(
     raise invalid("negative body byte ceiling")
   }
   let target = target(request)
-  if request.meth is Connect {
-    raise invalid("CONNECT is not sent by this backend")
+  let proxied = if target.secure {
+    self.config.proxy.https is Some(_)
+  } else {
+    self.config.proxy.http is Some(_)
   }
-  if request.headers.get("upgrade") is Some(_) {
-    raise invalid("protocol upgrades do not exist in HTTP/2")
-  }
-  if !target.secure && !self.h2c {
-    raise invalid(
-      "an http URL: this backend speaks HTTP/2 over TLS, or over cleartext only with h2c=true",
-    )
+  if (!target.secure && !self.h2c) ||
+    proxied ||
+    request.meth is Connect ||
+    request.headers.contains("upgrade") ||
+    self.speaks_http11(target.origin) {
+    handed = true
+    return self.fallback.send(request, options)
   }
   let limits : @attempt.PhaseLimits = {
     pool: self.config.pool_timeout_ms,
@@ -402,11 +451,6 @@ pub async fn H2Backend::send(
     options.timeout_ms,
     limits~,
   )
-  // The request body's first piece, read before anything is sent (rule 3).
-  let first = match source {
-    Some(source) => timer.run(Pool, () => source.read_some())
-    None => request.body.as_bytes()
-  }
   let fields = request_fields(request, target)
   let phases = {
     report: request.attributes.get(@mttp_core.on_phase),
@@ -417,7 +461,36 @@ pub async fn H2Backend::send(
   defer {
     phases.over = true
   }
-  let (connection, reused) = self.connection(target, timer, phases)
+  let (connection, reused) = match self.connection(target, timer, phases) {
+    H2(connection, reused~) => (connection, reused)
+    Http11 => {
+      phases.over = true
+      handed = true
+      let (request, options) = handed_over(request, options, timer)
+      return self.fallback.send(request, options)
+    }
+  }
+  // The stream reserved on the connection is given back on every exit
+  // before it opens.
+  let mut reserving = true
+  defer (if reserving {
+    connection.reserved -= 1
+    connection.notify()
+  })
+  let source = match request.body {
+    Stream(cell) => {
+      let source = cell.take()
+      taken.val = Some(source)
+      Some(source)
+    }
+    _ => None
+  }
+  // The request body's first piece, read before anything is sent (rule 3).
+  let first = match source {
+    Some(source) => timer.run(Write, () => source.read_some())
+    None => request.body.as_bytes()
+  }
+  reserving = false
   connection.reserved -= 1
   let has_body = match (first, source) {
     (Some(bytes), None) => bytes.length() > 0

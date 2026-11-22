@@ -17,6 +17,7 @@ import {
   "gaato/mttp",
   "gaato/mttp/codings",
   "gaato/mttp_core",
+  "gaato/mttp_core/h1client",
   "gaato/mttp_core/sim",
   "gaato/mttp_ng/h2client",
   "moonbitlang/core/async",

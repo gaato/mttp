@@ -45,21 +45,30 @@ impl @mttp_core.BodyStream for Source with fn close(self) {
 
 ///|
 async test "a stream body shorter than its declared length sends nothing" {
-  let b = @h2client.H2Backend::new(h2c=true)
-  defer b.close()
-  let source = { pieces: [], next: 0, closed: 0, }
-  let error = failure(
-    b,
-    @mttp_core.Request::post("http://127.0.0.1:1/").body_stream(
-      source,
-      length=5L,
-    ),
-  )
-  // Port 1 would have refused the connection with Connect.
-  guard error is @mttp_core.TransportError(kind=Protocol, ..) else {
-    fail("unexpected \{error.to_repr()}")
-  }
-  assert_eq(source.closed, 1)
+  with_server(server => {
+    let b = backend(h2c=true)
+    defer b.close()
+    let source = { pieces: [], next: 0, closed: 0, }
+    let error = failure(
+      b,
+      @mttp_core.Request::post(server.h2c + "/echo").body_stream(
+        source,
+        length=5L,
+      ),
+    )
+    // gaato/mttp_core's StreamBody reports the short stream before the
+    // stream opens.
+    guard error is @mttp_core.TransportError(kind=Protocol, ..) else {
+      fail("unexpected \{error.to_repr()}")
+    }
+    assert_eq(source.closed, 1)
+    // Nothing reached the server: its first stream is still to come.
+    let response = b.send(
+      @mttp_core.Request::get(server.h2c + "/hello"),
+      defaults,
+    )
+    assert_eq(text(response), "hello")
+  })
 }
 
 ///|

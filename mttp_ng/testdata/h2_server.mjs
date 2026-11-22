@@ -1,9 +1,11 @@
 // The HTTP/2 server of gaato/mttp_ng's tests (a copy of gaato/mttp_curl's),
 // on Node's node:http2: one cleartext listener spoken to with prior
 // knowledge (h2c), one TLS listener that offers h2 and http/1.1 by ALPN, and
-// an HTTP proxy, all on 127.0.0.1.
-// It prints {"h2c":PORT,"tls":PORT,"proxy":PORT} on one line once all
-// listen. The proxy tunnels CONNECT to the named port of 127.0.0.1 and
+// an HTTP proxy, all on 127.0.0.1; and, for the HTTP/1.1 fallback of
+// gaato/mttp_ng, a cleartext HTTP/1.1 listener (h1) and a TLS one that
+// offers only http/1.1 by ALPN (tls11), with the same paths. It prints
+// {"h2c":PORT,"tls":PORT,"proxy":PORT,"h1":PORT,"tls11":PORT} on one line
+// once all listen. The proxy tunnels CONNECT to the named port of 127.0.0.1 and
 // forwards absolute-form requests there, adding x-via-proxy: yes to the
 // forwarded answers; it answers 407 to a CONNECT or request for the host
 // deny.invalid, and answers a request for echo.invalid itself (200, "via
@@ -40,6 +42,7 @@
 // --max-streams N sets SETTINGS_MAX_CONCURRENT_STREAMS. The process ends
 // when its stdin closes, so a test that dies leaves no server behind.
 import http from "node:http";
+import https from "node:https";
 import http2 from "node:http2";
 import net from "node:net";
 import fs from "node:fs";
@@ -180,6 +183,15 @@ const tls = http2.createSecureServer(
   },
   answer,
 );
+const h1 = http.createServer(answer);
+const tls11 = https.createServer(
+  {
+    ALPNProtocols: ["http/1.1"],
+    key: fs.readFileSync(path.join(here, "localhost.key")),
+    cert: fs.readFileSync(path.join(here, "localhost.pem")),
+  },
+  answer,
+);
 // The proxy: CONNECT tunnels and absolute-form forwarding, to this machine
 // only; the host deny.invalid is refused with 407.
 const proxy = http.createServer((req, res) => {
@@ -230,12 +242,16 @@ await Promise.all([
   new Promise((ok) => h2c.listen(0, "127.0.0.1", ok)),
   new Promise((ok) => tls.listen(0, "127.0.0.1", ok)),
   new Promise((ok) => proxy.listen(0, "127.0.0.1", ok)),
+  new Promise((ok) => h1.listen(0, "127.0.0.1", ok)),
+  new Promise((ok) => tls11.listen(0, "127.0.0.1", ok)),
 ]);
 process.stdout.write(
   JSON.stringify({
     h2c: h2c.address().port,
     tls: tls.address().port,
     proxy: proxy.address().port,
+    h1: h1.address().port,
+    tls11: tls11.address().port,
   }) + "\n",
 );
 process.stdin.on("end", () => process.exit(0));

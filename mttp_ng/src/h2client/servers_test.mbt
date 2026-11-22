@@ -6,6 +6,12 @@
 priv struct Server {
   h2c : String
   tls : String
+  /// Cleartext HTTP/1.1.
+  h1 : String
+  /// TLS whose ALPN offers http/1.1 only.
+  tls11 : String
+  /// The HTTP proxy, as a proxy URL.
+  proxy : String
 }
 
 ///|
@@ -51,12 +57,23 @@ async fn with_server(
         fail("the test server printed no ports")
       }
       let ports = @json.parse(@utf8.decode_lossy(line))
-      guard ports is { "h2c": Number(h2c, ..), "tls": Number(tls, ..), .. } else {
+      guard ports
+        is {
+          "h2c": Number(h2c, ..),
+          "tls": Number(tls, ..),
+          "h1": Number(h1, ..),
+          "tls11": Number(tls11, ..),
+          "proxy": Number(proxy, ..),
+          ..
+        } else {
         fail("unexpected ports line: \{ports.stringify()}")
       }
       run({
         h2c: "http://127.0.0.1:\{h2c.to_int()}",
         tls: "https://localhost:\{tls.to_int()}",
+        h1: "http://127.0.0.1:\{h1.to_int()}",
+        tls11: "https://localhost:\{tls11.to_int()}",
+        proxy: "http://127.0.0.1:\{proxy.to_int()}",
       })
       group.return_immediately()
     })
@@ -345,7 +362,7 @@ async test "an early answer stops the upload and keeps its body" {
 }
 
 ///|
-async test "cleartext HTTP/2 only with h2c" {
+async test "cleartext HTTP/2 with h2c, HTTP/1.1 without" {
   with_server(server => {
     let b = backend(h2c=true)
     defer b.close()
@@ -353,13 +370,53 @@ async test "cleartext HTTP/2 only with h2c" {
       @mttp_core.Request::get(server.h2c + "/hello"),
       defaults,
     )
+    assert_eq(response.attributes.get(@mttp_core.protocol), Some("h2"))
     assert_eq(text(response), "hello")
     let plain = backend()
     defer plain.close()
-    let error = failure(plain, @mttp_core.Request::get(server.h2c + "/hello"))
-    guard error is @mttp_core.TransportError(kind=Invalid, phase=Pool, ..) else {
-      fail("unexpected \{error}")
+    let response = plain.send(
+      @mttp_core.Request::get(server.h1 + "/hello"),
+      defaults,
+    )
+    assert_eq(response.attributes.get(@mttp_core.protocol), Some("http/1.1"))
+    assert_eq(text(response), "hello")
+  })
+}
+
+///|
+async test "a server that chooses http/1.1 gets HTTP/1.1 on the same connection" {
+  with_server(server => {
+    let b = backend()
+    defer b.close()
+    let seen = []
+    let request = @mttp_core.Request::get(server.tls11 + "/session").attribute(
+      @mttp_core.on_phase,
+      event => seen.push(event),
+    )
+    let response = b.send(request, defaults)
+    assert_eq(response.attributes.get(@mttp_core.protocol), Some("http/1.1"))
+    assert_eq(text(response), "1")
+    // One dial: the HTTP/1 client was handed the TLS connection, and the
+    // events of its dial are not reported twice.
+    guard seen
+      is [Dialed(..), TlsDone, Pooled(reused=false), Written, FirstByte] else {
+      fail("unexpected events \{@debug.to_string(seen)}")
     }
+    assert_eq(b.connections(), 0)
+    // The origin keeps HTTP/1.1, on the connection the first request used.
+    let streamed = {
+      ..@mttp_core.Request::post(server.tls11 + "/echo"),
+      body: Stream(@mttp_core.StreamBody::new({ left: 3, size: 1000, })),
+    }
+    let response = b.send(streamed, defaults)
+    assert_eq(response.attributes.get(@mttp_core.protocol), Some("http/1.1"))
+    assert_eq(response.headers.get("x-received"), Some("3000"))
+    ignore(text(response))
+    let response = b.send(
+      @mttp_core.Request::get(server.tls11 + "/session"),
+      defaults,
+    )
+    assert_eq(text(response), "1")
   })
 }
 
@@ -372,4 +429,27 @@ async test "a closed backend refuses sends in phase Pool" {
   guard error is @mttp_core.TransportError(kind=Closed, phase=Pool, ..) else {
     fail("unexpected \{error}")
   }
+}
+
+///|
+async test "behind a proxy, https goes over HTTP/1.1 through its tunnel" {
+  with_server(server => {
+    let b = @h2client.H2Backend::new(trust=PemFile(testdata("root.pem")), config={
+      ..@h1client.ClientConfig::default(),
+      proxy: @h1client.ProxyConfig::fixed(server.proxy),
+    })
+    defer b.close()
+    let response = b.send(
+      @mttp_core.Request::get(server.tls + "/hello"),
+      defaults,
+    )
+    assert_eq(response.attributes.get(@mttp_core.protocol), Some("http/1.1"))
+    assert_eq(text(response), "hello")
+    assert_eq(b.connections(), 0)
+    let error = failure(b, @mttp_core.Request::get("https://deny.invalid/"))
+    guard error
+      is @mttp_core.TransportError(kind=Proxy(status=407), phase=Dial, ..) else {
+      fail("unexpected \{error.to_repr()}")
+    }
+  })
 }
