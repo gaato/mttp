@@ -29,6 +29,8 @@
 //   /drop               closes the connection without an answer, on every
 //                       request after the first of its connection (the
 //                       first gets 200 "kept"), and counts the drops
+//                       /drop?close=1 first closes both listeners, so that
+//                       a new connection is refused
 //   /drops              200, how many /drop requests were dropped so far
 //   /early/N            status N at once, without reading the request body;
 //                       over HTTP/2 the stream then ends with NO_ERROR, over
@@ -147,6 +149,10 @@ function answer(req, res) {
         return res.end("kept");
       }
       drops++;
+      if (url.searchParams.get("close") === "1") {
+        h2c.close();
+        tls.close();
+      }
       return stream ? stream.session.destroy() : req.socket.destroy();
     }
     case "drops":

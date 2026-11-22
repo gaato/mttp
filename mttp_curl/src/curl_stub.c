@@ -47,14 +47,6 @@
 #if LIBCURL_VERSION_NUM >= 0x080a00
 #define HAVE_POSTTRANSFER 1
 #endif
-#if LIBCURL_VERSION_NUM >= 0x080200
-#define HAVE_CONN_ID 1
-#endif
-
-// How many connections' HTTP versions the engine remembers (see
-// version_of). Older entries are overwritten; an unknown connection is
-// judged by whether it was reused.
-#define CONN_VERSIONS 256
 
 // State bits returned by mttp_curl_transfer_state.
 enum {
@@ -90,11 +82,6 @@ typedef struct engine {
   int thread_done;  // the thread has ended and reads no more commands
   int refs;
   transfer *added;  // in the multi handle; the thread's own list
-  // The thread's own: the HTTP version each recent connection answered in,
-  // by CURLINFO_CONN_ID, a ring of CONN_VERSIONS entries.
-  int64_t conn_ids[CONN_VERSIONS];
-  int32_t conn_versions[CONN_VERSIONS];
-  int conn_next;
 } engine;
 
 struct transfer {
@@ -116,9 +103,6 @@ struct transfer {
   int up_unknown_length;  // the request body's length was not declared
   int no_resend;  // stop libcurl from sending the request a second time
   int attempts;   // prereq callbacks so far: one per time libcurl sends it
-  int64_t first_conn;   // the first attempt's connection (CURLINFO_CONN_ID)
-  int first_reused;     // whether that connection was reused
-  int first_shared;     // whether another live transfer was on it then
   int32_t status;
   int32_t version;
   int32_t result;
@@ -257,37 +241,6 @@ static void enqueue(engine *e, cmd_kind kind, transfer *t) {
   curl_multi_wakeup(e->multi);
 }
 
-// The thread's own: remembers that connection `id` answered in `version`.
-static void remember_version(engine *e, int64_t id, int32_t version) {
-  for (int i = 0; i < CONN_VERSIONS; i++) {
-    if (e->conn_versions[i] && e->conn_ids[i] == id) {
-      e->conn_versions[i] = version;
-      return;
-    }
-  }
-  e->conn_ids[e->conn_next] = id;
-  e->conn_versions[e->conn_next] = version;
-  e->conn_next = (e->conn_next + 1) % CONN_VERSIONS;
-}
-
-// The thread's own: the version connection `id` answered in, or 0.
-static int32_t version_of(engine *e, int64_t id) {
-  for (int i = 0; i < CONN_VERSIONS; i++) {
-    if (e->conn_versions[i] && e->conn_ids[i] == id) return e->conn_versions[i];
-  }
-  return 0;
-}
-
-static int64_t conn_id(CURL *easy) {
-#ifdef HAVE_CONN_ID
-  curl_off_t id = -1;
-  if (curl_easy_getinfo(easy, CURLINFO_CONN_ID, &id) == CURLE_OK) return id;
-#else
-  (void)easy;
-#endif
-  return -1;
-}
-
 // ---------------------------------------------------------------- callbacks
 
 static size_t on_header(char *buf, size_t size, size_t n, void *arg) {
@@ -329,8 +282,6 @@ static size_t on_header(char *buf, size_t size, size_t n, void *arg) {
       long v = 0;
       curl_easy_getinfo(t->easy, CURLINFO_HTTP_VERSION, &v);
       t->version = (int32_t)v;
-      int64_t id = conn_id(t->easy);
-      if (id >= 0 && v > 0) remember_version(t->e, id, (int32_t)v);
       t->state |= ST_HEAD;
       finished = 1;
     }
@@ -421,40 +372,16 @@ static int on_prereq(void *arg, char *remote_ip, char *local_ip, int remote_port
   transfer *t = arg;
   long connects = 0;
   curl_easy_getinfo(t->easy, CURLINFO_NUM_CONNECTS, &connects);
-  int64_t id = conn_id(t->easy);
   pthread_mutex_lock(&t->lock);
   t->attempts++;
   // libcurl sends a request again by itself (Curl_retry_request) when a
   // reused connection gives no answer at all, or an HTTP/2 or HTTP/3 stream
-  // is refused (REFUSED_STREAM, a stream above GOAWAY), as long as no body
-  // had to be rewound. A refused stream was not processed: the protocol
-  // says so. A dead HTTP/1.1 connection says nothing, and the server may
-  // have processed the request before it died, so a request that is not
-  // idempotent is stopped before it goes out again after a first attempt
-  // on a reused HTTP/1.1 connection, or on a reused connection whose
-  // version is not known (libcurl before 8.2, or forgotten).
-  // An HTTP/1.1 connection carries one exchange at a time and is reused only
-  // after an answer, whose version is then known; a connection shared with a
-  // transfer still in flight is HTTP/2 or HTTP/3 even before any answer.
-  if (t->attempts == 1) {
-    t->first_conn = id;
-    t->first_reused = connects == 0;
-    t->first_shared = 0;
-    for (transfer *u = t->e->added; id >= 0 && u; u = u->next) {
-      if (u == t || u->first_conn != id || u->attempts == 0) continue;
-      pthread_mutex_lock(&u->lock);
-      int live = !(u->state & ST_DONE);
-      pthread_mutex_unlock(&u->lock);
-      if (live) t->first_shared = 1;
-    }
-  }
-  int stop = 0;
-  if (t->no_resend && t->attempts > 1) {
-    int32_t v = t->first_conn >= 0 ? version_of(t->e, t->first_conn) : 0;
-    int multiplexed = v == CURL_HTTP_VERSION_2_0 || v == CURL_HTTP_VERSION_3 ||
-                      (!v && t->first_shared);
-    stop = multiplexed ? 0 : (v ? 1 : t->first_reused);
-  }
+  // is refused, as long as no body had to be rewound. The first case may
+  // follow a server that processed the request before its connection died,
+  // on any HTTP version, and libcurl's API does not say which case it was,
+  // so a request that is not idempotent is stopped before it goes out a
+  // second time, even when it was in fact refused.
+  int stop = t->no_resend && t->attempts > 1;
   if (stop) t->state |= ST_NO_RESEND;
   t->state |= ST_PREREQ;
   if (connects > 0) t->state |= ST_NEW_CONN;

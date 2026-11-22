@@ -71,10 +71,17 @@ async test "a stream refused every time ends in Network after libcurl's own atte
 }
 
 ///|
-async test "a stream above GOAWAY is sent again by libcurl, a POST included" {
-  // HTTP/2 says such a stream was not processed, so even a request that is
-  // not idempotent may go again. The server sends GOAWAY on its first
-  // connection only, so each method gets a server of its own.
+/// The error of a send that must have failed.
+fn possibly_sent(e : @mttp_core.TransportError) -> Unit raise {
+  guard !e.is_unsent() else { fail("\{e} counts as unsent") }
+}
+
+///|
+async test "a stream above GOAWAY: libcurl sends a GET again, and not a POST" {
+  // HTTP/2 says such a stream was not processed, but libcurl's API cannot
+  // tell it from a stream lost after being processed, so a POST is not sent
+  // again. The server sends GOAWAY on its first connection only, so each
+  // method gets a server of its own.
   for meth in [@mttp_core.Method::Get, Post] {
     with_server(server => {
       let backend = tls_backend()
@@ -85,28 +92,62 @@ async test "a stream above GOAWAY is sent again by libcurl, a POST included" {
         @mttp_core.SendOptions::default(),
       ).body.read_all(max=100)
       |> ignore
-      let response = backend.send(
-        @mttp_core.Request::new(meth, server.tls + "/goaway"),
-        @mttp_core.SendOptions::default(),
-      ) catch {
-        // libcurl 7.88 does not send it again and reports a framing error:
-        // not unsent, so mttp's Client resends only an idempotent request.
-        e => {
-          guard curl_version_num() < 0x080e00 &&
-            e is @mttp_core.TransportError(kind=Protocol, ..) &&
-            !e.is_unsent() else {
-            fail("unexpected \{e}")
-          }
+      let request = @mttp_core.Request::new(meth, server.tls + "/goaway")
+      let response = backend.send(request, @mttp_core.SendOptions::default()) catch {
+        // libcurl 7.88 does not send it again and reports a framing error.
+        @mttp_core.TransportError(kind=Protocol, ..) as e if curl_version_num() <
+          0x080e00 => {
+          possibly_sent(e)
           return
         }
+        @mttp_core.TransportError(kind=Network, ..) as e if meth is Post => {
+          possibly_sent(e)
+          return
+        }
+        e => fail("unexpected \{e}")
       }
+      assert_true(meth is Get)
       assert_eq(text(response), "after goaway")
     })
   }
 }
 
 ///|
-async test "a reused connection that dies before an answer: GET is sent again, POST once" {
+async test "a reused connection that dies before an answer: a POST reaches the server once" {
+  // HTTP/1.1 and HTTP/2: a dead connection says nothing of whether the
+  // request was processed, on either.
+  for http2 in [false, true] {
+    with_server(server => {
+      let backend = if http2 {
+        tls_backend()
+      } else {
+        CurlBackend::with_version(
+          2,
+          http3=false,
+          trust=PemFile(testdata("root.pem")),
+        )
+      }
+      defer backend.close()
+      // Each connection answers its first /drop and closes on the next one.
+      let kept = backend.send(
+        @mttp_core.Request::post(server.tls + "/drop"),
+        @mttp_core.SendOptions::default(),
+      )
+      assert_eq(text(kept), "kept")
+      possibly_sent(
+        send_error(backend, @mttp_core.Request::post(server.tls + "/drop")),
+      )
+      let drops = backend.send(
+        @mttp_core.Request::get(server.tls + "/drops"),
+        @mttp_core.SendOptions::default(),
+      )
+      assert_eq(text(drops), "1")
+    })
+  }
+}
+
+///|
+async test "a GET on a reused HTTP/1.1 connection that dies is sent again by libcurl" {
   with_server(server => {
     let backend = CurlBackend::with_version(
       2,
@@ -114,34 +155,45 @@ async test "a reused connection that dies before an answer: GET is sent again, P
       trust=PemFile(testdata("root.pem")),
     )
     defer backend.close()
-    let drops = async fn() -> String {
-      text(
-        backend.send(
-          @mttp_core.Request::get(server.tls + "/drops"),
-          @mttp_core.SendOptions::default(),
-        ),
-      )
-    }
-    // Each connection answers its first /drop and closes on the next one.
-    let kept = backend.send(
-      @mttp_core.Request::post(server.tls + "/drop"),
+    let first = backend.send(
+      @mttp_core.Request::get(server.tls + "/drop"),
       @mttp_core.SendOptions::default(),
     )
-    assert_eq(text(kept), "kept")
-    let e = send_error(backend, @mttp_core.Request::post(server.tls + "/drop"))
-    guard e is @mttp_core.TransportError(kind=Network, ..) else {
-      fail("unexpected \{e}")
-    }
-    assert_false(e.is_unsent())
-    // The POST reached the server once: libcurl did not send it again.
-    assert_eq(drops(), "1")
-    // A GET on a reused connection that dies: libcurl sends it again on a
-    // new connection, where it is that connection's first and answered.
+    assert_eq(text(first), "kept")
+    // Sent again on a new connection, where it is that connection's first.
     let again = backend.send(
       @mttp_core.Request::get(server.tls + "/drop"),
       @mttp_core.SendOptions::default(),
     )
     assert_eq(text(again), "kept")
+  })
+}
+
+///|
+async test "a refused reconnect after the request went out is not unsent" {
+  // The server gets the POST, closes its listeners and drops the
+  // connection; libcurl's own reconnect is refused. The POST may have been
+  // processed, so the connect error does not make it unsent.
+  with_server(server => {
+    let backend = CurlBackend::with_version(
+      2,
+      http3=false,
+      trust=PemFile(testdata("root.pem")),
+    )
+    defer backend.close()
+    let kept = backend.send(
+      @mttp_core.Request::post(server.tls + "/drop"),
+      @mttp_core.SendOptions::default(),
+    )
+    assert_eq(text(kept), "kept")
+    let e = send_error(
+      backend,
+      @mttp_core.Request::post(server.tls + "/drop?close=1"),
+    )
+    guard e is @mttp_core.TransportError(kind=Network, ..) else {
+      fail("unexpected \{e}")
+    }
+    possibly_sent(e)
   })
 }
 

@@ -88,17 +88,18 @@ The settings:
   whatever the method.
 - libcurl itself sends a request again on a new connection, up to five
   times, when an attempt got no answer at all: when the server refuses its
-  HTTP/2 or HTTP/3 stream or names it above a GOAWAY, which those
-  protocols say it did not process, or when a reused connection died
-  first. The Client's retry budget does not count these. A request that is
-  not idempotent goes again only after such a refusal: after a reused
-  HTTP/1.1 connection died the server may have processed it, so the backend
-  stops libcurl's resend and the error is `Network`, not unsent. Before
-  libcurl 8.2 a reused HTTP/2 connection that has not answered yet cannot be
-  told from an HTTP/1.1 one, and its resends are stopped too. When all five
-  attempts fail the error is `Network`. libcurl 7.88.1 does not send a
-  stream above a GOAWAY again and fails it as `Protocol`; 8.14.1 and later
-  do.
+  HTTP/2 or HTTP/3 stream or names it above a GOAWAY, or when a reused
+  connection died before answering. The Client's retry budget does not
+  count these. libcurl does not say which of the two happened, and after a
+  dead connection the server may have processed the request, on any HTTP
+  version. So a request that `@mttp_core.is_idempotent` does not accept (an
+  idempotent method, or `@mttp_core.replay_safe` set to `true`) is sent
+  once: the backend stops libcurl's second attempt, and the error is
+  `Network`, not unsent, even when the stream was in fact refused. A failure
+  of libcurl's reconnect after the request went out is `Network` too. When
+  all five attempts fail the error is `Network`. libcurl 7.88.1 does not
+  send a stream above a GOAWAY again and fails it as `Protocol`; 8.14.1 and
+  later do.
 - A final response that arrives while a streamed request body is still
   being sent stops the upload, even while a read of that body is waiting:
   the rest of the body is not read, the stream is closed, and that

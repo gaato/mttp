@@ -182,7 +182,9 @@ let curl_owned_fields : Array[String] = [
 /// a reused connection gives no answer at all or the stream is refused, and
 /// no body has to be rewound. Only an idempotent request is let through
 /// twice; for any other the second attempt is stopped and the error is
-/// `Network`, not unsent. CONNECT and protocol upgrades are
+/// `Network`, not unsent. A failure of libcurl's own reconnect is `Network`
+/// too: the first attempt may have been processed. CONNECT and protocol
+/// upgrades are
 /// refused with `Invalid` before any I/O: libcurl cannot hand a connection
 /// over. A request's `@mttp_core.on_phase` callback gets the points libcurl
 /// shows (`Dialed`, `TlsDone` and `Pooled` once the connection is ready,
@@ -653,9 +655,13 @@ fn Exchange::failure(
       detail="the response head is larger than \{head_max} bytes",
     )
   }
+  // Once the prereq callback ran, the request may have gone out. A connect,
+  // TLS or proxy failure after it is libcurl's own reconnect to send it
+  // again, and does not make it unsent.
+  let may_be_sent = (state & ST_PREREQ) != 0
   // A proxy that refused the tunnel: nothing reached the origin.
   let connect_code = transfer_info(self.xfer, 3)
-  if connect_code >= 300 || code == 97 {
+  if (connect_code >= 300 || code == 97) && !may_be_sent {
     return @mttp_core.TransportError(
       kind=Proxy(status=connect_code),
       phase=Dial,
@@ -674,7 +680,7 @@ fn Exchange::failure(
   }
   let kind : @mttp_core.Kind = match code {
     // Resolving (the proxy too), connecting, TLS and QUIC handshakes.
-    5 | 6 | 7 | 35 | 58 | 60 | 77 | 96 => Connect
+    5 | 6 | 7 | 35 | 58 | 60 | 77 | 96 if !may_be_sent => Connect
     28 => Timeout(ms=0)
     // Framing the peer broke.
     8 | 16 | 92 | 95 => Protocol
