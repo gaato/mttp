@@ -1,16 +1,104 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "gaato/mttp_ng/h3"
 
+import {
+  "gaato/mttp/trust",
+  "moonbitlang/core/debug",
+}
+
 // Values
+pub const H3_EXCESSIVE_LOAD : Int64 = 0x107
+
+pub const H3_INTERNAL_ERROR : Int64 = 0x102
+
+pub const H3_NO_ERROR : Int64 = 0x100
+
+pub const H3_REQUEST_CANCELLED : Int64 = 0x10c
+
+pub const H3_REQUEST_REJECTED : Int64 = 0x10b
+
 pub fn crypto_init() -> Int32
+
+pub fn local_addr(Int32) -> String
 
 pub fn nghttp3_version() -> Int32
 
 pub fn ngtcp2_version() -> Int32
 
 // Errors
+#derive(@debug.Debug)
+pub suberror H3Error {
+  H3Error(code~ : Int32, detail~ : String)
+}
+pub fn H3Error::output(Self, &Logger) -> Unit
+pub fn H3Error::to_string(Self) -> String
+pub impl Show for H3Error
 
 // Types and methods
+pub struct ClientQuic {
+  // private fields
+}
+pub fn ClientQuic::new(trust? : @trust.Trust) -> Self raise H3Error
+
+#non_exhaustive
+#derive(Eq, @debug.Debug)
+pub(all) enum H3Event {
+  Headers(stream~ : Int64, fields~ : Array[(String, String)], end_stream~ : Bool)
+  Data(stream~ : Int64, Bytes)
+  EndStream(stream~ : Int64)
+  Closed(stream~ : Int64, code~ : Int64)
+  GoAway(id~ : Int64)
+  Sent(stream~ : Int64, end_stream~ : Bool)
+  Drained(stream~ : Int64)
+  TooLarge(stream~ : Int64)
+  HandshakeDone
+  ConnectionClosed(code~ : Int64, by_peer~ : Bool)
+}
+pub fn H3Event::equal(Self, Self) -> Bool
+pub fn H3Event::not_equal(Self, Self) -> Bool
+pub fn H3Event::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct H3Settings {
+  max_streams_bidi : Int32
+  stream_window : Int32
+  connection_window : Int32
+  max_header_list : Int32
+  low_mark : Int32
+  idle_timeout_ms : Int32
+}
+pub fn H3Settings::default() -> Self
+pub fn H3Settings::equal(Self, Self) -> Bool
+pub fn H3Settings::not_equal(Self, Self) -> Bool
+pub fn H3Settings::to_repr(Self) -> @debug.Repr
+
+pub struct QuicConn {
+  // private fields
+}
+pub fn QuicConn::client(ClientQuic, host~ : String, local_address~ : String, remote_address~ : String, settings? : H3Settings) -> Self raise H3Error
+pub fn QuicConn::close(Self, code? : Int64) -> Unit
+pub fn QuicConn::closed(Self) -> Bool
+pub fn QuicConn::consume(Self, Int64, Int32) -> Unit
+pub fn QuicConn::datagrams(Self) -> Array[Bytes] raise H3Error
+pub fn QuicConn::events(Self) -> Array[H3Event]
+pub fn QuicConn::expiry_ms(Self) -> Int32?
+pub fn QuicConn::free(Self) -> Unit
+pub fn QuicConn::handshake_done(Self) -> Bool
+pub fn QuicConn::idle_ms(Self) -> Int64
+pub fn QuicConn::on_expiry(Self) -> Unit raise H3Error
+pub fn QuicConn::push(Self, Int64, Bytes, end~ : Bool) -> Unit raise H3Error
+pub fn QuicConn::queued(Self, Int64) -> Int32?
+pub fn QuicConn::read(Self, Bytes) -> Unit raise H3Error
+pub fn QuicConn::reset(Self, Int64, Int64, read_only? : Bool) -> Unit
+pub fn QuicConn::server(ServerQuic, Bytes, local_address~ : String, remote_address~ : String, settings? : H3Settings) -> Self raise H3Error
+pub fn QuicConn::shutdown(Self, notice~ : Bool) -> Unit raise H3Error
+pub fn QuicConn::submit_request(Self, Array[(String, String)], body~ : Bool) -> Int64 raise H3Error
+pub fn QuicConn::submit_response(Self, Int64, Array[(String, String)], body~ : Bool) -> Unit raise H3Error
+
+pub struct ServerQuic {
+  // private fields
+}
+pub fn ServerQuic::from_pem(chain~ : String, key~ : String) -> Self raise H3Error
 
 // Type aliases
 
