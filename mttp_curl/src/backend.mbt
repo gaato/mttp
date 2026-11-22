@@ -292,7 +292,10 @@ pub async fn CurlBackend::send(
   for field in request.headers.iter() {
     let (name, value) = field
     if !curl_owned_fields.contains(name.to_lower()) {
-      transfer_header(xfer, @utf8.encode("\{name}: \{value}"))
+      // libcurl reads "Name:" as "do not send Name"; "Name;" is how it
+      // sends a field whose value is empty.
+      let line = if value.is_empty() { "\{name};" } else { "\{name}: \{value}" }
+      transfer_header(xfer, @utf8.encode(line))
     }
   }
   // Without these lines libcurl adds `Expect: 100-continue` to uploads and

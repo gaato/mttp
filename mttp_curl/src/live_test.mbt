@@ -41,3 +41,34 @@ async test "live: HTTP/3 to cloudflare-quic.com, a whole uncompressed page" {
   let body = @utf8.decode_lossy(response.body.read_all(max=4 << 20))
   assert_true(body.contains("</html>"))
 }
+
+///|
+async test "live: PemFile trusts the file's roots only, not the system's" {
+  guard live() else { return }
+  // The tests' own root: no public site is under it.
+  let root = for dir in ["testdata", "src/testdata", "mttp_curl/src/testdata"] {
+    if @fs.exists("\{dir}/root.pem") {
+      break @fs.realpath("\{dir}/root.pem")
+    }
+  } nobreak {
+    fail("no testdata/root.pem below the working directory")
+  }
+  let backend = @mttp_curl.CurlBackend::new(
+    trust=PemFile(root),
+    proxy=@h1client.ProxyConfig::none(),
+  )
+  defer backend.close()
+  let failed = try {
+    backend.send(
+      @mttp_core.Request::get("https://www.cloudflare.com/cdn-cgi/trace"),
+      @mttp_core.SendOptions::default(),
+    )
+    |> ignore
+    None
+  } catch {
+    e => Some(e)
+  }
+  guard failed is Some(@mttp_core.TransportError(kind=Connect, phase=Dial, ..)) else {
+    fail("a system-trusted site was accepted under PemFile")
+  }
+}

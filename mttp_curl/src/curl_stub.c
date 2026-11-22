@@ -700,14 +700,18 @@ MOONBIT_FFI_EXPORT transfer_box *mttp_curl_transfer_new(
   curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 0L);
   curl_easy_setopt(easy, CURLOPT_HTTP_CONTENT_DECODING, 0L);
   curl_easy_setopt(easy, CURLOPT_HTTP_TRANSFER_DECODING, 1L);
+  // Both always set: left unset, libcurl reads http_proxy and NO_PROXY
+  // from the environment itself, so a ProxyConfig with no proxy or no
+  // exceptions would not be what is used.
   s = dup_bytes(proxy);
   curl_easy_setopt(easy, CURLOPT_PROXY, s);
   free(s);
-  if (Moonbit_array_length(noproxy) > 0) {
-    s = dup_bytes(noproxy);
-    curl_easy_setopt(easy, CURLOPT_NOPROXY, s);
-    free(s);
-  }
+  s = dup_bytes(noproxy);
+  curl_easy_setopt(easy, CURLOPT_NOPROXY, s);
+  free(s);
+  // The request target as given: by default libcurl resolves "./" and
+  // "../" in the path before sending it.
+  curl_easy_setopt(easy, CURLOPT_PATH_AS_IS, 1L);
   // A proxy's answer to CONNECT is not the response's head.
   curl_easy_setopt(easy, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
   curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
@@ -722,10 +726,17 @@ MOONBIT_FFI_EXPORT transfer_box *mttp_curl_transfer_new(
     curl_easy_setopt(easy, CURLOPT_MAXLIFETIME_CONN, (long)max_age_s);
   }
   if (Moonbit_array_length(cainfo) > 0) {
+    // PemFile replaces the system's roots (gaato/mttp/trust): the file, and
+    // neither the build's default CA directory, which libcurl keeps beside
+    // CAINFO, nor a native store (CURLSSLOPT_NATIVE_CA).
     s = dup_bytes(cainfo);
     curl_easy_setopt(easy, CURLOPT_CAINFO, s);
     curl_easy_setopt(easy, CURLOPT_PROXY_CAINFO, s);
     free(s);
+    curl_easy_setopt(easy, CURLOPT_CAPATH, (char *)NULL);
+    curl_easy_setopt(easy, CURLOPT_PROXY_CAPATH, (char *)NULL);
+    curl_easy_setopt(easy, CURLOPT_SSL_OPTIONS, 0L);
+    curl_easy_setopt(easy, CURLOPT_PROXY_SSL_OPTIONS, 0L);
   }
   if (insecure) {
     curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 0L);

@@ -119,3 +119,30 @@ async test "HEAD is sent as HEAD, and a HEAD with a body is refused before any I
     }
   })
 }
+
+///|
+async test "an empty field value and the request target arrive as given" {
+  with_server(server => {
+    for
+      backend in [
+        tls_backend(),
+        CurlBackend::with_version(
+          2,
+          http3=false,
+          trust=PemFile(testdata("root.pem")),
+        ),
+      ] {
+      defer backend.close()
+      let response = backend.send(
+        @mttp_core.Request::get(server.tls + "/echo/./a/../b").header(
+          "x-empty", "",
+        ),
+        @mttp_core.SendOptions::default(),
+      )
+      assert_eq(response.headers.get("x-target"), Some("/echo/./a/../b"))
+      guard fields(response) is Object(seen) else { fail("no fields") }
+      assert_eq(seen.get("x-empty"), Some(Json::string("")))
+      text(response) |> ignore
+    }
+  })
+}

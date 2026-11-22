@@ -11,7 +11,8 @@
 //
 //   /hello              200 "hello"
 //   /echo               200, the request body; x-method, x-fields (the
-//                       request fields as JSON) and x-received (body bytes)
+//                       request fields as JSON), x-received (body bytes) and
+//                       x-target (the request target as it arrived)
 //   /status/N           status N, empty
 //   /redirect           302 to /hello
 //   /gzip               200, gzip-coded "hello gzip" with content-encoding
@@ -67,6 +68,7 @@ function answer(req, res) {
           "x-method": req.method,
           "x-fields": JSON.stringify(req.headers),
           "x-received": String(body.length),
+          "x-target": req.url,
         });
         res.end(body);
       });
