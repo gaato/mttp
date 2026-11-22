@@ -7,6 +7,22 @@ never does.
 
 ## [Unreleased]
 
+### Added
+
+- `attempt`: what `SendOptions` promise for one attempt, for any `Backend`
+  to keep the same way. `AttemptTimer` runs each phase against the attempt
+  deadline and per-phase limits (`PhaseLimits`) and checks the budget when
+  a phase starts, so a phase that would not wait is bounded too;
+  `AttemptTimer::for_body` gives a response body's timer under a
+  `BodyTiming`. `BodyBudget` counts body bytes in `Int64` against a bound
+  and refuses a declared length past it before reading; `body_limit` gives
+  the bound under a `BodyTiming`. A Backend over another transport (such as
+  libcurl) uses them instead of writing these rules again.
+
+### Changed
+
+- `h1client` runs on `attempt`; its behaviour is unchanged.
+
 ## [0.3.2] - 2026-11-21
 
 ### Changed

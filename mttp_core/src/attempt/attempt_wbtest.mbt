@@ -23,29 +23,3 @@ test "phase_budget takes the phase's limit unless the attempt ends first" {
     assert_eq(phase_budget(limit, total=5000, remaining~), expected)
   }
 }
-
-///|
-test "Timeouts gives the head and the body the read limit" {
-  let limits : Timeouts = {
-    pool: Some(2),
-    connect: Some(3),
-    write: Some(4),
-    read: Some(5),
-  }
-  let phases : Array[@mttp_core.Phase] = [
-    Pool,
-    Dial,
-    Write,
-    Head,
-    Body,
-    Unknown,
-  ]
-  assert_eq(phases.map(phase => limits.of(phase)), [
-    Some(2),
-    Some(3),
-    Some(4),
-    Some(5),
-    Some(5),
-    Some(5),
-  ])
-}

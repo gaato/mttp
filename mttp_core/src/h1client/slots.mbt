@@ -109,7 +109,7 @@ async fn Ticket::wait(self : Ticket) -> Unit raise @mttp_core.TransportError {
 async fn Slots::acquire(
   self : Slots,
   origin : String,
-  timer : PhaseTimer,
+  timer : @attempt.AttemptTimer,
 ) -> Unit raise @mttp_core.TransportError {
   let ticket = self.enqueue(origin)
   errdefer self.abandon(ticket)
