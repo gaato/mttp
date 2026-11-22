@@ -126,9 +126,11 @@ pub(all) struct H2Settings {
   /// SETTINGS_HEADER_TABLE_SIZE: the HPACK table the peer may make this end
   /// keep.
   header_table_size : Int32
-  /// SETTINGS_MAX_HEADER_LIST_SIZE, also enforced: a header block larger
-  /// than this (names, values and 32 bytes per field) resets its stream
-  /// and records `TooLarge`.
+  /// The largest header block taken (names, values and 32 bytes per
+  /// field): a larger one resets its stream and records `TooLarge`. A
+  /// server also advertises it as SETTINGS_MAX_HEADER_LIST_SIZE; a client
+  /// does not, so that a server sends a large head rather than giving up
+  /// on it with a reset that says nothing of why.
   max_header_list : Int32
   /// A body queue below this many bytes records `Drained`, once per push.
   low_mark : Int32

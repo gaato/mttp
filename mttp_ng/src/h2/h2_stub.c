@@ -440,7 +440,12 @@ static session *session_new(int server, const int32_t *values) {
     iv[n].settings_id = NGHTTP2_SETTINGS_HEADER_TABLE_SIZE;
     iv[n++].value = (uint32_t)c.header_table_size;
   }
-  if (c.max_header_list > 0) {
+  // Only a server advertises its header limit. SETTINGS_MAX_HEADER_LIST_SIZE
+  // is advisory (RFC 9113, section 6.5.2), and a server that honours a
+  // client's gives up on a large response with a reset whose code says
+  // nothing of why; unadvertised, the client sees the head and reports it
+  // as too large.
+  if (server && c.max_header_list > 0) {
     iv[n].settings_id = NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE;
     iv[n++].value = (uint32_t)c.max_header_list;
   }

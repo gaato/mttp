@@ -56,3 +56,4 @@ gaato/mttp_core/client/httpcache	CacheStatus
 gaato/mttp_core/representation	Precondition
 gaato/mttp_core/representation	RangeChoice
 gaato/mttp_core/representation	MediaChoice
+gaato/mttp_ng/h2	H2Event

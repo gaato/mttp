@@ -98,8 +98,10 @@ pub extend BlockKind with Eq::{equal, not_equal}
 pub extend BlockKind with @debug.Debug::{to_repr}
 
 ///|
-/// Something a step of the session caused.
+/// Something a step of the session caused. Later versions may add events:
+/// match the ones you need and pass over the rest (`H2Event::..`).
 #derive(Eq, Debug)
+#non_exhaustive
 pub(all) enum H2Event {
   /// A whole header block arrived on `stream`: its fields in order, pseudo
   /// fields first, and whether its frame ended the stream.
