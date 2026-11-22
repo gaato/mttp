@@ -8,8 +8,26 @@ pub struct CurlBackend {
   priv version : Int32
   priv http3 : Bool
   priv trust : @trust.Trust
+  priv proxy : @h1client.ProxyConfig
   priv max_age_s : Int32
   priv head_max : Int32
+}
+
+///|
+/// The network over libcurl as gaato/mttp's `@mttp.backend()` has it over
+/// its own engine: a `CurlBackend` under `@codings.Decompress`, so responses
+/// arrive decoded and an `Accept-Encoding` is offered unless the request has
+/// one. Give it to `@mttp.client(backend=...)`. The settings are
+/// `CurlBackend::new`'s.
+pub fn backend(
+  http3~ : Bool = false,
+  trust~ : @trust.Trust = System,
+  proxy? : @h1client.ProxyConfig,
+  max_connection_age_ms? : Int32,
+) -> &@mttp_core.Backend {
+  @codings.Decompress::new(
+    CurlBackend::new(http3~, trust~, proxy?, max_connection_age_ms?),
+  )
 }
 
 ///|
@@ -28,12 +46,16 @@ pub fn CurlBackend::supports_http3() -> Bool {
 ///|
 /// `http3=true` tries HTTP/3 first for `https` URLs and falls back to TCP,
 /// as libcurl's `CURL_HTTP_VERSION_3` does. `trust` chooses the certificate
-/// authorities (`System`: libcurl's default; `PemFile`: that file instead).
-/// `max_connection_age_ms` closes connections at that total age; zero or
-/// less prevents reuse.
+/// authorities, of the origin and of an HTTPS proxy alike (`System`:
+/// libcurl's default; `PemFile`: that file instead; `Insecure`: no check).
+/// `proxy` defaults to the `http_proxy`, `https_proxy`, `all_proxy` and
+/// `no_proxy` variables, read once here as `@mttp.backend()` reads them;
+/// `@h1client.ProxyConfig::none()` turns proxies off. `max_connection_age_ms`
+/// closes connections at that total age; zero or less prevents reuse.
 pub fn CurlBackend::new(
   http3~ : Bool = false,
   trust~ : @trust.Trust = System,
+  proxy? : @h1client.ProxyConfig,
   max_connection_age_ms? : Int32,
 ) -> CurlBackend {
   CurlBackend::with_version(
@@ -44,6 +66,9 @@ pub fn CurlBackend::new(
     },
     http3~,
     trust~,
+    proxy=proxy.unwrap_or_else(() => {
+      @h1client.ProxyConfig::from_env(@env.get_env_var)
+    }),
     max_connection_age_ms?,
   )
 }
@@ -63,6 +88,7 @@ fn CurlBackend::with_version(
   version : Int32,
   http3~ : Bool,
   trust~ : @trust.Trust,
+  proxy~ : @h1client.ProxyConfig = @h1client.ProxyConfig::none(),
   max_connection_age_ms? : Int32,
 ) -> CurlBackend {
   let engine = engine_new_raw()
@@ -76,6 +102,7 @@ fn CurlBackend::with_version(
     version,
     http3,
     trust,
+    proxy,
     max_age_s: match max_connection_age_ms {
       None => -1
       Some(ms) if ms <= 0 => 0
@@ -131,7 +158,10 @@ let curl_owned_fields : Array[String] = [
 /// itself sends a refused HTTP/2 or HTTP/3 stream again on a new
 /// connection, up to five times; when all are refused the error is
 /// `Refused`, which counts as unsent. CONNECT and protocol upgrades are
-/// refused with `Invalid` before any I/O.
+/// refused with `Invalid` before any I/O: libcurl cannot hand a connection
+/// over. A request's `@mttp_core.on_phase` callback gets the points libcurl
+/// shows (`Dialed`, `TlsDone` and `Pooled` once the connection is ready,
+/// `Written`, `FirstByte`), in that order, before the send returns.
 pub async fn CurlBackend::send(
   self : CurlBackend,
   request : @mttp_core.Request,
@@ -214,6 +244,11 @@ pub async fn CurlBackend::send(
     Insecure => ("", true)
     @trust.Trust::.. => raise invalid("a Trust this backend does not know")
   }
+  // The proxy for the URL's scheme; NO_PROXY is matched by libcurl.
+  let proxy = match url.scheme {
+    Some("https") => self.proxy.https
+    _ => self.proxy.http
+  }
   let xfer = transfer_new_raw(
     engine,
     @utf8.encode(request.url),
@@ -230,6 +265,8 @@ pub async fn CurlBackend::send(
     self.head_max,
     65536,
     self.max_age_s,
+    @utf8.encode(proxy.unwrap_or("")),
+    @utf8.encode(self.proxy.no_proxy),
   )
   if xfer_is_null(xfer) {
     stream.map(s => s.close()) |> ignore
@@ -279,12 +316,26 @@ pub async fn CurlBackend::send(
     (None, None) => ()
   }
   let mut upload_done = stream is None || first is None
+  let events = PhaseEvents::{
+    report: request.attributes.get(@mttp_core.on_phase),
+    seen: 0,
+    dialed: dialed_address(url, proxy),
+    tls: url.scheme is Some("https"),
+  }
   transfer_start(xfer)
   let deadline = options.timeout_ms.map(ms => {
     @env.now().reinterpret_as_int64() + ms.to_int64()
   })
   for ;; {
     let state = transfer_state(xfer)
+    events.observe(state)
+    if (state & ST_HEAD) != 0 && !upload_done {
+      // A final response before the whole body was sent: the rest is never
+      // read or sent, and the unfinished transfer's connection is not used
+      // again, as gaato/mttp_core's HTTP/1 client does it.
+      transfer_abandon_upload(xfer)
+      upload_done = true
+    }
     if (state & ST_WANTS_BODY) != 0 && !upload_done {
       // `stream` is Some here: upload_done starts true without one.
       let piece = stream.unwrap().read_some()
@@ -390,6 +441,59 @@ fn CurlBackend::response(
 }
 
 ///|
+/// The host and port a new connection dials: the proxy's when there is one.
+fn dialed_address(url : @mttp_core.Url, proxy : String?) -> String {
+  let target = match proxy {
+    Some(text) => @mttp_core.Url::parse(text) catch { _ => url }
+    None => url
+  }
+  let host = target.host.unwrap_or("")
+  match target.port_or_default() {
+    Some(port) => "\{host}:\{port}"
+    None => host
+  }
+}
+
+///|
+/// Reports a send's phase events (Backend rule 13) as the transfer's state
+/// bits appear, each once and in order.
+priv struct PhaseEvents {
+  report : ((@mttp_core.PhaseEvent) -> Unit)?
+  mut seen : Int32
+  dialed : String
+  tls : Bool
+}
+
+///|
+fn PhaseEvents::observe(self : PhaseEvents, state : Int32) -> Unit {
+  guard self.report is Some(report) else { return }
+  let fresh = state & (ST_PREREQ | ST_SENT | ST_FIRST_BYTE) & self.seen.lnot()
+  if fresh == 0 {
+    return
+  }
+  if (fresh & ST_PREREQ) != 0 {
+    if (state & ST_NEW_CONN) != 0 {
+      report(Dialed(addr=self.dialed))
+      if self.tls {
+        report(TlsDone)
+      }
+      report(Pooled(reused=false))
+    } else {
+      report(Pooled(reused=true))
+    }
+  }
+  // Written only before the first response byte: after an early response
+  // it is out of order, and rule 13 leaves it out.
+  if (fresh & ST_SENT) != 0 && (self.seen & ST_FIRST_BYTE) == 0 {
+    report(Written)
+  }
+  if (fresh & ST_FIRST_BYTE) != 0 {
+    report(FirstByte)
+  }
+  self.seen = self.seen | fresh
+}
+
+///|
 /// One transfer seen from MoonBit: the C handle and the descriptor its
 /// thread signals.
 priv struct Exchange {
@@ -490,6 +594,15 @@ fn Exchange::failure(
       detail="the response head is larger than \{head_max} bytes",
     )
   }
+  // A proxy that refused the tunnel: nothing reached the origin.
+  let connect_code = transfer_info(self.xfer, 3)
+  if connect_code >= 300 || code == 97 {
+    return @mttp_core.TransportError(
+      kind=Proxy(status=connect_code),
+      phase=Dial,
+      detail~,
+    )
+  }
   // libcurl sends a request again by itself when a stream is refused
   // (REFUSED_STREAM, a stream above GOAWAY) or a reused connection dies
   // before any answer, up to five times; then it gives up with this text.
@@ -499,8 +612,8 @@ fn Exchange::failure(
     return @mttp_core.TransportError(kind=Refused, phase~, detail~)
   }
   let kind : @mttp_core.Kind = match code {
-    // Resolving, connecting, TLS and QUIC handshakes.
-    6 | 7 | 35 | 58 | 60 | 77 | 96 => Connect
+    // Resolving (the proxy too), connecting, TLS and QUIC handshakes.
+    5 | 6 | 7 | 35 | 58 | 60 | 77 | 96 => Connect
     28 => Timeout(ms=0)
     // Framing the peer broke.
     8 | 16 | 92 | 95 => Protocol

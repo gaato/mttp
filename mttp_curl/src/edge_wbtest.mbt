@@ -79,7 +79,10 @@ async test "an empty stream body is sent as an empty body" {
 ///|
 async test "Insecure skips the certificate check" {
   with_server(server => {
-    let backend = CurlBackend::new(trust=Insecure)
+    let backend = CurlBackend::new(
+      trust=Insecure,
+      proxy=@h1client.ProxyConfig::none(),
+    )
     defer backend.close()
     let response = backend.send(
       @mttp_core.Request::get(server.tls + "/hello"),
@@ -124,4 +127,11 @@ async test "a body read after its end reads nothing" {
     assert_eq(reader.read_some(), None)
     assert_eq(reader.read_some(), None)
   })
+}
+
+///|
+test "the default response head bound is 64 KiB" {
+  let backend = CurlBackend::new(proxy=@h1client.ProxyConfig::none())
+  defer backend.close()
+  assert_eq(backend.head_max, 65536)
 }

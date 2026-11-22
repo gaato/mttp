@@ -8,17 +8,23 @@
 //
 // The thread never calls into MoonBit either, since the MoonBit runtime is
 // not thread-safe. Every curl callback only touches the C memory of its
-// transfer, under the transfer's mutex, and then bumps the transfer's eventfd.
-// The MoonBit side holds a dup of that eventfd in a core/async RawFd and
-// waits on it; reading it resets the count, and it then reads a snapshot of
-// the transfer's state. The dup lets MoonBit close its end whenever it is
-// unwound without racing the thread, which keeps writing to its own end
-// until it frees the transfer, so a reused descriptor number is never hit.
+// transfer, under the transfer's mutex, and then signals the transfer's
+// notification descriptor: an eventfd on Linux, a pipe elsewhere. MoonBit
+// holds a dup of its read end in a core/async RawFd and waits on it; a read
+// drains it, and MoonBit then reads a snapshot of the transfer's state. The
+// dup lets MoonBit close its end whenever it is unwound without racing the
+// thread, which keeps both of its own ends open until it frees the transfer:
+// a reused descriptor number is never written, and a pipe's write never
+// raises SIGPIPE, since its read end stays open.
 //
 // A transfer is freed by the thread when it handles the transfer's remove
 // command, which MoonBit queues exactly once and never touches the transfer
 // afterwards. An engine is freed by its thread once shutdown was asked for
 // and every transfer has been removed.
+//
+// libcurl 7.85 or later: CURLOPT_PROTOCOLS_STR (7.85), CURLOPT_PREREQFUNCTION
+// and CURLOPT_MAXLIFETIME_CONN (7.80). CURLINFO_POSTTRANSFER_TIME_T (8.10)
+// is used when present.
 
 #include <curl/curl.h>
 #include <errno.h>
@@ -27,10 +33,16 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/eventfd.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sys/eventfd.h>
+#endif
 
 #include "moonbit.h"
+
+#if LIBCURL_VERSION_NUM >= 0x080a00
+#define HAVE_POSTTRANSFER 1
+#endif
 
 // State bits returned by mttp_curl_transfer_state.
 enum {
@@ -42,6 +54,8 @@ enum {
   ST_HEAD_TOO_LARGE = 32, // the response head passed the limit
   ST_CLOSED = 64,         // ended by the engine's shutdown
   ST_SENT = 128,          // the whole request was sent
+  ST_FIRST_BYTE = 256,    // the first response byte (a status line) arrived
+  ST_NEW_CONN = 512,      // with PREREQ: this transfer opened its connection
 };
 
 typedef struct transfer transfer;
@@ -60,26 +74,28 @@ typedef struct engine {
   cmd *qhead, *qtail;
   int shutdown;   // under qlock
   int live;       // transfers not yet removed, under qlock
+  transfer *added; // in the multi handle; the thread's own list
 } engine;
 
 struct transfer {
   engine *e;
   CURL *easy;
   struct curl_slist *headers;
-  int efd;        // the thread's end; MoonBit waits on a dup
-  int added;      // in the multi handle; the thread's own field
+  int notify_r;   // the thread's ends of the notification descriptor (one
+  int notify_w;   // eventfd on Linux); MoonBit waits on a dup of notify_r
+  int added;      // the thread's own fields: in the multi handle, and its
+  transfer *prev, *next;  // place in the engine's list
   pthread_mutex_t lock;
   // Under lock from here on.
   int state;
   int paused_write;
   int paused_read;
+  int up_abandoned;
   int32_t status;
   int32_t version;
-  int32_t num_connects;
   int32_t result;
+  int32_t connect_code;
   char errbuf[CURL_ERROR_SIZE];
-  char primary_ip[64];
-  int32_t primary_port;
   // The final response head: the status line and the field lines.
   char *head;
   size_t head_len, head_max;
@@ -96,12 +112,44 @@ struct transfer {
 static pthread_once_t global_once = PTHREAD_ONCE_INIT;
 static void global_init(void) { curl_global_init(CURL_GLOBAL_DEFAULT); }
 
+// Wakes MoonBit. A full pipe already has a wake-up pending, so EAGAIN is fine.
 static void notify(transfer *t) {
+#if defined(__linux__)
   uint64_t one = 1;
+  const void *p = &one;
+  size_t n = sizeof one;
+#else
+  const char one = 1;
+  const void *p = &one;
+  size_t n = 1;
+#endif
   ssize_t r;
   do {
-    r = write(t->efd, &one, sizeof one);
+    r = write(t->notify_w, p, n);
   } while (r < 0 && errno == EINTR);
+}
+
+static int open_notify(transfer *t) {
+#if defined(__linux__)
+  int fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  t->notify_r = t->notify_w = fd;
+  return fd < 0 ? -1 : 0;
+#else
+  int fds[2];
+  if (pipe(fds) != 0) return -1;
+  for (int i = 0; i < 2; i++) {
+    fcntl(fds[i], F_SETFL, fcntl(fds[i], F_GETFL) | O_NONBLOCK);
+    fcntl(fds[i], F_SETFD, FD_CLOEXEC);
+  }
+  t->notify_r = fds[0];
+  t->notify_w = fds[1];
+  return 0;
+#endif
+}
+
+static void close_notify(transfer *t) {
+  close(t->notify_r);
+  if (t->notify_w != t->notify_r) close(t->notify_w);
 }
 
 static void enqueue(engine *e, cmd_kind kind, transfer *t) {
@@ -127,6 +175,8 @@ static size_t on_header(char *buf, size_t size, size_t n, void *arg) {
     pthread_mutex_unlock(&t->lock);
     return len;
   }
+  int first = !(t->state & ST_FIRST_BYTE);
+  t->state |= ST_FIRST_BYTE;
   if (len >= 5 && memcmp(buf, "HTTP/", 5) == 0) {
     // A new response block: an informational one before it is dropped.
     t->head_len = 0;
@@ -152,24 +202,15 @@ static size_t on_header(char *buf, size_t size, size_t n, void *arg) {
   if (blank && t->head_open) {
     t->head_open = 0;
     if (t->status >= 200) {
-      long v = 0, c = 0, port = 0;
-      char *ip = NULL;
+      long v = 0;
       curl_easy_getinfo(t->easy, CURLINFO_HTTP_VERSION, &v);
-      curl_easy_getinfo(t->easy, CURLINFO_NUM_CONNECTS, &c);
       t->version = (int32_t)v;
-      t->num_connects = (int32_t)c;
-      if (curl_easy_getinfo(t->easy, CURLINFO_PRIMARY_IP, &ip) == CURLE_OK && ip) {
-        strncpy(t->primary_ip, ip, sizeof t->primary_ip - 1);
-      }
-      if (curl_easy_getinfo(t->easy, CURLINFO_PRIMARY_PORT, &port) == CURLE_OK) {
-        t->primary_port = (int32_t)port;
-      }
       t->state |= ST_HEAD;
       finished = 1;
     }
   }
   pthread_mutex_unlock(&t->lock);
-  if (finished) notify(t);
+  if (finished || first) notify(t);
   return len;
 }
 
@@ -208,6 +249,13 @@ static size_t on_read(char *buf, size_t size, size_t n, void *arg) {
   transfer *t = arg;
   size_t room = size * n;
   pthread_mutex_lock(&t->lock);
+  if (t->up_abandoned) {
+    // A final response came first: the rest of the body is never sent, and
+    // the transfer is removed unfinished, so its connection is not reused.
+    t->paused_read = 1;
+    pthread_mutex_unlock(&t->lock);
+    return CURL_READFUNC_PAUSE;
+  }
   size_t held = t->up_len - t->up_off;
   if (held > 0) {
     size_t k = held < room ? held : room;
@@ -232,21 +280,26 @@ static size_t on_read(char *buf, size_t size, size_t n, void *arg) {
 
 static int on_prereq(void *arg, char *remote_ip, char *local_ip, int remote_port,
                      int local_port) {
+  (void)remote_ip;
   (void)local_ip;
+  (void)remote_port;
   (void)local_port;
   transfer *t = arg;
+  long connects = 0;
+  curl_easy_getinfo(t->easy, CURLINFO_NUM_CONNECTS, &connects);
   pthread_mutex_lock(&t->lock);
   t->state |= ST_PREREQ;
-  if (remote_ip) strncpy(t->primary_ip, remote_ip, sizeof t->primary_ip - 1);
-  t->primary_port = remote_port;
+  if (connects > 0) t->state |= ST_NEW_CONN;
   pthread_mutex_unlock(&t->lock);
   notify(t);
   return CURL_PREREQFUNC_OK;
 }
 
+#ifdef HAVE_POSTTRANSFER
 // Called by curl on the thread while a transfer runs: notes the moment the
 // whole request has been sent, so that a failure or deadline before the
-// response head says Head rather than Write.
+// response head says Head rather than Write. Without it (libcurl before
+// 8.10) every failure after the prereq callback says Write.
 static int on_progress(void *arg, curl_off_t dltotal, curl_off_t dlnow,
                        curl_off_t ultotal, curl_off_t ulnow) {
   (void)dltotal;
@@ -255,7 +308,8 @@ static int on_progress(void *arg, curl_off_t dltotal, curl_off_t dlnow,
   (void)ulnow;
   transfer *t = arg;
   pthread_mutex_lock(&t->lock);
-  int known = t->state & ST_SENT;
+  // Only a request on a ready connection can have been sent.
+  int known = (t->state & ST_SENT) || !(t->state & ST_PREREQ);
   pthread_mutex_unlock(&t->lock);
   if (!known) {
     curl_off_t sent_at = 0;
@@ -269,15 +323,35 @@ static int on_progress(void *arg, curl_off_t dltotal, curl_off_t dlnow,
   }
   return 0;
 }
+#endif
 
 // --------------------------------------------------------------- the thread
 
+static void link_added(transfer *t) {
+  engine *e = t->e;
+  t->added = 1;
+  t->prev = NULL;
+  t->next = e->added;
+  if (e->added) e->added->prev = t;
+  e->added = t;
+}
+
+static void unlink_added(transfer *t) {
+  engine *e = t->e;
+  if (!t->added) return;
+  curl_multi_remove_handle(e->multi, t->easy);
+  if (t->prev) t->prev->next = t->next; else e->added = t->next;
+  if (t->next) t->next->prev = t->prev;
+  t->prev = t->next = NULL;
+  t->added = 0;
+}
+
 static void free_transfer(transfer *t) {
   engine *e = t->e;
-  if (t->added) curl_multi_remove_handle(e->multi, t->easy);
+  unlink_added(t);
   curl_easy_cleanup(t->easy);
   curl_slist_free_all(t->headers);
-  close(t->efd);
+  close_notify(t);
   free(t->head);
   free(t->body);
   free(t->up);
@@ -289,18 +363,22 @@ static void free_transfer(transfer *t) {
 }
 
 static void finish(transfer *t, int32_t result, int closed) {
+  long connect_code = 0;
+  curl_easy_getinfo(t->easy, CURLINFO_HTTP_CONNECTCODE, &connect_code);
+#ifdef HAVE_POSTTRANSFER
   curl_off_t sent_at = 0;
   curl_easy_getinfo(t->easy, CURLINFO_POSTTRANSFER_TIME_T, &sent_at);
+#endif
   pthread_mutex_lock(&t->lock);
   t->state |= ST_DONE;
   if (closed) t->state |= ST_CLOSED;
-  if (sent_at > 0) t->state |= ST_SENT;
+#ifdef HAVE_POSTTRANSFER
+  if (sent_at > 0 && (t->state & ST_PREREQ)) t->state |= ST_SENT;
+#endif
   t->result = result;
+  t->connect_code = (int32_t)connect_code;
   pthread_mutex_unlock(&t->lock);
-  if (t->added) {
-    curl_multi_remove_handle(t->e->multi, t->easy);
-    t->added = 0;
-  }
+  unlink_added(t);
   notify(t);
 }
 
@@ -321,7 +399,7 @@ static void *engine_main(void *arg) {
           if (shutting) {
             finish(t, CURLE_ABORTED_BY_CALLBACK, 1);
           } else if (curl_multi_add_handle(e->multi, t->easy) == CURLM_OK) {
-            t->added = 1;
+            link_added(t);
           } else {
             finish(t, CURLE_FAILED_INIT, 0);
           }
@@ -341,13 +419,7 @@ static void *engine_main(void *arg) {
     if (shutting) {
       // End every transfer still in the multi handle; their remove commands
       // follow from MoonBit, and the thread stays until they have.
-      CURL **handles = curl_multi_get_handles(e->multi);
-      for (CURL **h = handles; h && *h; h++) {
-        transfer *t = NULL;
-        curl_easy_getinfo(*h, CURLINFO_PRIVATE, (char **)&t);
-        if (t) finish(t, CURLE_ABORTED_BY_CALLBACK, 1);
-      }
-      curl_free(handles);
+      while (e->added) finish(e->added, CURLE_ABORTED_BY_CALLBACK, 1);
       pthread_mutex_lock(&e->qlock);
       int done = e->live == 0 && e->qhead == NULL;
       pthread_mutex_unlock(&e->qlock);
@@ -373,13 +445,17 @@ static void *engine_main(void *arg) {
 
 // ------------------------------------------------------- the MoonBit side
 
-// Bit 1: HTTP/2, bit 2: HTTP/3.
+// Bit 1: HTTP/2, bit 2: HTTP/3, bit 4: the moment a request is sent is
+// known (CURLINFO_POSTTRANSFER_TIME_T, libcurl 8.10).
 MOONBIT_FFI_EXPORT int32_t mttp_curl_features(void) {
   pthread_once(&global_once, global_init);
   curl_version_info_data *info = curl_version_info(CURLVERSION_NOW);
   int32_t bits = 0;
   if (info->features & CURL_VERSION_HTTP2) bits |= 1;
   if (info->features & CURL_VERSION_HTTP3) bits |= 2;
+#ifdef HAVE_POSTTRANSFER
+  if (info->version_num >= 0x080a00) bits |= 4;
+#endif
   return bits;
 }
 
@@ -433,18 +509,19 @@ static char *dup_bytes(moonbit_bytes_t b) {
 
 // `version`: the CURL_HTTP_VERSION_* value. `body`: -2 for no body, -1 for a
 // body of unknown length, else its length. `cainfo`: a PEM file or empty.
-// `insecure`: skip certificate checks. Returns NULL on failure.
+// `insecure`: skip certificate checks. `proxy`: the proxy URL or empty for
+// none; `noproxy`: the hosts reached without it. Returns NULL on failure.
 MOONBIT_FFI_EXPORT transfer *mttp_curl_transfer_new(
     engine *e, moonbit_bytes_t url, moonbit_bytes_t method, int32_t nobody,
     int64_t body, int32_t version, moonbit_bytes_t cainfo, int32_t insecure,
-    int32_t head_max, int32_t body_cap, int32_t max_age_s) {
+    int32_t head_max, int32_t body_cap, int32_t max_age_s, moonbit_bytes_t proxy,
+    moonbit_bytes_t noproxy) {
   CURL *easy = curl_easy_init();
   if (!easy) return NULL;
   transfer *t = calloc(1, sizeof *t);
   t->e = e;
   t->easy = easy;
-  t->efd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-  if (t->efd < 0) {
+  if (open_notify(t) != 0) {
     curl_easy_cleanup(easy);
     free(t);
     return NULL;
@@ -492,15 +569,27 @@ MOONBIT_FFI_EXPORT transfer *mttp_curl_transfer_new(
   curl_easy_setopt(easy, CURLOPT_READDATA, t);
   curl_easy_setopt(easy, CURLOPT_PREREQFUNCTION, on_prereq);
   curl_easy_setopt(easy, CURLOPT_PREREQDATA, t);
+#ifdef HAVE_POSTTRANSFER
   curl_easy_setopt(easy, CURLOPT_XFERINFOFUNCTION, on_progress);
   curl_easy_setopt(easy, CURLOPT_XFERINFODATA, t);
   curl_easy_setopt(easy, CURLOPT_NOPROGRESS, 0L);
-  // mttp's policies stay mttp's: no redirects, decoding, cookies, proxies
-  // (curl reads the proxy variables unless told otherwise) or signals.
+#endif
+  // mttp's policies stay mttp's: no redirects, decoding, cookies or
+  // signals, and only the proxy the caller chose (an empty CURLOPT_PROXY
+  // also keeps libcurl from reading the proxy variables itself).
   curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 0L);
   curl_easy_setopt(easy, CURLOPT_HTTP_CONTENT_DECODING, 0L);
   curl_easy_setopt(easy, CURLOPT_HTTP_TRANSFER_DECODING, 1L);
-  curl_easy_setopt(easy, CURLOPT_PROXY, "");
+  s = dup_bytes(proxy);
+  curl_easy_setopt(easy, CURLOPT_PROXY, s);
+  free(s);
+  if (Moonbit_array_length(noproxy) > 0) {
+    s = dup_bytes(noproxy);
+    curl_easy_setopt(easy, CURLOPT_NOPROXY, s);
+    free(s);
+  }
+  // A proxy's answer to CONNECT is not the response's head.
+  curl_easy_setopt(easy, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
   curl_easy_setopt(easy, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(easy, CURLOPT_PROTOCOLS_STR, "http,https");
   curl_easy_setopt(easy, CURLOPT_HTTP_VERSION, (long)version);
@@ -515,11 +604,14 @@ MOONBIT_FFI_EXPORT transfer *mttp_curl_transfer_new(
   if (Moonbit_array_length(cainfo) > 0) {
     s = dup_bytes(cainfo);
     curl_easy_setopt(easy, CURLOPT_CAINFO, s);
+    curl_easy_setopt(easy, CURLOPT_PROXY_CAINFO, s);
     free(s);
   }
   if (insecure) {
     curl_easy_setopt(easy, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(easy, CURLOPT_SSL_VERIFYHOST, 0L);
+    curl_easy_setopt(easy, CURLOPT_PROXY_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(easy, CURLOPT_PROXY_SSL_VERIFYHOST, 0L);
   }
   pthread_mutex_lock(&e->qlock);
   e->live++;
@@ -534,9 +626,10 @@ MOONBIT_FFI_EXPORT void mttp_curl_transfer_header(transfer *t, moonbit_bytes_t l
   free(s);
 }
 
-// A descriptor of the transfer's eventfd for MoonBit's RawFd, which owns it.
+// A descriptor of the transfer's notification for MoonBit's RawFd, which
+// owns it.
 MOONBIT_FFI_EXPORT int mttp_curl_transfer_fd(transfer *t) {
-  return fcntl(t->efd, F_DUPFD_CLOEXEC, 0);
+  return fcntl(t->notify_r, F_DUPFD_CLOEXEC, 0);
 }
 
 MOONBIT_FFI_EXPORT void mttp_curl_transfer_start(transfer *t) {
@@ -551,8 +644,8 @@ MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_state(transfer *t) {
   return s;
 }
 
-// 0: status, 1: CURL_HTTP_VERSION_*, 2: CURLcode, 3: connections opened,
-// 4: the peer's port.
+// 0: status, 1: CURL_HTTP_VERSION_*, 2: CURLcode, 3: the proxy's answer to
+// CONNECT (0 without one).
 MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_info(transfer *t, int32_t which) {
   pthread_mutex_lock(&t->lock);
   int32_t v = 0;
@@ -560,14 +653,13 @@ MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_info(transfer *t, int32_t which) {
     case 0: v = t->status; break;
     case 1: v = t->version; break;
     case 2: v = t->result; break;
-    case 3: v = t->num_connects; break;
-    case 4: v = t->primary_port; break;
+    case 3: v = t->connect_code; break;
   }
   pthread_mutex_unlock(&t->lock);
   return v;
 }
 
-// 0: the response head, 1: curl's error text, 2: the peer's address.
+// 0: the response head, 1: curl's error text.
 MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_curl_transfer_text(transfer *t, int32_t which) {
   pthread_mutex_lock(&t->lock);
   const char *p = "";
@@ -575,7 +667,6 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_curl_transfer_text(transfer *t, int32_t 
   switch (which) {
     case 0: p = t->head; n = t->head_len; break;
     case 1: p = t->errbuf; n = strlen(t->errbuf); break;
-    case 2: p = t->primary_ip; n = strlen(t->primary_ip); break;
   }
   if (n == 0 && which == 1 && t->result != 0) {
     p = curl_easy_strerror((CURLcode)t->result);
@@ -626,6 +717,17 @@ MOONBIT_FFI_EXPORT void mttp_curl_transfer_push(transfer *t, moonbit_bytes_t dat
   t->state &= ~ST_WANTS_BODY;
   pthread_mutex_unlock(&t->lock);
   if (unpause) enqueue(t->e, CMD_UNPAUSE, t);
+}
+
+// Gives up the rest of the request body: a final response arrived first.
+MOONBIT_FFI_EXPORT void mttp_curl_transfer_abandon_upload(transfer *t) {
+  pthread_mutex_lock(&t->lock);
+  t->up_abandoned = 1;
+  t->state &= ~ST_WANTS_BODY;
+  free(t->up);
+  t->up = NULL;
+  t->up_off = t->up_len = 0;
+  pthread_mutex_unlock(&t->lock);
 }
 
 // Ends the transfer and frees it, on the thread. MoonBit calls it once and

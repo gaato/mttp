@@ -15,7 +15,8 @@ priv type Engine
 priv type Xfer
 
 ///|
-/// Bit 1: the libcurl has HTTP/2; bit 2: HTTP/3.
+/// Bit 1: the libcurl has HTTP/2; bit 2: HTTP/3; bit 4: it reports when a
+/// request was sent (8.10 or later).
 extern "c" fn curl_features() -> Int32 = "mttp_curl_features"
 
 ///|
@@ -31,7 +32,7 @@ extern "c" fn engine_is_null(e : Engine) -> Bool = "mttp_curl_is_null"
 extern "c" fn engine_close(e : Engine) -> Unit = "mttp_curl_engine_close"
 
 ///|
-#borrow(url, meth, cainfo)
+#borrow(url, meth, cainfo, proxy, noproxy)
 extern "c" fn transfer_new_raw(
   e : Engine,
   url : Bytes,
@@ -44,6 +45,8 @@ extern "c" fn transfer_new_raw(
   head_max : Int32,
   body_cap : Int32,
   max_age_s : Int32,
+  proxy : Bytes,
+  noproxy : Bytes,
 ) -> Xfer = "mttp_curl_transfer_new"
 
 ///|
@@ -81,6 +84,9 @@ extern "c" fn transfer_read(
 extern "c" fn transfer_push(t : Xfer, data : Bytes, eof : Bool) -> Unit = "mttp_curl_transfer_push"
 
 ///|
+extern "c" fn transfer_abandon_upload(t : Xfer) -> Unit = "mttp_curl_transfer_abandon_upload"
+
+///|
 extern "c" fn transfer_release(t : Xfer) -> Unit = "mttp_curl_transfer_release"
 
 // State bits of `transfer_state`, as curl_stub.c defines them.
@@ -105,3 +111,9 @@ const ST_CLOSED = 64
 
 ///|
 const ST_SENT = 128
+
+///|
+const ST_FIRST_BYTE = 256
+
+///|
+const ST_NEW_CONN = 512

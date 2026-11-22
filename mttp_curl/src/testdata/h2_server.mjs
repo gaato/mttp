@@ -1,8 +1,13 @@
 // The HTTP/2 server of gaato/mttp_curl's tests, on Node's node:http2: one
-// cleartext listener spoken to with prior knowledge (h2c) and one TLS
-// listener that offers h2 and http/1.1 by ALPN, both on 127.0.0.1. It prints
-// {"h2c":PORT,"tls":PORT} on one line once both listen, and then answers by
-// path:
+// cleartext listener spoken to with prior knowledge (h2c), one TLS listener
+// that offers h2 and http/1.1 by ALPN, and an HTTP proxy, all on 127.0.0.1.
+// It prints {"h2c":PORT,"tls":PORT,"proxy":PORT} on one line once all
+// listen. The proxy tunnels CONNECT to the named port of 127.0.0.1 and
+// forwards absolute-form requests there, adding x-via-proxy: yes to the
+// forwarded answers; it answers 407 to a CONNECT or request for the host
+// deny.invalid, and answers a request for echo.invalid itself (200, "via
+// proxy", x-target: the request target it got). The other two listeners
+// answer by path:
 //
 //   /hello              200 "hello"
 //   /echo               200, the request body; x-method, x-fields (the
@@ -20,10 +25,15 @@
 //   /stall              200 and its head, then nothing more
 //   /session            200, the connection's number (1 for the first one)
 //   /wait/MS            200 after MS milliseconds
+//   /early/N            status N at once, without reading the request body;
+//                       over HTTP/2 the stream then ends with NO_ERROR, over
+//                       HTTP/1.1 the connection closes
 //
 // --max-streams N sets SETTINGS_MAX_CONCURRENT_STREAMS. The process ends
 // when its stdin closes, so a test that dies leaves no server behind.
+import http from "node:http";
 import http2 from "node:http2";
+import net from "node:net";
 import fs from "node:fs";
 import zlib from "node:zlib";
 import path from "node:path";
@@ -116,6 +126,11 @@ function answer(req, res) {
       res.writeHead(200);
       return res.end(String(ids.get(session)));
     }
+    case "early":
+      res.writeHead(Number(parts[1]), stream ? {} : { connection: "close" });
+      res.end("early");
+      if (stream) stream.close(http2.constants.NGHTTP2_NO_ERROR);
+      return;
     case "wait":
       return setTimeout(() => {
         res.writeHead(200);
@@ -137,12 +152,63 @@ const tls = http2.createSecureServer(
   },
   answer,
 );
+// The proxy: CONNECT tunnels and absolute-form forwarding, to this machine
+// only; the host deny.invalid is refused with 407.
+const proxy = http.createServer((req, res) => {
+  const target = new URL(req.url);
+  if (target.hostname === "deny.invalid") {
+    res.writeHead(407, { "proxy-authenticate": "Basic" });
+    return res.end();
+  }
+  if (target.hostname === "echo.invalid") {
+    res.writeHead(200, { "x-via-proxy": "yes", "x-target": req.url });
+    return res.end("via proxy");
+  }
+  const upstream = http.request(
+    {
+      host: "127.0.0.1",
+      port: target.port,
+      method: req.method,
+      path: target.pathname + target.search,
+      headers: req.headers,
+    },
+    (answer) => {
+      res.writeHead(answer.statusCode, { ...answer.headers, "x-via-proxy": "yes" });
+      answer.pipe(res);
+    },
+  );
+  upstream.on("error", () => {
+    res.writeHead(502);
+    res.end();
+  });
+  req.pipe(upstream);
+});
+proxy.on("connect", (req, socket, head) => {
+  const [host, port] = req.url.split(":");
+  if (host === "deny.invalid") {
+    socket.end("HTTP/1.1 407 Proxy Authentication Required\r\ncontent-length: 0\r\n\r\n");
+    return;
+  }
+  const upstream = net.connect(Number(port), "127.0.0.1", () => {
+    socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    upstream.write(head);
+    upstream.pipe(socket);
+    socket.pipe(upstream);
+  });
+  upstream.on("error", () => socket.destroy());
+  socket.on("error", () => upstream.destroy());
+});
 await Promise.all([
   new Promise((ok) => h2c.listen(0, "127.0.0.1", ok)),
   new Promise((ok) => tls.listen(0, "127.0.0.1", ok)),
+  new Promise((ok) => proxy.listen(0, "127.0.0.1", ok)),
 ]);
 process.stdout.write(
-  JSON.stringify({ h2c: h2c.address().port, tls: tls.address().port }) + "\n",
+  JSON.stringify({
+    h2c: h2c.address().port,
+    tls: tls.address().port,
+    proxy: proxy.address().port,
+  }) + "\n",
 );
 process.stdin.on("end", () => process.exit(0));
 process.stdin.resume();

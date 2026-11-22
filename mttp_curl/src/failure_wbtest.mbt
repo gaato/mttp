@@ -37,7 +37,7 @@ async test "a refused port fails in Dial, unsent" {
 ///|
 async test "an untrusted certificate fails in Dial, unsent" {
   with_server(server => {
-    let backend = CurlBackend::new()
+    let backend = CurlBackend::new(proxy=@h1client.ProxyConfig::none())
     defer backend.close()
     let e = send_error(backend, @mttp_core.Request::get(server.tls + "/hello"))
     guard e is @mttp_core.TransportError(kind=Connect, phase=Dial, ..) else {
@@ -108,7 +108,11 @@ async test "a deadline before the head is a Timeout after the request was sent" 
       ..@mttp_core.SendOptions::default(),
       timeout_ms: Some(300),
     })
-    guard e is @mttp_core.TransportError(kind=Timeout(..), phase=Head, ..) else {
+    // Before libcurl 8.10 the backend cannot tell the whole request was
+    // sent, and says Write: sent all the same.
+    let sent : @mttp_core.Phase = if knows_when_sent() { Head } else { Write }
+    guard e is @mttp_core.TransportError(kind=Timeout(..), phase~, ..) &&
+      phase == sent else {
       fail("unexpected \{e.to_repr()}")
     }
     assert_false(e.is_unsent())

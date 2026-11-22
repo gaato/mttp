@@ -14,7 +14,8 @@ scheduler in `gaato/mttp_core/driver`, and the runtime implementations in
 
 Shared checks: `@sim.check_conn`, `check_coordination_contract`,
 `check_body_stream_contract` and `check_backend_contract` run against the sim
-doubles and against gaato/mttp's adapters. Transport-specific rules (wire
+doubles and against gaato/mttp's adapters; `check_backend_contract` also runs
+against gaato/mttp_curl's `CurlBackend`. Transport-specific rules (wire
 framing, socket deadlines, TLS) are checked by each implementation's own
 suites. For the implementations in this repository,
 [TEST_COVERAGE.md](TEST_COVERAGE.md) names the tests behind each rule and

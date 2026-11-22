@@ -1,6 +1,8 @@
 import {
   "gaato/mttp_core",
   "gaato/mttp_core/h1",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp/codings",
   "gaato/mttp/trust",
   "moonbitlang/core/async",
   "moonbitlang/core/async/raw_fd",
@@ -11,7 +13,6 @@ import {
 
 import {
   "gaato/mttp",
-  "gaato/mttp/codings",
   "moonbitlang/core/async/fs",
   "moonbitlang/core/async/process",
   "moonbitlang/core/json",
@@ -19,7 +20,6 @@ import {
 
 import {
   "gaato/mttp",
-  "gaato/mttp/codings",
   "gaato/mttp_core",
   "gaato/mttp_core/sim",
   "moonbitlang/core/async",

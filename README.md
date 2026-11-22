@@ -216,7 +216,7 @@ grows around that call:
 | Connection reuse | `Client` opens a connection per request | Pooled connections per Client |
 | Typed failures | Errors raised; a 404 is an ordinary response | HTTP/decoding failures in `reply.body`; `TransportError` identifies phase and whether the request was sent |
 | Typed endpoints and OpenAPI | No | One definition gives handler, client and OpenAPI 3.1 or 3.2; structural compatibility diff |
-| Server | HTTP/1.1 on native and wasm; writes head and body to a connection | Native/wasm engine: HTTP/1.1; JS fetch/server: host-negotiated versions. HTTP/2 engine awaits ALPN in core/tls. Bounded `Request -> Response` handlers, graceful shutdown |
+| Server | HTTP/1.1 on native and wasm; writes head and body to a connection | Native/wasm engine: HTTP/1.1; JS fetch/server: host-negotiated versions. An HTTP/2 server awaits ALPN in core/tls (the client gets HTTP/2 and HTTP/3 on native from `gaato/mttp_curl`). Bounded `Request -> Response` handlers, graceful shutdown |
 | WebSockets | Separate `core/async/websocket`: client and server on native/wasm; no extensions | Client and server; opt-in permessage-deflate on native/wasm; Autobahn both directions; JS host sessions |
 | Server middleware | No policy layer | `rate_limit` with RateLimit headers, `secure_headers`, signed-cookie sessions, CORS |
 | Representations | Raw headers and bodies; no selection or file handler | Accept negotiation and 406; conditionals 304/412; static files with opt-in Range 206/416 |
@@ -239,12 +239,14 @@ The standard-library column describes the toolchain pinned in
 |---|---|
 | [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) | you are building an app or a server: it sends requests over the network with the defaults above, serves handlers, and re-exports the types, request attributes and client functions an app uses. Add `gaato/mttp_core` beside it for typed endpoints, the router, OpenAPI documents, multipart bodies, rate limits and test stubs. |
 | [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core) | you are writing a library, such as an SDK for some API: it takes a `Client` and leaves the network to the app, so it builds on every target, wasm-gc included, and its tests run without a network. |
+| [`gaato/mttp_curl`](https://mooncakes.io/docs/gaato/mttp_curl) | your app's Client should speak HTTP/2 or HTTP/3 on native: a backend over the system's libcurl, given as `@mttp.client(backend=@mttp_curl.backend())`. |
 | [`gaato/mttp_digest`](https://mooncakes.io/docs/gaato/mttp_digest) | a server asks for HTTP Digest authentication. |
 | [`gaato/mttp_schemagen`](https://mooncakes.io/docs/gaato/mttp_schemagen) | you want JSON codecs and schemas generated from annotated MoonBit types. It is a command-line generator run with `moonx`; the code it writes uses `gaato/mttp_core`. |
 
 `gaato/mttp_core` holds everything without I/O and builds on every target;
 `gaato/mttp` connects it to the network through `moonbitlang/core/async`;
-`gaato/mttp_digest` adds Digest authentication to either, and
+`gaato/mttp_curl` gives gaato/mttp's Client a second network backend, over
+libcurl; `gaato/mttp_digest` adds Digest authentication to either, and
 `gaato/mttp_schemagen` writes codecs for the schemas of either. The split follows
 Scala's [sttp](https://sttp.softwaremill.com/) family.
 
@@ -271,7 +273,8 @@ Packages to look for (paths below are under `gaato/mttp_core` unless noted):
 
 [`scripts/gates.sh full`](scripts/gates.sh) checks all supported targets,
 documentation and ledgers, plus the Workers example on real workerd, on
-pushes and pull requests. Daily canaries repeat this on latest and nightly
+pushes and pull requests; `scripts/gates.sh curl` runs `gaato/mttp_curl`,
+which links libcurl, in jobs that install it, on Linux and macOS. Daily canaries repeat this on latest and nightly
 toolchains; separate pinned-toolchain jobs run interop, sanitizers, fuzzing
 and benchmarks. Mutation testing and proofs are manual gates.
 
@@ -325,8 +328,10 @@ and benchmarks. Mutation testing and proofs are manual gates.
 ## Status
 
 The engine mttp runs on native and wasm speaks HTTP/1.1; on JS hosts the
-host's fetch and server use whatever version they negotiate. An HTTP/2
-engine awaits ALPN in core/tls.
+host's fetch and server use whatever version they negotiate. For the client
+on native, `gaato/mttp_curl` speaks HTTP/2 and HTTP/3 over the system's
+libcurl. An HTTP/2 engine of mttp's own, and HTTP/2 for its server, await
+ALPN in core/tls.
 
 The modules are at 0.x: a minor release (0.1 → 0.2) may break the API, and a
 patch release never does. Bugs and planned work are tracked in

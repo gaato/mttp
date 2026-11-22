@@ -236,4 +236,4 @@ gaato/mttp_core	gaato/mttp_core/representation	native	9
 gaato/mttp_core	gaato/mttp_core/representation	wasm	9
 gaato/mttp_core	gaato/mttp_core/representation	wasm-gc	9
 gaato/mttp-example-migrate	gaato/mttp-example-migrate	native	1
-gaato/mttp_curl	gaato/mttp_curl	native	37
+gaato/mttp_curl	gaato/mttp_curl	native	47

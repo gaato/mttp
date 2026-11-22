@@ -11,6 +11,8 @@ const CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE = 5
 priv struct Server {
   h2c : String
   tls : String
+  /// The proxy, as a proxy URL.
+  proxy : String
 }
 
 ///|
@@ -58,12 +60,19 @@ async fn with_server(
         fail("the test server printed no ports")
       }
       let ports = @json.parse(@utf8.decode_lossy(line))
-      guard ports is { "h2c": Number(h2c, ..), "tls": Number(tls, ..), .. } else {
+      guard ports
+        is {
+          "h2c": Number(h2c, ..),
+          "tls": Number(tls, ..),
+          "proxy": Number(proxy, ..),
+          ..
+        } else {
         fail("unexpected ports line: \{ports.stringify()}")
       }
       run({
         h2c: "http://127.0.0.1:\{h2c.to_int()}",
         tls: "https://localhost:\{tls.to_int()}",
+        proxy: "http://127.0.0.1:\{proxy.to_int()}",
       })
       group.return_immediately()
     })
@@ -83,11 +92,23 @@ fn h2c_backend() -> CurlBackend {
 ///|
 /// A backend trusting the test root, for the TLS listener.
 async fn tls_backend() -> CurlBackend {
-  CurlBackend::new(trust=PemFile(testdata("root.pem")))
+  CurlBackend::new(
+    trust=PemFile(testdata("root.pem")),
+    proxy=@h1client.ProxyConfig::none(),
+  )
 }
 
 ///|
 /// The whole body of `response`, at most 16 MiB.
 async fn text(response : @mttp_core.Response) -> String {
   @utf8.decode_lossy(response.body.read_all(max=16 << 20))
+}
+
+///|
+/// Whether the linked libcurl reports when a whole request was sent
+/// (libcurl 8.10 or later). Without it a failure after the connection was
+/// ready is in phase Write rather than Head, and no `Written` event is
+/// reported.
+fn knows_when_sent() -> Bool {
+  (curl_features() & 4) != 0
 }
