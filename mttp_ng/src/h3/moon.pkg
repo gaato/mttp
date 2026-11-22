@@ -2,7 +2,6 @@ import {
   "gaato/mttp/trust",
   "moonbitlang/core/debug",
   "moonbitlang/core/encoding/utf8",
-  "moonbitlang/core/async/types",
 }
 
 import {
@@ -17,7 +16,6 @@ options(
   "allow-experimental-packages": [
     "moonbitlang/core/async",
     "moonbitlang/core/async/fs",
-    "moonbitlang/core/async/types",
   ],
   "native-stub": [ "h3_stub.c" ],
   // The include flags pkg-config gives (build.js); the link flags reach

@@ -19,6 +19,7 @@ import {
 }
 
 import {
+  "gaato/mttp",
   "gaato/mttp_core",
   "gaato/mttp_core/h1client",
   "gaato/mttp_ng",

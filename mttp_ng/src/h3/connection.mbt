@@ -147,11 +147,6 @@ extern "C" fn raw_shutdown(raw : Raw, notice : Bool) -> Int32 = "mttp_ng_h3_shut
 extern "C" fn strerror(code : Int32) -> Bytes = "mttp_ng_h3_strerror"
 
 ///|
-/// `Fd` has the ABI of the OS handle, an int on Unix.
-#borrow(fd)
-extern "C" fn raw_local_addr(fd : @types.Fd) -> Bytes = "mttp_ng_h3_local_addr"
-
-///|
 /// The version number of the linked ngtcp2, as `0xMMmmpp`.
 pub extern "C" fn ngtcp2_version() -> Int32 = "mttp_ng_h3_ngtcp2_version"
 
@@ -163,13 +158,6 @@ pub extern "C" fn nghttp3_version() -> Int32 = "mttp_ng_h3_nghttp3_version"
 /// Initialises ngtcp2's OpenSSL crypto library; 0 on success. Contexts do
 /// it themselves.
 pub extern "C" fn crypto_init() -> Int32 = "mttp_ng_h3_crypto_init"
-
-///|
-/// The local address of the UDP socket `fd`, as `host:port` (IPv6 in
-/// brackets): the local side of a client connection's path.
-pub fn local_addr(fd : @types.Fd) -> String {
-  @utf8.decode_lossy(raw_local_addr(fd))
-}
 
 ///|
 /// A QUIC connection or its configuration failed: ngtcp2's or nghttp3's
@@ -308,14 +296,14 @@ fn opened(raw : Raw) -> QuicConn raise H3Error {
 
 ///|
 /// A client connection to `host` (the name sent as SNI and checked against
-/// the certificate, or an IP literal without brackets), on the path from
-/// `local_address` to `remote_address` (`host:port`, IPv6 in brackets). Its
-/// first datagrams
-/// come from the first `write`.
+/// the certificate, or an IP literal without brackets) at `remote_address`
+/// (`host:port`, IPv6 in brackets), from `local_address` (by default the
+/// any-address of the remote's family, enough for a connected UDP socket).
+/// Its first datagrams come from the first `datagrams`.
 pub fn QuicConn::client(
   quic : ClientQuic,
   host~ : String,
-  local_address~ : String,
+  local_address~ : String = "",
   remote_address~ : String,
   settings~ : H3Settings = H3Settings::default(),
 ) -> QuicConn raise H3Error {

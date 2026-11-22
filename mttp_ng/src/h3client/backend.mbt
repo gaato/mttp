@@ -325,7 +325,6 @@ async fn H3Backend::attempt(
   let conn = @h3.QuicConn::client(
     quic,
     host=target.host,
-    local_address=@h3.local_addr(udp.fd()),
     remote_address=addr.to_string(),
     settings=self.settings,
   ) catch {

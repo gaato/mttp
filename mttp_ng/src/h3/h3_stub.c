@@ -903,9 +903,17 @@ static qconn *qconn_new(int server, const int64_t *values) {
   return q;
 }
 
+// An empty `local` is the any-address of the remote's family: a client's
+// connected UDP socket has one path, and ngtcp2 needs only the same path on
+// every packet, not the address the kernel chose.
 static int set_path(qconn *q, const char *local, const char *remote) {
-  if (parse_addr(local, &q->local) != 0 || parse_addr(remote, &q->remote) != 0)
+  if (parse_addr(remote, &q->remote) != 0) return -1;
+  if (local[0] == 0) {
+    memset(&q->local, 0, sizeof q->local);
+    q->local.ss_family = q->remote.ss_family;
+  } else if (parse_addr(local, &q->local) != 0) {
     return -1;
+  }
   q->path.local.addr = (ngtcp2_sockaddr *)&q->local;
   q->path.local.addrlen = addr_len(&q->local);
   q->path.remote.addr = (ngtcp2_sockaddr *)&q->remote;
@@ -1454,23 +1462,3 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_nghttp3_version(void) {
 }
 
 MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_crypto_init(void) { return ensure_init(); }
-
-// The local address of the UDP socket `fd`, as `host:port`.
-MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_local_addr(int32_t fd) {
-  struct sockaddr_storage a;
-  socklen_t len = sizeof a;
-  char text[80] = "";
-  if (getsockname(fd, (struct sockaddr *)&a, &len) == 0) {
-    char host[64];
-    if (a.ss_family == AF_INET6) {
-      struct sockaddr_in6 *v6 = (struct sockaddr_in6 *)&a;
-      inet_ntop(AF_INET6, &v6->sin6_addr, host, sizeof host);
-      snprintf(text, sizeof text, "[%s]:%u", host, ntohs(v6->sin6_port));
-    } else {
-      struct sockaddr_in *v4 = (struct sockaddr_in *)&a;
-      inet_ntop(AF_INET, &v4->sin_addr, host, sizeof host);
-      snprintf(text, sizeof text, "%s:%u", host, ntohs(v4->sin_port));
-    }
-  }
-  return to_bytes(text);
-}

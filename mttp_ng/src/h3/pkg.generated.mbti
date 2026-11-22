@@ -3,7 +3,6 @@ package "gaato/mttp_ng/h3"
 
 import {
   "gaato/mttp/trust",
-  "moonbitlang/core/async/types",
   "moonbitlang/core/debug",
 }
 
@@ -19,8 +18,6 @@ pub const H3_REQUEST_CANCELLED : Int64 = 0x10c
 pub const H3_REQUEST_REJECTED : Int64 = 0x10b
 
 pub fn crypto_init() -> Int32
-
-pub fn local_addr(@types.Fd) -> String
 
 pub fn nghttp3_version() -> Int32
 
@@ -76,7 +73,7 @@ pub fn H3Settings::to_repr(Self) -> @debug.Repr
 pub struct QuicConn {
   // private fields
 }
-pub fn QuicConn::client(ClientQuic, host~ : String, local_address~ : String, remote_address~ : String, settings? : H3Settings) -> Self raise H3Error
+pub fn QuicConn::client(ClientQuic, host~ : String, local_address? : String, remote_address~ : String, settings? : H3Settings) -> Self raise H3Error
 pub fn QuicConn::close(Self, code? : Int64) -> Unit
 pub fn QuicConn::closed(Self) -> Bool
 pub fn QuicConn::consume(Self, Int64, Int32) -> Unit

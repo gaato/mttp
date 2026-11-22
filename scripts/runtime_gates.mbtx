@@ -60,6 +60,28 @@ let runtime_markers : Array[String] = [
 ]
 
 ///|
+/// Whether `text`, a public interface, mentions `marker`. A package-qualified
+/// marker (`@tls.`) counts only when the interface imports the runtime's
+/// package of that name: a package of this repository may have the same last
+/// segment (gaato/mttp_ng/tls), and the interface names packages by it.
+fn mentions_runtime(text : String, marker : String) -> Bool {
+  guard marker.has_prefix("@") && marker.has_suffix(".") else {
+    return text.contains(marker)
+  }
+  let name = marker[1:marker.length() - 1].to_owned()
+  let imported = [
+    "\"moonbitlang/core/async/\{name}\"",
+    "\"moonbitlang/async/\{name}\"",
+  ]
+  let imported = if name == "async" {
+    [..imported, "\"moonbitlang/core/async\"", "\"moonbitlang/async\""]
+  } else {
+    imported
+  }
+  text.contains(marker) && imported.iter().any(path => text.contains(path))
+}
+
+///|
 /// The warning moon prints for an unlisted experimental package.
 let experimental_warning : String = "depends on experimental package"
 
@@ -622,7 +644,8 @@ async fn interfaces() -> Unit {
         // Internal adapters intentionally exchange runtime handles. They are
         // inaccessible to consumers; target and all other interface checks
         // still apply, while the public boundary must expose only ports.
-        if !pkg.name.split("/").contains("internal") && text.contains(marker) {
+        if !pkg.name.split("/").contains("internal") &&
+          mentions_runtime(text, marker) {
           failures.push(
             "\{pkg.name} on \{target}: the public interface mentions \{marker}; expose a gaato/mttp_core/rt port instead",
           )

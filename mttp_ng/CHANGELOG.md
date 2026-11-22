@@ -1,0 +1,26 @@
+# Changelog
+
+All notable changes to `gaato/mttp_ng` are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). While the version is
+0.x, a minor release (0.x → 0.y) may contain breaking changes; a patch release
+never does.
+
+## [Unreleased]
+
+### Added
+
+- `backend(trust?, config?, max_connection_age_ms?, http3?)`: gaato/mttp's
+  network with HTTP/2 by ALPN on `https` origins, HTTP/1.1 where the server
+  or the request needs it, and with `http3=true` HTTP/3 first, falling back
+  to TCP for origins without it. Under `@codings.Decompress`, as
+  `@mttp.backend()`.
+- `serve(handler, addr~, cert?, key?, h2c?, h3?, ...)`: `@server.serve`
+  with HTTP/2 by ALPN, cleartext HTTP/2 by prior knowledge with `h2c`, and
+  HTTP/3 on the same port with `h3`, advertised by `Alt-Svc`.
+- The packages beneath: `tls` (TLS with ALPN over any `rt.Conn`), `h2` and
+  `h3` (HTTP/2 and QUIC with HTTP/3 without I/O, over nghttp2, ngtcp2 and
+  nghttp3), `h2client` and `h3client` (`Backend`s), `h2server` and
+  `h3server`.
+- `build.js`, run under Node when a program that imports the module
+  builds, finds the libraries with pkg-config and puts them on that
+  program's link line.
