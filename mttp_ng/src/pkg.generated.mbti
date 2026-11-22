@@ -2,15 +2,30 @@
 package "gaato/mttp_ng"
 
 import {
+  "gaato/mttp/server",
   "gaato/mttp/trust",
   "gaato/mttp_core",
   "gaato/mttp_core/h1client",
+  "gaato/mttp_core/h1server",
+  "gaato/mttp_ng/h2server",
+  "gaato/mttp_ng/h3",
+  "moonbitlang/core/debug",
 }
 
 // Values
-pub fn backend(trust? : @trust.Trust, config? : @h1client.ClientConfig, max_connection_age_ms? : Int32) -> &@mttp_core.Backend
+pub fn backend(trust? : @trust.Trust, config? : @h1client.ClientConfig, max_connection_age_ms? : Int32, http3? : Bool) -> &@mttp_core.Backend
+
+pub async fn serve(async (@mttp_core.Request) -> @mttp_core.Response noraise, addr~ : String, cert? : String, key? : String, h2c? : Bool, h3? : Bool, limits? : @h1server.ServerLimits, h2_limits? : @h2server.H2Limits, h3_settings? : @h3.H3Settings, auto_date? : Bool, on_listen? : (String) -> Unit, on_error? : (@mttp_core.TransportError) -> Unit) -> Unit raise ServeError
 
 // Errors
+#derive(@debug.Debug)
+pub suberror ServeError {
+  Config(String)
+  Listen(@server.ListenError)
+}
+pub fn ServeError::output(Self, &Logger) -> Unit
+pub fn ServeError::to_string(Self) -> String
+pub impl Show for ServeError
 
 // Types and methods
 

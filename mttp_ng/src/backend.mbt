@@ -17,16 +17,64 @@
 /// `@h1client.ProxyConfig::none()` in it turns proxies off.
 /// `max_connection_age_ms` closes connections at that age once their last
 /// request ends; zero or less prevents reuse.
+///
+/// With `http3`, `https` origins are tried over HTTP/3 (QUIC, `@h3client`)
+/// first, unless a proxy is configured for them; one whose QUIC handshake
+/// does not finish in a second goes over TCP as above, and is not tried
+/// over QUIC again for five minutes. The time QUIC took comes off the
+/// request's deadline.
 pub fn backend(
   trust~ : @trust.Trust = System,
   config? : @h1client.ClientConfig,
   max_connection_age_ms? : Int32,
+  http3~ : Bool = false,
 ) -> &@mttp_core.Backend {
   let config = config.unwrap_or_else(() => {
     ..@h1client.ClientConfig::default(),
     proxy: @h1client.ProxyConfig::from_env(@env.get_env_var),
   })
-  @codings.Decompress::new(
-    @h2client.H2Backend::new(trust~, config~, max_connection_age_ms?),
-  )
+  let h2 = @h2client.H2Backend::new(trust~, config~, max_connection_age_ms?)
+  if !http3 || config.proxy.https is Some(_) {
+    return @codings.Decompress::new(h2)
+  }
+  @codings.Decompress::new(Http3First::{
+    h3: @h3client.H3Backend::new(trust~, config~, max_connection_age_ms?),
+    h2,
+    clock: @runtime.AsyncClock::new(),
+  })
+}
+
+///|
+/// HTTP/3 where the origin speaks it, the TCP backend otherwise.
+priv struct Http3First {
+  h3 : @h3client.H3Backend
+  h2 : @h2client.H2Backend
+  clock : &@rt.Clock
+}
+
+///|
+impl @mttp_core.Backend for Http3First with fn send(self, request, options) {
+  let started = self.clock.now_unix_ms()
+  match self.h3.try_send(request, options) {
+    Some(response) => response
+    None => {
+      let options = match options.timeout_ms {
+        Some(ms) => {
+          let left = ms.to_int64() - (self.clock.now_unix_ms() - started)
+          {
+            ..options,
+            timeout_ms: Some(if left < 1L { 1 } else { left.to_int() }),
+          }
+        }
+        None => options
+      }
+      self.h2.send(request, options)
+    }
+  }
+}
+
+///|
+impl @mttp_core.Backend for Http3First with fn close(self) {
+  self.h3.close()
+  self.h2.close()
 }
