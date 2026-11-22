@@ -21,4 +21,6 @@ never does.
   `CurlBackend::libcurl_version()`.
 - Proxies from the environment by default, or a `ProxyConfig`; phase
   events for `on_phase` and the Client's `events`; the carrying protocol
-  under `@mttp_core.protocol`.
+  under `@mttp_core.protocol`; `clock`, `timer` and `coordination` ports on
+  `CurlBackend::new`. Deadlines and body bounds follow gaato/mttp_core's
+  `attempt`, as its HTTP/1 client does.

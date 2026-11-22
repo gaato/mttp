@@ -11,6 +11,9 @@ pub struct CurlBackend {
   priv proxy : @h1client.ProxyConfig
   priv max_age_s : Int32
   priv head_max : Int32
+  priv clock : &@rt.Clock
+  priv timer : &@rt.Timer
+  priv coordination : &@rt.Coordination
 }
 
 ///|
@@ -52,11 +55,17 @@ pub fn CurlBackend::supports_http3() -> Bool {
 /// `no_proxy` variables, read once here as `@mttp.backend()` reads them;
 /// `@h1client.ProxyConfig::none()` turns proxies off. `max_connection_age_ms`
 /// closes connections at that total age; zero or less prevents reuse.
+/// `clock`, `timer` and `coordination` are the ports the deadlines and the
+/// upload run on, as `@backend.AsyncBackend::new` takes them; the defaults
+/// are gaato/mttp's runtime.
 pub fn CurlBackend::new(
   http3~ : Bool = false,
   trust~ : @trust.Trust = System,
   proxy? : @h1client.ProxyConfig,
   max_connection_age_ms? : Int32,
+  clock? : &@rt.Clock,
+  timer? : &@rt.Timer,
+  coordination? : &@rt.Coordination,
 ) -> CurlBackend {
   CurlBackend::with_version(
     if http3 {
@@ -70,6 +79,9 @@ pub fn CurlBackend::new(
       @h1client.ProxyConfig::from_env(@env.get_env_var)
     }),
     max_connection_age_ms?,
+    clock?,
+    timer?,
+    coordination?,
   )
 }
 
@@ -90,7 +102,22 @@ fn CurlBackend::with_version(
   trust~ : @trust.Trust,
   proxy~ : @h1client.ProxyConfig = @h1client.ProxyConfig::none(),
   max_connection_age_ms? : Int32,
+  clock? : &@rt.Clock,
+  timer? : &@rt.Timer,
+  coordination? : &@rt.Coordination,
 ) -> CurlBackend {
+  let clock : &@rt.Clock = match clock {
+    Some(clock) => clock
+    None => @runtime.AsyncClock::new()
+  }
+  let timer : &@rt.Timer = match timer {
+    Some(timer) => timer
+    None => @runtime.ClockTimer::new(clock~)
+  }
+  let coordination : &@rt.Coordination = match coordination {
+    Some(coordination) => coordination
+    None => @runtime.RuntimeCoordination::new()
+  }
   {
     engine: engine_new_raw(),
     closed: false,
@@ -104,6 +131,9 @@ fn CurlBackend::with_version(
       Some(ms) => (ms + 999) / 1000
     },
     head_max: DEFAULT_HEAD_MAX,
+    clock,
+    timer,
+    coordination,
   }
 }
 
@@ -169,9 +199,8 @@ pub async fn CurlBackend::send(
   }
   options.validate()
   request.validate()
-  let (limit, idle_ms) = match options.body {
-    Exchange(max_bytes~) => (Some(max_bytes), None)
-    Stream(idle_ms~) => (None, idle_ms)
+  match options.body {
+    Exchange(..) | Stream(..) => ()
     @mttp_core.BodyTiming::.. =>
       raise invalid("a BodyTiming this backend does not know")
   }
@@ -182,11 +211,14 @@ pub async fn CurlBackend::send(
       detail="no time left before the request",
     )
   }
-  // One deadline for the whole attempt, from here: every wait below, the
-  // request body's reads included, goes through `bounded` with it.
-  let deadline = options.timeout_ms.map(ms => {
-    @env.now().reinterpret_as_int64() + ms.to_int64()
-  })
+  // The attempt's phases, from here: every wait below runs in one of them
+  // (gaato/mttp_core/attempt), so the deadline bounds them all and is
+  // checked whenever a phase starts.
+  let timer = @attempt.AttemptTimer::new(
+    self.clock,
+    self.timer,
+    options.timeout_ms,
+  )
   let url = @mttp_core.Url::parse(request.url) catch {
     _ => raise invalid("not a URL: \{request.url}")
   }
@@ -232,7 +264,7 @@ pub async fn CurlBackend::send(
       let stream = body.take()
       let first = {
         errdefer stream.close()
-        bounded(deadline, options.timeout_ms, Pool, () => stream.read_some())
+        timer.run(Pool, () => stream.read_some())
       }
       // A stream shorter than its declared length fails in read_some:
       // gaato/mttp_core's StreamBody counts the bytes.
@@ -331,49 +363,79 @@ pub async fn CurlBackend::send(
     (None, Some(_)) => transfer_push(xfer, b"", true)
     (None, None) => ()
   }
-  let mut upload_done = stream is None || first is None
+  let upload_done = Ref(stream is None || first is None)
   let events = PhaseEvents::{
     report: request.attributes.get(@mttp_core.on_phase),
     seen: 0,
     dialed: dialed_address(url, proxy),
     tls: url.scheme is Some("https"),
   }
+  // Rung by the exchange after every change of the transfer's state, then
+  // replaced, since a Signal is one-shot; the uploader takes the current one
+  // before it looks at the state, so no change slips between the two.
+  let changed : Ref[&@rt.Signal] = Ref(self.coordination.signal())
+  let outcome : Ref[@mttp_core.Response?] = Ref(None)
   transfer_start(xfer)
-  for ;; {
-    let state = transfer_state(xfer)
-    events.observe(state)
-    if (state & ST_HEAD) != 0 && !upload_done {
-      // A final response before the whole body was sent: the rest is never
-      // read or sent, and the unfinished transfer's connection is not used
-      // again, as gaato/mttp_core's HTTP/1 client does it.
-      transfer_abandon_upload(xfer)
-      upload_done = true
-    }
-    if (state & ST_WANTS_BODY) != 0 && !upload_done {
-      // `stream` is Some here: upload_done starts true without one.
-      let source = stream.unwrap()
-      let piece = bounded(deadline, options.timeout_ms, Write, () => {
-        source.read_some()
-      })
-      match piece {
-        Some(bytes) => transfer_push(xfer, bytes, false)
-        None => {
-          transfer_push(xfer, b"", true)
-          upload_done = true
+  // As gaato/mttp_core's HTTP/1 client uploads (h1client's duplex): the
+  // uploader is the monitor, so a final response, the end of the transfer
+  // or a failure ends the exchange and cancels an upload read that waits,
+  // and a failure of the request stream ends the exchange at once.
+  self.coordination.supervise(
+    primary=() => {
+      for ;; {
+        let state = transfer_state(xfer)
+        events.observe(state)
+        if (state & ST_HEAD) != 0 {
+          if !upload_done.val {
+            // A final response before the whole body was sent: the rest is
+            // never read or sent, and the unfinished transfer's connection
+            // is not used again.
+            transfer_abandon_upload(xfer)
+            upload_done.val = true
+          }
+          outcome.val = Some(self.response(exchange, options, timer, nobody))
+          return
+        }
+        if (state & ST_DONE) != 0 {
+          raise exchange.failure(state, self.head_max)
+        }
+        let woken = changed.val
+        changed.val = self.coordination.signal()
+        woken.notify()
+        timer.run(phase_of(state), () => exchange.wait())
+      }
+    },
+    monitor=() => {
+      guard stream is Some(source) else { return }
+      while !upload_done.val {
+        let signal = changed.val
+        let state = transfer_state(xfer)
+        if (state & (ST_HEAD | ST_DONE)) != 0 {
+          return
+        }
+        if (state & ST_WANTS_BODY) == 0 {
+          signal.wait()
+          continue
+        }
+        match source.read_some() {
+          Some(bytes) => transfer_push(xfer, bytes, false)
+          None => {
+            transfer_push(xfer, b"", true)
+            upload_done.val = true
+          }
         }
       }
-      continue
-    }
-    if (state & ST_HEAD) != 0 {
-      let response = self.response(exchange, options, limit, idle_ms, deadline)
-      returned = true
-      return response
-    }
-    if (state & ST_DONE) != 0 {
-      raise exchange.failure(state, self.head_max)
-    }
-    exchange.wait(deadline, options.timeout_ms, state)
+    },
+  )
+  guard outcome.val is Some(response) else {
+    raise @mttp_core.TransportError(
+      kind=Protocol,
+      phase=Head,
+      detail="the exchange ended without a response head",
+    )
   }
+  returned = true
+  response
 }
 
 ///|
@@ -382,9 +444,8 @@ fn CurlBackend::response(
   self : CurlBackend,
   exchange : Exchange,
   options : @mttp_core.SendOptions,
-  limit : Int32?,
-  idle_ms : Int32?,
-  deadline : Int64?,
+  timer : @attempt.AttemptTimer,
+  nobody : Bool,
 ) -> @mttp_core.Response raise @mttp_core.TransportError {
   ignore(self)
   let xfer = exchange.xfer
@@ -422,23 +483,27 @@ fn CurlBackend::response(
     30 => Some("h3")
     _ => None
   }
+  // A declared length bounds the body before any of it is read; the HTTP/1
+  // codec's reading of the head says when there is one (not for HEAD, 204
+  // or 304, and not with a conflicting or malformed Content-Length).
+  let framing = @h1.response_framing(
+    headers,
+    status~,
+    meth?=if nobody { Some(Head) } else { None },
+  ) catch {
+    _ => @h1.Framing::NoBody
+  }
+  let declared = match framing {
+    Length(n) => Some(n)
+    _ => None
+  }
   let body = CurlBody::{
     exchange,
-    limit,
-    received: 0,
-    // Exchange: the attempt's deadline covers the whole body too. Stream:
-    // it ended with the head, and each read waits at most idle_ms.
-    deadline: if limit is Some(_) {
-      deadline
-    } else {
-      None
-    },
-    timeout_ms: if limit is Some(_) {
-      options.timeout_ms
-    } else {
-      None
-    },
-    idle_ms,
+    // Exchange: the attempt's deadline goes on into the body. Stream: it
+    // ended with the head, and each read waits at most idle_ms.
+    timer: timer.for_body(options.body),
+    budget: @attempt.BodyBudget::new(@attempt.body_limit(options.body)),
+    declared,
     finished: false,
   }
   let response = @mttp_core.Response::new(
@@ -530,61 +595,20 @@ fn Exchange::release(self : Exchange) -> Unit {
 }
 
 ///|
-/// Runs `f` within the attempt's `deadline`, if there is one: past it, the
-/// error is a `Timeout` in `phase`, the phase the exchange had reached.
-/// Every wait of an attempt goes through here, so no wait escapes the
-/// deadline.
-async fn[T] bounded(
-  deadline : Int64?,
-  timeout_ms : Int32?,
-  phase : @mttp_core.Phase,
-  f : async () -> T raise @mttp_core.TransportError,
-) -> T raise @mttp_core.TransportError {
-  guard deadline is Some(at) else { return f() }
-  let left = (at - @env.now().reinterpret_as_int64())
-    .max(0L)
-    .min(2147483647L)
-    .to_int()
-  // with_timeout_opt's error type is Error; the result travels beside it so
-  // that f's TransportError comes out as it was raised.
-  let result : Ref[Result[T, @mttp_core.TransportError]?] = Ref(None)
-  let finished = @async.with_timeout_opt(left, () => {
-    result.val = Some(Ok(f()) catch { e => Err(e) })
-  }) catch {
-    _ => None
-  }
-  match (finished, result.val) {
-    (_, Some(Ok(value))) => value
-    (_, Some(Err(error))) => raise error
-    _ =>
-      raise @mttp_core.TransportError(
-        kind=Timeout(ms=timeout_ms.unwrap_or(0)),
-        phase~,
-        detail="the attempt's deadline passed",
-      )
-  }
-}
-
-///|
-/// Waits until the thread signals a change after `state` was read, within
-/// `deadline`.
+/// Waits until the thread signals a change of the transfer's state. The
+/// caller bounds the wait with its phase's timer.
 async fn Exchange::wait(
   self : Exchange,
-  deadline : Int64?,
-  timeout_ms : Int32?,
-  state : Int32,
 ) -> Unit raise @mttp_core.TransportError {
   let buf = FixedArray::make(8, b'\x00')
-  bounded(deadline, timeout_ms, phase_of(state), () => {
-    (self.fd.read_into_once(buf.mut_view()) |> ignore) catch {
-      _ =>
-        raise @mttp_core.TransportError(
-          kind=Network,
-          phase=phase_of(state),
-          detail="the transfer's notification descriptor failed",
-        )
-    }
-  })
+  (self.fd.read_into_once(buf.mut_view()) |> ignore) catch {
+    _ =>
+      raise @mttp_core.TransportError(
+        kind=Network,
+        phase=Unknown,
+        detail="the transfer's notification descriptor failed",
+      )
+  }
 }
 
 ///|
@@ -652,14 +676,14 @@ fn Exchange::failure(
 }
 
 ///|
-/// A response body read out of the transfer's buffer.
+/// A response body read out of the transfer's buffer, under its timer (each
+/// read checks the deadline when it starts, so bytes already buffered and
+/// an end already known are bounded too) and its byte budget.
 priv struct CurlBody {
   exchange : Exchange
-  limit : Int32?
-  mut received : Int32
-  deadline : Int64?
-  timeout_ms : Int32?
-  idle_ms : Int32?
+  timer : @attempt.AttemptTimer
+  budget : @attempt.BodyBudget
+  declared : Int64?
   mut finished : Bool
 }
 
@@ -668,6 +692,28 @@ impl @mttp_core.BodyStream for CurlBody with fn read_some(self) {
   if self.finished || self.exchange.released {
     return None
   }
+  // Any failure, a deadline or the bound included, ends the transfer.
+  errdefer self.exchange.release()
+  self.budget.check_declared(self.declared)
+  match self.timer.run(Body, () => self.next()) {
+    Some(bytes) => {
+      self.budget.admit(bytes.length())
+      Some(bytes)
+    }
+    None => {
+      self.finished = true
+      self.exchange.release()
+      None
+    }
+  }
+}
+
+///|
+/// The next buffered piece, waiting for the thread when there is none, or
+/// `None` at the end.
+async fn CurlBody::next(
+  self : CurlBody,
+) -> Bytes? raise @mttp_core.TransportError {
   let xfer = self.exchange.xfer
   let buf = FixedArray::make(65536, b'\x00')
   for ;; {
@@ -677,42 +723,15 @@ impl @mttp_core.BodyStream for CurlBody with fn read_some(self) {
     let state = transfer_state(xfer)
     let n = transfer_read(xfer, buf, 65536)
     if n > 0 {
-      self.received += n
-      if self.limit is Some(limit) && self.received > limit {
-        self.exchange.release()
-        raise @mttp_core.TransportError(
-          kind=TooLarge(limit~),
-          phase=Body,
-          detail="the response body is larger than \{limit} bytes",
-        )
-      }
       return Some(Bytes::from_array(buf[:n]))
     }
     if (state & ST_DONE) != 0 {
       if transfer_info(xfer, 2) == 0 {
-        self.finished = true
-        self.exchange.release()
         return None
       }
-      let error = self.exchange.failure(state, 0)
-      self.exchange.release()
-      raise error
+      raise self.exchange.failure(state, 0)
     }
-    let deadline = match (self.deadline, self.idle_ms) {
-      (Some(at), _) => Some(at)
-      (None, Some(ms)) =>
-        Some(@env.now().reinterpret_as_int64() + ms.to_int64())
-      (None, None) => None
-    }
-    errdefer self.exchange.release()
-    self.exchange.wait(
-      deadline,
-      match self.timeout_ms {
-        Some(ms) => Some(ms)
-        None => self.idle_ms
-      },
-      state,
-    )
+    self.exchange.wait()
   }
 }
 

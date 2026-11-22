@@ -5,6 +5,7 @@ import {
   "gaato/mttp/trust",
   "gaato/mttp_core",
   "gaato/mttp_core/h1client",
+  "gaato/mttp_core/rt",
 }
 
 // Values
@@ -18,7 +19,7 @@ pub struct CurlBackend {
 }
 pub fn CurlBackend::close(Self) -> Unit
 pub fn CurlBackend::libcurl_version() -> String
-pub fn CurlBackend::new(http3? : Bool, trust? : @trust.Trust, proxy? : @h1client.ProxyConfig, max_connection_age_ms? : Int32) -> Self
+pub fn CurlBackend::new(http3? : Bool, trust? : @trust.Trust, proxy? : @h1client.ProxyConfig, max_connection_age_ms? : Int32, clock? : &@rt.Clock, timer? : &@rt.Timer, coordination? : &@rt.Coordination) -> Self
 pub async fn CurlBackend::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
 pub fn CurlBackend::supports_http3() -> Bool
 pub impl @mttp_core.Backend for CurlBackend

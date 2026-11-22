@@ -69,6 +69,9 @@ The settings:
   URLs. `no_proxy` is matched by libcurl's rules.
 - `max_connection_age_ms` closes connections at that total age; zero or
   less prevents reuse.
+- `clock`, `timer` and `coordination` (on `CurlBackend::new`) are the ports
+  the deadlines and the upload run on, as `@backend.AsyncBackend::new`
+  takes them; the defaults are gaato/mttp's runtime.
 
 ## What it does
 
@@ -91,8 +94,13 @@ The settings:
   as `Protocol` instead, which the Client resends only for an idempotent
   request; 8.14.1 and later send it again.
 - A final response that arrives while a streamed request body is still
-  being sent stops the upload: the rest of the body is not read, the
-  stream is closed, and that connection is not used again.
+  being sent stops the upload, even while a read of that body is waiting:
+  the rest of the body is not read, the stream is closed, and that
+  connection is not used again.
+- `timeout_ms` bounds every wait of the attempt, the request body's reads
+  included, and with `Exchange` the whole response body: a read that
+  starts past the deadline fails with `Timeout` even when its bytes have
+  already arrived.
 - The response head is bounded at 64 KiB (`TooLarge` in phase `Head`).
   `SendOptions` bound the body and the deadlines as for any backend.
 - Redirects, retries and cookies are left to the Client: a 3xx comes back

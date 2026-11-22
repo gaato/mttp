@@ -135,3 +135,23 @@ test "the default response head bound is 64 KiB" {
   defer backend.close()
   assert_eq(backend.head_max, 65536)
 }
+
+///|
+async test "ports passed explicitly are the ones used" {
+  with_server(server => {
+    let clock = @runtime.AsyncClock::new()
+    let backend = CurlBackend::new(
+      trust=PemFile(testdata("root.pem")),
+      proxy=@h1client.ProxyConfig::none(),
+      clock~,
+      timer=@runtime.ClockTimer::new(clock~),
+      coordination=@runtime.RuntimeCoordination::new(),
+    )
+    defer backend.close()
+    let response = backend.send(
+      @mttp_core.Request::get(server.tls + "/hello"),
+      @mttp_core.SendOptions::default(),
+    )
+    assert_eq(text(response), "hello")
+  })
+}

@@ -124,3 +124,67 @@ async test "engines made and closed in a row, idle or with an exchange" {
     CurlBackend::new(proxy=@h1client.ProxyConfig::none()) |> ignore
   }
 }
+
+///|
+async test "an early answer ends a send whose upload read is stalled, with or without a deadline" {
+  with_server(server => {
+    for timeout_ms in [None, Some(5000)] {
+      let backend = tls_backend()
+      defer backend.close()
+      // The second read never returns on its own; the server answers 413
+      // without reading the body.
+      let source = Stalling::{ stall_at: 2, reads: 0, closed: 0, }
+      let response = backend.send(
+        @mttp_core.Request::post(server.tls + "/early/413").body_stream(source),
+        { ..@mttp_core.SendOptions::default(), timeout_ms, },
+      )
+      assert_eq(response.status, 413)
+      assert_eq(text(response), "early")
+      assert_eq(source.closed, 1)
+    }
+  })
+}
+
+///|
+async test "a close while an upload read is stalled ends the send with Closed" {
+  with_server(server => {
+    let backend = tls_backend()
+    let source = Stalling::{ stall_at: 2, reads: 0, closed: 0, }
+    let outcome : Ref[@mttp_core.TransportError?] = Ref(None)
+    @async.with_task_group(group => {
+      group.spawn_bg(() => {
+        outcome.val = Some(
+          send_error(
+            backend,
+            @mttp_core.Request::post(server.tls + "/echo").body_stream(source),
+          ),
+        )
+      })
+      @async.sleep(500)
+      backend.close()
+    })
+    guard outcome.val is Some(@mttp_core.TransportError(kind=Closed, ..)) else {
+      fail("the stalled send did not end with Closed")
+    }
+    assert_eq(source.closed, 1)
+  })
+}
+
+///|
+async test "an Exchange deadline holds for a body already buffered" {
+  with_server(server => {
+    let backend = tls_backend()
+    defer backend.close()
+    let response = backend.send(
+      @mttp_core.Request::get(server.tls + "/hello"),
+      { timeout_ms: Some(300), body: Exchange(max_bytes=100), },
+    )
+    // The whole body has arrived by now; reading it after the deadline must
+    // still end the exchange.
+    @async.sleep(500)
+    let e = body_error(response)
+    guard e is @mttp_core.TransportError(kind=Timeout(ms=300), phase=Body, ..) else {
+      fail("unexpected \{e}")
+    }
+  })
+}
