@@ -96,7 +96,10 @@ The settings:
 - A final response that arrives while a streamed request body is still
   being sent stops the upload, even while a read of that body is waiting:
   the rest of the body is not read, the stream is closed, and that
-  connection is not used again.
+  connection is not used again. A body of undeclared length ends where it
+  is. With a declared length, a success answer that comes first (an error
+  answer makes libcurl stop by itself) leaves libcurl before 8.14 waiting
+  for the rest, so the exchange ends at its deadline.
 - `timeout_ms` bounds every wait of the attempt, the request body's reads
   included, and with `Exchange` the whole response body: a read that
   starts past the deadline fails with `Timeout` even when its bytes have

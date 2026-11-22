@@ -188,3 +188,29 @@ async test "an Exchange deadline holds for a body already buffered" {
     }
   })
 }
+
+///|
+async test "an early success answer during a stalled upload, over HTTP/2 and HTTP/1.1" {
+  with_server(server => {
+    let h1 = CurlBackend::with_version(
+      2,
+      http3=false,
+      trust=PemFile(testdata("root.pem")),
+    )
+    let h2 = tls_backend()
+    defer {
+      h1.close()
+      h2.close()
+    }
+    for backend in [h2, h1] {
+      let source = Stalling::{ stall_at: 2, reads: 0, closed: 0, }
+      let response = backend.send(
+        @mttp_core.Request::post(server.tls + "/early/200").body_stream(source),
+        { timeout_ms: Some(5000), body: Exchange(max_bytes=100), },
+      )
+      assert_eq(response.status, 200)
+      assert_eq(text(response), "early")
+      assert_eq(source.closed, 1)
+    }
+  })
+}

@@ -99,6 +99,7 @@ struct transfer {
   int paused_write;
   int paused_read;
   int up_abandoned;
+  int up_unknown_length;  // the request body's length was not declared
   int32_t status;
   int32_t version;
   int32_t result;
@@ -323,8 +324,16 @@ static size_t on_read(char *buf, size_t size, size_t n, void *arg) {
   size_t room = size * n;
   pthread_mutex_lock(&t->lock);
   if (t->up_abandoned) {
-    // A final response came first: the rest of the body is never sent, and
-    // the transfer is removed unfinished, so its connection is not reused.
+    // A final response came first: the rest of the body is never sent.
+    // Without a declared length (chunked, or HTTP/2 and HTTP/3) the body
+    // ends here in good form, so libcurl can finish the transfer; libcurl
+    // before 8.14 would otherwise wait for the upload for ever after a
+    // success answer, which it does not stop by itself. With a declared
+    // length a short body is an error, so the upload stays paused.
+    if (t->up_unknown_length) {
+      pthread_mutex_unlock(&t->lock);
+      return 0;
+    }
     t->paused_read = 1;
     pthread_mutex_unlock(&t->lock);
     return CURL_READFUNC_PAUSE;
@@ -649,6 +658,7 @@ MOONBIT_FFI_EXPORT transfer_box *mttp_curl_transfer_new(
   t->body_cap = body_cap > 0 ? (size_t)body_cap : 65536;
   t->body = malloc(t->body_cap);
   t->up_eof = body == -2;
+  t->up_unknown_length = body == -1;
 
   char *s = dup_bytes(url);
   curl_easy_setopt(easy, CURLOPT_URL, s);
@@ -865,15 +875,23 @@ MOONBIT_FFI_EXPORT void mttp_curl_transfer_push(transfer_box *tb, moonbit_bytes_
 }
 
 // Gives up the rest of the request body: a final response arrived first.
+// The transfer is also unpaused once. libcurl stops sending by itself when
+// an error answer comes first, but before 8.14 (8.7.1 is macOS's) that
+// leaves KEEP_SEND_PAUSE set (req_set_upload_done clears only KEEP_SEND),
+// and a transfer with any send bit set never completes, so its body never
+// ends. CURLPAUSE_CONT clears the bit; if libcurl still wants to send, the
+// read callback pauses it again.
 MOONBIT_FFI_EXPORT void mttp_curl_transfer_abandon_upload(transfer_box *tb) {
   transfer *t = tb->t;
   pthread_mutex_lock(&t->lock);
   t->up_abandoned = 1;
   t->state &= ~ST_WANTS_BODY;
+  t->paused_read = 0;
   free(t->up);
   t->up = NULL;
   t->up_off = t->up_len = 0;
   pthread_mutex_unlock(&t->lock);
+  enqueue(t->e, CMD_UNPAUSE, t);
 }
 
 // Ends the transfer: the thread takes it out of the multi handle. Its
