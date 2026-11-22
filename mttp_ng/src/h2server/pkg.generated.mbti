@@ -1,0 +1,34 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_ng/h2server"
+
+import {
+  "gaato/mttp/server",
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1server",
+  "gaato/mttp_core/rt",
+  "gaato/mttp_ng/tls",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub async fn serve(async (@mttp_core.Request) -> @mttp_core.Response noraise, addr~ : String, tls? : @tls.ServerTls, h2c? : Bool, limits? : @h1server.ServerLimits, h2_limits? : H2Limits, auto_date? : Bool, on_listen? : (String) -> Unit, on_error? : (@mttp_core.TransportError) -> Unit) -> Unit raise @server.ListenError
+
+pub async fn serve_h2_conn(&@rt.Conn, async (@mttp_core.Request) -> @mttp_core.Response noraise, clock~ : &@rt.Clock, timer~ : &@rt.Timer, scheme~ : String, limits? : @h1server.ServerLimits, h2_limits? : H2Limits, auto_date? : Bool, peer? : String, on_error? : (@mttp_core.TransportError) -> Unit, stopping? : () -> Bool, activity? : (Bool) -> Unit, background? : (async () -> Unit) -> Unit) -> Unit
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct H2Limits {
+  max_concurrent_streams : Int32
+  stream_window : Int32
+  connection_window : Int32
+}
+pub fn H2Limits::default() -> Self
+pub fn H2Limits::equal(Self, Self) -> Bool
+pub fn H2Limits::not_equal(Self, Self) -> Bool
+pub fn H2Limits::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
