@@ -1,0 +1,25 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/interface/wasi/cli/terminal-output"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct TerminalOutput(Int32)
+pub fn TerminalOutput::drop(Self) -> Unit
+#deprecated
+pub fn TerminalOutput::equal(Self, Self) -> Bool
+#deprecated
+pub fn TerminalOutput::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn TerminalOutput::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

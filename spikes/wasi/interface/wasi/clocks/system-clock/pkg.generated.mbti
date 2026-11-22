@@ -1,0 +1,30 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/interface/wasi/clocks/system-clock"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn get_resolution() -> UInt64
+
+pub fn now() -> Instant
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct Instant {
+  seconds : Int64
+  nanoseconds : UInt32
+}
+#deprecated
+pub fn Instant::equal(Self, Self) -> Bool
+#deprecated
+pub fn Instant::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn Instant::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

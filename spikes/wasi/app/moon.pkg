@@ -1,0 +1,20 @@
+import {
+  "gaato/spike/async-core" @async-core,
+  "gaato/spike/interface/wasi/cli/stdout" @stdout,
+  "gaato/spike/interface/wasi/http/types" @http,
+  "gaato/spike/interface/wasi/http/client" @hclient,
+  "gaato/spike/interface/wasi/clocks/monotonic-clock" @mono,
+  "gaato/spike/interface/wasi/clocks/system-clock" @sysclock,
+  "gaato/mttp_core" @mttp,
+  "gaato/mttp_core/rt" @rt,
+  "gaato/mttp_core/sim" @sim,
+  "gaato/mttp_core/attempt" @attempt,
+  "gaato/mttp_core/client" @mclient,
+  "gaato/mttp_core/h1" @h1,
+  "moonbitlang/core/encoding/utf8" @utf8,
+  "moonbitlang/core/buffer" @buffer,
+  "moonbitlang/core/debug" @debug,
+}
+
+warnings = "-44"
+supported_targets = "wasm"

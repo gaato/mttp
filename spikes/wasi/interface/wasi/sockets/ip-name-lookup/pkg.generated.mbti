@@ -1,0 +1,33 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/interface/wasi/sockets/ip-name-lookup"
+
+import {
+  "gaato/spike/interface/wasi/sockets/types",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub async fn resolve_addresses(String) -> Result[Array[@types.IpAddress], ErrorCode]
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) enum ErrorCode {
+  AccessDenied
+  InvalidArgument
+  NameUnresolvable
+  TemporaryResolverFailure
+  PermanentResolverFailure
+  Other(String?)
+}
+#deprecated
+pub fn ErrorCode::equal(Self, Self) -> Bool
+#deprecated
+pub fn ErrorCode::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn ErrorCode::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

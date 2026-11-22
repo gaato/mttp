@@ -1,0 +1,7 @@
+import {
+  "gaato/spike/async-core" @async-core,
+  "gaato/spike/app" @app,
+}
+
+warnings = "-44"
+supported_targets = "wasm"

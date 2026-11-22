@@ -1,0 +1,17 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/interface/wasi/cli/terminal-stderr"
+
+import {
+  "gaato/spike/interface/wasi/cli/terminal-output",
+}
+
+// Values
+pub fn get_terminal_stderr() -> @terminal-output.TerminalOutput?
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

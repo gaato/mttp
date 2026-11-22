@@ -1,0 +1,5 @@
+import {
+  "gaato/spike/interface/wasi/filesystem/types" @types,
+}
+
+warnings = "-44"

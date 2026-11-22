@@ -1,0 +1,165 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/interface/wasi/sockets/types"
+
+import {
+  "gaato/spike/async-core",
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) enum ErrorCode {
+  AccessDenied
+  NotSupported
+  InvalidArgument
+  OutOfMemory
+  Timeout
+  InvalidState
+  AddressNotBindable
+  AddressInUse
+  RemoteUnreachable
+  ConnectionRefused
+  ConnectionBroken
+  ConnectionReset
+  ConnectionAborted
+  DatagramTooLarge
+  Other(String?)
+}
+#deprecated
+pub fn ErrorCode::equal(Self, Self) -> Bool
+#deprecated
+pub fn ErrorCode::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn ErrorCode::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum IpAddress {
+  Ipv4((Byte, Byte, Byte, Byte))
+  Ipv6((UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32))
+}
+#deprecated
+pub fn IpAddress::equal(Self, Self) -> Bool
+#deprecated
+pub fn IpAddress::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn IpAddress::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum IpAddressFamily {
+  IPV4
+  IPV6
+}
+#deprecated
+pub fn IpAddressFamily::equal(Self, Self) -> Bool
+pub fn IpAddressFamily::from(Int32) -> Self
+#deprecated
+pub fn IpAddressFamily::not_equal(Self, Self) -> Bool
+pub fn IpAddressFamily::ordinal(Self) -> Int32
+#deprecated
+pub fn IpAddressFamily::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum IpSocketAddress {
+  Ipv4(Ipv4SocketAddress)
+  Ipv6(Ipv6SocketAddress)
+}
+#deprecated
+pub fn IpSocketAddress::equal(Self, Self) -> Bool
+#deprecated
+pub fn IpSocketAddress::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn IpSocketAddress::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Ipv4SocketAddress {
+  port : UInt32
+  address : (Byte, Byte, Byte, Byte)
+}
+#deprecated
+pub fn Ipv4SocketAddress::equal(Self, Self) -> Bool
+#deprecated
+pub fn Ipv4SocketAddress::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn Ipv4SocketAddress::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Ipv6SocketAddress {
+  port : UInt32
+  flow_info : UInt32
+  address : (UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32, UInt32)
+  scope_id : UInt32
+}
+#deprecated
+pub fn Ipv6SocketAddress::equal(Self, Self) -> Bool
+#deprecated
+pub fn Ipv6SocketAddress::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn Ipv6SocketAddress::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct TcpSocket(Int32)
+pub fn TcpSocket::bind(Self, IpSocketAddress) -> Result[Unit, ErrorCode]
+pub async fn TcpSocket::connect(Self, IpSocketAddress) -> Result[Unit, ErrorCode]
+pub fn TcpSocket::create(IpAddressFamily) -> Result[Self, ErrorCode]
+pub fn TcpSocket::drop(Self) -> Unit
+#deprecated
+pub fn TcpSocket::equal(Self, Self) -> Bool
+pub fn TcpSocket::get_address_family(Self) -> IpAddressFamily
+pub fn TcpSocket::get_hop_limit(Self) -> Result[Byte, ErrorCode]
+pub fn TcpSocket::get_is_listening(Self) -> Bool
+pub fn TcpSocket::get_keep_alive_count(Self) -> Result[UInt32, ErrorCode]
+pub fn TcpSocket::get_keep_alive_enabled(Self) -> Result[Bool, ErrorCode]
+pub fn TcpSocket::get_keep_alive_idle_time(Self) -> Result[UInt64, ErrorCode]
+pub fn TcpSocket::get_keep_alive_interval(Self) -> Result[UInt64, ErrorCode]
+pub fn TcpSocket::get_local_address(Self) -> Result[IpSocketAddress, ErrorCode]
+pub fn TcpSocket::get_receive_buffer_size(Self) -> Result[UInt64, ErrorCode]
+pub fn TcpSocket::get_remote_address(Self) -> Result[IpSocketAddress, ErrorCode]
+pub fn TcpSocket::get_send_buffer_size(Self) -> Result[UInt64, ErrorCode]
+pub fn TcpSocket::listen(Self) -> Result[@async-core.Stream[Self], ErrorCode]
+#deprecated
+pub fn TcpSocket::not_equal(Self, Self) -> Bool
+pub fn TcpSocket::receive(Self) -> (@async-core.Stream[Byte], @async-core.Future[Result[Unit, ErrorCode]])
+pub fn TcpSocket::send(Self, @async-core.Stream[Byte]) -> @async-core.Future[Result[Unit, ErrorCode]]
+pub fn TcpSocket::set_hop_limit(Self, Byte) -> Result[Unit, ErrorCode]
+pub fn TcpSocket::set_keep_alive_count(Self, UInt32) -> Result[Unit, ErrorCode]
+pub fn TcpSocket::set_keep_alive_enabled(Self, Bool) -> Result[Unit, ErrorCode]
+pub fn TcpSocket::set_keep_alive_idle_time(Self, UInt64) -> Result[Unit, ErrorCode]
+pub fn TcpSocket::set_keep_alive_interval(Self, UInt64) -> Result[Unit, ErrorCode]
+pub fn TcpSocket::set_listen_backlog_size(Self, UInt64) -> Result[Unit, ErrorCode]
+pub fn TcpSocket::set_receive_buffer_size(Self, UInt64) -> Result[Unit, ErrorCode]
+pub fn TcpSocket::set_send_buffer_size(Self, UInt64) -> Result[Unit, ErrorCode]
+#deprecated
+pub fn TcpSocket::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct UdpSocket(Int32)
+pub fn UdpSocket::bind(Self, IpSocketAddress) -> Result[Unit, ErrorCode]
+pub fn UdpSocket::connect(Self, IpSocketAddress) -> Result[Unit, ErrorCode]
+pub fn UdpSocket::create(IpAddressFamily) -> Result[Self, ErrorCode]
+pub fn UdpSocket::disconnect(Self) -> Result[Unit, ErrorCode]
+pub fn UdpSocket::drop(Self) -> Unit
+#deprecated
+pub fn UdpSocket::equal(Self, Self) -> Bool
+pub fn UdpSocket::get_address_family(Self) -> IpAddressFamily
+pub fn UdpSocket::get_local_address(Self) -> Result[IpSocketAddress, ErrorCode]
+pub fn UdpSocket::get_receive_buffer_size(Self) -> Result[UInt64, ErrorCode]
+pub fn UdpSocket::get_remote_address(Self) -> Result[IpSocketAddress, ErrorCode]
+pub fn UdpSocket::get_send_buffer_size(Self) -> Result[UInt64, ErrorCode]
+pub fn UdpSocket::get_unicast_hop_limit(Self) -> Result[Byte, ErrorCode]
+#deprecated
+pub fn UdpSocket::not_equal(Self, Self) -> Bool
+pub async fn UdpSocket::receive(Self) -> Result[(FixedArray[Byte], IpSocketAddress), ErrorCode]
+pub async fn UdpSocket::send(Self, FixedArray[Byte], IpSocketAddress?) -> Result[Unit, ErrorCode]
+pub fn UdpSocket::set_receive_buffer_size(Self, UInt64) -> Result[Unit, ErrorCode]
+pub fn UdpSocket::set_send_buffer_size(Self, UInt64) -> Result[Unit, ErrorCode]
+pub fn UdpSocket::set_unicast_hop_limit(Self, Byte) -> Result[Unit, ErrorCode]
+#deprecated
+pub fn UdpSocket::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

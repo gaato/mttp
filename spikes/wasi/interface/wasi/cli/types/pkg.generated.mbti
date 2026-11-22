@@ -1,0 +1,30 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/interface/wasi/cli/types"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) enum ErrorCode {
+  IO
+  ILLEGAL_BYTE_SEQUENCE
+  PIPE
+}
+#deprecated
+pub fn ErrorCode::equal(Self, Self) -> Bool
+pub fn ErrorCode::from(Int32) -> Self
+#deprecated
+pub fn ErrorCode::not_equal(Self, Self) -> Bool
+pub fn ErrorCode::ordinal(Self) -> Int32
+#deprecated
+pub fn ErrorCode::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

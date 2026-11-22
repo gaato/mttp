@@ -1,0 +1,5 @@
+import {
+  "gaato/spike/interface/wasi/cli/terminal-input" @terminal-input,
+}
+
+warnings = "-44"

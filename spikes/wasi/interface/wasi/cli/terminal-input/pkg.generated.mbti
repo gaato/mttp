@@ -1,0 +1,25 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/interface/wasi/cli/terminal-input"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) struct TerminalInput(Int32)
+pub fn TerminalInput::drop(Self) -> Unit
+#deprecated
+pub fn TerminalInput::equal(Self, Self) -> Bool
+#deprecated
+pub fn TerminalInput::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn TerminalInput::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits

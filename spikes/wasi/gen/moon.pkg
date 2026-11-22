@@ -1,0 +1,22 @@
+import {
+  "gaato/spike/gen/interface/wasi/cli/run" @run,
+}
+
+warnings = "-44"
+supported_targets = "wasm"
+
+pkgtype(kind: "foreign_library")
+
+options(
+  link: {
+    "wasm": {
+      "export-memory-name": "memory",
+      "heap-start-address": 16,
+      "exports": [
+        "mbt_ffi_cabi_realloc:cabi_realloc",
+        "wasmExportAsyncRun:[callback][async-lift]wasi:cli/run@0.3.0#run",
+        "wasmExportRun:[async-lift]wasi:cli/run@0.3.0#run"
+      ],
+    },
+  },
+)

@@ -1,0 +1,17 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/gen/interface/wasi/cli/run"
+
+import {
+  "gaato/spike/async-core",
+}
+
+// Values
+pub async fn run(@async-core.TaskGroup[Unit]) -> Result[Unit, Unit]
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

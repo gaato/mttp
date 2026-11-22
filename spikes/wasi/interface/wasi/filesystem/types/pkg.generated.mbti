@@ -1,0 +1,247 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/interface/wasi/filesystem/types"
+
+import {
+  "gaato/spike/async-core",
+  "gaato/spike/interface/wasi/clocks/system-clock",
+  "moonbitlang/core/debug",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) enum Advice {
+  NORMAL
+  SEQUENTIAL
+  RANDOM
+  WILL_NEED
+  DONT_NEED
+  NO_REUSE
+}
+#deprecated
+pub fn Advice::equal(Self, Self) -> Bool
+pub fn Advice::from(Int32) -> Self
+#deprecated
+pub fn Advice::not_equal(Self, Self) -> Bool
+pub fn Advice::ordinal(Self) -> Int32
+#deprecated
+pub fn Advice::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct Descriptor(Int32)
+pub async fn Descriptor::advise(Self, UInt64, UInt64, Advice) -> Result[Unit, ErrorCode]
+pub fn Descriptor::append_via_stream(Self, @async-core.Stream[Byte]) -> @async-core.Future[Result[Unit, ErrorCode]]
+pub async fn Descriptor::create_directory_at(Self, String) -> Result[Unit, ErrorCode]
+pub fn Descriptor::drop(Self) -> Unit
+#deprecated
+pub fn Descriptor::equal(Self, Self) -> Bool
+pub async fn Descriptor::get_flags(Self) -> Result[DescriptorFlags, ErrorCode]
+pub async fn Descriptor::get_type(Self) -> Result[DescriptorType, ErrorCode]
+pub async fn Descriptor::is_same_object(Self, Self) -> Bool
+pub async fn Descriptor::link_at(Self, PathFlags, String, Self, String) -> Result[Unit, ErrorCode]
+pub async fn Descriptor::metadata_hash(Self) -> Result[MetadataHashValue, ErrorCode]
+pub async fn Descriptor::metadata_hash_at(Self, PathFlags, String) -> Result[MetadataHashValue, ErrorCode]
+#deprecated
+pub fn Descriptor::not_equal(Self, Self) -> Bool
+pub async fn Descriptor::open_at(Self, PathFlags, String, OpenFlags, DescriptorFlags) -> Result[Self, ErrorCode]
+pub fn Descriptor::read_directory(Self) -> (@async-core.Stream[DirectoryEntry], @async-core.Future[Result[Unit, ErrorCode]])
+pub fn Descriptor::read_via_stream(Self, UInt64) -> (@async-core.Stream[Byte], @async-core.Future[Result[Unit, ErrorCode]])
+pub async fn Descriptor::readlink_at(Self, String) -> Result[String, ErrorCode]
+pub async fn Descriptor::remove_directory_at(Self, String) -> Result[Unit, ErrorCode]
+pub async fn Descriptor::rename_at(Self, String, Self, String) -> Result[Unit, ErrorCode]
+pub async fn Descriptor::set_size(Self, UInt64) -> Result[Unit, ErrorCode]
+pub async fn Descriptor::set_times(Self, NewTimestamp, NewTimestamp) -> Result[Unit, ErrorCode]
+pub async fn Descriptor::set_times_at(Self, PathFlags, String, NewTimestamp, NewTimestamp) -> Result[Unit, ErrorCode]
+pub async fn Descriptor::stat(Self) -> Result[DescriptorStat, ErrorCode]
+pub async fn Descriptor::stat_at(Self, PathFlags, String) -> Result[DescriptorStat, ErrorCode]
+pub async fn Descriptor::symlink_at(Self, String, String) -> Result[Unit, ErrorCode]
+pub async fn Descriptor::sync(Self) -> Result[Unit, ErrorCode]
+pub async fn Descriptor::sync_data(Self) -> Result[Unit, ErrorCode]
+#deprecated
+pub fn Descriptor::to_repr(Self) -> @debug.Repr
+pub async fn Descriptor::unlink_file_at(Self, String) -> Result[Unit, ErrorCode]
+pub fn Descriptor::write_via_stream(Self, @async-core.Stream[Byte], UInt64) -> @async-core.Future[Result[Unit, ErrorCode]]
+
+#derive(Eq, @debug.Debug)
+pub(all) struct DescriptorFlags(Byte)
+pub fn DescriptorFlags::default() -> Self
+#deprecated
+pub fn DescriptorFlags::equal(Self, Self) -> Bool
+pub fn DescriptorFlags::is_set(Self, DescriptorFlagsFlag) -> Bool
+#deprecated
+pub fn DescriptorFlags::not_equal(Self, Self) -> Bool
+pub fn DescriptorFlags::set(Self, DescriptorFlagsFlag) -> Self
+#deprecated
+pub fn DescriptorFlags::to_repr(Self) -> @debug.Repr
+pub fn DescriptorFlags::unset(Self, DescriptorFlagsFlag) -> Self
+
+pub(all) enum DescriptorFlagsFlag {
+  READ
+  WRITE
+  FILE_INTEGRITY_SYNC
+  DATA_INTEGRITY_SYNC
+  REQUESTED_WRITE_SYNC
+  MUTATE_DIRECTORY
+}
+
+#derive(Eq, @debug.Debug)
+pub(all) struct DescriptorStat {
+  type_ : DescriptorType
+  link_count : UInt64
+  size : UInt64
+  data_access_timestamp : @system-clock.Instant?
+  data_modification_timestamp : @system-clock.Instant?
+  status_change_timestamp : @system-clock.Instant?
+}
+#deprecated
+pub fn DescriptorStat::equal(Self, Self) -> Bool
+#deprecated
+pub fn DescriptorStat::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn DescriptorStat::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum DescriptorType {
+  BlockDevice
+  CharacterDevice
+  Directory
+  Fifo
+  SymbolicLink
+  RegularFile
+  Socket
+  Other(String?)
+}
+#deprecated
+pub fn DescriptorType::equal(Self, Self) -> Bool
+#deprecated
+pub fn DescriptorType::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn DescriptorType::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct DirectoryEntry {
+  type_ : DescriptorType
+  name : String
+}
+#deprecated
+pub fn DirectoryEntry::equal(Self, Self) -> Bool
+#deprecated
+pub fn DirectoryEntry::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn DirectoryEntry::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum ErrorCode {
+  Access
+  Already
+  BadDescriptor
+  Busy
+  Deadlock
+  Quota
+  Exist
+  FileTooLarge
+  IllegalByteSequence
+  InProgress
+  Interrupted
+  Invalid
+  Io
+  IsDirectory
+  Loop
+  TooManyLinks
+  MessageSize
+  NameTooLong
+  NoDevice
+  NoEntry
+  NoLock
+  InsufficientMemory
+  InsufficientSpace
+  NotDirectory
+  NotEmpty
+  NotRecoverable
+  Unsupported
+  NoTty
+  NoSuchDevice
+  Overflow
+  NotPermitted
+  Pipe
+  ReadOnly
+  InvalidSeek
+  TextFileBusy
+  CrossDevice
+  Other(String?)
+}
+#deprecated
+pub fn ErrorCode::equal(Self, Self) -> Bool
+#deprecated
+pub fn ErrorCode::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn ErrorCode::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct MetadataHashValue {
+  lower : UInt64
+  upper : UInt64
+}
+#deprecated
+pub fn MetadataHashValue::equal(Self, Self) -> Bool
+#deprecated
+pub fn MetadataHashValue::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn MetadataHashValue::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum NewTimestamp {
+  NoChange
+  Now
+  Timestamp(@system-clock.Instant)
+}
+#deprecated
+pub fn NewTimestamp::equal(Self, Self) -> Bool
+#deprecated
+pub fn NewTimestamp::not_equal(Self, Self) -> Bool
+#deprecated
+pub fn NewTimestamp::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) struct OpenFlags(Byte)
+pub fn OpenFlags::default() -> Self
+#deprecated
+pub fn OpenFlags::equal(Self, Self) -> Bool
+pub fn OpenFlags::is_set(Self, OpenFlagsFlag) -> Bool
+#deprecated
+pub fn OpenFlags::not_equal(Self, Self) -> Bool
+pub fn OpenFlags::set(Self, OpenFlagsFlag) -> Self
+#deprecated
+pub fn OpenFlags::to_repr(Self) -> @debug.Repr
+pub fn OpenFlags::unset(Self, OpenFlagsFlag) -> Self
+
+pub(all) enum OpenFlagsFlag {
+  CREATE
+  DIRECTORY
+  EXCLUSIVE
+  TRUNCATE
+}
+
+#derive(Eq, @debug.Debug)
+pub(all) struct PathFlags(Byte)
+pub fn PathFlags::default() -> Self
+#deprecated
+pub fn PathFlags::equal(Self, Self) -> Bool
+pub fn PathFlags::is_set(Self, PathFlagsFlag) -> Bool
+#deprecated
+pub fn PathFlags::not_equal(Self, Self) -> Bool
+pub fn PathFlags::set(Self, PathFlagsFlag) -> Self
+#deprecated
+pub fn PathFlags::to_repr(Self) -> @debug.Repr
+pub fn PathFlags::unset(Self, PathFlagsFlag) -> Self
+
+pub(all) enum PathFlagsFlag {
+  SYMLINK_FOLLOW
+}
+
+// Type aliases
+
+// Traits

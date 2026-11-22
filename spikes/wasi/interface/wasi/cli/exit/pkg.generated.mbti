@@ -1,0 +1,15 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/spike/interface/wasi/cli/exit"
+
+// Values
+pub fn exit(Result[Unit, Unit]) -> Unit
+
+pub fn exit_with_code(Byte) -> Unit
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
