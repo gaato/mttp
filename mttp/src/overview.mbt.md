@@ -310,8 +310,11 @@ the network.
   call; [a side-by-side table](https://github.com/gaato/mttp#beside-moonbitlangcoreasynchttp)
   and a [migration guide](https://github.com/gaato/mttp/blob/main/MIGRATING.md)
   compare the two.
-- **HTTP/2 or HTTP/3.** On native and wasm mttp speaks HTTP/1.1. On
-  JavaScript the host's `fetch` and server choose the version.
+- **HTTP/2 or HTTP/3.** On native and wasm mttp speaks HTTP/1.1. For the
+  Client on native, [gaato/mttp_curl](https://mooncakes.io/docs/gaato/mttp_curl)
+  speaks HTTP/2 and HTTP/3 over the system's libcurl:
+  `@mttp.client(backend=@mttp_curl.backend())`. The server stays HTTP/1.1.
+  On JavaScript the host's `fetch` and server choose the version.
 - **1xx responses or trailers.** The client skips informational responses
   and does not expose trailers.
 - **wasm-gc.** This module has no runtime there; `gaato/mttp_core` builds on

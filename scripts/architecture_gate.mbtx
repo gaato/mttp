@@ -116,14 +116,20 @@ fn parse_rows(text : String) -> Array[Row] raise {
         package_imports,
         experimental,
         release,
+        gate,
       ] else {
-      fail("scripts/modules.tsv: expected 8 tab-separated cells: \{line}")
+      fail("scripts/modules.tsv: expected 9 tab-separated cells: \{line}")
     }
     guard kind is ("four-target" | "runtime" | "example" | "benchmark" | "tool") else {
       fail("scripts/modules.tsv: unknown kind \{kind}: \{line}")
     }
     guard release is ("yes" | "no") else {
       fail("scripts/modules.tsv: release must be yes or no: \{line}")
+    }
+    // The targets of scripts/gates.sh that select modules by this cell. A
+    // misspelt gate would leave its module in no gate at all.
+    guard gate is ("full" | "curl") else {
+      fail("scripts/modules.tsv: gate must be full or curl: \{line}")
     }
     rows.push({
       example: kind == "example" || kind == "benchmark",

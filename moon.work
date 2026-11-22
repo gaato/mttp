@@ -1,6 +1,7 @@
 members = [
   "mttp_core",
   "mttp",
+  "mttp_curl",
   "mttp_digest",
   "conformance",
   "conformance/cache-tests",

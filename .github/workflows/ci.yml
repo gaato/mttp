@@ -75,9 +75,53 @@ jobs:
       - name: The Workers example on workerd
         run: scripts/gates.sh workerd
 
+  # gaato/mttp_curl links the system's libcurl, which only the curl jobs
+  # install (scripts/modules.tsv puts it in the curl gate; every other job
+  # runs the full gate). Debian's libcurl has HTTP/2 and HTTP/3; the canary's
+  # curl-live job checks HTTP/3 against public servers.
+  curl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.22-124d61d05
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: libcurl's headers and library
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libcurl4-openssl-dev
+      - run: moon update
+      - name: gaato/mttp_curl's tests, coverage and resolver consumer
+        run: scripts/gates.sh curl
+
+  # The same on macOS, over the libcurl that comes with the system (HTTP/2,
+  # no HTTP/3), where the backend's notification is a pipe instead of an
+  # eventfd. The pinned moon comes from its installer, checked against the
+  # upstream checksums as the gate image's Dockerfile checks them.
+  curl-macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: The pinned moon
+        run: |
+          version=$(cat moonbit-version)
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | MOONBIT_INSTALL_VERSION="$version" bash
+          escaped=$(printf '%s' "$version" | sed 's/+/%2B/g')
+          curl -fsSL "https://cli.moonbitlang.com/binaries/$escaped/moonbit-darwin-aarch64.sha256" |
+            (cd "$HOME/.moon/bin" && shasum -a 256 -c --quiet -)
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+      - run: moon update
+      - name: gaato/mttp_curl's tests, coverage and resolver consumer
+        run: scripts/gates.sh curl
+
   gates:
     if: always()
-    needs: [tests, static, selftest, workerd]
+    needs: [tests, static, selftest, workerd, curl, curl-macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

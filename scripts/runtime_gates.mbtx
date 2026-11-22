@@ -12,14 +12,15 @@ import {
 /// Per-target build, test and public-interface gates for every module of
 /// `scripts/modules.tsv`.
 ///
-///   moon run scripts/runtime_gates.mbtx -- tests [--target T]...
+///   moon run scripts/runtime_gates.mbtx -- tests [--target T]... [--gate G]
 ///       `moon check --deny-warn`, then the tests of each package on its own
 ///       (so a native abort cannot hide the other packages), on each target
 ///       (default: all four) the package builds on. Counts are compared with
-///       `scripts/test_manifest.tsv`: a run fails when `moon test` fails,
-///       prints no "Total tests" line, reports a count the manifest does not
-///       record, or warns that a package uses an experimental package it did
-///       not list (moon does not turn that warning into an error).
+///       the rows of `scripts/test_manifest.tsv` for those packages and
+///       targets: a run fails when `moon test` fails, prints no "Total tests"
+///       line, reports a count the manifest does not record, or warns that a
+///       package uses an experimental package it did not list (moon does not
+///       turn that warning into an error).
 ///   moon run scripts/runtime_gates.mbtx -- manifest --update
 ///       runs every package on every target and rewrites counts in the
 ///       existing row order; new rows are appended in byte order, so an
@@ -32,6 +33,11 @@ import {
 ///       carry `#non_exhaustive`; no interface names a runtime type
 ///       (design, principle 9); and a package's interface is the same on
 ///       every target it builds on.
+///
+/// `--gate G` keeps the modules whose `gate` cell in `scripts/modules.tsv` is
+/// G, so a target of `scripts/gates.sh` links and runs only its own modules;
+/// without it every module counts. The manifest and the interfaces stay
+/// whole, because neither links anything.
 ///
 /// A package builds on its module's targets, narrowed by a
 /// `supported_targets = "a+b"` line in its `moon.pkg`.
@@ -141,16 +147,19 @@ async fn package_dirs(root : String) -> Array[String] {
 
 ///|
 /// Every package of every module whose directory exists, in order.
-async fn packages() -> Array[Package] {
+async fn packages(gate? : String) -> Array[Package] {
   let out : Array[Package] = []
   for raw in @fs.read_text("scripts/modules.tsv").split("\n") {
     let line = raw.trim_end().to_owned()
     if line.is_empty() || line.has_prefix("#") || line.has_prefix("dir\t") {
       continue
     }
-    guard line.split("\t").map(s => s.to_owned()).to_array()
-      is [dir, module_name, kind, targets, ..] else {
+    let cells = line.split("\t").map(s => s.to_owned()).to_array()
+    guard cells is [dir, module_name, kind, targets, .., row_gate] else {
       raise GateError("scripts/modules.tsv: malformed row: \{line}")
+    }
+    if gate is Some(wanted) && row_gate != wanted {
+      continue
     }
     let module_targets = cell_list(targets)
     let root = if kind == "example" || kind == "benchmark" {
@@ -395,14 +404,23 @@ fn report(failures : Array[String]) -> Unit raise GateError {
 }
 
 ///|
-async fn tests(targets : Array[String]) -> Unit {
-  let pkgs = packages()
+async fn tests(targets : Array[String], gate : String?) -> Unit {
+  let pkgs = packages(gate?)
+  let modules = pkgs.map(pkg => pkg.module_name)
   let expected = manifest()
   let (counts, failures, failed) = run_tests(pkgs, targets, Some(expected))
   let differences = []
   for key, count in expected {
     let target = key.split("\t").last().map(s => s.to_owned()).unwrap_or("")
-    guard targets.contains(target) else { continue }
+    let module_name = key
+      .split("\t")
+      .next()
+      .map(s => s.to_owned())
+      .unwrap_or("")
+    // Rows of the modules another gate runs belong to that gate.
+    guard targets.contains(target) && modules.contains(module_name) else {
+      continue
+    }
     match counts.get(key) {
       Some(actual) if actual == count => ()
       Some(actual) =>
@@ -630,20 +648,26 @@ async fn interfaces() -> Unit {
 
 ///|
 async fn main {
-  let usage = "usage: moon run scripts/runtime_gates.mbtx -- tests [--target T]... | manifest --update | manifest --check | interfaces"
+  let usage = "usage: moon run scripts/runtime_gates.mbtx -- tests [--target T]... [--gate G] | manifest --update | manifest --check | interfaces"
   let task : async () -> Unit = () => {
     match @env.args()[1:] {
       ["tests", .. rest] => {
         let targets = []
+        let mut gate = None
         for i = 0; i < rest.length(); i = i + 2 {
-          guard rest[i] == "--target" &&
-            i + 1 < rest.length() &&
-            all_targets.contains(rest[i + 1]) else {
-            raise GateError(usage)
+          guard i + 1 < rest.length() else { raise GateError(usage) }
+          match rest[i] {
+            "--target" if all_targets.contains(rest[i + 1]) =>
+              targets.push(rest[i + 1])
+            "--gate" if gate is None => gate = Some(rest[i + 1])
+            _ => raise GateError(usage)
           }
-          targets.push(rest[i + 1])
         }
-        tests(if targets.is_empty() { all_targets } else { targets })
+        // A gate no module names would test nothing and pass.
+        if gate is Some(name) && packages(gate=name).is_empty() {
+          raise GateError("no module of scripts/modules.tsv has gate \{name}")
+        }
+        tests(if targets.is_empty() { all_targets } else { targets }, gate)
       }
       ["manifest", "--update"] => update_manifest()
       ["manifest", "--check"] => check_manifest()

@@ -1,0 +1,49 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp_core/attempt",
+  "gaato/mttp_core/rt",
+  "gaato/mttp/codings",
+  "gaato/mttp/runtime",
+  "gaato/mttp/trust",
+  "moonbitlang/core/async/raw_fd",
+  "moonbitlang/core/async/types",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/env",
+}
+
+import {
+  "gaato/mttp",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/process",
+  "moonbitlang/core/json",
+} for "wbtest"
+
+import {
+  "gaato/mttp",
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp_core/sim",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/env",
+} for "test"
+
+supported_targets = "native"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/fs",
+    "moonbitlang/core/async/process",
+    "moonbitlang/core/async/raw_fd",
+    "moonbitlang/core/async/types",
+  ],
+  "native-stub": [ "curl_stub.c" ],
+  // The system's libcurl, and pthread for the thread that runs its multi
+  // handle.
+  link: { "native": { "cc-link-flags": "-lcurl -lpthread" } },
+)

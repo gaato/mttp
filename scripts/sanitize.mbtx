@@ -120,10 +120,17 @@ async fn sanitize(root : String) -> Unit {
       root + "/source.tar",
       "mttp_core",
       "mttp",
+      "mttp_curl",
     ]),
   )
   ignore(command("tar", ["-xf", root + "/source.tar", "-C", source]))
-  @fs.write_text(source + "/moon.work", "members = [\"mttp_core\", \"mttp\"]\n")
+  // gaato/mttp_curl links the system's libcurl, so this gate needs it
+  // installed, as the curl gate does; its stub and the thread it starts are
+  // the C this gate most needs to see.
+  @fs.write_text(
+    source + "/moon.work",
+    "members = [\"mttp_core\", \"mttp\", \"mttp_curl\"]\n",
+  )
   // ASan's slow allocation unwinder can consume the smoke test's entire
   // 200ms budget before its fast local request completes on a busy host.
   // In the disposable copy only, allow 1s: the slow handler still sleeps
@@ -177,6 +184,7 @@ async fn sanitize(root : String) -> Unit {
   )
   instrument_tree(source + "/mttp_core/src")
   instrument_tree(source + "/mttp/src")
+  instrument_tree(source + "/mttp_curl/src")
   @fs.write_text(root + "/empty.c", "")
   ignore(
     command(compiler, [
@@ -189,7 +197,7 @@ async fn sanitize(root : String) -> Unit {
   println("sanitize: \{flags}; ASAN_OPTIONS=\{vars["ASAN_OPTIONS"]}")
   // Each package has its own run so a native abort cannot hide later ones.
   let packages : Array[String] = []
-  for module_dir in ["mttp_core", "mttp"] {
+  for module_dir in ["mttp_core", "mttp", "mttp_curl"] {
     @fs.walk(
       source + "/" + module_dir + "/src",
       (dir, files) => {

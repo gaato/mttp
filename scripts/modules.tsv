@@ -36,6 +36,12 @@
 #                    an unpublished harness or app. This is separate from
 #                    kind so private modules keep their test/target rules
 #                    and resolver coverage without becoming release candidates.
+#   gate             which scripts/gates.sh target builds, links and tests the
+#                    module: full (every module, the gate CI requires) or curl
+#                    (gaato/mttp_curl, which links the system's libcurl, so
+#                    only the job that installs libcurl runs it and a libcurl
+#                    problem cannot fail the full gate). Checks that only read
+#                    text or type-check cover every module whatever its gate.
 #
 # An example or benchmark module may use anything: `*` in package_imports and
 # experimental.
@@ -59,19 +65,20 @@
 # - .mbtx front matter accepts `import` and `permission` only, so a script
 #   cannot acknowledge core/async: it runs, with the same warning on stderr.
 #   scripts/gates.sh drops exactly that warning from script output.
-dir	name	kind	targets	module_deps	package_imports	experimental	release
-mttp_core	gaato/mttp_core	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core,!moonbitlang/core/async,!moonbitlang/core/compress	gaato/mttp_core/driver	yes
-mttp	gaato/mttp	runtime	native,wasm,js	gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/mttp_core/driver	yes
-mttp_digest	gaato/mttp_digest	four-target	wasm-gc,wasm,js,native	gaato/mttp_core,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core,moonbitlang/x	test:gaato/mttp_core/driver	yes
-mttp_schemagen	gaato/mttp_schemagen	tool	wasm	moonbitlang/parser,moonbitlang/lexer	moonbitlang/core,moonbitlang/parser,moonbitlang/lexer	moonbitlang/core/async*	yes
-conformance	gaato/mttp-conformance	four-target	wasm-gc,wasm,js,native	gaato/mttp_core	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core	-	no
-examples/get	gaato/mttp-example-get	example	native,wasm,js	gaato/mttp	*	*	no
-examples/serve	gaato/mttp-example-serve	example	native	gaato/mttp	*	*	no
-examples/fetch	gaato/mttp-fetch-example	example	js	gaato/mttp	*	*	no
-examples/tour	gaato/mttp-example-tour	example	native	gaato/mttp_core,gaato/mttp	*	*	no
-examples/retries	gaato/mttp-example-retries	example	native	gaato/mttp	*	*	no
-examples/migrate	gaato/mttp-example-migrate	example	native	gaato/mttp	*	*	no
-interop	gaato/mttp-interop	example	native,js	gaato/mttp_core,gaato/mttp,moonbitlang/x	*	*	no
-benchmarks/transport	gaato/mttp-transport-bench	benchmark	native	gaato/mttp_core,gaato/mttp	*	*	no
-fuzz	gaato/mttp-fuzz	benchmark	native	gaato/mttp_core	*	*	no
-conformance/cache-tests	gaato/mttp-cache-conformance	example	native	gaato/mttp_core,gaato/mttp	*	*	no
+dir	name	kind	targets	module_deps	package_imports	experimental	release	gate
+mttp_core	gaato/mttp_core	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core,!moonbitlang/core/async,!moonbitlang/core/compress	gaato/mttp_core/driver	yes	full
+mttp	gaato/mttp	runtime	native,wasm,js	gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/mttp_core/driver	yes	full
+mttp_curl	gaato/mttp_curl	runtime	native	gaato/mttp_core,gaato/mttp	moonbitlang/core,gaato/mttp_core,gaato/mttp	moonbitlang/core/async*	yes	curl
+mttp_digest	gaato/mttp_digest	four-target	wasm-gc,wasm,js,native	gaato/mttp_core,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core,moonbitlang/x	test:gaato/mttp_core/driver	yes	full
+mttp_schemagen	gaato/mttp_schemagen	tool	wasm	moonbitlang/parser,moonbitlang/lexer	moonbitlang/core,moonbitlang/parser,moonbitlang/lexer	moonbitlang/core/async*	yes	full
+conformance	gaato/mttp-conformance	four-target	wasm-gc,wasm,js,native	gaato/mttp_core	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core	-	no	full
+examples/get	gaato/mttp-example-get	example	native,wasm,js	gaato/mttp	*	*	no	full
+examples/serve	gaato/mttp-example-serve	example	native	gaato/mttp	*	*	no	full
+examples/fetch	gaato/mttp-fetch-example	example	js	gaato/mttp	*	*	no	full
+examples/tour	gaato/mttp-example-tour	example	native	gaato/mttp_core,gaato/mttp	*	*	no	full
+examples/retries	gaato/mttp-example-retries	example	native	gaato/mttp	*	*	no	full
+examples/migrate	gaato/mttp-example-migrate	example	native	gaato/mttp	*	*	no	full
+interop	gaato/mttp-interop	example	native,js	gaato/mttp_core,gaato/mttp,moonbitlang/x	*	*	no	full
+benchmarks/transport	gaato/mttp-transport-bench	benchmark	native	gaato/mttp_core,gaato/mttp	*	*	no	full
+fuzz	gaato/mttp-fuzz	benchmark	native	gaato/mttp_core	*	*	no	full
+conformance/cache-tests	gaato/mttp-cache-conformance	example	native	gaato/mttp_core,gaato/mttp	*	*	no	full

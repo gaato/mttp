@@ -16,7 +16,12 @@ import {
 // allow-experimental-packages, and a second build without the list must warn,
 // so the opt-in a user needs is the opt-in the module documents. Nothing is
 // uploaded or published.
-// Usage: moon run scripts/resolver_gate.mbtx [-- --self-test]
+// Usage: moon run scripts/resolver_gate.mbtx [-- --self-test | --gate G]
+//
+// `--gate G` builds consumers only for the modules whose `gate` cell in
+// scripts/modules.tsv is G, since a consumer build links the module and
+// gaato/mttp_curl links the system's libcurl. Every module is still staged,
+// so a gate's modules resolve their workspace dependencies from the archives.
 
 ///|
 suberror GateError {
@@ -158,6 +163,27 @@ async fn run(program : String, args : Array[String], cwd~ : String) -> String {
     raise GateError(program + " failed in " + cwd)
   }
   output.stdout() + output.stderr()
+}
+
+///|
+/// Copies the registry index and cache, as reflinks where the file system
+/// can. `--reflink` is GNU cp's; macOS's cp (the curl gate runs there too)
+/// refuses it, and copies plainly instead.
+async fn copy_registry(
+  source : String,
+  destination : String,
+  root : String,
+) -> Unit {
+  let reflinked = @shell.Cmd(
+    "cp",
+    ["-a", "--reflink=auto", source, destination],
+    cwd=root,
+  ).output(timeout_ms=600000)
+  if reflinked.exit_code() != 0 {
+    // A copy cut short would make the second one land inside it.
+    run("rm", ["-rf", destination], cwd=root) |> ignore
+    run("cp", ["-a", source, destination], cwd=root) |> ignore
+  }
 }
 
 ///|
@@ -405,9 +431,38 @@ async fn build(consumer : String, target : String, isolated : String) -> String 
 }
 
 ///|
-async fn check() -> Unit {
+/// The `gate` cell of each row of scripts/modules.tsv, by module name.
+async fn module_gates(root : String) -> Map[String, String] {
+  let gates : Map[String, String] = Map([])
+  for raw in @fs.read_text(root + "/scripts/modules.tsv").split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line.has_prefix("dir\t") {
+      continue
+    }
+    guard line.split("\t").map(s => s.to_owned()).to_array()
+      is [_, name, .., gate] else {
+      raise GateError("scripts/modules.tsv: malformed row: " + line)
+    }
+    gates[name] = gate
+  }
+  gates
+}
+
+///|
+async fn check(gate : String?) -> Unit {
   let root = @fs.realpath(".")
   let modules = workspace_modules(root)
+  let gates = module_gates(root)
+  let chosen = match gate {
+    None => modules
+    Some(name) => modules.filter(m => gates.get(m.name) == Some(name))
+  }
+  // A gate no module names would build nothing and pass.
+  if gate is Some(name) && chosen.is_empty() {
+    raise GateError(
+      "no packaged module of scripts/modules.tsv has gate " + name,
+    )
+  }
   let home = @env.get_env_var("MOON_HOME").unwrap_or(
     @env.get_env_var("HOME").unwrap() + "/.moon",
   )
@@ -427,17 +482,12 @@ async fn check() -> Unit {
   println("resolver scratch: " + scratch)
   let isolated = scratch + "/moon"
   @fs.mkdir(isolated)
-  run(
-    "cp",
-    ["-a", "--reflink=auto", home + "/registry", isolated + "/registry"],
-    cwd=root,
-  )
-  |> ignore
+  copy_registry(home + "/registry", isolated + "/registry", root)
   @fs.symlink(target=home + "/lib", isolated + "/lib")
   for candidate in modules {
     stage(candidate, isolated + "/registry")
   }
-  for i, candidate in modules {
+  for i, candidate in chosen {
     let consumer = scratch + "/consumer-" + i.to_string()
     @fs.mkdir(consumer)
     @fs.write_text(
@@ -525,12 +575,7 @@ async fn run_with_local_module(
   println("local module scratch: " + scratch)
   let isolated = scratch + "/moon"
   @fs.mkdir(isolated)
-  run(
-    "cp",
-    ["-a", "--reflink=auto", home + "/registry", isolated + "/registry"],
-    cwd=root,
-  )
-  |> ignore
+  copy_registry(home + "/registry", isolated + "/registry", root)
   @fs.symlink(target=home + "/lib", isolated + "/lib")
   let candidate = module_at(root + "/" + module_dir, all_targets)
   stage(candidate, isolated + "/registry")
@@ -634,8 +679,14 @@ async fn main {
       } else {
         raise GateError("supported_targets is read wrongly")
       }
+    } else if @env.args()[1:] is ["--gate", name] {
+      check(Some(name))
+    } else if @env.args()[1:] is [] {
+      check(None)
     } else {
-      check()
+      raise GateError(
+        "usage: moon run scripts/resolver_gate.mbtx [-- --self-test | --gate G]",
+      )
     }
   }
   task() catch {

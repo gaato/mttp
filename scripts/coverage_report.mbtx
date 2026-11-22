@@ -19,6 +19,11 @@ import {
 // Usage, from the repository root:
 //   moon run scripts/coverage_report.mbtx                     # measure and check
 //   moon run scripts/coverage_report.mbtx -- --from-json FILE # recheck FILE only
+//   moon run scripts/coverage_report.mbtx -- --gate G         # the modules of gate G
+//
+// `--gate G` measures only the modules whose `gate` cell in scripts/modules.tsv
+// is G: measuring links every measured module, and gaato/mttp_curl links the
+// system's libcurl, which only the curl gate's job installs.
 //
 // Exit status: 0 = every uncovered line is ledgered, 1 = unexplained coverage
 // gaps or over-budget files, 2 = setup/run failure.
@@ -50,7 +55,7 @@ let extra_drivers : Array[String] = []
 let network_drivers : Array[String] = []
 
 ///|
-let usage : String = "usage: moon run scripts/coverage_report.mbtx [-- --from-json FILE]"
+let usage : String = "usage: moon run scripts/coverage_report.mbtx [-- [--gate G] [--from-json FILE]]"
 
 ///|
 /// Prints `message` on stderr and exits with `code`.
@@ -63,7 +68,7 @@ fn[T] die(code : Int32, message : String) -> T {
 /// The measured modules: the directories of scripts/modules.tsv, all of
 /// which build on native, excluding example, benchmark and standalone tool
 /// executables; compiler-host tool behavior is checked by its own Wasm tests.
-async fn read_modules() -> Array[String] {
+async fn read_modules(gate : String?) -> Array[String] {
   @fs.read_text("scripts/modules.tsv")
   .split("\n")
   .filter(line => {
@@ -72,7 +77,11 @@ async fn read_modules() -> Array[String] {
     !line.has_prefix("dir\t") &&
     !line.contains("\texample\t") &&
     !line.contains("\tbenchmark\t") &&
-    !line.contains("\ttool\t")
+    !line.contains("\ttool\t") &&
+    (match gate {
+      None => true
+      Some(name) => line.trim_end().has_suffix("\t" + name)
+    })
   })
   .map(line => line.split("\t").next().unwrap().to_owned())
   .to_array()
@@ -385,13 +394,22 @@ async fn main {
   guard @fs.exists("TEST_COVERAGE.md") && @fs.exists("moon.work") else {
     die(2, "no TEST_COVERAGE.md: run from the repository root")
   }
-  let from_json = match @env.args()[1:] {
-    [] => None
-    ["--from-json", file] => Some(file)
-    ["--from-json"] => die(2, "--from-json needs a file")
-    _ => die(2, usage)
+  let mut gate = None
+  let mut from_json = None
+  let args = @env.args()[1:]
+  for i = 0; i < args.length(); i = i + 2 {
+    guard i + 1 < args.length() else { die(2, usage) }
+    match args[i] {
+      "--gate" if gate is None => gate = Some(args[i + 1])
+      "--from-json" if from_json is None => from_json = Some(args[i + 1])
+      _ => die(2, usage)
+    }
   }
-  let modules = read_modules()
+  let modules = read_modules(gate)
+  // A gate no module names would measure nothing and pass.
+  if gate is Some(name) && modules.is_empty() {
+    die(2, "no module of scripts/modules.tsv has gate \{name}")
+  }
   if from_json is None {
     let sources = []
     for m in modules {

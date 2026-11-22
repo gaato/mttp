@@ -14,7 +14,8 @@ scheduler in `gaato/mttp_core/driver`, and the runtime implementations in
 
 Shared checks: `@sim.check_conn`, `check_coordination_contract`,
 `check_body_stream_contract` and `check_backend_contract` run against the sim
-doubles and against gaato/mttp's adapters. Transport-specific rules (wire
+doubles and against gaato/mttp's adapters; `check_backend_contract` also runs
+against gaato/mttp_curl's `CurlBackend`. Transport-specific rules (wire
 framing, socket deadlines, TLS) are checked by each implementation's own
 suites. For the implementations in this repository,
 [TEST_COVERAGE.md](TEST_COVERAGE.md) names the tests behind each rule and
@@ -156,7 +157,9 @@ message buffered before it is delivered before that failure is reported.
    stream identifier, HTTP/3's H3_REQUEST_REJECTED) is reported with kind
    `Refused` in the phase the exchange had reached, not as Pool: `is_unsent`
    counts `Refused` too, because the request may be sent again whatever its
-   method.
+   method. A backend whose engine cannot tell such a refusal from a
+   connection lost after the request went out reports it as not unsent,
+   the safe side (gaato/mttp_curl, over libcurl).
 3. **Request bodies.** The backend takes a stream body at most once and closes
    it on success, failure and cancellation. It performs the stream's first
    read before writing the request head, so a failing stream or one falsely
@@ -168,7 +171,11 @@ message buffered before it is delivered before that failure is reported.
    the caller's.
 5. **Raw bytes.** A backend moves bytes. It does not follow redirects, retry,
    store cookies or undo content codings; wrappers that do so say so in their
-   name and documentation (FollowRedirects, Cookies, Decompress). JS fetch is
+   name and documentation (FollowRedirects, Cookies, Decompress). An engine
+   that sends a request again by itself (libcurl) is let do so only for a
+   request that `is_idempotent` accepts, and its backend's documentation
+   says so; those sends are not the Client's retries and its budget does
+   not count them. JS fetch is
    the per-target exception: it always negotiates and decodes codings, buffers
    request bodies, and is called with manual redirects.
 6. **Close.** `close` is idempotent. Afterwards, new sends fail with
