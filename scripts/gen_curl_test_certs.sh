@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Writes mttp_curl/src/testdata/{root.pem,localhost.pem,localhost.key}: a test
-# root, a certificate for localhost and 127.0.0.1 under it, and that
-# certificate's key, for the local HTTPS server (Node's node:http2) of
-# gaato/mttp_curl's tests. The client trusts the root through
-# Trust::PemFile, so no test turns certificate checking off. Valid from 2020
-# to 2040, P-256 keys, issued by OpenSSL 3.4 or later (-not_before/
-# -not_after). Rerun it rather than editing the output. Each run makes new
-# keys, so the gates do not compare the committed files with a fresh run as
-# they do for scripts/gen_*.mbtx.
+# Writes {root.pem,localhost.pem,localhost.key} into mttp_curl/src/testdata
+# and mttp_ng/testdata: a test root, a certificate for localhost and 127.0.0.1
+# under it, and that certificate's key, for the local HTTPS servers of
+# gaato/mttp_curl's and gaato/mttp_ng's tests (Node's node:http2 and
+# mttp_ng's own). Both modules get the same files, so that the tests that
+# run one module's client against the other's server trust one root. The
+# clients trust the root through Trust::PemFile, so no test turns
+# certificate checking off. Valid from 2020 to 2040, P-256 keys, issued by
+# OpenSSL 3.4 or later (-not_before/-not_after). Rerun it rather than
+# editing the output. Each run makes new keys, so the gates do not compare
+# the committed files with a fresh run as they do for scripts/gen_*.mbtx.
 #
 # Bash rather than .mbtx: it only runs openssl.
 set -euo pipefail
@@ -35,9 +37,10 @@ openssl x509 -req -in "$work/leaf.csr" -CA "$work/root.pem" -CAkey "$work/root.k
   -extfile <(printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n') \
   -out "$work/leaf.pem"
 
-out=mttp_curl/src/testdata
-mkdir -p "$out"
-cp "$work/root.pem" "$out/root.pem"
-cp "$work/leaf.pem" "$out/localhost.pem"
-cp "$work/leaf.key" "$out/localhost.key"
-echo "wrote $out/root.pem, localhost.pem and localhost.key"
+for out in mttp_curl/src/testdata mttp_ng/testdata; do
+  mkdir -p "$out"
+  cp "$work/root.pem" "$out/root.pem"
+  cp "$work/leaf.pem" "$out/localhost.pem"
+  cp "$work/leaf.key" "$out/localhost.key"
+  echo "wrote $out/root.pem, localhost.pem and localhost.key"
+done

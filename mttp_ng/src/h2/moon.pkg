@@ -1,0 +1,13 @@
+import {
+  "moonbitlang/core/debug",
+  "moonbitlang/core/encoding/utf8",
+}
+
+supported_targets = "native"
+
+options(
+  "native-stub": [ "h2_stub.c" ],
+  // The include flags pkg-config gives (build.js); the link flags reach
+  // every program through build.js's link_configs.
+  link: { "native": { "stub-cc-flags": "${build.H2_CFLAGS}" } },
+)

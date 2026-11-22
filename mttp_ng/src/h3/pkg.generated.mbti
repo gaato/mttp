@@ -1,0 +1,17 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_ng/h3"
+
+// Values
+pub fn crypto_init() -> Int32
+
+pub fn nghttp3_version() -> Int32
+
+pub fn ngtcp2_version() -> Int32
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

@@ -3,7 +3,7 @@
 # which moonbit-version pins (CI uses the image of that version; canary.yml
 # runs these gates on the latest and nightly images). The modules and what
 # each may depend on are listed in scripts/modules.tsv, whose gate column
-# says which of `full` and `curl` links and tests each module. Checks that
+# says which of `full`, `curl` and `ng` links and tests each module. Checks that
 # only read text or type-check (fmt, info, interfaces, architecture, docs)
 # cover every module in both.
 #
@@ -81,6 +81,14 @@
 #                                           (scripts/resolver_smoke/). CI runs
 #                                           it as a job of its own, the one
 #                                           that installs libcurl
+#   scripts/gates.sh ng                     gaato/mttp_ng, which links the
+#                                           system's nghttp2, nghttp3, ngtcp2
+#                                           and OpenSSL 3.5 or later: its
+#                                           native tests, its coverage and
+#                                           its resolver consumer, which runs
+#                                           a program calling each library.
+#                                           CI runs it as a job of its own,
+#                                           the one that installs them
 #   scripts/gates.sh curl-live              gaato/mttp_curl's tests against
 #                                           public HTTP/2 and HTTP/3 servers
 #                                           (needs the internet and a libcurl
@@ -207,7 +215,7 @@ static_gates() {
   step script interop/run.mbtx -- --self-test
   step script scripts/runtime_gates.mbtx -- interfaces
   step script scripts/runtime_gates.mbtx -- manifest --check
-  # Measuring links the modules; the curl gate measures its own.
+  # Measuring links the modules; the curl and ng gates measure their own.
   step script scripts/coverage_report.mbtx -- --gate full
 }
 
@@ -217,6 +225,14 @@ curl_gate() {
   step script scripts/runtime_gates.mbtx -- tests --target native --gate curl
   step script scripts/coverage_report.mbtx -- --gate curl
   step script scripts/resolver_gate.mbtx -- --gate curl
+}
+
+# gaato/mttp_ng links nghttp2, nghttp3, ngtcp2 and OpenSSL, so these run
+# where they are installed and nowhere else, as the curl gate does.
+ng_gate() {
+  step script scripts/runtime_gates.mbtx -- tests --target native --gate ng
+  step script scripts/coverage_report.mbtx -- --gate ng
+  step script scripts/resolver_gate.mbtx -- --gate ng
 }
 
 # The Node tests of the fetch package run the host shims under Node, which
@@ -289,6 +305,12 @@ case "$mode" in
     [ $# = 0 ] || usage
     print_versions
     curl_gate
+    finish
+    ;;
+  ng)
+    [ $# = 0 ] || usage
+    print_versions
+    ng_gate
     finish
     ;;
   curl-live)

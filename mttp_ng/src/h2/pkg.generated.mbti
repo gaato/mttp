@@ -1,0 +1,116 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_ng/h2"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn nghttp2_version() -> Int32
+
+// Errors
+#derive(@debug.Debug)
+pub suberror H2Error {
+  H2Error(code~ : Int32, detail~ : String)
+}
+pub fn H2Error::output(Self, &Logger) -> Unit
+pub fn H2Error::to_string(Self) -> String
+pub impl Show for H2Error
+
+// Types and methods
+#derive(Eq, @debug.Debug)
+pub(all) enum BlockKind {
+  Request
+  Response
+  Trailers
+  Push
+}
+pub fn BlockKind::equal(Self, Self) -> Bool
+pub fn BlockKind::not_equal(Self, Self) -> Bool
+pub fn BlockKind::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum ErrorCode {
+  NoError
+  ProtocolError
+  InternalError
+  FlowControlError
+  SettingsTimeout
+  StreamClosed
+  FrameSizeError
+  RefusedStream
+  Cancel
+  CompressionError
+  ConnectError
+  EnhanceYourCalm
+  InadequateSecurity
+  Http11Required
+  Other(Int32)
+}
+pub fn ErrorCode::equal(Self, Self) -> Bool
+pub fn ErrorCode::from_int(Int32) -> Self
+pub fn ErrorCode::not_equal(Self, Self) -> Bool
+pub fn ErrorCode::to_int(Self) -> Int32
+pub fn ErrorCode::to_repr(Self) -> @debug.Repr
+
+#derive(Eq, @debug.Debug)
+pub(all) enum H2Event {
+  Headers(stream~ : Int32, kind~ : BlockKind, fields~ : Array[(String, String)], end_stream~ : Bool)
+  Data(stream~ : Int32, Bytes)
+  EndStream(stream~ : Int32)
+  Closed(stream~ : Int32, code~ : ErrorCode)
+  GoAway(last_stream~ : Int32, code~ : ErrorCode)
+  Settings(max_concurrent_streams~ : Int32)
+  Sent(stream~ : Int32, end_stream~ : Bool)
+  Drained(stream~ : Int32)
+  NotSent(stream~ : Int32, code~ : Int32)
+  TooLarge(stream~ : Int32)
+  PingAck
+}
+pub fn H2Event::equal(Self, Self) -> Bool
+pub fn H2Event::not_equal(Self, Self) -> Bool
+pub fn H2Event::to_repr(Self) -> @debug.Repr
+
+pub struct H2Session {
+  // private fields
+}
+pub fn H2Session::can_open(Self) -> Bool
+pub fn H2Session::client(settings? : H2Settings) -> Self raise H2Error
+pub fn H2Session::consume_connection(Self, Int32) -> Unit
+pub fn H2Session::consume_stream(Self, Int32, Int32) -> Unit
+pub fn H2Session::events(Self) -> Array[H2Event]
+pub fn H2Session::free(Self) -> Unit
+pub fn H2Session::goaway(Self, ErrorCode) -> Unit raise H2Error
+pub fn H2Session::is_server(Self) -> Bool
+pub fn H2Session::output(Self) -> Bytes
+pub fn H2Session::peer_max_streams(Self) -> Int32
+pub fn H2Session::ping(Self) -> Unit raise H2Error
+pub fn H2Session::push(Self, Int32, Bytes, end~ : Bool) -> Unit raise H2Error
+pub fn H2Session::queued(Self, Int32) -> Int32?
+pub fn H2Session::recv(Self, Bytes) -> Unit raise H2Error
+pub fn H2Session::reset(Self, Int32, ErrorCode) -> Unit raise H2Error
+pub fn H2Session::server(settings? : H2Settings) -> Self raise H2Error
+pub fn H2Session::shutdown_notice(Self) -> Unit raise H2Error
+pub fn H2Session::submit_request(Self, Array[(String, String)], body~ : Bool) -> Int32 raise H2Error
+pub fn H2Session::submit_response(Self, Int32, Array[(String, String)], body~ : Bool) -> Unit raise H2Error
+pub fn H2Session::wants_io(Self) -> Bool
+
+#derive(Eq, @debug.Debug)
+pub(all) struct H2Settings {
+  max_concurrent_streams : Int32
+  stream_window : Int32
+  connection_window : Int32
+  max_frame_size : Int32
+  header_table_size : Int32
+  max_header_list : Int32
+  low_mark : Int32
+}
+pub fn H2Settings::client() -> Self
+pub fn H2Settings::equal(Self, Self) -> Bool
+pub fn H2Settings::not_equal(Self, Self) -> Bool
+pub fn H2Settings::server() -> Self
+pub fn H2Settings::to_repr(Self) -> @debug.Repr
+
+// Type aliases
+
+// Traits
