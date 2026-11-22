@@ -10,8 +10,17 @@ import {
   "moonbitlang/core/string",
 }
 
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_ng/h3client",
+  "moonbitlang/core/async",
+} for "test"
+
 supported_targets = "native"
 
 options(
-  "allow-experimental-packages": [ "moonbitlang/core/async/socket" ],
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/socket",
+  ],
 )

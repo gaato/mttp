@@ -45,12 +45,46 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
         200,
         body=Bytes(Bytes::makei(2000000, i => (i % 251).to_byte())),
       )
+    "/stream" =>
+      @mttp_core.Response::new(
+        200,
+        body=Stream(@mttp_core.StreamBody::new({ left: 50, size: 20000, })),
+      )
+    "/early" => @mttp_core.Response::new(413, body=Bytes(b"early"))
+    "/slow" => {
+      @async.sleep(300)
+      @mttp_core.Response::new(200, body=Bytes(b"slow"))
+    }
     _ => @mttp_core.Response::new(404)
   }
 }
 
 ///|
-async fn with_server(run : async (Int32) -> Unit) -> Unit {
+/// `left` pieces of `size` bytes.
+priv struct Pieces {
+  mut left : Int32
+  size : Int32
+}
+
+///|
+impl @mttp_core.BodyStream for Pieces with fn read_some(self) {
+  if self.left == 0 {
+    return None
+  }
+  self.left -= 1
+  Some(Bytes::make(self.size, b'p'))
+}
+
+///|
+impl @mttp_core.BodyStream for Pieces with fn close(_) {
+  ()
+}
+
+///|
+async fn with_server(
+  run : async (Int32) -> Unit,
+  limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
+) -> Unit {
   let quic = @h3.ServerQuic::from_pem(
     chain=@fs.read_text(testdata("localhost.pem")),
     key=@fs.read_text(testdata("localhost.key")),
@@ -60,7 +94,7 @@ async fn with_server(run : async (Int32) -> Unit) -> Unit {
       let port : Ref[Int32?] = Ref(None)
       let listening = @cond_var.Cond()
       group.spawn_bg(() => {
-        @h3server.serve(answer, addr="127.0.0.1:0", quic~, on_listen=addr => {
+        @h3server.serve(answer, addr="127.0.0.1:0", quic~, limits~, on_listen=addr => {
           port.val = Some(
             @string.parse_int(addr[addr.rev_find(":").unwrap() + 1:]) catch {
               _ => 0
@@ -185,4 +219,62 @@ async test "curl speaks HTTP/3 to it" {
     )
     assert_eq(@utf8.decode_lossy(result.stdout_binary()), "hello 3")
   })
+}
+
+///|
+async test "streamed response bodies, early answers and the limits over HTTP/3" {
+  with_server(
+    limits={
+      ..@h1server.ServerLimits::default(),
+      max_body_bytes: 100000,
+      handler_timeout_ms: Some(100),
+    },
+    port => {
+      let b = client()
+      defer b.close()
+      let response = b.send(
+        @mttp_core.Request::get("https://localhost:\{port}/stream"),
+        defaults,
+      )
+      assert_eq(response.body.read_all(max=4 << 20).length(), 1000000)
+      // Declared too large: 413 before the handler.
+      let response = b.send(
+        @mttp_core.Request::post("https://localhost:\{port}/echo").body_bytes(
+          Bytes::make(200000, b'x'),
+        ),
+        defaults,
+      )
+      assert_eq(response.status, 413)
+      ignore(text(response))
+      // Streamed too large: the read that crosses it fails, and 413.
+      let response = b.send(
+        {
+          ..@mttp_core.Request::post("https://localhost:\{port}/echo"),
+          body: Stream(@mttp_core.StreamBody::new({ left: 20, size: 10000, })),
+        },
+        defaults,
+      )
+      assert_eq(response.status, 413)
+      ignore(text(response))
+      // An answer before the request body: the client stops sending.
+      let response = b.send(
+        {
+          ..@mttp_core.Request::post("https://localhost:\{port}/early"),
+          body: Stream(
+            @mttp_core.StreamBody::new({ left: 100000, size: 16384, }),
+          ),
+        },
+        defaults,
+      )
+      assert_eq(response.status, 413)
+      assert_eq(text(response), "early")
+      // A handler over its deadline: 504.
+      let response = b.send(
+        @mttp_core.Request::get("https://localhost:\{port}/slow"),
+        defaults,
+      )
+      assert_eq(response.status, 504)
+      ignore(text(response))
+    },
+  )
 }
