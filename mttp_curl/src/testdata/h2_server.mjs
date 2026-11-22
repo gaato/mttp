@@ -26,6 +26,10 @@
 //   /stall              200 and its head, then nothing more
 //   /session            200, the connection's number (1 for the first one)
 //   /wait/MS            200 after MS milliseconds
+//   /drop               closes the connection without an answer, on every
+//                       request after the first of its connection (the
+//                       first gets 200 "kept"), and counts the drops
+//   /drops              200, how many /drop requests were dropped so far
 //   /early/N            status N at once, without reading the request body;
 //                       over HTTP/2 the stream then ends with NO_ERROR, over
 //                       HTTP/1.1 the connection closes
@@ -48,6 +52,8 @@ for (let i = 0; i < args.length; i += 2) {
 }
 
 let sessions = 0;
+let drops = 0;
+const seen = new WeakMap();
 const ids = new WeakMap();
 const { NGHTTP2_REFUSED_STREAM, NGHTTP2_INTERNAL_ERROR, NGHTTP2_NO_ERROR } = http2.constants;
 
@@ -133,6 +139,19 @@ function answer(req, res) {
       res.end("early");
       if (stream) stream.close(http2.constants.NGHTTP2_NO_ERROR);
       return;
+    case "drop": {
+      const conn = stream ? stream.session : req.socket;
+      seen.set(conn, (seen.get(conn) || 0) + 1);
+      if (seen.get(conn) === 1) {
+        res.writeHead(200);
+        return res.end("kept");
+      }
+      drops++;
+      return stream ? stream.session.destroy() : req.socket.destroy();
+    }
+    case "drops":
+      res.writeHead(200);
+      return res.end(String(drops));
     case "wait":
       return setTimeout(() => {
         res.writeHead(200);

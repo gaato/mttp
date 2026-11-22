@@ -178,9 +178,11 @@ let curl_owned_fields : Array[String] = [
 /// One exchange: the response once its head has arrived, its body a stream
 /// that the caller reads to its end or closes. Redirects and coded bodies
 /// come back as they are, and nothing is retried here, except that libcurl
-/// itself sends a refused HTTP/2 or HTTP/3 stream again on a new
-/// connection, up to five times; when all are refused the error is
-/// `Refused`, which counts as unsent. CONNECT and protocol upgrades are
+/// itself sends a request again on a new connection, up to five times, when
+/// a reused connection gives no answer at all or the stream is refused, and
+/// no body has to be rewound. Only an idempotent request is let through
+/// twice; for any other the second attempt is stopped and the error is
+/// `Network`, not unsent. CONNECT and protocol upgrades are
 /// refused with `Invalid` before any I/O: libcurl cannot hand a connection
 /// over. A request's `@mttp_core.on_phase` callback gets the points libcurl
 /// shows (`Dialed`, `TlsDone` and `Pooled` once the connection is ready,
@@ -303,6 +305,10 @@ pub async fn CurlBackend::send(
     self.max_age_s,
     @utf8.encode(proxy.unwrap_or("")),
     @utf8.encode(self.proxy.no_proxy),
+    // libcurl may send a request again by itself; only a request that may
+    // be replayed is let through twice, as gaato/mttp_core's HTTP/1 client
+    // resends on a stale connection only what is idempotent.
+    !@mttp_core.is_idempotent(request),
   )
   if xfer_is_null(xfer) {
     stream.map(s => s.close()) |> ignore
@@ -656,13 +662,15 @@ fn Exchange::failure(
       detail~,
     )
   }
-  // libcurl sends a request again by itself when a stream is refused
-  // (REFUSED_STREAM, a stream above GOAWAY) or a reused connection dies
-  // before any answer, up to five times; then it gives up with this text.
-  // None of those attempts was processed, so the request may be sent again
-  // whatever its method (rule 2's Refused). The text is the only sign.
-  if code == 56 && text.contains("times before giving up") {
-    return @mttp_core.TransportError(kind=Refused, phase~, detail~)
+  if (state & ST_NO_RESEND) != 0 {
+    // libcurl was about to send the request again after its first attempt
+    // got no answer (a reused connection died, or the stream was refused);
+    // that attempt may have been processed, so this is not unsent.
+    return @mttp_core.TransportError(
+      kind=Network,
+      phase~,
+      detail="the connection gave no answer, and libcurl's own resend of a request that is not idempotent was stopped",
+    )
   }
   let kind : @mttp_core.Kind = match code {
     // Resolving (the proxy too), connecting, TLS and QUIC handshakes.

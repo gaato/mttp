@@ -52,6 +52,7 @@ extern "c" fn transfer_new_raw(
   max_age_s : Int32,
   proxy : Bytes,
   noproxy : Bytes,
+  no_resend : Bool,
 ) -> Xfer = "mttp_curl_transfer_new"
 
 ///|
@@ -130,3 +131,6 @@ const ST_FIRST_BYTE = 256
 
 ///|
 const ST_NEW_CONN = 512
+
+///|
+const ST_NO_RESEND = 1024

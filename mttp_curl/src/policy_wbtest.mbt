@@ -216,15 +216,30 @@ async test "requests past SETTINGS_MAX_CONCURRENT_STREAMS still complete" {
       @async.with_task_group(group => {
         for _ in 0..<4 {
           group.spawn_bg(() => {
+            // A POST past the limit is refused and sent again by libcurl.
+            // Before 8.2 the backend cannot tell that a reused connection
+            // was HTTP/2 (no CURLINFO_CONN_ID), so it stops that resend,
+            // and the POST fails as possibly sent instead.
             let response = backend.send(
               @mttp_core.Request::post(server.tls + "/wait/200"),
               @mttp_core.SendOptions::default(),
-            )
+            ) catch {
+              @mttp_core.TransportError(kind=Network, ..) as e if curl_version_num() <
+                0x080200 &&
+                !e.is_unsent() => {
+                done.push("stopped")
+                return
+              }
+              e => raise e
+            }
             done.push(text(response))
           })
         }
       })
-      assert_eq(done, ["waited", "waited", "waited", "waited"])
+      assert_eq(done.length(), 4)
+      if curl_version_num() >= 0x080200 {
+        assert_eq(done, ["waited", "waited", "waited", "waited"])
+      }
     },
     max_streams=1,
   )

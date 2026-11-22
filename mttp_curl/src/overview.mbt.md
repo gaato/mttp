@@ -86,13 +86,19 @@ The settings:
   connecting, TLS and the proxy's tunnel come before it (phase `Dial`); a
   refused tunnel is `Proxy(status)`. The Client may send those again
   whatever the method.
-- libcurl itself sends a request again on a new connection when the server
-  refuses its HTTP/2 or HTTP/3 stream, or names it above a GOAWAY, up to
-  five times, and the Client's retry budget does not count those. When all
-  five are refused, the error is `Refused`, which also counts as unsent.
-  libcurl 7.88.1 does not send a stream above a GOAWAY again and fails it
-  as `Protocol` instead, which the Client resends only for an idempotent
-  request; 8.14.1 and later send it again.
+- libcurl itself sends a request again on a new connection, up to five
+  times, when an attempt got no answer at all: when the server refuses its
+  HTTP/2 or HTTP/3 stream or names it above a GOAWAY, which those
+  protocols say it did not process, or when a reused connection died
+  first. The Client's retry budget does not count these. A request that is
+  not idempotent goes again only after such a refusal: after a reused
+  HTTP/1.1 connection died the server may have processed it, so the backend
+  stops libcurl's resend and the error is `Network`, not unsent. Before
+  libcurl 8.2 a reused HTTP/2 connection that has not answered yet cannot be
+  told from an HTTP/1.1 one, and its resends are stopped too. When all five
+  attempts fail the error is `Network`. libcurl 7.88.1 does not send a
+  stream above a GOAWAY again and fails it as `Protocol`; 8.14.1 and later
+  do.
 - A final response that arrives while a streamed request body is still
   being sent stops the upload, even while a read of that body is waiting:
   the rest of the body is not read, the stream is closed, and that
