@@ -1,0 +1,20 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_ng/h3server"
+
+import {
+  "gaato/mttp/server",
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1server",
+  "gaato/mttp_ng/h3",
+}
+
+// Values
+pub async fn serve(async (@mttp_core.Request) -> @mttp_core.Response noraise, addr~ : String, quic~ : @h3.ServerQuic, limits? : @h1server.ServerLimits, settings? : @h3.H3Settings, auto_date? : Bool, on_listen? : (String) -> Unit, on_error? : (@mttp_core.TransportError) -> Unit) -> Unit raise @server.ListenError
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

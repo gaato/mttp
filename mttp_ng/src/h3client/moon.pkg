@@ -1,0 +1,17 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/attempt",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp_core/rt",
+  "gaato/mttp/runtime",
+  "gaato/mttp/trust",
+  "gaato/mttp_ng/h3",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/string",
+}
+
+supported_targets = "native"
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async/socket" ],
+)

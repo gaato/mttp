@@ -3,6 +3,7 @@ package "gaato/mttp_ng/h3"
 
 import {
   "gaato/mttp/trust",
+  "moonbitlang/core/async/types",
   "moonbitlang/core/debug",
 }
 
@@ -19,7 +20,7 @@ pub const H3_REQUEST_REJECTED : Int64 = 0x10b
 
 pub fn crypto_init() -> Int32
 
-pub fn local_addr(Int32) -> String
+pub fn local_addr(@types.Fd) -> String
 
 pub fn nghttp3_version() -> Int32
 

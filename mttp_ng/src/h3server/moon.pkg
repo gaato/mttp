@@ -1,0 +1,37 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1server",
+  "gaato/mttp_core/rt",
+  "gaato/mttp/runtime",
+  "gaato/mttp/server",
+  "gaato/mttp_ng/h3",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/cond_var",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/string",
+}
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_ng/h3",
+  "gaato/mttp_ng/h3client",
+  "gaato/mttp_ng/h3server",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/cond_var",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/process",
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/string",
+} for "test"
+
+supported_targets = "native"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/cond_var",
+    "moonbitlang/core/async/fs",
+    "moonbitlang/core/async/process",
+    "moonbitlang/core/async/socket",
+  ],
+)

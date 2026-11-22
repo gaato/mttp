@@ -147,7 +147,9 @@ extern "C" fn raw_shutdown(raw : Raw, notice : Bool) -> Int32 = "mttp_ng_h3_shut
 extern "C" fn strerror(code : Int32) -> Bytes = "mttp_ng_h3_strerror"
 
 ///|
-extern "C" fn raw_local_addr(fd : Int32) -> Bytes = "mttp_ng_h3_local_addr"
+/// `Fd` has the ABI of the OS handle, an int on Unix.
+#borrow(fd)
+extern "C" fn raw_local_addr(fd : @types.Fd) -> Bytes = "mttp_ng_h3_local_addr"
 
 ///|
 /// The version number of the linked ngtcp2, as `0xMMmmpp`.
@@ -165,7 +167,7 @@ pub extern "C" fn crypto_init() -> Int32 = "mttp_ng_h3_crypto_init"
 ///|
 /// The local address of the UDP socket `fd`, as `host:port` (IPv6 in
 /// brackets): the local side of a client connection's path.
-pub fn local_addr(fd : Int32) -> String {
+pub fn local_addr(fd : @types.Fd) -> String {
   @utf8.decode_lossy(raw_local_addr(fd))
 }
 
@@ -307,7 +309,8 @@ fn opened(raw : Raw) -> QuicConn raise H3Error {
 ///|
 /// A client connection to `host` (the name sent as SNI and checked against
 /// the certificate, or an IP literal without brackets), on the path from
-/// `local_address` to `remote_address` (`host:port`, IPv6 in brackets). Its first datagrams
+/// `local_address` to `remote_address` (`host:port`, IPv6 in brackets). Its
+/// first datagrams
 /// come from the first `write`.
 pub fn QuicConn::client(
   quic : ClientQuic,
