@@ -28,3 +28,10 @@ import {
   "gaato/mttp_core@0.3.2",
   "gaato/mttp@0.5.2",
 }
+
+options(
+  // build.js puts libcurl on the link line of every program that links this
+  // module; moon.pkg's link flags would reach this module's own tests only.
+  // It runs under Node when the module is built.
+  "--moonbit-unstable-prebuild": "build.js",
+)

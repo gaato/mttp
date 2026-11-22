@@ -1,0 +1,5 @@
+import {
+  "gaato/mttp_curl",
+}
+
+supported_targets = "native"

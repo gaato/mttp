@@ -376,11 +376,12 @@ async fn workspace_modules(root : String) -> Array[Module] {
 ///|
 /// The consumer's moon.pkg on `target`: every public package of `candidate`
 /// that builds there, and the experimental ones among them acknowledged when
-/// `acknowledge` is true.
+/// `acknowledge` is true; with `smoke`, also the consumer's `smoke` package.
 fn consumer_pkg(
   candidate : Module,
   target~ : String,
   acknowledge~ : Bool,
+  smoke~ : Bool,
 ) -> String {
   let full = (pkg : String) => {
     if pkg.is_empty() {
@@ -393,6 +394,11 @@ fn consumer_pkg(
     .filter(pkg => on_target(candidate, pkg, target))
     .mapi((index, pkg) => "  \"" + full(pkg) + "\" @p" + index.to_string() + ",")
     .join("\n")
+  let imports = if smoke {
+    imports + "\n  \"resolver/consumer/smoke\","
+  } else {
+    imports
+  }
   let experimental = experimental_on(candidate, target)
   let allow = if acknowledge && !experimental.is_empty() {
     ", \"allow-experimental-packages\": [" +
@@ -428,6 +434,27 @@ async fn build(consumer : String, target : String, isolated : String) -> String 
     raise GateError("consumer build failed on " + target + ": " + consumer)
   }
   log
+}
+
+///|
+/// Runs the consumer, which must print the smoke line: a program that calls
+/// into a module with C stubs links that module's system libraries.
+async fn run_consumer(
+  consumer : String,
+  target : String,
+  isolated : String,
+) -> Unit {
+  let output = @shell.Cmd(
+    "moon",
+    ["run", "--target", target, "--deny-warn", "."],
+    cwd=consumer,
+    env={ "MOON_HOME": isolated },
+  ).output(timeout_ms=600000)
+  let log = output.stdout() + output.stderr()
+  if output.exit_code() != 0 || !output.stdout().contains("resolver smoke: OK") {
+    println(log)
+    raise GateError("consumer run failed on " + target + ": " + consumer)
+  }
 }
 
 ///|
@@ -500,17 +527,33 @@ async fn check(gate : String?) -> Unit {
       candidate.version +
       "\",\n}\n",
     )
+    // Importing a package does not link its C stubs' libraries unless the
+    // program calls into them, so a module whose packages bind a system
+    // library keeps a package under scripts/resolver_smoke/<dir> with a
+    // `pub fn run() -> Unit` that does; the consumer calls it and runs.
+    let smoke_dir = root +
+      "/scripts/resolver_smoke/" +
+      candidate.dir[root.length() + 1:].to_owned()
+    let smoke = @fs.exists(smoke_dir)
+    if smoke {
+      copy_module(smoke_dir, consumer + "/smoke")
+    }
     @fs.write_text(
       consumer + "/main.mbt",
-      "///|\nfn main {\n  println(\"resolver smoke: OK\")\n}\n",
+      "///|\nfn main {\n" +
+      (if smoke { "  @smoke.run()\n" } else { "" }) +
+      "  println(\"resolver smoke: OK\")\n}\n",
     )
     for target in candidate.targets {
       println("+ packaged " + candidate.name + " on " + target)
       @fs.write_text(
         consumer + "/moon.pkg",
-        consumer_pkg(candidate, target~, acknowledge=true),
+        consumer_pkg(candidate, target~, acknowledge=true, smoke~),
       )
       let log = build(consumer, target, isolated)
+      if smoke {
+        run_consumer(consumer, target, isolated)
+      }
       if log.contains("depends on experimental package") {
         println(log)
         raise GateError(
@@ -522,7 +565,7 @@ async fn check(gate : String?) -> Unit {
       if !experimental_on(candidate, target).is_empty() {
         @fs.write_text(
           consumer + "/moon.pkg",
-          consumer_pkg(candidate, target~, acknowledge=false),
+          consumer_pkg(candidate, target~, acknowledge=false, smoke~),
         )
         if !build(consumer, target, isolated).contains(
             "depends on experimental package",
@@ -654,8 +697,18 @@ async fn main {
         targets: ["native", "wasm", "js"],
         package_targets: { "native_only": ["native"] },
       }
-      let native = consumer_pkg(narrowed, target="native", acknowledge=true)
-      let wasm = consumer_pkg(narrowed, target="wasm", acknowledge=true)
+      let native = consumer_pkg(
+        narrowed,
+        target="native",
+        acknowledge=true,
+        smoke=false,
+      )
+      let wasm = consumer_pkg(
+        narrowed,
+        target="wasm",
+        acknowledge=true,
+        smoke=false,
+      )
       if !native.contains("\"probe/library/native_only\" @p1") ||
         !native.contains(
           "\"allow-experimental-packages\": [\"probe/library/native_only\"]",
