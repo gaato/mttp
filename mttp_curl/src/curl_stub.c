@@ -17,10 +17,14 @@
 // a reused descriptor number is never written, and a pipe's write never
 // raises SIGPIPE, since its read end stays open.
 //
-// A transfer is freed by the thread when it handles the transfer's remove
-// command, which MoonBit queues exactly once and never touches the transfer
-// afterwards. An engine is freed by its thread once shutdown was asked for
-// and every transfer has been removed.
+// Lifetimes are reference counts, so that no side frees memory another
+// still points at. An engine is held by MoonBit's CurlBackend (through a
+// GC-managed box whose finalizer lets go), by each transfer made on it and
+// by its thread until the thread ends; a transfer is held by MoonBit's
+// Exchange (a box likewise), by the multi handle while it is added, and by
+// each queued command naming it. Whoever lets go last frees. After
+// shutdown the engine refuses new transfers itself, so MoonBit's closed
+// flag is a shortcut, not what keeps memory safe.
 //
 // libcurl 7.85 or later: CURLOPT_PROTOCOLS_STR (7.85), CURLOPT_PREREQFUNCTION
 // and CURLOPT_MAXLIFETIME_CONN (7.80). CURLINFO_POSTTRANSFER_TIME_T (8.10)
@@ -71,10 +75,12 @@ typedef struct cmd {
 typedef struct engine {
   CURLM *multi;
   pthread_mutex_t qlock;
+  // Under qlock.
   cmd *qhead, *qtail;
-  int shutdown;   // under qlock
-  int live;       // transfers not yet removed, under qlock
-  transfer *added; // in the multi handle; the thread's own list
+  int shutdown;     // no new transfers; the thread ends when idle
+  int thread_done;  // the thread has ended and reads no more commands
+  int refs;
+  transfer *added;  // in the multi handle; the thread's own list
 } engine;
 
 struct transfer {
@@ -87,6 +93,8 @@ struct transfer {
   transfer *prev, *next;  // place in the engine's list
   pthread_mutex_t lock;
   // Under lock from here on.
+  int refs;
+  int released;   // MoonBit asked for the transfer to end
   int state;
   int paused_write;
   int paused_read;
@@ -152,12 +160,77 @@ static void close_notify(transfer *t) {
   if (t->notify_w != t->notify_r) close(t->notify_w);
 }
 
+static void engine_ref(engine *e) {
+  pthread_mutex_lock(&e->qlock);
+  e->refs++;
+  pthread_mutex_unlock(&e->qlock);
+}
+
+static void engine_unref(engine *e) {
+  pthread_mutex_lock(&e->qlock);
+  int left = --e->refs;
+  pthread_mutex_unlock(&e->qlock);
+  if (left == 0) {
+    // The thread held a reference until it ended, so nothing drives the
+    // multi handle any more, and no transfer is in it.
+    curl_multi_cleanup(e->multi);
+    pthread_mutex_destroy(&e->qlock);
+    free(e);
+  }
+}
+
+static void transfer_ref(transfer *t) {
+  pthread_mutex_lock(&t->lock);
+  t->refs++;
+  pthread_mutex_unlock(&t->lock);
+}
+
+static void transfer_unref(transfer *t) {
+  pthread_mutex_lock(&t->lock);
+  int left = --t->refs;
+  pthread_mutex_unlock(&t->lock);
+  if (left == 0) {
+    // Not in the multi handle (that holds a reference), so no callback runs.
+    engine *e = t->e;
+    curl_easy_cleanup(t->easy);
+    curl_slist_free_all(t->headers);
+    close_notify(t);
+    free(t->head);
+    free(t->body);
+    free(t->up);
+    pthread_mutex_destroy(&t->lock);
+    free(t);
+    engine_unref(e);
+  }
+}
+
+static void mark_closed(transfer *t) {
+  pthread_mutex_lock(&t->lock);
+  t->state |= ST_DONE | ST_CLOSED;
+  t->result = CURLE_ABORTED_BY_CALLBACK;
+  pthread_mutex_unlock(&t->lock);
+  notify(t);
+}
+
+// Queues a command for the thread. The caller holds a reference to `e`,
+// and the command one to `t`, so neither is freed under it. Once the thread
+// has ended nobody reads the queue: a transfer it would have added ends as
+// Closed at once, and the other commands have nothing left to act on.
 static void enqueue(engine *e, cmd_kind kind, transfer *t) {
+  if (t) transfer_ref(t);
+  pthread_mutex_lock(&e->qlock);
+  if (e->thread_done) {
+    pthread_mutex_unlock(&e->qlock);
+    if (t) {
+      if (kind == CMD_ADD) mark_closed(t);
+      transfer_unref(t);
+    }
+    return;
+  }
   cmd *c = malloc(sizeof *c);
   c->kind = kind;
   c->t = t;
   c->next = NULL;
-  pthread_mutex_lock(&e->qlock);
   if (e->qtail) e->qtail->next = c; else e->qhead = c;
   e->qtail = c;
   pthread_mutex_unlock(&e->qlock);
@@ -329,6 +402,7 @@ static int on_progress(void *arg, curl_off_t dltotal, curl_off_t dlnow,
 
 static void link_added(transfer *t) {
   engine *e = t->e;
+  transfer_ref(t);
   t->added = 1;
   t->prev = NULL;
   t->next = e->added;
@@ -344,22 +418,7 @@ static void unlink_added(transfer *t) {
   if (t->next) t->next->prev = t->prev;
   t->prev = t->next = NULL;
   t->added = 0;
-}
-
-static void free_transfer(transfer *t) {
-  engine *e = t->e;
-  unlink_added(t);
-  curl_easy_cleanup(t->easy);
-  curl_slist_free_all(t->headers);
-  close_notify(t);
-  free(t->head);
-  free(t->body);
-  free(t->up);
-  pthread_mutex_destroy(&t->lock);
-  free(t);
-  pthread_mutex_lock(&e->qlock);
-  e->live--;
-  pthread_mutex_unlock(&e->qlock);
+  transfer_unref(t);  // the multi handle's reference: last, it may free t
 }
 
 static void finish(transfer *t, int32_t result, int closed) {
@@ -378,8 +437,8 @@ static void finish(transfer *t, int32_t result, int closed) {
   t->result = result;
   t->connect_code = (int32_t)connect_code;
   pthread_mutex_unlock(&t->lock);
-  unlink_added(t);
   notify(t);
+  unlink_added(t);
 }
 
 static void *engine_main(void *arg) {
@@ -408,20 +467,25 @@ static void *engine_main(void *arg) {
           if (t->added) curl_easy_pause(t->easy, CURLPAUSE_CONT);
           break;
         case CMD_REMOVE:
-          free_transfer(t);
+          unlink_added(t);
           break;
         case CMD_SHUTDOWN:
           break;
       }
+      if (t) transfer_unref(t);  // the command's reference
       free(c);
       c = next;
     }
     if (shutting) {
       // End every transfer still in the multi handle; their remove commands
       // follow from MoonBit, and the thread stays until they have.
+      // No transfer is left in the multi handle now. The thread ends once
+      // the queue is empty too; deciding so under the lock means a command
+      // queued later finds thread_done set.
       while (e->added) finish(e->added, CURLE_ABORTED_BY_CALLBACK, 1);
       pthread_mutex_lock(&e->qlock);
-      int done = e->live == 0 && e->qhead == NULL;
+      int done = e->qhead == NULL;
+      if (done) e->thread_done = 1;
       pthread_mutex_unlock(&e->qlock);
       if (done) break;
     }
@@ -437,13 +501,49 @@ static void *engine_main(void *arg) {
     }
     curl_multi_poll(e->multi, NULL, 0, 1000, NULL);
   }
-  curl_multi_cleanup(e->multi);
-  pthread_mutex_destroy(&e->qlock);
-  free(e);
+  engine_unref(e);  // the thread's reference
   return NULL;
 }
 
 // ------------------------------------------------------- the MoonBit side
+
+// What MoonBit holds: GC-managed boxes, each owning one reference. The
+// pointer inside is NULL when making the engine or transfer failed.
+typedef struct { engine *e; } engine_box;
+typedef struct { transfer *t; } transfer_box;
+
+static void engine_close(engine *e) {
+  pthread_mutex_lock(&e->qlock);
+  e->shutdown = 1;
+  pthread_mutex_unlock(&e->qlock);
+  enqueue(e, CMD_SHUTDOWN, NULL);
+}
+
+// A CurlBackend dropped without close is closed here.
+static void engine_box_finalize(void *self) {
+  engine_box *b = self;
+  if (b->e) {
+    engine_close(b->e);
+    engine_unref(b->e);
+  }
+}
+
+// An Exchange dropped without release is released here.
+static void transfer_box_finalize(void *self) {
+  transfer_box *b = self;
+  if (!b->t) return;
+  transfer *t = b->t;
+  pthread_mutex_lock(&t->lock);
+  int released = t->released;
+  t->released = 1;
+  pthread_mutex_unlock(&t->lock);
+  if (!released) enqueue(t->e, CMD_REMOVE, t);
+  transfer_unref(t);
+}
+
+MOONBIT_FFI_EXPORT int32_t mttp_curl_engine_is_null(engine_box *b) { return b->e == NULL; }
+
+MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_is_null(transfer_box *b) { return b->t == NULL; }
 
 // Bit 1: HTTP/2, bit 2: HTTP/3, bit 4: the moment a request is sent is
 // known (CURLINFO_POSTTRANSFER_TIME_T, libcurl 8.10).
@@ -468,35 +568,36 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_curl_version(void) {
   return b;
 }
 
-// NULL when the thread cannot start.
-MOONBIT_FFI_EXPORT engine *mttp_curl_engine_new(void) {
+// A box holding NULL when the thread cannot start.
+MOONBIT_FFI_EXPORT engine_box *mttp_curl_engine_new(void) {
   pthread_once(&global_once, global_init);
+  engine_box *b = moonbit_make_external_object(engine_box_finalize, sizeof(engine_box));
+  b->e = NULL;
   engine *e = calloc(1, sizeof *e);
   e->multi = curl_multi_init();
   if (!e->multi) {
     free(e);
-    return NULL;
+    return b;
   }
   curl_multi_setopt(e->multi, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
   pthread_mutex_init(&e->qlock, NULL);
+  e->refs = 2;  // MoonBit's box and the thread
   pthread_t thread;
   if (pthread_create(&thread, NULL, engine_main, e) != 0) {
     curl_multi_cleanup(e->multi);
     pthread_mutex_destroy(&e->qlock);
     free(e);
-    return NULL;
+    return b;
   }
   pthread_detach(thread);
-  return e;
+  b->e = e;
+  return b;
 }
 
-// After this call MoonBit adds no more transfers to `e`; the thread frees it
-// once the transfers already made are removed.
-MOONBIT_FFI_EXPORT void mttp_curl_engine_close(engine *e) {
-  pthread_mutex_lock(&e->qlock);
-  e->shutdown = 1;
-  pthread_mutex_unlock(&e->qlock);
-  enqueue(e, CMD_SHUTDOWN, NULL);
+// Asks the engine to stop: no new transfers, those in flight end as Closed,
+// and the thread ends once idle. Idempotent.
+MOONBIT_FFI_EXPORT void mttp_curl_engine_close(engine_box *b) {
+  if (b->e) engine_close(b->e);
 }
 
 static char *dup_bytes(moonbit_bytes_t b) {
@@ -511,22 +612,38 @@ static char *dup_bytes(moonbit_bytes_t b) {
 // body of unknown length, else its length. `cainfo`: a PEM file or empty.
 // `insecure`: skip certificate checks. `proxy`: the proxy URL or empty for
 // none; `noproxy`: the hosts reached without it. Returns NULL on failure.
-MOONBIT_FFI_EXPORT transfer *mttp_curl_transfer_new(
-    engine *e, moonbit_bytes_t url, moonbit_bytes_t method, int32_t nobody,
+MOONBIT_FFI_EXPORT transfer_box *mttp_curl_transfer_new(
+    engine_box *eb, moonbit_bytes_t url, moonbit_bytes_t method, int32_t nobody,
     int64_t body, int32_t version, moonbit_bytes_t cainfo, int32_t insecure,
     int32_t head_max, int32_t body_cap, int32_t max_age_s, moonbit_bytes_t proxy,
     moonbit_bytes_t noproxy) {
+  transfer_box *box = moonbit_make_external_object(transfer_box_finalize, sizeof(transfer_box));
+  box->t = NULL;
+  engine *e = eb->e;
+  if (!e) return box;
+  // A closed engine makes no transfer; mttp_curl_engine_is_closed tells
+  // MoonBit why the box is empty.
+  pthread_mutex_lock(&e->qlock);
+  int closed = e->shutdown;
+  if (!closed) e->refs++;  // the transfer's reference
+  pthread_mutex_unlock(&e->qlock);
+  if (closed) return box;
   CURL *easy = curl_easy_init();
-  if (!easy) return NULL;
+  if (!easy) {
+    engine_unref(e);
+    return box;
+  }
   transfer *t = calloc(1, sizeof *t);
   t->e = e;
   t->easy = easy;
   if (open_notify(t) != 0) {
     curl_easy_cleanup(easy);
     free(t);
-    return NULL;
+    engine_unref(e);
+    return box;
   }
   pthread_mutex_init(&t->lock, NULL);
+  t->refs = 1;  // MoonBit's box
   t->head_max = head_max > 0 ? (size_t)head_max : 16384;
   t->head = malloc(t->head_max);
   t->body_cap = body_cap > 0 ? (size_t)body_cap : 65536;
@@ -542,6 +659,11 @@ MOONBIT_FFI_EXPORT transfer *mttp_curl_transfer_new(
   // later request would wait on it for ever.
   int tls = strncmp(s, "https:", 6) == 0;
   free(s);
+  // The request's shape is set explicitly rather than left to libcurl's
+  // defaults, which pick the method from other options (UPLOAD means PUT,
+  // POSTFIELDS POST and adds a form Content-Type, NOBODY HEAD): the method
+  // is always CUSTOMREQUEST, and the body is always an upload of known or
+  // unknown length, whatever the method.
   s = dup_bytes(method);
   if (nobody) {
     curl_easy_setopt(easy, CURLOPT_NOBODY, 1L);
@@ -550,13 +672,11 @@ MOONBIT_FFI_EXPORT transfer *mttp_curl_transfer_new(
     curl_easy_setopt(easy, CURLOPT_INFILESIZE_LARGE, (curl_off_t)body);
   } else if (strcmp(s, "POST") == 0 || strcmp(s, "PUT") == 0 ||
              strcmp(s, "PATCH") == 0) {
-    // An empty body still says so: Content-Length: 0.
-    curl_easy_setopt(easy, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)0);
-    curl_easy_setopt(easy, CURLOPT_COPYPOSTFIELDS, "");
+    // No body where one is expected still says so: Content-Length: 0.
+    curl_easy_setopt(easy, CURLOPT_UPLOAD, 1L);
+    curl_easy_setopt(easy, CURLOPT_INFILESIZE_LARGE, (curl_off_t)0);
   }
-  if (!nobody && strcmp(s, "GET") != 0) {
-    curl_easy_setopt(easy, CURLOPT_CUSTOMREQUEST, s);
-  }
+  curl_easy_setopt(easy, CURLOPT_CUSTOMREQUEST, s);
   free(s);
 
   curl_easy_setopt(easy, CURLOPT_PRIVATE, (char *)t);
@@ -613,14 +733,21 @@ MOONBIT_FFI_EXPORT transfer *mttp_curl_transfer_new(
     curl_easy_setopt(easy, CURLOPT_PROXY_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(easy, CURLOPT_PROXY_SSL_VERIFYHOST, 0L);
   }
-  pthread_mutex_lock(&e->qlock);
-  e->live++;
-  pthread_mutex_unlock(&e->qlock);
-  return t;
+  box->t = t;
+  return box;
+}
+
+MOONBIT_FFI_EXPORT int32_t mttp_curl_engine_is_closed(engine_box *b) {
+  if (!b->e) return 0;
+  pthread_mutex_lock(&b->e->qlock);
+  int closed = b->e->shutdown;
+  pthread_mutex_unlock(&b->e->qlock);
+  return closed;
 }
 
 // One request field, "Name: value", or "Name:" to suppress curl's own.
-MOONBIT_FFI_EXPORT void mttp_curl_transfer_header(transfer *t, moonbit_bytes_t line) {
+MOONBIT_FFI_EXPORT void mttp_curl_transfer_header(transfer_box *tb, moonbit_bytes_t line) {
+  transfer *t = tb->t;
   char *s = dup_bytes(line);
   t->headers = curl_slist_append(t->headers, s);
   free(s);
@@ -628,16 +755,19 @@ MOONBIT_FFI_EXPORT void mttp_curl_transfer_header(transfer *t, moonbit_bytes_t l
 
 // A descriptor of the transfer's notification for MoonBit's RawFd, which
 // owns it.
-MOONBIT_FFI_EXPORT int mttp_curl_transfer_fd(transfer *t) {
+MOONBIT_FFI_EXPORT int mttp_curl_transfer_fd(transfer_box *tb) {
+  transfer *t = tb->t;
   return fcntl(t->notify_r, F_DUPFD_CLOEXEC, 0);
 }
 
-MOONBIT_FFI_EXPORT void mttp_curl_transfer_start(transfer *t) {
+MOONBIT_FFI_EXPORT void mttp_curl_transfer_start(transfer_box *tb) {
+  transfer *t = tb->t;
   curl_easy_setopt(t->easy, CURLOPT_HTTPHEADER, t->headers);
   enqueue(t->e, CMD_ADD, t);
 }
 
-MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_state(transfer *t) {
+MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_state(transfer_box *tb) {
+  transfer *t = tb->t;
   pthread_mutex_lock(&t->lock);
   int32_t s = t->state;
   pthread_mutex_unlock(&t->lock);
@@ -646,7 +776,8 @@ MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_state(transfer *t) {
 
 // 0: status, 1: CURL_HTTP_VERSION_*, 2: CURLcode, 3: the proxy's answer to
 // CONNECT (0 without one).
-MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_info(transfer *t, int32_t which) {
+MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_info(transfer_box *tb, int32_t which) {
+  transfer *t = tb->t;
   pthread_mutex_lock(&t->lock);
   int32_t v = 0;
   switch (which) {
@@ -660,7 +791,8 @@ MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_info(transfer *t, int32_t which) {
 }
 
 // 0: the response head, 1: curl's error text.
-MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_curl_transfer_text(transfer *t, int32_t which) {
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_curl_transfer_text(transfer_box *tb, int32_t which) {
+  transfer *t = tb->t;
   pthread_mutex_lock(&t->lock);
   const char *p = "";
   size_t n = 0;
@@ -680,7 +812,8 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_curl_transfer_text(transfer *t, int32_t 
 
 // Copies up to `max` buffered body bytes into `out`; the count. Queues an
 // unpause when curl waits for room.
-MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_read(transfer *t, uint8_t *out, int32_t max) {
+MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_read(transfer_box *tb, uint8_t *out, int32_t max) {
+  transfer *t = tb->t;
   pthread_mutex_lock(&t->lock);
   size_t held = t->body_len - t->body_off;
   size_t k = held < (size_t)max ? held : (size_t)max;
@@ -698,7 +831,8 @@ MOONBIT_FFI_EXPORT int32_t mttp_curl_transfer_read(transfer *t, uint8_t *out, in
 }
 
 // Hands curl the next piece of the request body; `eof` after the last.
-MOONBIT_FFI_EXPORT void mttp_curl_transfer_push(transfer *t, moonbit_bytes_t data, int32_t eof) {
+MOONBIT_FFI_EXPORT void mttp_curl_transfer_push(transfer_box *tb, moonbit_bytes_t data, int32_t eof) {
+  transfer *t = tb->t;
   size_t n = (size_t)Moonbit_array_length(data);
   pthread_mutex_lock(&t->lock);
   if (n > 0) {
@@ -720,7 +854,8 @@ MOONBIT_FFI_EXPORT void mttp_curl_transfer_push(transfer *t, moonbit_bytes_t dat
 }
 
 // Gives up the rest of the request body: a final response arrived first.
-MOONBIT_FFI_EXPORT void mttp_curl_transfer_abandon_upload(transfer *t) {
+MOONBIT_FFI_EXPORT void mttp_curl_transfer_abandon_upload(transfer_box *tb) {
+  transfer *t = tb->t;
   pthread_mutex_lock(&t->lock);
   t->up_abandoned = 1;
   t->state &= ~ST_WANTS_BODY;
@@ -730,13 +865,18 @@ MOONBIT_FFI_EXPORT void mttp_curl_transfer_abandon_upload(transfer *t) {
   pthread_mutex_unlock(&t->lock);
 }
 
-// Ends the transfer and frees it, on the thread. MoonBit calls it once and
-// never uses `t` afterwards.
-MOONBIT_FFI_EXPORT void mttp_curl_transfer_release(transfer *t) {
-  enqueue(t->e, CMD_REMOVE, t);
+// Ends the transfer: the thread takes it out of the multi handle. Its
+// memory stays until MoonBit's box lets go too. Idempotent.
+MOONBIT_FFI_EXPORT void mttp_curl_transfer_release(transfer_box *b) {
+  transfer *t = b->t;
+  if (!t) return;
+  pthread_mutex_lock(&t->lock);
+  int released = t->released;
+  t->released = 1;
+  pthread_mutex_unlock(&t->lock);
+  if (!released) enqueue(t->e, CMD_REMOVE, t);
 }
 
-MOONBIT_FFI_EXPORT int32_t mttp_curl_is_null(void *p) { return p == NULL; }
 
 // libcurl's version as 0xXXYYZZ, for the tests that differ by version.
 MOONBIT_FFI_EXPORT int32_t mttp_curl_version_num(void) {

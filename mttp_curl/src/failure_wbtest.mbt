@@ -81,7 +81,7 @@ async test "a stream above GOAWAY is sent again by libcurl on a new connection" 
       // libcurl 7.88 does not send it again and reports a framing error:
       // not unsent, so mttp's Client resends only an idempotent request.
       e => {
-        guard curl_version_num() < 0x080500 &&
+        guard curl_version_num() < 0x080e00 &&
           e is @mttp_core.TransportError(kind=Protocol, ..) else {
           fail("unexpected \{e.to_repr()}")
         }

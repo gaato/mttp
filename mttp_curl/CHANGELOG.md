@@ -14,8 +14,8 @@ never does.
   responses decoded as `@mttp.backend()` decodes them. HTTP/1.1 and HTTP/2
   by ALPN, every request to an `https` origin on one HTTP/2 connection, and
   HTTP/3 with `http3=true` over a libcurl that has it. Native, on Linux and
-  macOS; libcurl 7.85 or later, tested on 7.88.1, 8.5.0, 8.14.1, 8.23.0
-  and macOS's.
+  macOS; libcurl 7.85 or later, tested on 7.88.1, 8.14.1, 8.23.0 and
+  macOS's.
 - `CurlBackend`: the same backend without decoding, implementing
   gaato/mttp_core's `Backend`, with `CurlBackend::supports_http3()` and
   `CurlBackend::libcurl_version()`.

@@ -49,10 +49,11 @@
 #                                           --record writes today's JSON in
 #                                           benchmarks/results. CI instead
 #                                           passes --output and --summary.
-#   scripts/gates.sh sanitize               Linux native tests of mttp_core
-#                                           and mttp under ASan, using a
-#                                           disposable source/toolchain copy.
-#                                           Daily in canary, outside full
+#   scripts/gates.sh sanitize               Linux native tests of mttp_core,
+#                                           mttp and mttp_curl under ASan,
+#                                           using a disposable source/toolchain
+#                                           copy; needs libcurl. Daily in
+#                                           canary, outside full
 #   scripts/gates.sh fuzz [SECONDS]         Linux libFuzzer+ASan runs of the
 #                                           fuzz/ targets (HTTP/1.1 reader,
 #                                           WebSocket frame parser), SECONDS

@@ -3,7 +3,7 @@
 /// ALPN, and HTTP/3 when asked for. One exchange per `send`; redirects,
 /// retries, cookies and content decoding stay with the caller.
 pub struct CurlBackend {
-  priv engine : Engine?
+  priv engine : Engine
   priv mut closed : Bool
   priv version : Int32
   priv http3 : Bool
@@ -91,13 +91,8 @@ fn CurlBackend::with_version(
   proxy~ : @h1client.ProxyConfig = @h1client.ProxyConfig::none(),
   max_connection_age_ms? : Int32,
 ) -> CurlBackend {
-  let engine = engine_new_raw()
   {
-    engine: if engine_is_null(engine) {
-      None
-    } else {
-      Some(engine)
-    },
+    engine: engine_new_raw(),
     closed: false,
     version,
     http3,
@@ -120,9 +115,7 @@ pub fn CurlBackend::close(self : CurlBackend) -> Unit {
     return
   }
   self.closed = true
-  if self.engine is Some(engine) {
-    engine_close(engine)
-  }
+  engine_close(self.engine)
 }
 
 ///|
@@ -189,6 +182,11 @@ pub async fn CurlBackend::send(
       detail="no time left before the request",
     )
   }
+  // One deadline for the whole attempt, from here: every wait below, the
+  // request body's reads included, goes through `bounded` with it.
+  let deadline = options.timeout_ms.map(ms => {
+    @env.now().reinterpret_as_int64() + ms.to_int64()
+  })
   let url = @mttp_core.Url::parse(request.url) catch {
     _ => raise invalid("not a URL: \{request.url}")
   }
@@ -205,6 +203,12 @@ pub async fn CurlBackend::send(
   if request.headers.get("upgrade") is Some(_) {
     raise invalid("protocol upgrades are not supported by this backend")
   }
+  // libcurl reads a HEAD response as bodiless only with NOBODY, which sends
+  // no request body; content in a HEAD request has no defined meaning
+  // (RFC 9110, section 9.3.2), so it is refused rather than dropped.
+  if request.meth is Head && !(request.body is Empty) {
+    raise invalid("a HEAD request with a body")
+  }
   (@h1.request_framing(request.headers) |> ignore) catch {
     _ => raise invalid("conflicting or malformed framing fields")
   }
@@ -213,7 +217,7 @@ pub async fn CurlBackend::send(
       "http3=true, but the linked libcurl has no HTTP/3: \{CurlBackend::libcurl_version()}",
     )
   }
-  guard self.engine is Some(engine) else {
+  if engine_is_null(self.engine) {
     raise @mttp_core.TransportError(
       kind=Connect,
       phase=Pool,
@@ -228,7 +232,7 @@ pub async fn CurlBackend::send(
       let stream = body.take()
       let first = {
         errdefer stream.close()
-        stream.read_some()
+        bounded(deadline, options.timeout_ms, Pool, () => stream.read_some())
       }
       // A stream shorter than its declared length fails in read_some:
       // gaato/mttp_core's StreamBody counts the bytes.
@@ -250,7 +254,7 @@ pub async fn CurlBackend::send(
     _ => self.proxy.http
   }
   let xfer = transfer_new_raw(
-    engine,
+    self.engine,
     @utf8.encode(request.url),
     @utf8.encode(request.meth.to_string()),
     nobody,
@@ -270,6 +274,15 @@ pub async fn CurlBackend::send(
   )
   if xfer_is_null(xfer) {
     stream.map(s => s.close()) |> ignore
+    // The engine itself refuses a transfer once closed, also when the close
+    // came while this send waited for its request body.
+    if engine_is_closed(self.engine) {
+      raise @mttp_core.TransportError(
+        kind=Closed,
+        phase=Pool,
+        detail="the backend is closed",
+      )
+    }
     raise @mttp_core.TransportError(
       kind=Connect,
       phase=Pool,
@@ -323,9 +336,6 @@ pub async fn CurlBackend::send(
     tls: url.scheme is Some("https"),
   }
   transfer_start(xfer)
-  let deadline = options.timeout_ms.map(ms => {
-    @env.now().reinterpret_as_int64() + ms.to_int64()
-  })
   for ;; {
     let state = transfer_state(xfer)
     events.observe(state)
@@ -338,7 +348,10 @@ pub async fn CurlBackend::send(
     }
     if (state & ST_WANTS_BODY) != 0 && !upload_done {
       // `stream` is Some here: upload_done starts true without one.
-      let piece = stream.unwrap().read_some()
+      let source = stream.unwrap()
+      let piece = bounded(deadline, options.timeout_ms, Write, () => {
+        source.read_some()
+      })
       match piece {
         Some(bytes) => transfer_push(xfer, bytes, false)
         None => {
@@ -514,8 +527,44 @@ fn Exchange::release(self : Exchange) -> Unit {
 }
 
 ///|
-/// Waits until the thread signals a change after `state` was read, or the
-/// deadline passes (a Timeout in the phase `state` shows).
+/// Runs `f` within the attempt's `deadline`, if there is one: past it, the
+/// error is a `Timeout` in `phase`, the phase the exchange had reached.
+/// Every wait of an attempt goes through here, so no wait escapes the
+/// deadline.
+async fn[T] bounded(
+  deadline : Int64?,
+  timeout_ms : Int32?,
+  phase : @mttp_core.Phase,
+  f : async () -> T raise @mttp_core.TransportError,
+) -> T raise @mttp_core.TransportError {
+  guard deadline is Some(at) else { return f() }
+  let left = (at - @env.now().reinterpret_as_int64())
+    .max(0L)
+    .min(2147483647L)
+    .to_int()
+  // with_timeout_opt's error type is Error; the result travels beside it so
+  // that f's TransportError comes out as it was raised.
+  let result : Ref[Result[T, @mttp_core.TransportError]?] = Ref(None)
+  let finished = @async.with_timeout_opt(left, () => {
+    result.val = Some(Ok(f()) catch { e => Err(e) })
+  }) catch {
+    _ => None
+  }
+  match (finished, result.val) {
+    (_, Some(Ok(value))) => value
+    (_, Some(Err(error))) => raise error
+    _ =>
+      raise @mttp_core.TransportError(
+        kind=Timeout(ms=timeout_ms.unwrap_or(0)),
+        phase~,
+        detail="the attempt's deadline passed",
+      )
+  }
+}
+
+///|
+/// Waits until the thread signals a change after `state` was read, within
+/// `deadline`.
 async fn Exchange::wait(
   self : Exchange,
   deadline : Int64?,
@@ -523,39 +572,16 @@ async fn Exchange::wait(
   state : Int32,
 ) -> Unit raise @mttp_core.TransportError {
   let buf = FixedArray::make(8, b'\x00')
-  let read = async fn() -> Unit {
-    self.fd.read_into_once(buf.mut_view()) |> ignore
-  }
-  let woke = match deadline {
-    None =>
-      try {
-        read()
-        true
-      } catch {
-        _ => false
-      }
-    Some(at) => {
-      let left = (at - @env.now().reinterpret_as_int64())
-        .max(0L)
-        .min(2147483647L)
-        .to_int()
-      (@async.with_timeout_opt(left, read) catch { _ => None }) is Some(_)
+  bounded(deadline, timeout_ms, phase_of(state), () => {
+    (self.fd.read_into_once(buf.mut_view()) |> ignore) catch {
+      _ =>
+        raise @mttp_core.TransportError(
+          kind=Network,
+          phase=phase_of(state),
+          detail="the transfer's notification descriptor failed",
+        )
     }
-  }
-  if !woke {
-    if deadline is Some(_) {
-      raise @mttp_core.TransportError(
-        kind=Timeout(ms=timeout_ms.unwrap_or(0)),
-        phase=phase_of(state),
-        detail="the attempt's deadline passed",
-      )
-    }
-    raise @mttp_core.TransportError(
-      kind=Network,
-      phase=phase_of(state),
-      detail="the transfer's eventfd failed",
-    )
-  }
+  })
 }
 
 ///|
