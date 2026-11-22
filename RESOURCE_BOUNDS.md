@@ -1,7 +1,8 @@
 # Resource bounds
 
 What a long-running client, server or parser built on `gaato/mttp_core`,
-`gaato/mttp`, `gaato/mttp_curl` or `gaato/mttp_digest` can accumulate, and
+`gaato/mttp`, `gaato/mttp_curl`, `gaato/mttp_ng` or `gaato/mttp_digest` can
+accumulate, and
 what keeps each structure from growing without limit. The rule: **every
 structure that grows with input from the network, a peer, or the number of
 requests, buckets, connections or pending calls is listed here with its
@@ -189,6 +190,12 @@ a test from hanging.
 | `mttp_curl` response head per transfer | 64 KiB: the status line and fields of the final response; an informational response's block is replaced by the next | `TooLarge(limit)` in phase Head; libcurl ends the transfer | `mttp_curl/src/failure_wbtest.mbt`: "a head past the bound is TooLarge in Head"; `mttp_curl/src/edge_wbtest.mbt`: "the default response head bound is 64 KiB" |
 | `mttp_curl` response body buffer per transfer | 64 KiB not yet read, plus at most one libcurl delivery (`CURLOPT_BUFFERSIZE`) | libcurl is paused until the caller has read the buffer empty | `mttp_curl/src/policy_wbtest.mbt`: "a large body streams through the paused buffer" |
 | `mttp_curl` libcurl's own resends of a request | Five per request, libcurl's fixed count, each on a new connection; none for a request that is not idempotent | `Network`, not unsent | `mttp_curl/src/failure_wbtest.mbt`: "a stream refused every time ends in Network after libcurl's own attempts", "a reused connection that dies before an answer: a POST reaches the server once" |
+| `mttp_ng` HTTP/2 header block per stream, both ends | `max_header_list`: the client's `head_limits.max_head_bytes` (16 KiB by default), the server's `ServerLimits.max_header_bytes`, counting names, values and 32 bytes per field as SETTINGS_MAX_HEADER_LIST_SIZE does; a server also advertises it | nghttp2 resets the stream (INTERNAL_ERROR) and drops the rest of the block; a client reports `TooLarge(limit)` in phase Head | `mttp_ng/src/h2/session_test.mbt`: "a header block over the limit resets its stream"; `mttp_ng/src/h2client/servers_test.mbt`: "bounds and deadlines fail in the phase they bound" |
+| `mttp_ng` HTTP/2 received body per stream and per connection | A stream's unread bytes at most its window (`stream_window`, 256 KiB by default); the stream window opens only as its reader takes bytes, the connection window (1 MiB) as they enter a stream's buffer | The peer is held by flow control | `mttp_ng/src/h2/session_test.mbt`: "a body waits for its window, which only the reader opens" |
+| `mttp_ng` HTTP/2 and HTTP/3 client response body wire bytes | `Exchange(max_bytes)` and `ClientConfig.max_body_bytes`, as for any backend (`@attempt.BodyBudget`) | `TooLarge(limit)` in phase Body; the stream is reset | `mttp_ng/src/h2client/servers_test.mbt`: "bounds and deadlines fail in the phase they bound" |
+| `mttp_ng` HTTP/2 client streams per connection | The server's SETTINGS_MAX_CONCURRENT_STREAMS, and one stream until the server's first SETTINGS arrive | The send waits in phase Pool under `pool_timeout_ms` and the deadline | `mttp_ng/src/h2client/servers_test.mbt`: "a server limit of one stream still completes every request" |
+| `mttp_ng` HTTP/2 and HTTP/3 server request body | `ServerLimits.max_body_bytes`: a larger Content-Length is answered 413 before the handler; a body that crosses it fails the handler's read, stops being buffered, and is answered 413 | 413 | `mttp_ng/src/h2server/serve_test.mbt`: "a body over max_body_bytes is answered 413"; `mttp_ng/src/h3server/serve_test.mbt`: "streamed response bodies, early answers and the limits over HTTP/3" |
+| `mttp_ng` QUIC received body per stream and per connection | `H3Settings.stream_window` (256 KiB) and `connection_window` (1 MiB) as transport parameters; both open only as the reader takes bytes | The peer is held by flow control | `mttp_ng/src/h3/connection_test.mbt`: "a body larger than the windows arrives as the reader takes it" |
 
 ## Bounded by rate and lifetime
 
@@ -197,6 +204,8 @@ a test from hanging.
 | `mttp_core/ws` FIFO send tickets | Concurrent callers starting sends | One ticket per caller; removed on completion, cancellation or send deadline (default 30 s). The caller controls concurrent call count; queue lifetime is bounded by the send wait. `mttp_core/src/ws/concurrency_test.mbt`: "senders queue FIFO queued cancellation removes its ticket and later senders progress", "abort wakes a blocked writer and refuses queued sends without extra frames". |
 | `mttp_core/client/ratelimit` retained state, aliases and pace deadlines | New bucket/server/group keys per millisecond, capped at 4096 per map | Live state, including fallback copies: key arrival rate × at most one hour; aliases: bucket arrival rate × one hour independently of shared-state refresh, except capacity-deferred expirations retain their route while constraints remain live; pace: group arrival rate × at most Int.MAX milliseconds (caller-configured). Sweeps on acquire/release at doubling thresholds (floor 64) or after 60 seconds reclaim expired entries, including after a burst; idle instances retain at most the hard map caps. Checked by `mttp_core/src/client/ratelimit/rate_limit_wbtest.mbt` ("one-off buckets leave no gates and only unexpired states behind", "a burst's expired states go once traffic settles on one bucket", "responses without rate-limit headers still sweep expired states", "one-off aliased and paced buckets keep the maps bounded") and `mttp_core/src/client/ratelimit/bounds_wbtest.mbt` ("aliases expire even while their shared server window keeps refreshing"); capacity deferral by `mttp_core/src/client/ratelimit/alias_wbtest.mbt` ("alias expiry at state capacity retains its route until transfer has room"). |
 | `mttp_core/h1client` queued slot tickets (`Slots`, `SlotState.waiting`) | Sends that find no free slot under a configured cap | One ticket per waiting send, removed when it is granted, when the pool limit or the attempt deadline runs out, on close and on cancellation, so the queue holds at most the sends started within the longest wait (`pool_timeout_ms`, or the caller's own deadline); unset limits leave the wait, and so the queue, to the caller. Checked by `mttp_core/src/h1client/pool_test.mbt` ("a queued request leaves no slot behind on timeout, close or cancellation", "active connection caps queue requests until a slot frees") |
+| `mttp_ng` origins remembered as HTTP/1.1 (h2client) and as without HTTP/3 (h3client) | Origins whose server chose http/1.1 by ALPN, or whose QUIC handshake failed | At most 256 each; the oldest goes first, and an entry lives ten minutes (HTTP/1.1) or five (HTTP/3). |
+| `mttp_ng` client connections per origin | Origins the caller sends to | One open connection per origin, plus retired ones that take no new stream and close with their last stream; idle ones close after `idle_max_ms` when the next send looks at the pool, and QUIC ones well before their idle timeout. |
 
 ## Left to the caller
 
@@ -234,7 +243,23 @@ Growth that follows what the caller asks for, not what the network sends.
 
 ## Known gaps
 
-None. The handler's own running time is bounded by the application, not by
+`mttp_ng` bounds that no test drives to their limit yet:
+
+- An HTTP/2 or HTTP/3 server runs at most `max_concurrent_streams` handlers
+  per connection, cancelled ones still finishing included, and does not read
+  the connection while that many run, so a client that opens and resets
+  streams (CVE-2023-44487) cannot pile up tasks; nghttp2's own reset rate
+  limit (1.57 or later) and its CONTINUATION and glitch limits (1.61, 1.67)
+  apply where the linked version has them.
+- A request or response body waits in a stream's queue of at most 64 KiB
+  before the next piece is read from its source, in both directions and
+  both protocols.
+- An HTTP/3 server takes at most `max_connections` connections; further
+  clients' Initials are dropped.
+- A TLS session (`mttp_ng/tls`) buffers at most one record of ciphertext a
+  read took from the connection beneath.
+
+Apart from those, none. The handler's own running time is bounded by the application, not by
 default: `h1server`'s `handler_timeout_ms` is `None` unless set. This was
 decided on 2026-11-16 after comparing other servers: Go's net/http, Node's
 http, hyper, ASP.NET Core's Kestrel, uvicorn, aiohttp and Bun put no default
