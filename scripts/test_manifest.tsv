@@ -46,10 +46,10 @@ gaato/mttp_core	gaato/mttp_core/h1	js	57
 gaato/mttp_core	gaato/mttp_core/h1	native	57
 gaato/mttp_core	gaato/mttp_core/h1	wasm	57
 gaato/mttp_core	gaato/mttp_core/h1	wasm-gc	57
-gaato/mttp_core	gaato/mttp_core/h1client	js	126
-gaato/mttp_core	gaato/mttp_core/h1client	native	126
-gaato/mttp_core	gaato/mttp_core/h1client	wasm	126
-gaato/mttp_core	gaato/mttp_core/h1client	wasm-gc	126
+gaato/mttp_core	gaato/mttp_core/h1client	js	124
+gaato/mttp_core	gaato/mttp_core/h1client	native	124
+gaato/mttp_core	gaato/mttp_core/h1client	wasm	124
+gaato/mttp_core	gaato/mttp_core/h1client	wasm-gc	124
 gaato/mttp_core	gaato/mttp_core/h1server	js	103
 gaato/mttp_core	gaato/mttp_core/h1server	native	103
 gaato/mttp_core	gaato/mttp_core/h1server	wasm	103
@@ -146,7 +146,7 @@ gaato/mttp-interop	gaato/mttp-interop/pattern	native	3
 gaato/mttp	gaato/mttp	js	0
 gaato/mttp	gaato/mttp	native	16
 gaato/mttp	gaato/mttp	wasm	16
-gaato/mttp	gaato/mttp/backend	js	17
+gaato/mttp	gaato/mttp/backend	js	18
 gaato/mttp	gaato/mttp/backend	native	25
 gaato/mttp	gaato/mttp/backend	wasm	24
 gaato/mttp	gaato/mttp/codings	js	83
@@ -237,3 +237,7 @@ gaato/mttp_core	gaato/mttp_core/representation	wasm	9
 gaato/mttp_core	gaato/mttp_core/representation	wasm-gc	9
 gaato/mttp-example-migrate	gaato/mttp-example-migrate	native	1
 gaato/mttp_curl	gaato/mttp_curl	native	55
+gaato/mttp_core	gaato/mttp_core/attempt	js	11
+gaato/mttp_core	gaato/mttp_core/attempt	native	11
+gaato/mttp_core	gaato/mttp_core/attempt	wasm	11
+gaato/mttp_core	gaato/mttp_core/attempt	wasm-gc	11

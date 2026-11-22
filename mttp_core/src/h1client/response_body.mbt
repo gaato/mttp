@@ -10,15 +10,13 @@ priv struct ResponseBody {
   wire : Wire
   framing : @h1.Framing
   chunked : @h1.ChunkedDecoder
-  timer : PhaseTimer
-  /// The most body bytes admitted from the wire, or `None` for no bound.
-  limit : Int32?
+  timer : @attempt.AttemptTimer
+  /// The body bytes admitted from the wire against their bound.
+  budget : @attempt.BodyBudget
   /// Whether the connection may be parked once the body ends.
   reusable : Bool
   /// Bytes still due under `Length` framing.
   mut remaining : Int64
-  /// Body bytes delivered so far.
-  mut count : Int64
   /// Decoded chunk payloads not delivered yet.
   mut chunks : Array[Bytes]
   mut index : Int32
@@ -35,7 +33,7 @@ fn ResponseBody::new(
   agent : String?,
   wire : Wire,
   framing : @h1.Framing,
-  timer : PhaseTimer,
+  timer : @attempt.AttemptTimer,
   limit : Int32?,
   reusable : Bool,
 ) -> ResponseBody {
@@ -46,14 +44,13 @@ fn ResponseBody::new(
     wire,
     framing,
     timer,
-    limit,
+    budget: @attempt.BodyBudget::new(limit),
     reusable,
     chunked: @h1.ChunkedDecoder::new(client.config.head_limits),
     remaining: match framing {
       Length(n) => n
       _ => 0L
     },
-    count: 0L,
     chunks: [],
     index: 0,
     raw_done: false,
@@ -99,18 +96,12 @@ impl @mttp_core.BodyStream for ResponseBody with fn read_some(self) {
   }
   errdefer self.finish(false)
   // A declared length past the bound is refused before waiting for bytes.
-  if self.limit is Some(limit) &&
-    self.framing is Length(declared) &&
-    declared > limit.to_int64() {
-    raise too_large(limit)
+  if self.framing is Length(declared) {
+    self.budget.check_declared(Some(declared))
   }
   match self.timer.run(Body, () => self.read_raw()) {
     Some(bytes) => {
-      if self.limit is Some(limit) &&
-        bytes.length().to_int64() > limit.to_int64() - self.count {
-        raise too_large(limit)
-      }
-      self.count += bytes.length().to_int64()
+      self.budget.admit(bytes.length())
       Some(bytes)
     }
     None => {
@@ -187,13 +178,4 @@ async fn ResponseBody::read_raw(self : ResponseBody) -> Bytes? {
       None
     }
   }
-}
-
-///|
-fn too_large(limit : Int32) -> @mttp_core.TransportError {
-  @mttp_core.TransportError(
-    kind=TooLarge(limit~),
-    phase=Body,
-    detail="the response body exceeds \{limit} bytes",
-  )
 }

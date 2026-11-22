@@ -186,17 +186,18 @@ async fn Client::send_request(
   ) catch {
     @h1.ParseError(detail~, ..) => raise invalid(detail)
   }
-  let limits : Timeouts = {
+  let limits : @attempt.PhaseLimits = {
     pool: self.config.pool_timeout_ms,
     connect: self.config.connect_timeout_ms,
     write: self.config.write_timeout_ms,
     read: self.config.read_timeout_ms,
   }
-  let timer = PhaseTimer::new(
+  let timer = @attempt.AttemptTimer::new(
     self.clock,
     self.timer,
-    limits,
     options.timeout_ms,
+    limits~,
+    classify=failure,
   )
   let upload : Upload = match stream {
     Some(stream) => Stream(stream, timer.run(Write, () => stream.read_some()))
@@ -356,24 +357,11 @@ async fn Client::send_request(
         attributes,
       }
     }
-    let (body_timer, limit) = match options.body {
-      Stream(idle_ms~) =>
-        (
-          PhaseTimer::new(
-            self.clock,
-            self.timer,
-            { ..limits, read: min_limit(idle_ms, limits.read), },
-            None,
-          ),
-          self.config.max_body_bytes,
-        )
-      Exchange(max_bytes~) =>
-        (
-          timer,
-          Some(min_limit(self.config.max_body_bytes, Some(max_bytes)).unwrap()),
-        )
-      @mttp_core.BodyTiming::.. => (timer, self.config.max_body_bytes)
-    }
+    let body_timer = timer.for_body(options.body)
+    let limit = @attempt.body_limit(
+      options.body,
+      ceiling?=self.config.max_body_bytes,
+    )
     let reader = ResponseBody::new(
       self, key, agent, wire, body_framing, body_timer, limit, keep_alive,
     )
@@ -389,16 +377,6 @@ async fn Client::send_request(
       ),
       attributes,
     }
-  }
-}
-
-///|
-/// The smaller of two optional limits.
-fn min_limit(a : Int32?, b : Int32?) -> Int32? {
-  match (a, b) {
-    (Some(a), Some(b)) => Some(a.min(b))
-    (Some(_), None) => a
-    (None, _) => b
   }
 }
 
