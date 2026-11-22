@@ -42,8 +42,7 @@ options(
     "moonbitlang/core/async/raw_fd",
     "moonbitlang/core/async/types",
   ],
+  // The link flags for libcurl come from the module's build.js, so that
+  // they reach every program that links this package, not only its tests.
   "native-stub": [ "curl_stub.c" ],
-  // The system's libcurl, and pthread for the thread that runs its multi
-  // handle.
-  link: { "native": { "cc-link-flags": "-lcurl -lpthread" } },
 )

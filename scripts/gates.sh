@@ -76,7 +76,9 @@
 #   scripts/gates.sh curl                   gaato/mttp_curl, which links the
 #                                           system's libcurl (with HTTP/2):
 #                                           its native tests, its coverage
-#                                           and its resolver consumer. CI runs
+#                                           and its resolver consumer, which
+#                                           runs a program calling libcurl
+#                                           (scripts/resolver_smoke/). CI runs
 #                                           it as a job of its own, the one
 #                                           that installs libcurl
 #   scripts/gates.sh curl-live              gaato/mttp_curl's tests against

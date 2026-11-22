@@ -16,6 +16,9 @@ never does.
   HTTP/3 with `http3=true` over a libcurl that has it. Native, on Linux and
   macOS; libcurl 7.85 or later, tested on 7.88.1, 8.14.1, 8.23.0 and
   macOS's.
+- `build.js`, run under Node when a program that imports the module builds,
+  puts `-lcurl -lpthread` on that program's link line; a library
+  package's own link flags reach only its tests.
 - `CurlBackend`: the same backend without decoding, implementing
   gaato/mttp_core's `Backend`, with `CurlBackend::supports_http3()` and
   `CurlBackend::libcurl_version()`.

@@ -22,6 +22,9 @@ It links the system's libcurl, 7.85 or later, built with HTTP/2:
 - Fedora and openSUSE: `libcurl-devel`
 - macOS: the libcurl that comes with the system
 
+Building it also needs Node: the module's `build.js` runs when your program
+builds and adds `-lcurl -lpthread` to its link line.
+
 HTTP/3 needs a libcurl built with it, such as Debian 13's; Apple's has
 none. The tests pass on libcurl 7.88.1 (Debian 12), 8.14.1 (Debian 13),
 8.23.0 and macOS's. It builds for the native target on Linux and macOS, not on Windows,
