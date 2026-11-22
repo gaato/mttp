@@ -711,3 +711,25 @@ async test "Node fetch integration decodes gzip echoes uploads and preserves red
     )
   })
 }
+
+///|
+async test "JS Exchange deadline holds for a body already delivered" {
+  // The whole body is in the host's stream at once; the caller only reads
+  // it after the attempt deadline, which must still end the exchange
+  // rather than hand out bytes that arrived in time.
+  let mock = MockFetch::install("normal", b"in time")
+  defer mock.restore()
+  let backend = @backend.AsyncBackend::new()
+  defer backend.close()
+  let response = backend.send(@mttp_core.Request::get("http://example.test/"), {
+    timeout_ms: Some(30),
+    body: Exchange(max_bytes=100),
+  })
+  @async.sleep(60)
+  try js_body(response) catch {
+    @mttp_core.TransportError(kind=Timeout(ms=30), phase=Body, ..) => ()
+    error => raise error
+  } noraise {
+    _ => fail("a body read after the deadline completed")
+  }
+}

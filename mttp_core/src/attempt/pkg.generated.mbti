@@ -1,0 +1,47 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_core/attempt"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn body_limit(@mttp_core.BodyTiming, ceiling? : Int32) -> Int32?
+
+pub fn failure(@mttp_core.Phase, Error) -> @mttp_core.TransportError
+
+// Errors
+
+// Types and methods
+pub struct AttemptTimer {
+  // private fields
+}
+pub fn AttemptTimer::for_body(Self, @mttp_core.BodyTiming) -> Self
+pub fn AttemptTimer::new(&@rt.Clock, &@rt.Timer, Int32?, limits? : PhaseLimits, classify? : (@mttp_core.Phase, Error) -> @mttp_core.TransportError) -> Self
+pub fn AttemptTimer::remaining(Self) -> Int64?
+pub async fn[X] AttemptTimer::run(Self, @mttp_core.Phase, async () -> X) -> X raise @mttp_core.TransportError
+pub fn AttemptTimer::timer(Self) -> &@rt.Timer
+
+pub struct BodyBudget {
+  // private fields
+}
+pub fn BodyBudget::admit(Self, Int32) -> Unit raise @mttp_core.TransportError
+pub fn BodyBudget::check_declared(Self, Int64?) -> Unit raise @mttp_core.TransportError
+pub fn BodyBudget::count(Self) -> Int64
+pub fn BodyBudget::new(Int32?) -> Self
+
+#derive(Eq, @debug.Debug)
+pub(all) struct PhaseLimits {
+  pool : Int32?
+  connect : Int32?
+  write : Int32?
+  read : Int32?
+}
+pub fn PhaseLimits::none() -> Self
+pub fn PhaseLimits::of(Self, @mttp_core.Phase) -> Int32?
+
+// Type aliases
+
+// Traits

@@ -41,7 +41,7 @@ async fn exchange(
   head : Bytes,
   upload : Upload,
   framing : @h1.Framing,
-  timer : PhaseTimer,
+  timer : @attempt.AttemptTimer,
   limits : @h1.Limits,
   coordination : &@rt.Coordination,
   expect_continue~ : Bool = false,
@@ -108,7 +108,7 @@ async fn upload(
   head : Bytes,
   upload : Upload,
   framing : @h1.Framing,
-  timer : PhaseTimer,
+  timer : @attempt.AttemptTimer,
   before_body? : async () -> Unit,
 ) -> Unit {
   // With `before_body`, the head goes out alone and the body after it.
@@ -212,7 +212,7 @@ async fn duplex(
   head : Bytes,
   body : Upload,
   framing : @h1.Framing,
-  timer : PhaseTimer,
+  timer : @attempt.AttemptTimer,
   limits : @h1.Limits,
   coordination : &@rt.Coordination,
   expect_continue~ : Bool,
@@ -226,7 +226,7 @@ async fn duplex(
         Some(left) => left.min(continue_wait_ms.to_int64()).to_int()
         None => continue_wait_ms
       }
-      let _ = timer.timer.within(wait, () => continued.wait())
+      let _ = timer.timer().within(wait, () => continued.wait())
     })
   } else {
     None

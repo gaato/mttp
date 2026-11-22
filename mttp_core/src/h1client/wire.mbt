@@ -245,7 +245,7 @@ async fn Wire::head(
 async fn Wire::send(
   self : Wire,
   bytes : BytesView,
-  timer : PhaseTimer,
+  timer : @attempt.AttemptTimer,
 ) -> Unit raise @mttp_core.TransportError {
   for offset = 0; offset < bytes.length(); {
     let n = (bytes.length() - offset).min(io_bytes)
