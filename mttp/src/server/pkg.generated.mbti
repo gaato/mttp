@@ -4,11 +4,14 @@ package "gaato/mttp/server"
 import {
   "gaato/mttp_core",
   "gaato/mttp_core/h1server",
+  "gaato/mttp_core/rt",
   "moonbitlang/core/debug",
 }
 
 // Values
 pub async fn serve(async (@mttp_core.Request) -> @mttp_core.Response noraise, addr~ : String, limits? : @h1server.ServerLimits, auto_date? : Bool, on_listen? : (String) -> Unit, on_error? : (@mttp_core.TransportError) -> Unit) -> Unit raise ListenError
+
+pub async fn serve_conns(async (Accepted) -> Unit, addr~ : String, limits? : @h1server.ServerLimits, on_listen? : (String) -> Unit, on_error? : (@mttp_core.TransportError) -> Unit) -> Unit raise ListenError
 
 // Errors
 #derive(@debug.Debug)
@@ -23,6 +26,18 @@ pub fn ListenError::to_string(Self) -> String
 pub impl Show for ListenError
 
 // Types and methods
+pub struct Accepted {
+  conn : &@rt.Conn
+  peer : String
+  authority : String
+  clock : &@rt.Clock
+  timer : &@rt.Timer
+  coordination : &@rt.Coordination
+  stopping : () -> Bool
+  activity : (Bool) -> Unit
+  background : (async () -> Unit) -> Unit
+  on_error : (@mttp_core.TransportError) -> Unit
+}
 
 // Type aliases
 

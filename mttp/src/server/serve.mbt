@@ -31,6 +31,99 @@ pub async fn serve(
   on_listen~ : (String) -> Unit = _ => (),
   on_error~ : (@mttp_core.TransportError) -> Unit = _ => (),
 ) -> Unit raise ListenError {
+  serve_conns(
+    accepted => {
+      let response_finished = Ref(false)
+      @h1server.serve_conn(
+        accepted.conn,
+        request => {
+          response_finished.val = false
+          (accepted.activity)(true)
+          lease(handler(request))
+        },
+        clock=accepted.clock,
+        timer=accepted.timer,
+        coordination=accepted.coordination,
+        scheme="http",
+        limits~,
+        auto_date~,
+        peer=accepted.peer,
+        authority=accepted.authority,
+        on_error=error => {
+          // A refusal can write a response before invoking the handler.
+          // Let that response share the shutdown grace.
+          (accepted.activity)(true)
+          on_error(error)
+        },
+        on_response_complete=() => response_finished.val = true,
+        stopping=() => {
+          // Commit idle at the next-request checkpoint, after the final
+          // write/drain and the peer monitor have finished.
+          if response_finished.val {
+            (accepted.activity)(false)
+          }
+          (accepted.stopping)()
+        },
+        background=accepted.background,
+      ) catch {
+        _ =>
+          on_error(
+            @mttp_core.TransportError(
+              kind=Invalid,
+              phase=Unknown,
+              detail="validated server limits refused",
+            ),
+          )
+      }
+    },
+    addr~,
+    limits~,
+    on_listen~,
+    on_error~,
+  )
+}
+
+///|
+/// A connection `serve_conns` accepted, with what its session needs.
+pub struct Accepted {
+  /// The connection; the session owns it and closes it, and `serve_conns`
+  /// closes it too once the session returns.
+  conn : &@rt.Conn
+  /// The client's address, `host:port`.
+  peer : String
+  /// The listener's address, `host:port`.
+  authority : String
+  clock : &@rt.Clock
+  timer : &@rt.Timer
+  coordination : &@rt.Coordination
+  /// Whether the server is stopping. A session looks at it between
+  /// exchanges and ends, or tells its peer to go away, when it is true.
+  stopping : () -> Bool
+  /// Marks the connection busy (`true`) or idle (`false`). At stop an idle
+  /// connection is closed at once; a busy one gets `drain_ms` to finish.
+  /// A connection starts idle.
+  activity : (Bool) -> Unit
+  /// Runs work outside the connection's task; stop gives it `drain_ms` too,
+  /// then cancels it.
+  background : (async () -> Unit) -> Unit
+  /// Where the session reports its connection's failures.
+  on_error : (@mttp_core.TransportError) -> Unit
+}
+
+///|
+/// Listens on `addr` as `serve` does, with its admission bound and graceful
+/// stop, and runs `session` for each accepted connection: a protocol of the
+/// caller's own on the server's lifecycle, such as HTTP/2 over a TLS
+/// session (gaato/mttp_ng). `serve` is `serve_conns` with an HTTP/1
+/// session. `limits` gives `max_connections` and `drain_ms`; the session
+/// applies the rest as its protocol has them.
+pub async fn serve_conns(
+  session : async (Accepted) -> Unit,
+  addr~ : String,
+  limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
+  on_listen~ : (String) -> Unit = _ => (),
+  on_error~ : (@mttp_core.TransportError) -> Unit = _ => (),
+) -> Unit raise ListenError {
   limits.validate() catch {
     error => raise Config(error)
   }
@@ -49,17 +142,16 @@ pub async fn serve(
     error => raise Bind(detail="could not bind \{addr}: \{error}")
   }
   defer listener.close()
-  run_listener(listener, handler, on_listen, limits, on_error, auto_date)
+  run_listener(listener, session, on_listen, limits, on_error)
 }
 
 ///|
 async fn run_listener(
   listener : @socket.TcpServer,
-  handler : @mttp_core.Handler,
+  session : async (Accepted) -> Unit,
   on_listen : (String) -> Unit,
   limits : @h1server.ServerLimits,
   on_error : (@mttp_core.TransportError) -> Unit,
-  auto_date : Bool,
 ) -> Unit raise ListenError {
   let state = ServerState::new()
   let clock = @runtime.AsyncClock::new()
@@ -135,54 +227,24 @@ async fn run_listener(
                 state.connections.remove(id)
                 continue
               }
-              let response_finished = Ref(false)
               let task = group.spawn(() => {
                 defer conn.close()
                 defer {
                   state.connections.remove(id)
                   ignore(state.step(Finished(id)))
                 }
-                @h1server.serve_conn(
+                session({
                   conn,
-                  request => {
-                    response_finished.val = false
-                    ignore(state.step(Activity(id, true)))
-                    lease(handler(request))
-                  },
-                  clock~,
-                  timer~,
-                  coordination~,
-                  scheme="http",
-                  limits~,
-                  auto_date~,
-                  peer=peer.to_string(),
-                  authority=listener.addr.to_string(),
-                  on_error=error => {
-                    // A refusal can write a response before invoking the
-                    // handler. Let that response share the shutdown grace.
-                    ignore(state.step(Activity(id, true)))
-                    on_error(error)
-                  },
-                  on_response_complete=() => response_finished.val = true,
-                  stopping=() => {
-                    // Commit idle at the next-request checkpoint, after the
-                    // final write/drain and the peer monitor have finished.
-                    if response_finished.val {
-                      ignore(state.step(Activity(id, false)))
-                    }
-                    state.control.stopping()
-                  },
-                  background~,
-                ) catch {
-                  _ =>
-                    on_error(
-                      @mttp_core.TransportError(
-                        kind=Invalid,
-                        phase=Unknown,
-                        detail="validated server limits refused",
-                      ),
-                    )
-                }
+                  peer: peer.to_string(),
+                  authority: listener.addr.to_string(),
+                  clock,
+                  timer,
+                  coordination,
+                  stopping: () => state.control.stopping(),
+                  activity: busy => ignore(state.step(Activity(id, busy))),
+                  background,
+                  on_error,
+                })
               })
               connection.task = Some(task)
               if state.control.stopping() &&

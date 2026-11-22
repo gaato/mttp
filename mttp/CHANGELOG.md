@@ -7,6 +7,15 @@ never does.
 
 ## [Unreleased]
 
+### Added
+
+- `@server.serve_conns(session, addr~, limits?, on_listen?, on_error?)`:
+  `serve`'s listener, admission bound and graceful stop with a connection
+  session of the caller's own, which gets each accepted connection as an
+  `Accepted` (the connection, its peer, the ports, the stopping probe, a
+  busy/idle report and background jobs). `serve` is `serve_conns` with its
+  HTTP/1 session and behaves as before; gaato/mttp_ng serves HTTP/2 on it.
+
 ## [0.5.2] - 2026-11-21
 
 ### Changed
