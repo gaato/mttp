@@ -75,6 +75,29 @@ jobs:
       - name: The Workers example on workerd
         run: scripts/gates.sh workerd
 
+  # gaato/mttp_curl links the system's libcurl, which only this job installs
+  # (scripts/modules.tsv puts it in the curl gate; every other job runs the
+  # full gate). It is not among the needs of `gates` while the module is a
+  # prototype: release.yml waits for the whole CI run, and a libcurl problem
+  # must not hold up the release of the other modules. Debian's libcurl has
+  # HTTP/2; HTTP/3 is checked by the opt-in curl-live gate instead.
+  curl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.22-124d61d05
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: libcurl's headers and library
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libcurl4-openssl-dev
+      - run: moon update
+      - name: gaato/mttp_curl's tests, coverage and resolver consumer
+        run: scripts/gates.sh curl
+
   gates:
     if: always()
     needs: [tests, static, selftest, workerd]

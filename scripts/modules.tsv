@@ -68,6 +68,7 @@
 dir	name	kind	targets	module_deps	package_imports	experimental	release	gate
 mttp_core	gaato/mttp_core	four-target	wasm-gc,wasm,js,native	-	moonbitlang/core,!moonbitlang/core/async,!moonbitlang/core/compress	gaato/mttp_core/driver	yes	full
 mttp	gaato/mttp	runtime	native,wasm,js	gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core,gaato/mttp_core,gaato/codec_bytes,gaato/deflate,gaato/brotli,gaato/zstd	moonbitlang/core/async*,gaato/mttp_core/driver	yes	full
+mttp_curl	gaato/mttp_curl	runtime	native	gaato/mttp_core,gaato/mttp	moonbitlang/core,gaato/mttp_core,gaato/mttp	moonbitlang/core/async*	no	curl
 mttp_digest	gaato/mttp_digest	four-target	wasm-gc,wasm,js,native	gaato/mttp_core,moonbitlang/x	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core,moonbitlang/x	test:gaato/mttp_core/driver	yes	full
 mttp_schemagen	gaato/mttp_schemagen	tool	wasm	moonbitlang/parser,moonbitlang/lexer	moonbitlang/core,moonbitlang/parser,moonbitlang/lexer	moonbitlang/core/async*	yes	full
 conformance	gaato/mttp-conformance	four-target	wasm-gc,wasm,js,native	gaato/mttp_core	moonbitlang/core,!moonbitlang/core/async,gaato/mttp_core	-	no	full
