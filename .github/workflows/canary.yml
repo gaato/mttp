@@ -29,6 +29,49 @@ jobs:
       - name: Validate all targets and ledgers
         run: scripts/gates.sh full
 
+  # gaato/mttp_curl on the same toolchains, over Debian's libcurl, which the
+  # images lack.
+  curl:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [latest, nightly]
+    container:
+      image: ghcr.io/gaato/moonbit:${{ matrix.toolchain }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: libcurl's headers and library
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libcurl4-openssl-dev
+      - run: moon update
+      - name: gaato/mttp_curl's tests, coverage and resolver consumer
+        run: scripts/gates.sh curl
+
+  # gaato/mttp_curl against public HTTP/2 and HTTP/3 servers, on the pinned
+  # toolchain; Debian's libcurl is built with HTTP/3. It needs the internet,
+  # so push CI does not run it.
+  curl-live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.22-124d61d05
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: libcurl's headers and library
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libcurl4-openssl-dev
+      - run: moon update
+      - name: HTTP/2 and HTTP/3 to public servers
+        run: scripts/gates.sh curl-live
+
   # Keep sanitizer overhead out of push CI and use the pinned compiler so
   # findings in our C can be separated from toolchain-canary regressions.
   sanitize:
