@@ -1,0 +1,19 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_ng"
+
+import {
+  "gaato/mttp/trust",
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1client",
+}
+
+// Values
+pub fn backend(trust? : @trust.Trust, config? : @h1client.ClientConfig, max_connection_age_ms? : Int32) -> &@mttp_core.Backend
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits

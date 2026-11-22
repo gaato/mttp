@@ -1,0 +1,21 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp/codings",
+  "gaato/mttp/trust",
+  "gaato/mttp_ng/h2client",
+  "moonbitlang/core/env",
+}
+
+supported_targets = "native"
+
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp_ng",
+  "moonbitlang/core/async",
+} for "test"
+
+options(
+  "allow-experimental-packages": [ "moonbitlang/core/async" ],
+)
