@@ -166,6 +166,27 @@ async fn run(program : String, args : Array[String], cwd~ : String) -> String {
 }
 
 ///|
+/// Copies the registry index and cache, as reflinks where the file system
+/// can. `--reflink` is GNU cp's; macOS's cp (the curl gate runs there too)
+/// refuses it, and copies plainly instead.
+async fn copy_registry(
+  source : String,
+  destination : String,
+  root : String,
+) -> Unit {
+  let reflinked = @shell.Cmd(
+    "cp",
+    ["-a", "--reflink=auto", source, destination],
+    cwd=root,
+  ).output(timeout_ms=600000)
+  if reflinked.exit_code() != 0 {
+    // A copy cut short would make the second one land inside it.
+    run("rm", ["-rf", destination], cwd=root) |> ignore
+    run("cp", ["-a", source, destination], cwd=root) |> ignore
+  }
+}
+
+///|
 async fn copy_module(source : String, destination : String) -> Unit {
   let excluded = ["_build", ".mooncakes", ".git", ".jj", "moon.work"]
   @fs.walk(
@@ -461,12 +482,7 @@ async fn check(gate : String?) -> Unit {
   println("resolver scratch: " + scratch)
   let isolated = scratch + "/moon"
   @fs.mkdir(isolated)
-  run(
-    "cp",
-    ["-a", "--reflink=auto", home + "/registry", isolated + "/registry"],
-    cwd=root,
-  )
-  |> ignore
+  copy_registry(home + "/registry", isolated + "/registry", root)
   @fs.symlink(target=home + "/lib", isolated + "/lib")
   for candidate in modules {
     stage(candidate, isolated + "/registry")
@@ -559,12 +575,7 @@ async fn run_with_local_module(
   println("local module scratch: " + scratch)
   let isolated = scratch + "/moon"
   @fs.mkdir(isolated)
-  run(
-    "cp",
-    ["-a", "--reflink=auto", home + "/registry", isolated + "/registry"],
-    cwd=root,
-  )
-  |> ignore
+  copy_registry(home + "/registry", isolated + "/registry", root)
   @fs.symlink(target=home + "/lib", isolated + "/lib")
   let candidate = module_at(root + "/" + module_dir, all_targets)
   stage(candidate, isolated + "/registry")
