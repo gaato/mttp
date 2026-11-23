@@ -25,6 +25,8 @@ pub fn nghttp3_version() -> Int32
 
 pub fn ngtcp2_version() -> Int32
 
+pub fn version_negotiation(Bytes) -> Bytes?
+
 // Errors
 #derive(@debug.Debug)
 pub suberror H3Error {
@@ -92,6 +94,7 @@ pub fn QuicConn::read(Self, Bytes) -> Unit raise H3Error
 pub fn QuicConn::reset(Self, Int64, Int64, read_only? : Bool) -> Unit
 pub fn QuicConn::server(ServerQuic, Bytes, local_address~ : String, remote_address~ : String, settings? : H3Settings) -> Self raise H3Error
 pub fn QuicConn::shutdown(Self, notice~ : Bool) -> Unit raise H3Error
+pub fn QuicConn::streams_left(Self) -> Int64
 pub fn QuicConn::submit_request(Self, Array[(String, String)], body~ : Bool) -> Int64 raise H3Error
 pub fn QuicConn::submit_response(Self, Int64, Array[(String, String)], body~ : Bool) -> Unit raise H3Error
 

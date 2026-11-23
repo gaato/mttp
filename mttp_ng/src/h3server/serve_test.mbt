@@ -51,6 +51,11 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
         body=Stream(@mttp_core.StreamBody::new({ left: 50, size: 20000, })),
       )
     "/early" => @mttp_core.Response::new(413, body=Bytes(b"early"))
+    "/ignore" => {
+      // Lets the request body arrive, and answers without reading it.
+      @async.sleep(100)
+      @mttp_core.Response::new(200, body=Bytes(b"ignored"))
+    }
     "/stuck" =>
       // A response whose body never yields.
       @mttp_core.Response::new(
@@ -384,4 +389,34 @@ async test "a request body that keeps trickling ends at body_timeout_ms" {
       response.close()
     },
   )
+}
+
+///|
+/// Body bytes a handler never read give the connection's window back when
+/// its stream ends, or a few such requests would hold the window shut for
+/// every later one (the audit of #58).
+async test "request bodies nobody read leave the connection's window open" {
+  with_server(port => {
+    let b = client()
+    defer b.close()
+    // More than the connection's window (1 MiB) in all.
+    for _ in 0..<8 {
+      let response = b.send(
+        @mttp_core.Request::post("https://localhost:\{port}/ignore").body_bytes(
+          Bytes::make(200000, b'x'),
+        ),
+        defaults,
+      )
+      assert_eq(text(response), "ignored")
+    }
+    let response = b.send(
+      @mttp_core.Request::post("https://localhost:\{port}/echo").body_bytes(
+        Bytes::make(200000, b'y'),
+      ),
+      defaults,
+    )
+    assert_eq(response.headers.get("x-received"), Some("200000"))
+    ignore(text(response))
+    assert_eq(b.connections(), 1)
+  })
 }

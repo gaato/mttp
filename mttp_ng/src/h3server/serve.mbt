@@ -248,6 +248,16 @@ async fn Listener::receive(
   let conn = match self.conns.get(key) {
     Some(conn) => conn
     None => {
+      // A version this server does not speak: the client hears which it
+      // does, and may try again with one, instead of waiting out its
+      // handshake timeout. The answer is smaller than the datagram, and
+      // no state is kept.
+      if @h3.version_negotiation(datagram) is Some(packet) {
+        self.udp.send(packet, peer) catch {
+          _ => ()
+        }
+        return
+      }
       if self.conns.length() >= self.limits.max_connections {
         return
       }
@@ -319,6 +329,15 @@ fn Listener::dispatch(
               defer {
                 conn.handlers -= 1
                 conn.streams.remove(stream)
+                // What the handler left unread gives the windows back:
+                // `consume` opens the connection's window with the
+                // stream's, and the bytes would otherwise hold the
+                // connection's window shut for every later request.
+                let left = s.body.fold(init=0, (n, b) => n + b.length())
+                if left > 0 {
+                  conn.quic.consume(stream, left)
+                  s.body.clear()
+                }
                 self.changes.notify()
               }
               context.serve(s, fields)

@@ -116,11 +116,15 @@ fn Connection::usable(self : Connection) -> Bool {
 }
 
 ///|
-/// The streams a server allows at once are its transport parameter, which
-/// ngtcp2 enforces when a stream opens; one waits for room there instead
-/// (`submit_request` raises), so the count here only spreads sends.
+/// Whether another stream fits: under `limit` streams at once, and under
+/// the server's MAX_STREAMS, which counts the streams it lets the client
+/// open over the connection's life and grows as streams close (RFC 9000,
+/// section 4.6). A send waits for room in phase Pool rather than open a
+/// stream ngtcp2 would refuse (STREAM_ID_BLOCKED), which retires the
+/// connection.
 fn Connection::has_room(self : Connection, limit : Int32) -> Bool {
-  self.active + self.reserved < limit
+  self.active + self.reserved < limit &&
+  self.reserved.to_int64() < self.quic.streams_left()
 }
 
 ///|

@@ -314,6 +314,35 @@ typedef struct chunk {
   struct chunk *next;
 } chunk;
 
+// The bytes of a header section a stream is receiving. nghttp3 hands over
+// fields as it decodes them, so sections of several streams can be in
+// progress at once, and the bound (which nghttp3 leaves to the
+// application, `max_field_section_size`) is counted per stream.
+typedef struct header_count {
+  int64_t stream;
+  size_t bytes;
+  int over; // over the bound: the rest of the section is dropped
+  struct header_count *next;
+} header_count;
+
+static header_count *header_count_of(header_count *list, int64_t stream) {
+  for (; list; list = list->next)
+    if (list->stream == stream) return list;
+  return NULL;
+}
+
+static void header_count_remove(header_count **list, int64_t stream) {
+  while (*list) {
+    if ((*list)->stream == stream) {
+      header_count *gone = *list;
+      *list = gone->next;
+      free(gone);
+      return;
+    }
+    list = &(*list)->next;
+  }
+}
+
 typedef struct outq {
   int64_t stream;
   chunk *head, *tail;
@@ -353,8 +382,7 @@ typedef struct {
   int handshake;
   size_t low;
   size_t max_header_bytes;
-  int64_t header_stream;
-  size_t header_bytes;
+  struct header_count *headers; // header sections being received
   uint64_t max_streams_bidi;
   char error[ERROR_CAPACITY];
 } qconn;
@@ -369,6 +397,7 @@ static void qconn_free(qconn *q) {
   if (q->conn) ngtcp2_conn_del(q->conn);
   if (q->ossl) ngtcp2_crypto_ossl_ctx_del(q->ossl);
   if (q->ssl) SSL_free(q->ssl);
+  while (q->headers) header_count_remove(&q->headers, q->headers->stream);
   outq *o = q->queues;
   while (o) {
     outq *next = o->next;
@@ -467,6 +496,14 @@ static int new_cid_cb(ngtcp2_conn *conn, ngtcp2_cid *cid, uint8_t *token,
   return 0;
 }
 
+// An nghttp3 failure `rv` inside an ngtcp2 callback: the connection closes
+// with the HTTP/3 error code it implies.
+static int h3_failed(qconn *q, int rv) {
+  ngtcp2_ccerr_set_application_error(
+      &q->ccerr, nghttp3_err_infer_quic_app_error_code(rv), NULL, 0);
+  return NGTCP2_ERR_CALLBACK_FAILURE;
+}
+
 static int extend_offsets(qconn *q, int64_t stream, size_t n) {
   if (n == 0) return 0;
   ngtcp2_conn_extend_max_stream_offset(q->conn, stream, n);
@@ -500,9 +537,9 @@ static int acked_offset_cb(ngtcp2_conn *conn, int64_t stream, uint64_t offset,
   (void)offset;
   (void)stream_user;
   qconn *q = user;
-  if (q->h3 && nghttp3_conn_add_ack_offset(q->h3, stream, datalen) != 0)
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  return 0;
+  if (!q->h3) return 0;
+  int rv = nghttp3_conn_add_ack_offset(q->h3, stream, datalen);
+  return rv != 0 ? h3_failed(q, rv) : 0;
 }
 
 static int stream_close_cb(ngtcp2_conn *conn, uint32_t flags, int64_t stream,
@@ -529,6 +566,11 @@ static int stream_close_cb(ngtcp2_conn *conn, uint32_t flags, int64_t stream,
   if (q->server && (stream & 0x3) == 0) {
     ngtcp2_conn_extend_max_streams_bidi(conn, 1);
   }
+  // The peer's unidirectional streams: a client's have the low bits 0b10,
+  // a server's 0b11.
+  if ((stream & 0x3) == (q->server ? 2 : 3)) {
+    ngtcp2_conn_extend_max_streams_uni(conn, 1);
+  }
   return 0;
 }
 
@@ -539,9 +581,9 @@ static int stream_reset_cb(ngtcp2_conn *conn, int64_t stream, uint64_t final_siz
   (void)code;
   (void)stream_user;
   qconn *q = user;
-  if (q->h3 && nghttp3_conn_shutdown_stream_read(q->h3, stream) != 0)
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  return 0;
+  if (!q->h3) return 0;
+  int rv = nghttp3_conn_shutdown_stream_read(q->h3, stream);
+  return rv != 0 ? h3_failed(q, rv) : 0;
 }
 
 static int stream_stop_sending_cb(ngtcp2_conn *conn, int64_t stream,
@@ -550,9 +592,9 @@ static int stream_stop_sending_cb(ngtcp2_conn *conn, int64_t stream,
   (void)code;
   (void)stream_user;
   qconn *q = user;
-  if (q->h3 && nghttp3_conn_shutdown_stream_read(q->h3, stream) != 0)
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  return 0;
+  if (!q->h3) return 0;
+  int rv = nghttp3_conn_shutdown_stream_read(q->h3, stream);
+  return rv != 0 ? h3_failed(q, rv) : 0;
 }
 
 static int extend_max_remote_bidi_cb(ngtcp2_conn *conn, uint64_t max,
@@ -570,9 +612,9 @@ static int extend_max_stream_data_cb(ngtcp2_conn *conn, int64_t stream,
   (void)max;
   (void)stream_user;
   qconn *q = user;
-  if (q->h3 && nghttp3_conn_unblock_stream(q->h3, stream) != 0)
-    return NGTCP2_ERR_CALLBACK_FAILURE;
-  return 0;
+  if (!q->h3) return 0;
+  int rv = nghttp3_conn_unblock_stream(q->h3, stream);
+  return rv != 0 ? h3_failed(q, rv) : 0;
 }
 
 // --- nghttp3 callbacks -----------------------------------------------------
@@ -606,6 +648,7 @@ static int h3_stream_close_cb(nghttp3_conn *h3, int64_t stream, uint64_t code,
   (void)stream_user;
   qconn *q = user;
   queue_remove(q, stream);
+  header_count_remove(&q->headers, stream);
   put_u8(&q->events, EV_CLOSED);
   put_i64(&q->events, stream);
   put_i64(&q->events, (int64_t)code);
@@ -636,8 +679,16 @@ static int h3_begin_headers_cb(nghttp3_conn *h3, int64_t stream, void *user,
   (void)h3;
   (void)stream_user;
   qconn *q = user;
-  q->header_stream = stream;
-  q->header_bytes = 0;
+  header_count *h = header_count_of(q->headers, stream);
+  if (!h) {
+    h = calloc(1, sizeof *h);
+    if (!h) return NGHTTP3_ERR_NOMEM;
+    h->stream = stream;
+    h->next = q->headers;
+    q->headers = h;
+  }
+  h->bytes = 0;
+  h->over = 0;
   put_u8(&q->events, EV_HEADERS_BEGIN);
   put_i64(&q->events, stream);
   return 0;
@@ -653,12 +704,13 @@ static int h3_recv_header_cb(nghttp3_conn *h3, int64_t stream, int32_t token,
   qconn *q = user;
   nghttp3_vec n = nghttp3_rcbuf_get_buf(name);
   nghttp3_vec v = nghttp3_rcbuf_get_buf(value);
-  if (q->header_stream == -1) return 0;
-  q->header_bytes += n.len + v.len + 32;
-  if (q->max_header_bytes > 0 && q->header_bytes > q->max_header_bytes) {
+  header_count *h = header_count_of(q->headers, stream);
+  if (!h || h->over) return 0;
+  h->bytes += n.len + v.len + 32;
+  if (q->max_header_bytes > 0 && h->bytes > q->max_header_bytes) {
     put_u8(&q->events, EV_TOO_LARGE);
     put_i64(&q->events, stream);
-    q->header_stream = -1;
+    h->over = 1;
     // The stream ends both ways; the connection goes on.
     nghttp3_conn_shutdown_stream_read(q->h3, stream);
     ngtcp2_conn_shutdown_stream(q->conn, 0, stream,
@@ -677,10 +729,10 @@ static int h3_end_headers_cb(nghttp3_conn *h3, int64_t stream, int fin,
   (void)h3;
   (void)stream_user;
   qconn *q = user;
-  if (q->header_stream == -1) {
-    q->header_stream = 0;
-    return 0;
-  }
+  header_count *h = header_count_of(q->headers, stream);
+  int over = h && h->over;
+  header_count_remove(&q->headers, stream);
+  if (over) return 0;
   put_u8(&q->events, EV_HEADERS_END);
   put_i64(&q->events, stream);
   put_i64(&q->events, fin);
@@ -736,7 +788,7 @@ static int h3_stop_sending_cb(nghttp3_conn *h3, int64_t stream, uint64_t code,
   (void)h3;
   (void)stream_user;
   qconn *q = user;
-  ngtcp2_conn_shutdown_stream_write(q->conn, 0, stream, code);
+  ngtcp2_conn_shutdown_stream_read(q->conn, 0, stream, code);
   return 0;
 }
 
@@ -892,8 +944,10 @@ static void fill_params(ngtcp2_transport_params *params, const config *c,
   params->initial_max_stream_data_uni = (uint64_t)c->stream_window;
   // A client opens no stream of the server's kind; a server limits them.
   params->initial_max_streams_bidi = server ? (uint64_t)c->max_streams_bidi : 0;
-  // Control and two QPACK streams, with room to spare.
-  params->initial_max_streams_uni = 3;
+  // Control and two QPACK streams, and room for streams of types nghttp3
+  // reads and drops (GREASE, RFC 9114, section 6.2.3); the peer's that
+  // close are given back.
+  params->initial_max_streams_uni = 16;
   params->max_idle_timeout = (uint64_t)c->idle_timeout_ms * NGTCP2_MILLISECONDS;
   // One path per connection: the server routes datagrams by address.
   params->disable_active_migration = 1;
@@ -1012,6 +1066,30 @@ done:
   return box(q);
 }
 
+// A Version Negotiation packet for `data` when it is a long header packet
+// of a version this server does not speak, in a datagram large enough to
+// start a connection (RFC 9000, sections 6.1 and 14.1); empty otherwise.
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_version_negotiation(
+    moonbit_bytes_t data) {
+  size_t len = (size_t)Moonbit_array_length(data);
+  ngtcp2_version_cid vc;
+  if (len < 1200 ||
+      ngtcp2_pkt_decode_version_cid(&vc, data, len, 0) !=
+          NGTCP2_ERR_VERSION_NEGOTIATION)
+    return moonbit_make_bytes(0, 0);
+  uint8_t buf[256];
+  uint8_t random;
+  RAND_bytes(&random, 1);
+  uint32_t versions[] = {NGTCP2_PROTO_VER_V1};
+  ngtcp2_ssize n = ngtcp2_pkt_write_version_negotiation(
+      buf, sizeof buf, random, vc.scid, vc.scidlen, vc.dcid, vc.dcidlen,
+      versions, 1);
+  if (n < 0) return moonbit_make_bytes(0, 0);
+  moonbit_bytes_t out = moonbit_make_bytes((int32_t)n, 0);
+  memcpy(out, buf, (size_t)n);
+  return out;
+}
+
 // A server connection for the client Initial packet `data`, from `remote`
 // to `local`; a failed box when the packet does not start a connection.
 MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_server_new(
@@ -1051,8 +1129,11 @@ MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_server_new(
   ngtcp2_settings_default(&settings);
   settings.initial_ts = now_ns();
   settings.max_tx_udp_payload_size = MAX_DATAGRAM;
-  settings.token = hd.token;
-  settings.tokenlen = hd.tokenlen;
+  // No token: this server issues none (no Retry, no NEW_TOKEN), so a
+  // token in an Initial is not one it can validate, and ngtcp2 takes a
+  // token passed here as the client's address validated, lifting the
+  // three-times limit on what is sent to an unproven address (RFC 9000,
+  // section 8).
   ngtcp2_transport_params params;
   fill_params(&params, &c, 1);
   params.original_dcid = hd.dcid;
@@ -1183,11 +1264,16 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_write(qconn_box *b) {
       case NGTCP2_ERR_STREAM_DATA_BLOCKED:
         nghttp3_conn_block_stream(q->h3, stream);
         continue;
+      // A stream that can take no more, or that is gone (reset and
+      // closed): nghttp3 stops offering it, and the other streams go on.
       case NGTCP2_ERR_STREAM_SHUT_WR:
+      case NGTCP2_ERR_STREAM_NOT_FOUND:
         nghttp3_conn_shutdown_stream_write(q->h3, stream);
         continue;
-      case NGTCP2_ERR_WRITE_MORE:
-        if (nghttp3_conn_add_write_offset(q->h3, stream, (uint64_t)ndatalen) != 0) {
+      case NGTCP2_ERR_WRITE_MORE: {
+        int rv = nghttp3_conn_add_write_offset(q->h3, stream, (uint64_t)ndatalen);
+        if (rv != 0) {
+          h3_failed(q, rv);
           write_close(q);
           return NGTCP2_ERR_CALLBACK_FAILURE;
         }
@@ -1197,6 +1283,7 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_write(qconn_box *b) {
           put_i64(&q->events, 0);
         }
         continue;
+      }
       default:
         fail_lib(q, (int)n);
         write_close(q);
@@ -1204,7 +1291,9 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_write(qconn_box *b) {
       }
     }
     if (ndatalen >= 0 && stream >= 0) {
-      if (nghttp3_conn_add_write_offset(q->h3, stream, (uint64_t)ndatalen) != 0) {
+      int rv = nghttp3_conn_add_write_offset(q->h3, stream, (uint64_t)ndatalen);
+      if (rv != 0) {
+        h3_failed(q, rv);
         write_close(q);
         return NGTCP2_ERR_CALLBACK_FAILURE;
       }
@@ -1278,6 +1367,14 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_handshake_done(qconn_box *b) {
 }
 
 // Milliseconds until the connection's idle timeout ends it, or -1.
+// The request streams the server lets this client open now: its
+// MAX_STREAMS less the streams opened. 0 before the handshake.
+MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_streams_left(qconn_box *b) {
+  qconn *q = b->q;
+  if (!q || !q->conn || q->closed) return 0;
+  return (int64_t)ngtcp2_conn_get_streams_bidi_left(q->conn);
+}
+
 MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_idle_ms(qconn_box *b) {
   qconn *q = b->q;
   if (!q || !q->conn || q->closed) return 0;
@@ -1351,12 +1448,18 @@ MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_submit_request(qconn_box *b,
   int64_t stream;
   int rv = ngtcp2_conn_open_bidi_stream(q->conn, &stream, NULL);
   if (rv != 0) return rv;
+  // From here a failure leaves an open stream, which would hold one of
+  // the server's stream slots: it is reset both ways.
   size_t n;
   nghttp3_nv *nva = fields(blob, &n);
-  if (!nva) return NGHTTP3_ERR_INVALID_ARGUMENT;
+  if (!nva) {
+    ngtcp2_conn_shutdown_stream(q->conn, 0, stream, NGHTTP3_H3_REQUEST_CANCELLED);
+    return NGHTTP3_ERR_INVALID_ARGUMENT;
+  }
   nghttp3_data_reader dr = {h3_read_data_cb};
   if (body && !queue_new(q, stream)) {
     free(nva);
+    ngtcp2_conn_shutdown_stream(q->conn, 0, stream, NGHTTP3_H3_REQUEST_CANCELLED);
     return NGHTTP3_ERR_NOMEM;
   }
   rv = nghttp3_conn_submit_request(q->h3, stream, nva, n, body ? &dr : NULL,
@@ -1364,6 +1467,7 @@ MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_submit_request(qconn_box *b,
   free(nva);
   if (rv != 0) {
     queue_remove(q, stream);
+    ngtcp2_conn_shutdown_stream(q->conn, 0, stream, NGHTTP3_H3_REQUEST_CANCELLED);
     return rv;
   }
   return stream;

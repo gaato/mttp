@@ -97,6 +97,14 @@ extern "C" fn raw_handshake_done(raw : Raw) -> Bool = "mttp_ng_h3_handshake_done
 extern "C" fn raw_idle_ms(raw : Raw) -> Int64 = "mttp_ng_h3_idle_ms"
 
 ///|
+#borrow(raw)
+extern "C" fn raw_streams_left(raw : Raw) -> Int64 = "mttp_ng_h3_streams_left"
+
+///|
+#borrow(datagram)
+extern "C" fn raw_version_negotiation(datagram : Bytes) -> Bytes = "mttp_ng_h3_version_negotiation"
+
+///|
 #borrow(raw, fields)
 extern "C" fn raw_submit_request(
   raw : Raw,
@@ -431,6 +439,28 @@ pub fn QuicConn::closed(self : QuicConn) -> Bool {
 /// Whether the handshake completed.
 pub fn QuicConn::handshake_done(self : QuicConn) -> Bool {
   raw_handshake_done(self.raw)
+}
+
+///|
+/// The request streams the server lets a client connection open now (its
+/// MAX_STREAMS less the streams already opened); 0 before the handshake.
+pub fn QuicConn::streams_left(self : QuicConn) -> Int64 {
+  raw_streams_left(self.raw)
+}
+
+///|
+/// For a server: the Version Negotiation packet that answers `datagram`,
+/// when it is a long header packet of a QUIC version this module does not
+/// speak in a datagram large enough to start a connection (RFC 9000,
+/// sections 6.1 and 14.1). `None` for anything else, which
+/// `QuicConn::server` then decides on.
+pub fn version_negotiation(datagram : Bytes) -> Bytes? {
+  let packet = raw_version_negotiation(datagram)
+  if packet.length() == 0 {
+    None
+  } else {
+    Some(packet)
+  }
 }
 
 ///|

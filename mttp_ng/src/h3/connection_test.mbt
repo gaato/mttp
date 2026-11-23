@@ -261,3 +261,45 @@ async test "a header block read across drains of events keeps every field" {
     )
   })
 }
+
+///|
+test "a datagram of another QUIC version is answered with Version Negotiation" {
+  // A long header packet of a reserved version (RFC 9000, section 15),
+  // with a destination and a source connection ID, padded to 1200 bytes.
+  let datagram = Bytes::makei(1200, i => {
+    match i {
+      0 => b'\xc0'
+      1 => b'\x1a'
+      2 => b'\x2a'
+      3 => b'\x3a'
+      4 => b'\x4a'
+      5 => b'\x08' // DCID length
+      6..<=13 => b'\x11'
+      14 => b'\x04' // SCID length
+      15..<=18 => b'\x22'
+      _ => b'\x00'
+    }
+  })
+  guard @h3.version_negotiation(datagram) is Some(packet) else {
+    fail("no Version Negotiation")
+  }
+  // Version 0, the client's SCID as the DCID and its DCID as the SCID, then
+  // the versions this module speaks: QUIC v1.
+  assert_true(packet[0] >= b'\x80')
+  assert_eq(packet[1:5].to_owned(), b"\x00\x00\x00\x00")
+  assert_eq(packet[5], b'\x04')
+  assert_eq(packet[6:10].to_owned(), b"\x22\x22\x22\x22")
+  assert_eq(packet[10], b'\x08')
+  assert_eq(packet[19:].to_owned(), b"\x00\x00\x00\x01")
+  // QUIC v1 itself, and a datagram too small to start a connection, are not.
+  let v1 = Bytes::makei(1200, i => if i == 4 { b'\x01' } else { datagram[i] })
+  let v1 = Bytes::makei(1200, i => {
+    if i >= 1 && i <= 3 {
+      b'\x00'
+    } else {
+      v1[i]
+    }
+  })
+  assert_true(@h3.version_negotiation(v1) is None)
+  assert_true(@h3.version_negotiation(datagram[:100].to_owned()) is None)
+}

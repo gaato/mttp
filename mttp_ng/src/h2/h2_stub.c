@@ -130,6 +130,7 @@ typedef struct {
   size_t header_bytes;
   size_t max_header_bytes;
   int fatal; // nghttp2 returned a fatal error
+  int flooded; // nghttp2 found a flood: nothing more is written
 } session;
 
 typedef struct {
@@ -310,6 +311,13 @@ static int on_frame_not_send(nghttp2_session *ng, const nghttp2_frame *frame,
     put_u8(&s->events, EV_NOT_SENT);
     put_i32(&s->events, frame->hd.stream_id);
     put_i32(&s->events, lib_error);
+    // A response whose HEADERS never went (its stream closed first) sends
+    // no body either, and its stream's close came before the queue was
+    // made: the queue goes now, and pushes to it fail.
+    if (frame->hd.type == NGHTTP2_HEADERS) {
+      outq *q = queue_of(s, frame->hd.stream_id);
+      if (q) queue_remove(s, q);
+    }
   }
   return 0;
 }
@@ -496,6 +504,10 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_recv(session_box *b, moonbit_bytes_t data,
   NG_SSIZE rv = ng_mem_recv(s->ng, data + offset, (size_t)len);
   if (rv < 0) {
     s->fatal = 1;
+    // "Flooding was detected in this HTTP/2 session, and it must be
+    // closed" (nghttp2_session_mem_recv2): what it queued (answers to the
+    // flood) is not written to a peer that does not read.
+    if (rv == NGHTTP2_ERR_FLOODED) s->flooded = 1;
     return (int32_t)rv;
   }
   return 0;
@@ -505,7 +517,7 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_recv(session_box *b, moonbit_bytes_t data,
 // takes it: the bytes to write beneath, possibly empty.
 MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h2_send(session_box *b) {
   session *s = b->s;
-  if (s && s->ng) {
+  if (s && s->ng && !s->flooded) {
     for (;;) {
       const uint8_t *chunk;
       NG_SSIZE n = ng_mem_send(s->ng, &chunk);

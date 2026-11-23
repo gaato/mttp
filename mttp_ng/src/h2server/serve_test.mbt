@@ -83,6 +83,13 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
       @async.sleep(300)
       @mttp_core.Response::new(200, body=Bytes(b"drained"))
     }
+    "/badfield" =>
+      // A field value with CR and LF, as a handler reflecting its input
+      // might return.
+      @mttp_core.Response::new(
+        200,
+        headers=@mttp_core.Headers::of([("x-echo", "a\r\nset-cookie: b")]),
+      )
     "/early" =>
       // Answers without reading the request body.
       @mttp_core.Response::new(413, body=Bytes(b"early"))
@@ -469,4 +476,21 @@ async test "a request body that keeps trickling ends at body_timeout_ms" {
       response.close()
     },
   )
+}
+
+///|
+/// nghttp2 checks only what it receives: a response field with CR or LF is
+/// refused here, as h1server refuses one (the audit of #58).
+async test "a response with an invalid field is answered 500" {
+  with_server(port => {
+    let client = h2_client()
+    defer client.close()
+    let response = client.send(
+      @mttp_core.Request::get("https://localhost:\{port}/badfield"),
+      defaults,
+    )
+    assert_eq(response.status, 500)
+    assert_eq(response.headers.get("x-echo"), None)
+    ignore(text(response))
+  })
 }

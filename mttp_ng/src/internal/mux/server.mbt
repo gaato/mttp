@@ -365,13 +365,33 @@ async fn ServerContext::respond(
 ) -> Unit {
   let conn = self.conn
   defer response.close()
-  let response = if response.status == 101 || response.status < 200 {
+  let response = if response.status == 101 ||
+    response.status < 200 ||
+    response.status > 599 {
     // No upgrades in HTTP/2 or HTTP/3, and an interim response is not a
     // final one.
     response.close()
     @mttp_core.Response::new(500)
   } else {
-    response
+    // nghttp2 and nghttp3 check what they receive, not what they send: a
+    // field with CR, LF or NUL (a handler that reflects its input) would
+    // go out as it is, and split a response where a gateway turns it into
+    // HTTP/1.1. As h1server, the response is refused; here with a 500.
+    try response.headers.validate() catch {
+      @mttp_core.TransportError(detail~, ..) => {
+        (self.on_error)(
+          @mttp_core.TransportError(
+            kind=Invalid,
+            phase=Head,
+            detail="the handler's response has an invalid field: \{detail}",
+          ),
+        )
+        response.close()
+        @mttp_core.Response::new(500)
+      }
+    } noraise {
+      _ => response
+    }
   }
   let fields = [(":status", response.status.to_string())]
   for field in response.headers.iter() {
