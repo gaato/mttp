@@ -47,24 +47,9 @@ const LINGER_MS : Int32 = 100
 const POLL_MS : Int32 = 250
 
 ///|
-/// A response body's queue holds at most this many bytes before its writer
-/// waits.
-const QUEUE_BYTES : Int32 = 65536
-
-///|
-/// Where one request stream stands.
-priv struct ServerStream {
-  id : Int32
-  body : Array[Bytes]
-  mut received : Int64
-  /// The client ended its half.
-  mut ended : Bool
-  /// The stream closed, with the code.
-  mut closed : @h2.ErrorCode?
-  /// The response's last frame went out.
-  mut sent_end : Bool
-  /// Why the request body cannot be read on (too large, too slow).
-  mut failure : @mttp_core.TransportError?
+/// A request stream and the task that serves it.
+priv struct Entry {
+  stream : @mux.ServerStream
   mut task : @async.Task[Unit]?
 }
 
@@ -77,11 +62,8 @@ priv struct Served {
   clock : &@rt.Clock
   limits : @h1server.ServerLimits
   h2_limits : H2Limits
-  streams : Map[Int32, ServerStream]
-  /// Broadcast after every change a waiter may wait for, with `generation`
-  /// counting the changes (see `wait`).
-  changed : @cond_var.Cond
-  mut generation : Int32
+  streams : Map[Int32, Entry]
+  changes : @mux.Changes
   /// Handlers running, cancelled ones still finishing included.
   mut handlers : Int32
   /// The connection can carry nothing more.
@@ -90,43 +72,93 @@ priv struct Served {
 
 ///|
 fn Served::wake(self : Served) -> Unit {
-  self.generation += 1
-  self.changed.broadcast()
+  self.changes.notify()
 }
 
 ///|
-/// Waits for the next change, at most `ms`; false when the time ran out.
-/// The change counted is any after the call: `timer.within` suspends before
-/// its body waits on the condition, and a broadcast in between would be
-/// lost, so the body waits until the generation moves on from the one seen
-/// at the call. (A handler started while its request's DATA frames were
-/// still being dispatched missed their wake-up and waited out
-/// `body_timeout_ms`; h2spec's "Sends multiple DATA frames" found it.)
-async fn Served::wait(self : Served, ms : Int32) -> Bool noraise {
-  let seen = self.generation
-  self.timer.within(ms, () => {
-    while self.generation == seen {
-      self.changed.wait()
+/// What a stream of `@mux.ServerContext` needs of an HTTP/2 connection.
+impl @mux.ServerConn for Served with fn submit_response(self, id, fields, body~) {
+  let ok = try {
+    self.session.submit_response(id.to_int(), fields, body~)
+    true
+  } catch {
+    _ => false
+  }
+  self.wake()
+  ok
+}
+
+///|
+impl @mux.ServerConn for Served with fn push(self, id, data, end~) {
+  let ok = try {
+    self.session.push(id.to_int(), data, end~)
+    true
+  } catch {
+    _ => false
+  }
+  self.wake()
+  ok
+}
+
+///|
+impl @mux.ServerConn for Served with fn queued(self, id) {
+  self.session.queued(id.to_int()).unwrap_or(0)
+}
+
+///|
+impl @mux.ServerConn for Served with fn consume(self, id, len) {
+  self.session.consume_stream(id.to_int(), len)
+}
+
+///|
+impl @mux.ServerConn for Served with fn abort(self, id) {
+  self.session.reset(id.to_int(), InternalError) catch {
+    _ => ()
+  }
+  self.wake()
+}
+
+///|
+/// RST_STREAM(NO_ERROR) once the response's last frame went out: a reset
+/// drops what is still queued.
+impl @mux.ServerConn for Served with fn stop_reading(self, stream) {
+  ignore(
+    self.changes.wait_until(
+      () => stream.sent_end || stream.ended || stream.closed || self.dead,
+      deadline=self.changes.deadline_in(self.limits.body_timeout_ms),
+    ),
+  )
+  if !stream.ended && !stream.closed && !self.dead {
+    self.session.reset(stream.id.to_int(), NoError) catch {
+      _ => ()
     }
-  })
+    self.wake()
+  }
+}
+
+///|
+impl @mux.ServerConn for Served with fn gone(self) {
+  self.dead
+}
+
+///|
+/// The writer task sends what the session has; a wake-up is enough.
+impl @mux.ServerConn for Served with fn flush(self) {
+  self.wake()
 }
 
 ///|
 /// Writes what the session has to say until the connection ends.
-async fn Served::write_loop(
-  self : Served,
-  group : @async.TaskGroup,
-  context : Context,
-) -> Unit noraise {
+async fn Served::write_loop(self : Served) -> Unit noraise {
   while !self.dead {
+    // Taken before the session is asked, so a change after the question
+    // wakes the wait below.
+    let next = self.changes.next()
     let output = self.session.output()
     // What serializing it caused: frames sent, streams closed.
-    self.dispatch(group, context)
+    self.dispatch(None)
     if output.length() == 0 {
-      if !self.session.wants_io() {
-        return
-      }
-      self.changed.wait()
+      next.wait()
       continue
     }
     let failed = Ref(false)
@@ -155,10 +187,12 @@ async fn Served::write_loop(
 /// declared length is answered 413 before the handler runs; a body that
 /// crosses it fails the handler's read, and the answer is 413),
 /// `max_header_bytes` as SETTINGS_MAX_HEADER_LIST_SIZE (a larger header
-/// block resets its stream), `body_timeout_ms` for each request body read
-/// and each write, `handler_timeout_ms` (504), and `header_timeout_ms` for
-/// a connection without streams, which then gets GOAWAY. `h2_limits` gives
-/// the streams and windows.
+/// block resets its stream), `body_timeout_ms` for a request body from its
+/// first read to its end and for each write and each read of a streamed
+/// response, `handler_timeout_ms` (504), and `header_timeout_ms` for a
+/// connection without streams, which then gets GOAWAY. `h2_limits` gives
+/// the streams and windows. `coordination` defaults to gaato/mttp's
+/// runtime.
 ///
 /// A request carries the `protocol` attribute `h2`, `connection_scheme`
 /// from `scheme`, `remote_addr` from `peer`, and `background` when given.
@@ -182,6 +216,7 @@ pub async fn serve_h2_conn(
   stopping~ : () -> Bool = () => false,
   activity~ : (Bool) -> Unit = _ => (),
   background? : (async () -> Unit) -> Unit,
+  coordination? : &@rt.Coordination,
 ) -> Unit {
   defer conn.close()
   let session = @h2.H2Session::server(settings={
@@ -203,6 +238,10 @@ pub async fn serve_h2_conn(
     }
   }
   defer session.free()
+  let coordination : &@rt.Coordination = match coordination {
+    Some(coordination) => coordination
+    None => @runtime.RuntimeCoordination::new()
+  }
   let served = {
     conn,
     session,
@@ -211,28 +250,32 @@ pub async fn serve_h2_conn(
     limits,
     h2_limits,
     streams: Map([]),
-    changed: @cond_var.Cond(),
-    generation: 0,
+    changes: @mux.Changes::new(coordination, clock, timer),
     handlers: 0,
     dead: false,
   }
-  let context = {
-    served,
+  let context : @mux.ServerContext = {
+    conn: served,
+    changes: served.changes,
     handler,
+    limits,
     scheme,
+    protocol: "h2",
     auto_date,
     peer,
+    clock,
+    timer,
     on_error,
     background,
   }
   @async.with_task_group(group => {
-    group.spawn_bg(() => served.write_loop(group, context))
+    group.spawn_bg(() => served.write_loop())
     served.read_loop(group, context, stopping, activity)
     // Whatever ended the loop, what the session still has to say (GOAWAY,
     // the last frames of finished streams) goes out before the close.
     served.dead = true
-    for _, stream in served.streams {
-      if stream.task is Some(task) {
+    for _, entry in served.streams {
+      if entry.task is Some(task) {
         task.cancel()
       }
     }
@@ -265,24 +308,12 @@ pub async fn serve_h2_conn(
 }
 
 ///|
-/// What every stream task of a connection needs.
-priv struct Context {
-  served : Served
-  handler : @mttp_core.Handler
-  scheme : String
-  auto_date : Bool
-  peer : String?
-  on_error : (@mttp_core.TransportError) -> Unit
-  background : ((async () -> Unit) -> Unit)?
-}
-
-///|
 /// Reads frames until the client goes, the connection fails, or a stop or
 /// the idle limit has let the last stream finish.
 async fn Served::read_loop(
   self : Served,
   group : @async.TaskGroup,
-  context : Context,
+  context : @mux.ServerContext,
   stopping : () -> Bool,
   activity : (Bool) -> Unit,
 ) -> Unit {
@@ -361,7 +392,7 @@ async fn Served::read_loop(
     } catch {
       @h2.H2Error(..) as error => Some(error)
     }
-    self.dispatch(group, context)
+    self.dispatch(Some((group, context)))
     self.wake()
     // A connection error nghttp2 answered itself (a malformed frame, an
     // invalid PING): it queued GOAWAY and reads no more, so the connection
@@ -383,12 +414,12 @@ async fn Served::read_loop(
 }
 
 ///|
-/// Hands the session's events to their streams, and starts a task for each
-/// request.
+/// Hands the session's events to their streams. With `spawn` (the reader's
+/// call), a request starts a task on that group; the writer's call only
+/// sees frames sent and streams closed.
 fn Served::dispatch(
   self : Served,
-  group : @async.TaskGroup,
-  context : Context,
+  spawn : (@async.TaskGroup, @mux.ServerContext)?,
 ) -> Unit {
   for event in self.session.events() {
     match event {
@@ -404,69 +435,50 @@ fn Served::dispatch(
         self.session.reset(stream, RefusedStream) catch {
           _ => ()
         }
-      Headers(stream~, kind=Request, fields~, end_stream~) => {
-        let s = {
-          id: stream,
-          body: [],
-          received: 0L,
-          ended: end_stream,
-          closed: None,
-          sent_end: false,
-          failure: None,
-          task: None,
+      Headers(stream~, kind=Request, fields~, end_stream~) =>
+        if spawn is Some((group, context)) {
+          let s = @mux.ServerStream::new(stream.to_int64(), ended=end_stream)
+          let entry = { stream: s, task: None, }
+          self.streams[stream] = entry
+          self.handlers += 1
+          let task = group.spawn(allow_failure=true, () => {
+            defer {
+              self.handlers -= 1
+              self.streams.remove(stream)
+              self.wake()
+            }
+            context.serve(s, fields)
+          })
+          entry.task = Some(task)
         }
-        self.streams[stream] = s
-        self.handlers += 1
-        let task = group.spawn(allow_failure=true, () => {
-          defer {
-            self.handlers -= 1
-            self.streams.remove(stream)
-            self.wake()
-          }
-          context.run(s, fields)
-        })
-        s.task = Some(task)
-      }
       Headers(stream~, kind=Trailers, end_stream~, ..) =>
-        if end_stream && self.streams.get(stream) is Some(s) {
-          s.ended = true
+        if end_stream && self.streams.get(stream) is Some(entry) {
+          entry.stream.ended = true
         }
       Data(stream~, data) => {
         self.session.consume_connection(data.length())
         match self.streams.get(stream) {
-          Some(s) => {
-            s.received += data.length().to_int64()
-            if s.received > self.limits.max_body_bytes.to_int64() {
-              let limit = self.limits.max_body_bytes
-              if s.failure is None {
-                s.failure = Some(
-                  @mttp_core.TransportError(
-                    kind=TooLarge(limit~),
-                    phase=Body,
-                    detail="the request body is larger than \{limit} bytes",
-                  ),
-                )
-              }
-            } else {
-              s.body.push(data)
+          Some(entry) =>
+            if !entry.stream.arrived(data, self.limits.max_body_bytes) {
+              self.session.consume_stream(stream, data.length())
             }
-          }
-          None => ()
+          // A stream whose handler finished: its window is given back.
+          None => self.session.consume_stream(stream, data.length())
         }
       }
       EndStream(stream~) =>
-        if self.streams.get(stream) is Some(s) {
-          s.ended = true
+        if self.streams.get(stream) is Some(entry) {
+          entry.stream.ended = true
         }
       Sent(stream~, end_stream=true) =>
-        if self.streams.get(stream) is Some(s) {
-          s.sent_end = true
+        if self.streams.get(stream) is Some(entry) {
+          entry.stream.sent_end = true
         }
       Closed(stream~, code~) =>
-        if self.streams.get(stream) is Some(s) {
-          s.closed = Some(code)
+        if self.streams.get(stream) is Some(entry) {
+          entry.stream.closed = true
           // A reset before the response ended: its handler is not waited for.
-          if code != NoError && s.task is Some(task) {
+          if code != NoError && entry.task is Some(task) {
             task.cancel()
           }
         }

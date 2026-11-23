@@ -200,6 +200,8 @@ fn h2_error(code : Int32) -> H2Error {
 pub struct H2Session {
   priv raw : Raw
   priv server : Bool
+  /// Header blocks begun and not yet ended, across `events` calls.
+  priv blocks : Map[Int32, Array[(String, String)]]
 }
 
 ///|
@@ -220,7 +222,7 @@ fn H2Session::new(
   if session_failed(raw) {
     raise H2Error(code=-901, detail="cannot create an nghttp2 session")
   }
-  { raw, server, }
+  { raw, server, blocks: Map([]), }
 }
 
 ///|
@@ -267,7 +269,7 @@ pub fn H2Session::output(self : H2Session) -> Bytes {
 ///|
 /// The events recorded since the last call, in order.
 pub fn H2Session::events(self : H2Session) -> Array[H2Event] {
-  decode_events(raw_events(self.raw))
+  decode_events(raw_events(self.raw), self.blocks)
 }
 
 ///|

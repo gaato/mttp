@@ -119,6 +119,7 @@ pub async fn serve(
           stopping=accepted.stopping,
           activity=accepted.activity,
           background=accepted.background,
+          coordination=accepted.coordination,
         )
       }
       let speak_h1 = (conn : &@rt.Conn, scheme : String) => {

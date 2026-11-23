@@ -203,10 +203,17 @@ fn kind_of(category : Int32) -> BlockKind {
 ///|
 /// Decodes the records h2_stub.c wrote. Header fields between a block's
 /// begin and end records are gathered into one `Headers`.
-fn decode_events(data : Bytes) -> Array[H2Event] {
+///
+/// `blocks` holds the fields of header blocks whose end record has not come
+/// yet. It belongs to the session: a block split over two reads has its
+/// first fields in one drain and its end in the next (Codex's review of
+/// #58 found the fields of the first read lost when the map was local).
+fn decode_events(
+  data : Bytes,
+  blocks : Map[Int32, Array[(String, String)]],
+) -> Array[H2Event] {
   let events = []
   let cursor = { data, at: 0, }
-  let blocks : Map[Int32, Array[(String, String)]] = Map([])
   while cursor.at < data.length() {
     match cursor.byte() {
       1 => {

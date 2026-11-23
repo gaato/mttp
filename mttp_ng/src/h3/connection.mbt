@@ -282,6 +282,8 @@ fn values(settings : H3Settings) -> FixedArray[Int64] {
 /// A QUIC connection with HTTP/3 on it, client or server.
 pub struct QuicConn {
   priv raw : Raw
+  /// Header sections begun and not yet ended, across `events` calls.
+  priv blocks : Map[Int64, Array[(String, String)]]
 }
 
 ///|
@@ -291,7 +293,7 @@ fn opened(raw : Raw) -> QuicConn raise H3Error {
     raw_free(raw)
     raise H3Error(code=0, detail~)
   }
-  { raw, }
+  { raw, blocks: Map([]), }
 }
 
 ///|
@@ -385,7 +387,7 @@ pub fn QuicConn::datagrams(self : QuicConn) -> Array[Bytes] raise H3Error {
 ///|
 /// The events recorded since the last call, in order.
 pub fn QuicConn::events(self : QuicConn) -> Array[H3Event] {
-  decode_events(raw_events(self.raw))
+  decode_events(raw_events(self.raw), self.blocks)
 }
 
 ///|

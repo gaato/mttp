@@ -13,7 +13,7 @@ import {
 // Values
 pub async fn serve(async (@mttp_core.Request) -> @mttp_core.Response noraise, addr~ : String, tls? : @tls.ServerTls, h2c? : Bool, limits? : @h1server.ServerLimits, h2_limits? : H2Limits, auto_date? : Bool, on_listen? : (String) -> Unit, on_error? : (@mttp_core.TransportError) -> Unit) -> Unit raise @server.ListenError
 
-pub async fn serve_h2_conn(&@rt.Conn, async (@mttp_core.Request) -> @mttp_core.Response noraise, clock~ : &@rt.Clock, timer~ : &@rt.Timer, scheme~ : String, limits? : @h1server.ServerLimits, h2_limits? : H2Limits, auto_date? : Bool, peer? : String, on_error? : (@mttp_core.TransportError) -> Unit, stopping? : () -> Bool, activity? : (Bool) -> Unit, background? : (async () -> Unit) -> Unit) -> Unit
+pub async fn serve_h2_conn(&@rt.Conn, async (@mttp_core.Request) -> @mttp_core.Response noraise, clock~ : &@rt.Clock, timer~ : &@rt.Timer, scheme~ : String, limits? : @h1server.ServerLimits, h2_limits? : H2Limits, auto_date? : Bool, peer? : String, on_error? : (@mttp_core.TransportError) -> Unit, stopping? : () -> Bool, activity? : (Bool) -> Unit, background? : (async () -> Unit) -> Unit, coordination? : &@rt.Coordination) -> Unit
 
 // Errors
 

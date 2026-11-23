@@ -108,10 +108,15 @@ fn latin1(bytes : BytesView) -> String {
 }
 
 ///|
-fn decode_events(data : Bytes) -> Array[H3Event] {
+///
+/// `blocks` holds the fields of header sections whose end record has not
+/// come yet; it belongs to the connection, as h2's does to its session.
+fn decode_events(
+  data : Bytes,
+  blocks : Map[Int64, Array[(String, String)]],
+) -> Array[H3Event] {
   let events = []
   let cursor = { data, at: 0, }
-  let blocks : Map[Int64, Array[(String, String)]] = Map([])
   while cursor.at < data.length() {
     match cursor.byte() {
       1 => blocks[cursor.long()] = []
