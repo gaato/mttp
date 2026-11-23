@@ -6,36 +6,9 @@
 // is sent again, so writes need no protection from cancellation.
 
 ///|
-/// Where one request stream stands.
-priv struct Stream {
-  id : Int64
-  mut head : (Int32, @mttp_core.Headers)?
-  body : Array[Bytes]
-  mut buffered : Int32
-  mut ended : Bool
-  /// The stream closed, with its HTTP/3 error code.
-  mut closed : Int64?
-  mut headers_sent : Bool
-  mut sent_end : Bool
-  mut too_large : Bool
-  mut malformed : String?
-}
-
-///|
-fn Stream::new(id : Int64) -> Stream {
-  {
-    id,
-    head: None,
-    body: [],
-    buffered: 0,
-    ended: false,
-    closed: None,
-    headers_sent: false,
-    sent_end: false,
-    too_large: false,
-    malformed: None,
-  }
-}
+/// A stream's request body queue holds at most this many bytes before the
+/// uploader waits.
+const QUEUE_BYTES : Int32 = 65536
 
 ///|
 priv struct Connection {
@@ -44,8 +17,8 @@ priv struct Connection {
   coordination : &@rt.Coordination
   timer : &@rt.Timer
   clock : &@rt.Clock
-  streams : Map[Int64, Stream]
-  mut changed : &@rt.Signal
+  streams : Map[Int64, @mux.ClientStream]
+  changes : @mux.Changes
   mut reading : Bool
   mut writing : Bool
   mut dead : @mttp_core.TransportError?
@@ -78,7 +51,7 @@ fn Connection::new(
     timer,
     clock,
     streams: Map([]),
-    changed: coordination.signal(),
+    changes: @mux.Changes::new(coordination, clock, timer),
     reading: false,
     writing: false,
     dead: None,
@@ -96,9 +69,7 @@ fn Connection::new(
 
 ///|
 fn Connection::notify(self : Connection) -> Unit {
-  let woken = self.changed
-  self.changed = self.coordination.signal()
-  woken.notify()
+  self.changes.notify()
 }
 
 ///|
@@ -159,15 +130,8 @@ fn Connection::dispatch(self : Connection) -> Unit {
       HandshakeDone => self.handshake = true
       Headers(stream~, fields~, end_stream~) =>
         if self.streams.get(stream) is Some(s) {
-          if s.head is None {
-            match response_head(fields) {
-              Ok(None) => ()
-              Ok(Some(head)) => s.head = Some(head)
-              Err(detail) => {
-                s.malformed = Some(detail)
-                self.quic.reset(stream, @h3.H3_REQUEST_CANCELLED)
-              }
-            }
+          if s.head_arrived(fields) {
+            self.quic.reset(stream, @h3.H3_MESSAGE_ERROR)
           }
           if end_stream {
             s.ended = true
@@ -175,10 +139,7 @@ fn Connection::dispatch(self : Connection) -> Unit {
         }
       Data(stream~, data) =>
         match self.streams.get(stream) {
-          Some(s) => {
-            s.body.push(data)
-            s.buffered += data.length()
-          }
+          Some(s) => s.data_arrived(data)
           // A stream released before its end: its bytes count no more.
           None => self.quic.consume(stream, data.length())
         }
@@ -188,7 +149,7 @@ fn Connection::dispatch(self : Connection) -> Unit {
         }
       Closed(stream~, code~) =>
         if self.streams.get(stream) is Some(s) {
-          s.closed = Some(code)
+          s.closed = Some(stream_end(code))
         }
       GoAway(id~) => {
         self.goaway = Some(id)
@@ -225,14 +186,14 @@ fn Connection::dispatch(self : Connection) -> Unit {
 
 ///|
 /// Sends what the connection has to say, one sender at a time.
-async fn Connection::flush(
+async fn Connection::send_output(
   self : Connection,
 ) -> Unit raise @mttp_core.TransportError {
   while self.writing {
     if self.dead is Some(error) {
       raise error
     }
-    self.changed.wait()
+    self.changes.next().wait()
   }
   self.writing = true
   defer {
@@ -273,9 +234,9 @@ async fn Connection::flush(
 }
 
 ///|
-async fn Connection::flush_if_idle(self : Connection) -> Unit noraise {
+async fn Connection::send_if_idle(self : Connection) -> Unit noraise {
   if !self.writing && self.dead is None {
-    self.flush() catch {
+    self.send_output() catch {
       @mttp_core.TransportError(..) => ()
     }
   }
@@ -313,10 +274,7 @@ async fn Connection::read_once(
         )
       },
       monitor=() => {
-        while !done() {
-          let signal = self.changed
-          signal.wait()
-        }
+        ignore(self.changes.wait_until(done))
         interrupted.val = true
         raise @mttp_core.TransportError(
           kind=Closed,
@@ -354,11 +312,11 @@ async fn Connection::read_once(
       }
   }
   self.dispatch()
-  self.flush_if_idle()
+  self.send_if_idle()
 }
 
 ///|
-async fn Connection::wait_until(
+async fn Connection::wait_for(
   self : Connection,
   done : () -> Bool,
 ) -> Unit raise @mttp_core.TransportError {
@@ -367,7 +325,7 @@ async fn Connection::wait_until(
       raise error
     }
     if self.reading {
-      self.changed.wait()
+      self.changes.next().wait()
     } else {
       self.read_once(done)
     }
@@ -375,12 +333,66 @@ async fn Connection::wait_until(
 }
 
 ///|
-fn Connection::release(self : Connection, stream : Stream) -> Unit {
+/// How a stream that closed with HTTP/3 error `code` ended.
+fn stream_end(code : Int64) -> @mux.StreamEnd {
+  if code == @h3.H3_NO_ERROR {
+    Clean
+  } else if code == @h3.H3_REQUEST_REJECTED {
+    Refused("the server rejected the request (H3_REQUEST_REJECTED)")
+  } else {
+    Failed(protocol=code == @h3.H3_MESSAGE_ERROR, "HTTP/3 error \{code}")
+  }
+}
+
+///|
+/// What an exchange of `@mux.exchange` needs of an HTTP/3 connection.
+impl @mux.ClientConn for Connection with fn open_stream(self, fields, body~) {
+  let id = self.quic.submit_request(fields, body~) catch {
+    error => {
+      self.retired = true
+      self.notify()
+      raise @mttp_core.TransportError(
+        kind=Refused,
+        phase=Pool,
+        detail="the connection took no new stream: \{error}",
+      )
+    }
+  }
+  let stream = @mux.ClientStream::new(id)
+  self.streams[id] = stream
+  self.active += 1
+  stream
+}
+
+///|
+impl @mux.ClientConn for Connection with fn push(self, stream, data, end~) {
+  try {
+    self.quic.push(stream.id, data, end~)
+    true
+  } catch {
+    _ => false
+  }
+}
+
+///|
+impl @mux.ClientConn for Connection with fn queued(self, stream) {
+  self.quic.queued(stream.id).unwrap_or(0)
+}
+
+///|
+impl @mux.ClientConn for Connection with fn consume(self, stream, len) {
+  self.quic.consume(stream.id, len)
+}
+
+///|
+/// Ends `stream` on this end's side: what it buffered and nobody read
+/// gives the windows back, and a stream still open is reset with
+/// H3_REQUEST_CANCELLED.
+impl @mux.ClientConn for Connection with fn release(self, stream) {
   guard self.streams.get(stream.id) is Some(_) else { return }
   self.streams.remove(stream.id)
   self.active -= 1
   if !self.closed {
-    // What was buffered and not read gives the window back.
     if stream.buffered > 0 {
       self.quic.consume(stream.id, stream.buffered)
     }
@@ -392,4 +404,31 @@ fn Connection::release(self : Connection, stream : Stream) -> Unit {
     self.idle_since = self.clock.now_unix_ms()
   }
   self.notify()
+}
+
+///|
+impl @mux.ClientConn for Connection with fn flush(self) {
+  self.send_output()
+}
+
+///|
+impl @mux.ClientConn for Connection with fn flush_if_idle(self) {
+  self.send_if_idle()
+}
+
+///|
+impl @mux.ClientConn for Connection with fn wait_until(self, done) {
+  self.wait_for(done)
+}
+
+///|
+impl @mux.ClientConn for Connection with fn dead(self) {
+  self.dead
+}
+
+///|
+/// A server's GOAWAY names the first request stream it does not process
+/// (RFC 9114, section 5.2).
+impl @mux.ClientConn for Connection with fn beyond_goaway(self, stream) {
+  self.goaway is Some(first) && stream.id >= first
 }

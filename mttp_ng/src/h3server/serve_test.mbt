@@ -340,3 +340,48 @@ async test "a stuck response body is reset after body_timeout_ms" {
     },
   )
 }
+
+///|
+/// A request body that sends a small piece every 40 ms, for 40 seconds.
+priv struct Trickle {
+  mut left : Int32
+}
+
+///|
+impl @mttp_core.BodyStream for Trickle with fn read_some(self) {
+  if self.left == 0 {
+    return None
+  }
+  self.left -= 1
+  @async.sleep(40)
+  Some(Bytes::make(100, b't'))
+}
+
+///|
+impl @mttp_core.BodyStream for Trickle with fn close(_) {
+  ()
+}
+
+///|
+async test "a request body that keeps trickling ends at body_timeout_ms" {
+  // Each piece wakes the handler's read; the body's deadline runs from its
+  // first read all the same. Were it reset by each piece, the upload would
+  // outlast the test's 30 seconds.
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 300, },
+    port => {
+      let client = client()
+      defer client.close()
+      let response = client.send(
+        {
+          ..@mttp_core.Request::post("https://localhost:\{port}/echo"),
+          body: Stream(@mttp_core.StreamBody::new({ left: 1000, })),
+        },
+        defaults,
+      )
+      // The body's failure decides the answer, as h1server's does.
+      assert_eq(response.status, 408)
+      response.close()
+    },
+  )
+}

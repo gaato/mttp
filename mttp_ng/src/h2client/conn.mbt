@@ -4,8 +4,8 @@
 // response head, body bytes, room in a body queue, a free stream) takes the
 // reader's role when nobody holds it: one read from the connection, the
 // session's events handed to their streams, and the session's output written.
-// The others wait for the connection's `changed` signal, which every step
-// rings, and look again; one of them takes the role when its holder lets it
+// The others wait for the connection's changes (`@mux.Changes`), which every
+// step rings, and look again; one of them takes the role when its holder lets it
 // go. So the connection is read as long as anyone waits on it, and nothing
 // outlives the sends and bodies that use it.
 //
@@ -28,46 +28,6 @@ const READ_BYTES : Int32 = 65536
 const QUEUE_BYTES : Int32 = 65536
 
 ///|
-/// Where one stream stands, as the connection's events left it.
-priv struct Stream {
-  id : Int32
-  /// The final response: its status and fields.
-  mut head : (Int32, @mttp_core.Headers)?
-  /// Body bytes not yet taken by the reader, and how many.
-  body : Array[Bytes]
-  mut buffered : Int32
-  /// The peer ended its half.
-  mut ended : Bool
-  /// The stream closed, with the code (NoError when both halves ended).
-  mut closed : @h2.ErrorCode?
-  /// HEADERS of this stream were serialized for sending: from here the
-  /// request may have reached the peer.
-  mut headers_sent : Bool
-  /// The whole request went out.
-  mut sent_end : Bool
-  /// The response head was larger than the limit.
-  mut too_large : Bool
-  /// The response head is not a valid HTTP/2 response.
-  mut malformed : String?
-}
-
-///|
-fn Stream::new(id : Int32) -> Stream {
-  {
-    id,
-    head: None,
-    body: [],
-    buffered: 0,
-    ended: false,
-    closed: None,
-    headers_sent: false,
-    sent_end: false,
-    too_large: false,
-    malformed: None,
-  }
-}
-
-///|
 /// An HTTP/2 connection over `conn`.
 priv struct Connection {
   conn : &@rt.Conn
@@ -75,9 +35,9 @@ priv struct Connection {
   coordination : &@rt.Coordination
   timer : &@rt.Timer
   clock : &@rt.Clock
-  streams : Map[Int32, Stream]
-  /// Rung and replaced after every step and whenever a role is let go.
-  mut changed : &@rt.Signal
+  streams : Map[Int32, @mux.ClientStream]
+  /// Rung after every step and whenever a role is let go.
+  changes : @mux.Changes
   mut reading : Bool
   mut writing : Bool
   /// Why the connection can carry nothing more.
@@ -115,7 +75,7 @@ fn Connection::new(
     timer,
     clock,
     streams: Map([]),
-    changed: coordination.signal(),
+    changes: @mux.Changes::new(coordination, clock, timer),
     reading: false,
     writing: false,
     dead: None,
@@ -133,9 +93,7 @@ fn Connection::new(
 ///|
 /// Wakes everyone waiting on the connection.
 fn Connection::notify(self : Connection) -> Unit {
-  let woken = self.changed
-  self.changed = self.coordination.signal()
-  woken.notify()
+  self.changes.notify()
 }
 
 ///|
@@ -188,50 +146,48 @@ fn Connection::has_room(self : Connection) -> Bool {
 }
 
 ///|
+/// How a stream that closed with `code` ended.
+fn stream_end(code : @h2.ErrorCode) -> @mux.StreamEnd {
+  match code {
+    NoError => Clean
+    RefusedStream => Refused("the server refused the stream (REFUSED_STREAM)")
+    ProtocolError => Failed(protocol=true, "PROTOCOL_ERROR")
+    code => Failed(protocol=false, "\{code.to_repr()}")
+  }
+}
+
+///|
 /// Hands the session's events to their streams.
 fn Connection::dispatch(self : Connection, events : Array[@h2.H2Event]) -> Unit {
   for event in events {
     match event {
-      Headers(stream~, kind~, fields~, end_stream~) =>
+      Headers(stream~, kind=Response | Trailers, fields~, end_stream~) =>
         if self.streams.get(stream) is Some(s) {
-          match kind {
-            Response | Trailers if s.head is None =>
-              match response_head(fields) {
-                // An interim response: the final one follows.
-                Ok(None) => ()
-                Ok(Some(head)) => s.head = Some(head)
-                Err(detail) => {
-                  s.malformed = Some(detail)
-                  self.session.reset(stream, ProtocolError) catch {
-                    _ => ()
-                  }
-                }
-              }
-            // Trailer fields are not passed on (nobody asks; CONTRACT.md).
-            _ => ()
+          if s.head_arrived(fields) {
+            self.session.reset(stream, ProtocolError) catch {
+              _ => ()
+            }
           }
           if end_stream {
             s.ended = true
           }
         }
-      Data(stream~, data) =>
-        match self.streams.get(stream) {
-          Some(s) => {
-            s.body.push(data)
-            s.buffered += data.length()
-            // The connection's window opens as soon as the bytes are in
-            // the stream's buffer, which its own window bounds.
-            self.session.consume_connection(data.length())
-          }
-          None => self.session.consume_connection(data.length())
+      Headers(..) => ()
+      Data(stream~, data) => {
+        // The connection's window opens as soon as the bytes are in the
+        // stream's buffer, which its own window bounds.
+        self.session.consume_connection(data.length())
+        if self.streams.get(stream) is Some(s) {
+          s.data_arrived(data)
         }
+      }
       EndStream(stream~) =>
         if self.streams.get(stream) is Some(s) {
           s.ended = true
         }
       Closed(stream~, code~) =>
         if self.streams.get(stream) is Some(s) {
-          s.closed = Some(code)
+          s.closed = Some(stream_end(code))
         }
       GoAway(last_stream~, ..) => {
         self.goaway = Some(last_stream)
@@ -248,9 +204,10 @@ fn Connection::dispatch(self : Connection, events : Array[@h2.H2Event]) -> Unit 
         if self.streams.get(stream) is Some(s) {
           s.too_large = true
         }
+      // A frame that never went out: the request did not reach the server.
       NotSent(stream~, ..) =>
         if self.streams.get(stream) is Some(s) && s.closed is None {
-          s.closed = Some(RefusedStream)
+          s.closed = Some(Refused("the stream's frames were never sent"))
         }
       Settings(..) => self.settled = true
       Drained(..) | PingAck => ()
@@ -279,12 +236,7 @@ async fn Connection::read_once(
   self.coordination.supervise(
     primary=() => chunk.val = self.conn.read(max_len=READ_BYTES),
     monitor=() => {
-      // Looked at before every wait: a change between the start of the read
-      // and the first wait rang a signal this monitor never waited on.
-      while !done() {
-        let signal = self.changed
-        signal.wait()
-      }
+      ignore(self.changes.wait_until(done))
       interrupted.val = true
       // Cancels the read, which gives up nothing (rt.Conn).
       raise @mttp_core.TransportError(
@@ -296,7 +248,7 @@ async fn Connection::read_once(
   ) catch {
     @mttp_core.TransportError(..) as error => {
       if !interrupted.val {
-        self.fail(with_phase(error, Unknown))
+        self.fail(@mux.with_phase(error, Unknown))
       }
       return
     }
@@ -324,7 +276,7 @@ async fn Connection::read_once(
         // A fatal protocol error: nghttp2 queued GOAWAY, which goes out
         // below as far as the connection lets it.
         Some(error) => {
-          self.flush() catch {
+          self.flush_output() catch {
             @mttp_core.TransportError(..) => ()
           }
           self.fail(
@@ -335,7 +287,7 @@ async fn Connection::read_once(
             ),
           )
         }
-        None => self.flush_if_idle()
+        None => self.write_if_idle()
       }
     }
   }
@@ -345,14 +297,14 @@ async fn Connection::read_once(
 /// Writes the session's output, one writer at a time; a writer that finds
 /// another at work waits for it and writes what is left. Each write is
 /// protected from cancellation and bounded by `WRITE_MS`.
-async fn Connection::flush(
+async fn Connection::flush_output(
   self : Connection,
 ) -> Unit raise @mttp_core.TransportError {
   while self.writing {
     if self.dead is Some(error) {
       raise error
     }
-    self.changed.wait()
+    self.changes.next().wait()
   }
   if self.dead is Some(error) {
     raise error
@@ -396,9 +348,9 @@ async fn Connection::flush(
 ///|
 /// Writes what the session has to say after a read (acknowledgements,
 /// window updates), unless a writer is at work and will.
-async fn Connection::flush_if_idle(self : Connection) -> Unit noraise {
+async fn Connection::write_if_idle(self : Connection) -> Unit noraise {
   if !self.writing {
-    self.flush() catch {
+    self.flush_output() catch {
       @mttp_core.TransportError(..) => ()
     }
   }
@@ -408,7 +360,7 @@ async fn Connection::flush_if_idle(self : Connection) -> Unit noraise {
 /// Waits until `done` holds, reading the connection meanwhile whenever no
 /// one else does. Raises the connection's failure when it can carry nothing
 /// more and `done` still does not hold.
-async fn Connection::wait_until(
+async fn Connection::wait_for(
   self : Connection,
   done : () -> Bool,
 ) -> Unit raise @mttp_core.TransportError {
@@ -417,7 +369,7 @@ async fn Connection::wait_until(
       raise error
     }
     if self.reading {
-      self.changed.wait()
+      self.changes.next().wait()
     } else {
       self.read_once(done)
     }
@@ -435,14 +387,55 @@ async fn Connection::probe(self : Connection) -> Unit noraise {
 }
 
 ///|
+/// What an exchange of `@mux.exchange` needs of an HTTP/2 connection.
+impl @mux.ClientConn for Connection with fn open_stream(self, fields, body~) {
+  let id = self.session.submit_request(fields, body~) catch {
+    error => {
+      self.retired = true
+      self.notify()
+      raise @mttp_core.TransportError(
+        kind=Refused,
+        phase=Pool,
+        detail="the connection took no new stream: \{error}",
+      )
+    }
+  }
+  let stream = @mux.ClientStream::new(id.to_int64())
+  self.streams[id] = stream
+  self.active += 1
+  stream
+}
+
+///|
+impl @mux.ClientConn for Connection with fn push(self, stream, data, end~) {
+  try {
+    self.session.push(stream.id.to_int(), data, end~)
+    true
+  } catch {
+    _ => false
+  }
+}
+
+///|
+impl @mux.ClientConn for Connection with fn queued(self, stream) {
+  self.session.queued(stream.id.to_int()).unwrap_or(0)
+}
+
+///|
+impl @mux.ClientConn for Connection with fn consume(self, stream, len) {
+  self.session.consume_stream(stream.id.to_int(), len)
+}
+
+///|
 /// Ends `stream` on this end's side: a stream still open is reset with
-/// CANCEL, and its unread bytes are given back to the windows.
-fn Connection::release(self : Connection, stream : Stream) -> Unit {
-  guard self.streams.get(stream.id) is Some(_) else { return }
-  self.streams.remove(stream.id)
+/// CANCEL.
+impl @mux.ClientConn for Connection with fn release(self, stream) {
+  let id = stream.id.to_int()
+  guard self.streams.get(id) is Some(_) else { return }
+  self.streams.remove(id)
   self.active -= 1
   if stream.closed is None && !self.closed {
-    self.session.reset(stream.id, Cancel) catch {
+    self.session.reset(id, Cancel) catch {
       _ => ()
     }
   }
@@ -450,4 +443,31 @@ fn Connection::release(self : Connection, stream : Stream) -> Unit {
     self.idle_since = self.clock.now_unix_ms()
   }
   self.notify()
+}
+
+///|
+impl @mux.ClientConn for Connection with fn flush(self) {
+  self.flush_output()
+}
+
+///|
+impl @mux.ClientConn for Connection with fn flush_if_idle(self) {
+  self.write_if_idle()
+}
+
+///|
+impl @mux.ClientConn for Connection with fn wait_until(self, done) {
+  self.wait_for(done)
+}
+
+///|
+impl @mux.ClientConn for Connection with fn dead(self) {
+  self.dead
+}
+
+///|
+/// Streams above the GOAWAY's last stream were not processed (RFC 9113,
+/// section 6.8).
+impl @mux.ClientConn for Connection with fn beyond_goaway(self, stream) {
+  self.goaway is Some(last) && stream.id > last.to_int64()
 }

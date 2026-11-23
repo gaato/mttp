@@ -3,12 +3,16 @@ package "gaato/mttp_ng/internal/mux"
 
 import {
   "gaato/mttp_core",
+  "gaato/mttp_core/attempt",
   "gaato/mttp_core/h1server",
   "gaato/mttp_core/rt",
+  "moonbitlang/core/debug",
 }
 
 // Values
 pub let connection_fields : Array[String]
+
+pub async fn exchange(&ClientConn, &@rt.Coordination, Array[(String, String)], @mttp_core.Request, @mttp_core.SendOptions, @attempt.AttemptTimer, Phases, reused~ : Bool, &@mttp_core.BodyStream?, Bytes?, ExchangeLimits, protocol~ : String) -> @mttp_core.Response raise @mttp_core.TransportError
 
 pub fn invalid(String) -> @mttp_core.TransportError
 
@@ -31,6 +35,43 @@ pub fn Changes::new(&@rt.Coordination, &@rt.Clock, &@rt.Timer) -> Self
 pub fn Changes::next(Self) -> &@rt.Signal
 pub fn Changes::notify(Self) -> Unit
 pub async fn Changes::wait_until(Self, () -> Bool, deadline? : Int64) -> Bool noraise
+
+pub(all) struct ClientStream {
+  id : Int64
+  mut head : (Int32, @mttp_core.Headers)?
+  body : Array[Bytes]
+  mut buffered : Int32
+  mut ended : Bool
+  mut closed : StreamEnd?
+  mut headers_sent : Bool
+  mut sent_end : Bool
+  mut too_large : Bool
+  mut malformed : String?
+}
+pub fn ClientStream::data_arrived(Self, Bytes) -> Unit
+pub fn ClientStream::head_arrived(Self, Array[(String, String)]) -> Bool
+pub fn ClientStream::new(Int64) -> Self
+
+pub(all) struct ExchangeLimits {
+  head_max : Int32
+  max_body_bytes : Int32?
+  queue_bytes : Int32
+}
+
+pub struct Phases {
+  // private fields
+}
+pub fn Phases::emit(Self, @mttp_core.PhaseEvent) -> Unit
+pub fn Phases::end(Self) -> Unit
+pub fn Phases::new(@mttp_core.Request) -> Self
+
+pub struct RequestSource {
+  // private fields
+}
+pub fn RequestSource::finish(Self) -> Unit
+pub fn RequestSource::hand_over(Self) -> Unit
+pub fn RequestSource::new(@mttp_core.Request) -> Self
+pub fn RequestSource::take(Self) -> &@mttp_core.BodyStream? raise @mttp_core.TransportError
 
 pub(all) struct ServerContext {
   conn : &ServerConn
@@ -60,6 +101,13 @@ pub(all) struct ServerStream {
 pub fn ServerStream::arrived(Self, Bytes, Int32) -> Bool
 pub fn ServerStream::new(Int64, ended~ : Bool) -> Self
 
+#derive(Eq, @debug.Debug)
+pub(all) enum StreamEnd {
+  Clean
+  Refused(String)
+  Failed(protocol~ : Bool, String)
+}
+
 pub struct Target {
   host : String
   port : Int32
@@ -73,6 +121,19 @@ pub struct Target {
 // Type aliases
 
 // Traits
+pub(open) trait ClientConn {
+  fn open_stream(Self, Array[(String, String)], body~ : Bool) -> ClientStream raise @mttp_core.TransportError
+  fn push(Self, ClientStream, Bytes, end~ : Bool) -> Bool
+  fn queued(Self, ClientStream) -> Int32
+  fn consume(Self, ClientStream, Int32) -> Unit
+  fn release(Self, ClientStream) -> Unit
+  async fn flush(Self) -> Unit raise @mttp_core.TransportError
+  async fn flush_if_idle(Self) -> Unit noraise
+  async fn wait_until(Self, () -> Bool) -> Unit raise @mttp_core.TransportError
+  fn dead(Self) -> @mttp_core.TransportError?
+  fn beyond_goaway(Self, ClientStream) -> Bool
+}
+
 pub(open) trait ServerConn {
   fn submit_response(Self, Int64, Array[(String, String)], body~ : Bool) -> Bool
   fn push(Self, Int64, Bytes, end~ : Bool) -> Bool

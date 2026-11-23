@@ -290,3 +290,31 @@ test "a PING is acknowledged" {
   p.settle()
   assert_true(p.client_events.contains(PingAck))
 }
+
+///|
+/// A request with `n` fields of `size` bytes each after its pseudo-fields.
+fn big_request(n : Int32, size : Int32) -> Array[(String, String)] {
+  let fields = request()
+  for i in 0..<n {
+    fields.push(("x-field-\{i}", String::make(size, 'a')))
+  }
+  fields
+}
+
+///|
+test "a header block read across two drains of events keeps every field" {
+  let p = pair()
+  // Larger than a frame: HEADERS and CONTINUATION.
+  let fields = big_request(40, 600)
+  let stream = p.client.submit_request(fields, body=false)
+  let bytes = p.client.output()
+  let half = bytes.length() / 2
+  p.server.recv(bytes[:half].to_owned())
+  let first = p.server.events()
+  assert_false(first.iter().any(e => e is Headers(..)))
+  p.server.recv(bytes[half:].to_owned())
+  let second = p.server.events()
+  assert_true(
+    second.contains(Headers(stream~, kind=Request, fields~, end_stream=true)),
+  )
+}

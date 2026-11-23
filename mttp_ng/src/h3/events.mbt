@@ -22,6 +22,10 @@ pub const H3_REQUEST_REJECTED : Int64 = 0x10bL
 pub const H3_REQUEST_CANCELLED : Int64 = 0x10cL
 
 ///|
+/// A malformed message (RFC 9114, section 4.1.2).
+pub const H3_MESSAGE_ERROR : Int64 = 0x10eL
+
+///|
 /// Something a step of the connection caused. Later versions may add
 /// events: match the ones you need and pass over the rest (`H3Event::..`).
 #derive(Eq, Debug)

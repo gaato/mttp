@@ -62,3 +62,49 @@ async test "a closed backend refuses sends with Closed in phase Pool" {
     _ => fail("a closed backend sent")
   }
 }
+
+///|
+/// A request body that counts its closes.
+priv struct Source {
+  mut closed : Int32
+}
+
+///|
+impl @mttp_core.BodyStream for Source with fn read_some(_) {
+  None
+}
+
+///|
+impl @mttp_core.BodyStream for Source with fn close(self) {
+  self.closed += 1
+}
+
+///|
+async test "a send that fails before its stream opens closes the request body" {
+  let b = @h3client.H3Backend::new()
+  defer b.close()
+  let source = { closed: 0, }
+  let request = @mttp_core.Request::post("https://127.0.0.1:1/").body_stream(
+    source,
+  )
+  try b.try_send(request, { ..defaults, timeout_ms: Some(0), }) catch {
+    @mttp_core.TransportError(phase~, ..) => assert_eq(phase, Pool)
+  } noraise {
+    _ => fail("an invalid send was not refused")
+  }
+  assert_eq(source.closed, 1)
+}
+
+///|
+async test "a declined send leaves the request body to the caller" {
+  let b = @h3client.H3Backend::new()
+  defer b.close()
+  let source = { closed: 0, }
+  let request = @mttp_core.Request::post("http://127.0.0.1:1/").body_stream(
+    source,
+  )
+  assert_true(b.try_send(request, defaults) is None)
+  assert_eq(source.closed, 0)
+  guard request.body is Stream(cell) else { fail("no stream body") }
+  ignore(cell.take())
+}

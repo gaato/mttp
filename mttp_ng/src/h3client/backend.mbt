@@ -198,9 +198,9 @@ fn H3Backend::sweep(self : H3Backend, origin : Origin) -> Unit {
 /// (the origin is then remembered as without HTTP/3).
 async fn H3Backend::connection(
   self : H3Backend,
-  target : Target,
+  target : @mux.Target,
   timer : @attempt.AttemptTimer,
-  phases : Phases,
+  phases : @mux.Phases,
 ) -> (Connection, Bool)? raise @mttp_core.TransportError {
   let origin = match self.origins.get(target.origin) {
     Some(origin) => origin
@@ -221,7 +221,7 @@ async fn H3Backend::connection(
         return Some((connection, true))
       }
       timer.run(Pool, () => {
-        connection.wait_until(() => {
+        connection.wait_for(() => {
           connection.has_room(self.settings.max_streams_bidi) ||
           !connection.usable()
         }) catch {
@@ -270,8 +270,8 @@ async fn H3Backend::connection(
 /// `::1` where a server may listen on 127.0.0.1 only.
 async fn H3Backend::dial(
   self : H3Backend,
-  target : Target,
-  phases : Phases,
+  target : @mux.Target,
+  phases : @mux.Phases,
 ) -> Connection? raise @mttp_core.TransportError {
   guard self.quic is Some(quic) else {
     raise @mttp_core.TransportError(
@@ -316,10 +316,10 @@ async fn H3Backend::dial(
 async fn H3Backend::attempt(
   self : H3Backend,
   quic : @h3.ClientQuic,
-  target : Target,
+  target : @mux.Target,
   addr : @socket.Addr,
   ms : Int32,
-  phases : Phases,
+  phases : @mux.Phases,
 ) -> Connection? noraise {
   let udp = @socket.UdpClient(addr) catch { _ => return None }
   let conn = @h3.QuicConn::client(
@@ -343,10 +343,10 @@ async fn H3Backend::attempt(
   let mut ok = false
   defer (if !ok { connection.close() })
   let finished = self.timer.within(ms, () => {
-    connection.flush() catch {
+    connection.send_output() catch {
       @mttp_core.TransportError(..) => return
     }
-    connection.wait_until(() => connection.handshake) catch {
+    connection.wait_for(() => connection.handshake) catch {
       @mttp_core.TransportError(..) => ()
     }
   })
@@ -358,40 +358,6 @@ async fn H3Backend::attempt(
   phases.emit(TlsDone)
   ok = true
   Some(connection)
-}
-
-///|
-/// Reports a send's phase events (Backend rule 13).
-priv struct Phases {
-  report : ((@mttp_core.PhaseEvent) -> Unit)?
-  mut over : Bool
-  mut written : Bool
-  mut first_byte : Bool
-}
-
-///|
-fn Phases::emit(self : Phases, event : @mttp_core.PhaseEvent) -> Unit {
-  if self.over {
-    return
-  }
-  match event {
-    Written => {
-      if self.written || self.first_byte {
-        return
-      }
-      self.written = true
-    }
-    FirstByte => {
-      if self.first_byte {
-        return
-      }
-      self.first_byte = true
-    }
-    _ => ()
-  }
-  if self.report is Some(report) {
-    report(event)
-  }
 }
 
 ///|
@@ -441,6 +407,8 @@ pub async fn H3Backend::try_send(
   request : @mttp_core.Request,
   options : @mttp_core.SendOptions,
 ) -> @mttp_core.Response? raise @mttp_core.TransportError {
+  let body = @mux.RequestSource::new(request)
+  defer body.finish()
   if self.closed {
     raise closed_error()
   }
@@ -448,16 +416,17 @@ pub async fn H3Backend::try_send(
   match options.body {
     Exchange(..) | Stream(..) => ()
     @mttp_core.BodyTiming::.. =>
-      raise invalid("a BodyTiming this backend does not know")
+      raise @mux.invalid("a BodyTiming this backend does not know")
   }
   if self.config.max_body_bytes is Some(n) && n < 0 {
-    raise invalid("negative body byte ceiling")
+    raise @mux.invalid("negative body byte ceiling")
   }
-  let target = target(request)
+  let target = @mux.target(request)
   if !target.secure ||
     request.meth is Connect ||
     request.headers.contains("upgrade") ||
     self.is_broken(target.origin) {
+    body.hand_over()
     return None
   }
   let limits : @attempt.PhaseLimits = {
@@ -472,17 +441,11 @@ pub async fn H3Backend::try_send(
     options.timeout_ms,
     limits~,
   )
-  let fields = request_fields(request, target)
-  let phases = {
-    report: request.attributes.get(@mttp_core.on_phase),
-    over: false,
-    written: false,
-    first_byte: false,
-  }
-  defer {
-    phases.over = true
-  }
+  let fields = @mux.request_fields(request, target)
+  let phases = @mux.Phases::new(request)
+  defer phases.end()
   guard self.connection(target, timer, phases) is Some((connection, reused)) else {
+    body.hand_over()
     return None
   }
   let mut reserving = true
@@ -490,301 +453,30 @@ pub async fn H3Backend::try_send(
     connection.reserved -= 1
     connection.notify()
   })
-  let source = match request.body {
-    Stream(cell) => Some(cell.take())
-    _ => None
-  }
-  defer (if source is Some(source) { source.close() })
+  let source = body.take()
   let first = match source {
     Some(source) => timer.run(Write, () => source.read_some())
     None => request.body.as_bytes()
   }
   reserving = false
   connection.reserved -= 1
-  let has_body = match (first, source) {
-    (Some(bytes), None) => bytes.length() > 0
-    (Some(_), Some(_)) => true
-    _ => false
-  }
-  let id = connection.quic.submit_request(fields, body=has_body) catch {
-    error => {
-      connection.retired = true
-      connection.notify()
-      raise @mttp_core.TransportError(
-        kind=Refused,
-        phase=Pool,
-        detail="the connection took no new stream: \{error}",
-      )
-    }
-  }
-  let stream = Stream::new(id)
-  connection.streams[id] = stream
-  connection.active += 1
-  phases.emit(Pooled(reused~))
-  let mut returned = false
-  defer (if !returned { connection.release(stream) })
-  match (first, source) {
-    (Some(bytes), None) if has_body =>
-      connection.quic.push(id, bytes, end=true) catch {
-        _ => ()
-      }
-    (Some(piece), Some(_)) =>
-      connection.quic.push(id, piece, end=false) catch {
-        _ => ()
-      }
-    _ => ()
-  }
-  let upload_done = Ref(!(source is Some(_) && first is Some(_)))
-  let outcome : Ref[@mttp_core.Response?] = Ref(None)
-  self.coordination.supervise(
-    primary=() => {
-      timer.run(Write, () => connection.flush())
-      while true {
-        if stream.sent_end {
-          phases.emit(Written)
-        }
-        if stream.head is Some((status, headers)) {
-          phases.emit(FirstByte)
-          outcome.val = Some(
-            self.response(
-              connection, stream, status, headers, request, options, timer,
-            ),
-          )
-          return
-        }
-        if stream.closed is Some(_) ||
-          stream.too_large ||
-          stream.malformed is Some(_) {
-          raise self.stream_failure(connection, stream, phase_of(stream))
-        }
-        let phase = phase_of(stream)
-        let sent = stream.sent_end
-        timer.run(phase, () => {
-          connection.wait_until(() => {
-            stream.head is Some(_) ||
-            stream.closed is Some(_) ||
-            stream.too_large ||
-            stream.malformed is Some(_) ||
-            stream.sent_end != sent
-          }) catch {
-            @mttp_core.TransportError(..) =>
-              raise self.stream_failure(connection, stream, phase)
-          }
-        })
-      }
-    },
-    monitor=() => {
-      guard source is Some(source) else { return }
-      while !upload_done.val {
-        timer.run(Write, () => {
-          connection.wait_until(() => {
-            stream.head is Some(_) ||
-            stream.closed is Some(_) ||
-            connection.quic.queued(id).unwrap_or(0) < 65536
-          }) catch {
-            @mttp_core.TransportError(..) =>
-              raise self.stream_failure(connection, stream, Write)
-          }
-        })
-        if stream.head is Some(_) || stream.closed is Some(_) {
-          return
-        }
-        match timer.run(Write, () => source.read_some()) {
-          Some(bytes) =>
-            connection.quic.push(id, bytes, end=false) catch {
-              _ => return
-            }
-          None => {
-            connection.quic.push(id, b"", end=true) catch {
-              _ => return
-            }
-            upload_done.val = true
-          }
-        }
-        timer.run(Write, () => connection.flush())
-      }
-    },
-  )
-  guard outcome.val is Some(response) else {
-    raise @mttp_core.TransportError(
-      kind=Protocol,
-      phase=Head,
-      detail="the exchange ended without a response head",
-    )
-  }
-  returned = true
-  Some(response)
-}
-
-///|
-fn phase_of(stream : Stream) -> @mttp_core.Phase {
-  if stream.head is Some(_) {
-    Body
-  } else if stream.sent_end {
-    Head
-  } else if stream.headers_sent {
-    Write
-  } else {
-    Pool
-  }
-}
-
-///|
-fn H3Backend::stream_failure(
-  self : H3Backend,
-  connection : Connection,
-  stream : Stream,
-  phase : @mttp_core.Phase,
-) -> @mttp_core.TransportError {
-  if stream.too_large {
-    let limit = self.config.head_limits.max_head_bytes
-    return @mttp_core.TransportError(
-      kind=TooLarge(limit~),
-      phase=Head,
-      detail="the response head is larger than \{limit} bytes",
-    )
-  }
-  if stream.malformed is Some(detail) {
-    return @mttp_core.TransportError(kind=Protocol, phase=Head, detail~)
-  }
-  let phase = if stream.headers_sent { phase } else { Pool }
-  if connection.goaway is Some(first) && stream.id >= first {
-    return @mttp_core.TransportError(
-      kind=Refused,
-      phase~,
-      detail="the server's GOAWAY did not take stream \{stream.id}",
-    )
-  }
-  match stream.closed {
-    Some(code) if code == @h3.H3_REQUEST_REJECTED =>
-      @mttp_core.TransportError(
-        kind=Refused,
-        phase~,
-        detail="the server rejected the request (H3_REQUEST_REJECTED)",
-      )
-    Some(code) =>
-      @mttp_core.TransportError(
-        kind=Network,
-        phase~,
-        detail="the stream was reset: HTTP/3 error \{code}",
-      )
-    None =>
-      match connection.dead {
-        Some(error) => with_phase(error, phase)
-        None =>
-          @mttp_core.TransportError(
-            kind=Network,
-            phase~,
-            detail="the stream ended without a response",
-          )
-      }
-  }
-}
-
-///|
-fn H3Backend::response(
-  self : H3Backend,
-  connection : Connection,
-  stream : Stream,
-  status : Int32,
-  headers : @mttp_core.Headers,
-  request : @mttp_core.Request,
-  options : @mttp_core.SendOptions,
-  timer : @attempt.AttemptTimer,
-) -> @mttp_core.Response {
-  let attributes = @mttp_core.Attributes::empty().put(@mttp_core.protocol, "h3")
-  let bodiless = request.meth is Head || status == 204 || status == 304
-  if bodiless || (stream.ended && stream.buffered == 0) {
-    connection.release(stream)
-    return { ..@mttp_core.Response::new(status, headers~), attributes, }
-  }
-  let declared = match headers.get("content-length") {
-    Some(text) => @string.parse_int64(text) catch { _ => -1L }
-    None => -1L
-  }
-  let body = H3Body::{
+  let response = @mux.exchange(
     connection,
-    stream,
-    timer: timer.for_body(options.body),
-    budget: @attempt.BodyBudget::new(
-      @attempt.body_limit(options.body, ceiling?=self.config.max_body_bytes),
-    ),
-    declared: if declared >= 0L {
-      Some(declared)
-    } else {
-      None
+    self.coordination,
+    fields,
+    request,
+    options,
+    timer,
+    phases,
+    reused~,
+    source,
+    first,
+    {
+      head_max: self.config.head_limits.max_head_bytes,
+      max_body_bytes: self.config.max_body_bytes,
+      queue_bytes: QUEUE_BYTES,
     },
-    finished: false,
-  }
-  {
-    ..@mttp_core.Response::new(
-      status,
-      headers~,
-      body=Stream(@mttp_core.StreamBody::new(body)),
-    ),
-    attributes,
-  }
-}
-
-///|
-priv struct H3Body {
-  connection : Connection
-  stream : Stream
-  timer : @attempt.AttemptTimer
-  budget : @attempt.BodyBudget
-  declared : Int64?
-  mut finished : Bool
-}
-
-///|
-impl @mttp_core.BodyStream for H3Body with fn read_some(self) {
-  if self.finished {
-    return None
-  }
-  errdefer self.close_stream()
-  self.budget.check_declared(self.declared)
-  let connection = self.connection
-  let stream = self.stream
-  self.timer.run(Body, () => {
-    connection.wait_until(() => {
-      stream.body.length() > 0 || stream.ended || stream.closed is Some(_)
-    }) catch {
-      @mttp_core.TransportError(..) as error => raise with_phase(error, Body)
-    }
-  })
-  if stream.body.length() > 0 {
-    let bytes = stream.body.remove(0)
-    stream.buffered -= bytes.length()
-    self.budget.admit(bytes.length())
-    connection.quic.consume(stream.id, bytes.length())
-    connection.flush_if_idle()
-    return Some(bytes)
-  }
-  let complete = stream.ended ||
-    (
-      stream.closed == Some(@h3.H3_NO_ERROR) &&
-      (self.declared is None || self.declared == Some(self.budget.count()))
-    )
-  if complete {
-    self.close_stream()
-    return None
-  }
-  raise @mttp_core.TransportError(
-    kind=Network,
-    phase=Body,
-    detail="the stream was reset before its body ended: HTTP/3 error \{stream.closed.unwrap_or(0L)}",
+    protocol="h3",
   )
-}
-
-///|
-fn H3Body::close_stream(self : H3Body) -> Unit {
-  self.finished = true
-  self.connection.release(self.stream)
-}
-
-///|
-impl @mttp_core.BodyStream for H3Body with fn close(self) {
-  if !self.finished {
-    self.close_stream()
-  }
+  Some(response)
 }

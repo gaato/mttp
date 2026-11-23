@@ -224,9 +224,9 @@ priv enum Route {
 /// HTTP/1.1 only.
 async fn H2Backend::connection(
   self : H2Backend,
-  target : Target,
+  target : @mux.Target,
   timer : @attempt.AttemptTimer,
-  phases : Phases,
+  phases : @mux.Phases,
 ) -> Route raise @mttp_core.TransportError {
   let origin = match self.origins.get(target.origin) {
     Some(origin) => origin
@@ -259,9 +259,7 @@ async fn H2Backend::connection(
       // Every stream the server allows is in use: wait for one to end,
       // reading the connection meanwhile.
       timer.run(Pool, () => {
-        connection.wait_until(() => {
-          connection.has_room() || !connection.usable()
-        }) catch {
+        connection.wait_for(() => connection.has_room() || !connection.usable()) catch {
           @mttp_core.TransportError(..) => ()
         }
       })
@@ -299,8 +297,8 @@ async fn H2Backend::connection(
 /// HTTP/1 client, and the origin remembered as HTTP/1.1.
 async fn H2Backend::dial(
   self : H2Backend,
-  target : Target,
-  phases : Phases,
+  target : @mux.Target,
+  phases : @mux.Phases,
 ) -> Connection? raise @mttp_core.TransportError {
   let tcp = self.dialer.connect(host=target.host, port=target.port)
   let mut owned = true
@@ -340,42 +338,6 @@ async fn H2Backend::dial(
 }
 
 ///|
-/// Reports a send's phase events (Backend rule 13), each at most once and
-/// never after the send ended.
-priv struct Phases {
-  report : ((@mttp_core.PhaseEvent) -> Unit)?
-  mut over : Bool
-  mut written : Bool
-  mut first_byte : Bool
-}
-
-///|
-fn Phases::emit(self : Phases, event : @mttp_core.PhaseEvent) -> Unit {
-  if self.over {
-    return
-  }
-  match event {
-    Written => {
-      // Out of order after an early response: left out.
-      if self.written || self.first_byte {
-        return
-      }
-      self.written = true
-    }
-    FirstByte => {
-      if self.first_byte {
-        return
-      }
-      self.first_byte = true
-    }
-    _ => ()
-  }
-  if self.report is Some(report) {
-    report(event)
-  }
-}
-
-///|
 /// `H2Backend::send`.
 pub impl @mttp_core.Backend for H2Backend with fn send(self, request, options) {
   self.send(request, options)
@@ -404,15 +366,8 @@ pub async fn H2Backend::send(
   request : @mttp_core.Request,
   options : @mttp_core.SendOptions,
 ) -> @mttp_core.Response raise @mttp_core.TransportError {
-  // A stream body stays untaken until it is known which engine sends the
-  // request: every exit closes it, except a hand-over to the HTTP/1 client,
-  // which takes it itself.
-  let mut handed = false
-  let taken : Ref[&@mttp_core.BodyStream?] = Ref(None)
-  defer (match taken.val {
-    Some(source) => source.close()
-    None => if !handed && request.body is Stream(cell) { cell.close() }
-  })
+  let body = @mux.RequestSource::new(request)
+  defer body.finish()
   if self.closed {
     raise closed_error()
   }
@@ -420,12 +375,12 @@ pub async fn H2Backend::send(
   match options.body {
     Exchange(..) | Stream(..) => ()
     @mttp_core.BodyTiming::.. =>
-      raise invalid("a BodyTiming this backend does not know")
+      raise @mux.invalid("a BodyTiming this backend does not know")
   }
   if self.config.max_body_bytes is Some(n) && n < 0 {
-    raise invalid("negative body byte ceiling")
+    raise @mux.invalid("negative body byte ceiling")
   }
-  let target = target(request)
+  let target = @mux.target(request)
   let proxied = if target.secure {
     self.config.proxy.https is Some(_)
   } else {
@@ -436,7 +391,7 @@ pub async fn H2Backend::send(
     request.meth is Connect ||
     request.headers.contains("upgrade") ||
     self.speaks_http11(target.origin) {
-    handed = true
+    body.hand_over()
     return self.fallback.send(request, options)
   }
   let limits : @attempt.PhaseLimits = {
@@ -451,21 +406,14 @@ pub async fn H2Backend::send(
     options.timeout_ms,
     limits~,
   )
-  let fields = request_fields(request, target)
-  let phases = {
-    report: request.attributes.get(@mttp_core.on_phase),
-    over: false,
-    written: false,
-    first_byte: false,
-  }
-  defer {
-    phases.over = true
-  }
+  let fields = @mux.request_fields(request, target)
+  let phases = @mux.Phases::new(request)
+  defer phases.end()
   let (connection, reused) = match self.connection(target, timer, phases) {
     H2(connection, reused~) => (connection, reused)
     Http11 => {
-      phases.over = true
-      handed = true
+      phases.end()
+      body.hand_over()
       let (request, options) = handed_over(request, options, timer)
       return self.fallback.send(request, options)
     }
@@ -477,14 +425,7 @@ pub async fn H2Backend::send(
     connection.reserved -= 1
     connection.notify()
   })
-  let source = match request.body {
-    Stream(cell) => {
-      let source = cell.take()
-      taken.val = Some(source)
-      Some(source)
-    }
-    _ => None
-  }
+  let source = body.take()
   // The request body's first piece, read before anything is sent (rule 3).
   let first = match source {
     Some(source) => timer.run(Write, () => source.read_some())
@@ -492,305 +433,22 @@ pub async fn H2Backend::send(
   }
   reserving = false
   connection.reserved -= 1
-  let has_body = match (first, source) {
-    (Some(bytes), None) => bytes.length() > 0
-    (Some(_), Some(_)) => true
-    _ => false
-  }
-  let id = connection.session.submit_request(fields, body=has_body) catch {
-    error => {
-      connection.retired = true
-      connection.notify()
-      raise @mttp_core.TransportError(
-        kind=Refused,
-        phase=Pool,
-        detail="the connection took no new stream: \{error}",
-      )
-    }
-  }
-  let stream = Stream::new(id)
-  connection.streams[id] = stream
-  connection.active += 1
-  phases.emit(Pooled(reused~))
-  // Whatever ends the send before a response is returned ends its stream.
-  let mut returned = false
-  defer (if !returned { connection.release(stream) })
-  match (first, source) {
-    (Some(bytes), None) if has_body =>
-      connection.session.push(id, bytes, end=true) catch {
-        _ => ()
-      }
-    (Some(piece), Some(_)) =>
-      connection.session.push(id, piece, end=false) catch {
-        _ => ()
-      }
-    _ => ()
-  }
-  let upload_done = Ref(!(source is Some(_) && first is Some(_)))
-  let outcome : Ref[@mttp_core.Response?] = Ref(None)
-  self.coordination.supervise(
-    primary=() => {
-      timer.run(Write, () => connection.flush())
-      while true {
-        if stream.sent_end {
-          phases.emit(Written)
-        }
-        if stream.head is Some((status, headers)) {
-          phases.emit(FirstByte)
-          outcome.val = Some(
-            self.response(
-              connection, stream, status, headers, request, options, timer,
-            ),
-          )
-          return
-        }
-        if stream.closed is Some(_) ||
-          stream.too_large ||
-          stream.malformed is Some(_) {
-          raise self.stream_failure(connection, stream, phase_of(stream))
-        }
-        let phase = phase_of(stream)
-        let sent = stream.sent_end
-        timer.run(phase, () => {
-          connection.wait_until(() => {
-            stream.head is Some(_) ||
-            stream.closed is Some(_) ||
-            stream.too_large ||
-            stream.malformed is Some(_) ||
-            stream.sent_end != sent
-          }) catch {
-            @mttp_core.TransportError(..) =>
-              raise self.stream_failure(connection, stream, phase)
-          }
-        })
-      }
-    },
-    monitor=() => {
-      guard source is Some(source) else { return }
-      while !upload_done.val {
-        timer.run(Write, () => {
-          connection.wait_until(() => {
-            stream.head is Some(_) ||
-            stream.closed is Some(_) ||
-            connection.session.queued(id).unwrap_or(0) < QUEUE_BYTES
-          }) catch {
-            @mttp_core.TransportError(..) =>
-              raise self.stream_failure(connection, stream, Write)
-          }
-        })
-        if stream.head is Some(_) || stream.closed is Some(_) {
-          return
-        }
-        match timer.run(Write, () => source.read_some()) {
-          Some(bytes) =>
-            connection.session.push(id, bytes, end=false) catch {
-              _ => return
-            }
-          None => {
-            connection.session.push(id, b"", end=true) catch {
-              _ => return
-            }
-            upload_done.val = true
-          }
-        }
-        timer.run(Write, () => connection.flush())
-      }
-    },
-  )
-  guard outcome.val is Some(response) else {
-    raise @mttp_core.TransportError(
-      kind=Protocol,
-      phase=Head,
-      detail="the exchange ended without a response head",
-    )
-  }
-  returned = true
-  response
-}
-
-///|
-/// The phase a stream has reached: Pool until its HEADERS went out (nothing
-/// of the request reached the server), Write until the whole request did,
-/// Head until the response head arrived.
-fn phase_of(stream : Stream) -> @mttp_core.Phase {
-  if stream.head is Some(_) {
-    Body
-  } else if stream.sent_end {
-    Head
-  } else if stream.headers_sent {
-    Write
-  } else {
-    Pool
-  }
-}
-
-///|
-/// Why `stream` ended without what was waited for, in `phase`.
-fn H2Backend::stream_failure(
-  self : H2Backend,
-  connection : Connection,
-  stream : Stream,
-  phase : @mttp_core.Phase,
-) -> @mttp_core.TransportError {
-  if stream.too_large {
-    let limit = self.config.head_limits.max_head_bytes
-    return @mttp_core.TransportError(
-      kind=TooLarge(limit~),
-      phase=Head,
-      detail="the response head is larger than \{limit} bytes",
-    )
-  }
-  if stream.malformed is Some(detail) {
-    return @mttp_core.TransportError(kind=Protocol, phase=Head, detail~)
-  }
-  // Nothing of the request went out: whatever happened, it is unsent.
-  let phase = if stream.headers_sent { phase } else { Pool }
-  if connection.goaway is Some(last) && stream.id > last {
-    return @mttp_core.TransportError(
-      kind=Refused,
-      phase~,
-      detail="the server's GOAWAY named stream \{last} as its last; stream \{stream.id} was not processed",
-    )
-  }
-  match stream.closed {
-    Some(RefusedStream) =>
-      @mttp_core.TransportError(
-        kind=Refused,
-        phase~,
-        detail="the server refused the stream (REFUSED_STREAM)",
-      )
-    Some(code) =>
-      @mttp_core.TransportError(
-        kind=if code == ProtocolError { Protocol } else { Network },
-        phase~,
-        detail="the stream was reset: \{code.to_repr()}",
-      )
-    None =>
-      match connection.dead {
-        Some(error) => with_phase(error, phase)
-        None =>
-          @mttp_core.TransportError(
-            kind=Network,
-            phase~,
-            detail="the stream ended without a response",
-          )
-      }
-  }
-}
-
-///|
-/// The response whose head has arrived on `stream`.
-fn H2Backend::response(
-  self : H2Backend,
-  connection : Connection,
-  stream : Stream,
-  status : Int32,
-  headers : @mttp_core.Headers,
-  request : @mttp_core.Request,
-  options : @mttp_core.SendOptions,
-  timer : @attempt.AttemptTimer,
-) -> @mttp_core.Response {
-  let attributes = @mttp_core.Attributes::empty().put(@mttp_core.protocol, "h2")
-  let bodiless = request.meth is Head || status == 204 || status == 304
-  if bodiless || (stream.ended && stream.buffered == 0) {
-    connection.release(stream)
-    return { ..@mttp_core.Response::new(status, headers~), attributes, }
-  }
-  // A declared length bounds the body before any of it is read.
-  let declared = match headers.get("content-length") {
-    Some(text) => @string.parse_int64(text) catch { _ => -1L }
-    None => -1L
-  }
-  let body = H2Body::{
+  @mux.exchange(
     connection,
-    stream,
-    timer: timer.for_body(options.body),
-    budget: @attempt.BodyBudget::new(
-      @attempt.body_limit(options.body, ceiling?=self.config.max_body_bytes),
-    ),
-    declared: if declared >= 0L {
-      Some(declared)
-    } else {
-      None
+    self.coordination,
+    fields,
+    request,
+    options,
+    timer,
+    phases,
+    reused~,
+    source,
+    first,
+    {
+      head_max: self.config.head_limits.max_head_bytes,
+      max_body_bytes: self.config.max_body_bytes,
+      queue_bytes: QUEUE_BYTES,
     },
-    finished: false,
-  }
-  {
-    ..@mttp_core.Response::new(
-      status,
-      headers~,
-      body=Stream(@mttp_core.StreamBody::new(body)),
-    ),
-    attributes,
-  }
-}
-
-///|
-/// A response body read from its stream's buffer. Each piece the reader
-/// takes opens the stream's window by as much.
-priv struct H2Body {
-  connection : Connection
-  stream : Stream
-  timer : @attempt.AttemptTimer
-  budget : @attempt.BodyBudget
-  declared : Int64?
-  mut finished : Bool
-}
-
-///|
-impl @mttp_core.BodyStream for H2Body with fn read_some(self) {
-  if self.finished {
-    return None
-  }
-  errdefer self.close_stream()
-  self.budget.check_declared(self.declared)
-  let connection = self.connection
-  let stream = self.stream
-  self.timer.run(Body, () => {
-    connection.wait_until(() => {
-      stream.body.length() > 0 || stream.ended || stream.closed is Some(_)
-    }) catch {
-      @mttp_core.TransportError(..) as error => raise with_phase(error, Body)
-    }
-  })
-  if stream.body.length() > 0 {
-    let bytes = stream.body.remove(0)
-    stream.buffered -= bytes.length()
-    self.budget.admit(bytes.length())
-    connection.session.consume_stream(stream.id, bytes.length())
-    connection.flush_if_idle()
-    return Some(bytes)
-  }
-  // RST_STREAM(NO_ERROR) after the response is how a server ends a stream
-  // whose request it will not read on (RFC 9113, section 8.1); some send it
-  // before the DATA frame that ends the body, so it ends the body too,
-  // unless a declared length says bytes are missing.
-  let complete = stream.ended ||
-    (
-      stream.closed == Some(NoError) &&
-      (self.declared is None || self.declared == Some(self.budget.count()))
-    )
-  if complete {
-    self.close_stream()
-    return None
-  }
-  let code = stream.closed.unwrap_or(InternalError)
-  raise @mttp_core.TransportError(
-    kind=if code == ProtocolError { Protocol } else { Network },
-    phase=Body,
-    detail="the stream was reset before its body ended: \{code.to_repr()}",
+    protocol="h2",
   )
-}
-
-///|
-fn H2Body::close_stream(self : H2Body) -> Unit {
-  self.finished = true
-  self.connection.release(self.stream)
-}
-
-///|
-impl @mttp_core.BodyStream for H2Body with fn close(self) {
-  if !self.finished {
-    self.close_stream()
-  }
 }

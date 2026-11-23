@@ -7,8 +7,8 @@ import {
   "gaato/mttp/runtime",
   "gaato/mttp/trust",
   "gaato/mttp_ng/h2",
+  "gaato/mttp_ng/internal/mux",
   "gaato/mttp_ng/tls",
-  "moonbitlang/core/string",
 }
 
 supported_targets = "native"

@@ -232,3 +232,32 @@ async test "a certificate for another name fails the handshake" {
     assert_true(client.closed())
   })
 }
+
+///|
+async test "a header block read across drains of events keeps every field" {
+  @async.with_timeout(10000, () => {
+    let p = pair()
+    p.take()
+    // Larger than a packet: the HEADERS frame spans several datagrams.
+    let fields = request()
+    for i in 0..<20 {
+      fields.push(("x-field-\{i}", String::make(300, 'a')))
+    }
+    let stream = p.client.submit_request(fields, body=false)
+    let datagrams = p.client.datagrams()
+    assert_true(datagrams.length() > 1)
+    let drains = []
+    for datagram in datagrams {
+      p.server.read(datagram)
+      drains.push(p.server.events())
+    }
+    assert_false(drains[0].iter().any(e => e is Headers(..)))
+    p.settle()
+    for events in drains {
+      p.server_events.append(events)
+    }
+    assert_true(
+      p.server_events.contains(Headers(stream~, fields~, end_stream=true)),
+    )
+  })
+}
