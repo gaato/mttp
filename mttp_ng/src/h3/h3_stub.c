@@ -1284,6 +1284,10 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_write(qconn_box *b) {
     ngtcp2_ssize ndatalen = -1;
     uint32_t flags = NGTCP2_WRITE_STREAM_FLAG_MORE;
     if (fin) flags |= NGTCP2_WRITE_STREAM_FLAG_FIN;
+    // ngtcp2 encodes the FIN only with all the data offered, so the stream
+    // ended in this write only when `ndatalen` covers every vector.
+    uint64_t offered = 0;
+    for (nghttp3_ssize i = 0; i < veccnt; ++i) offered += vec[i].len;
     ngtcp2_ssize n = ngtcp2_conn_writev_stream(
         q->conn, &ps.path, NULL, buf, sizeof buf, &ndatalen, flags, stream,
         (const ngtcp2_vec *)vec, (size_t)veccnt, ts);
@@ -1308,7 +1312,7 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_write(qconn_box *b) {
         if (stream >= 0) {
           put_u8(&q->events, EV_SENT);
           put_i64(&q->events, stream);
-          put_i64(&q->events, 0);
+          put_i64(&q->events, fin && (uint64_t)ndatalen == offered);
         }
         continue;
       }
@@ -1327,7 +1331,7 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_write(qconn_box *b) {
       }
       put_u8(&q->events, EV_SENT);
       put_i64(&q->events, stream);
-      put_i64(&q->events, fin);
+      put_i64(&q->events, fin && (uint64_t)ndatalen == offered);
     }
     if (n == 0) break;
     uint8_t len[2] = {(uint8_t)(n >> 8), (uint8_t)n};
@@ -1519,6 +1523,20 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_submit_response(qconn_box *b,
                                         body ? &dr : NULL);
   free(nva);
   if (rv != 0) queue_remove(q, stream);
+  return rv;
+}
+
+// Submits an informational (1xx) head on `stream`, before its response: 0
+// or a negative nghttp3 error.
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_submit_info(qconn_box *b, int64_t stream,
+                                                  moonbit_bytes_t blob) {
+  qconn *q = b->q;
+  if (!q || !q->h3 || q->closed) return NGHTTP3_ERR_INVALID_STATE;
+  size_t n;
+  nghttp3_nv *nva = fields(blob, &n);
+  if (!nva) return NGHTTP3_ERR_INVALID_ARGUMENT;
+  int rv = nghttp3_conn_submit_info(q->h3, stream, nva, n);
+  free(nva);
   return rv;
 }
 

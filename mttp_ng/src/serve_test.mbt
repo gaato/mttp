@@ -117,3 +117,33 @@ async test "h3 without a certificate is refused" {
     _ => fail("served HTTP/3 without a certificate")
   }
 }
+
+///|
+/// With `h3`, a UDP port that cannot be bound fails `serve`: the TCP
+/// listener already bound to the same port stops with it, rather than
+/// serving on and advertising an HTTP/3 that is not there (Codex's review
+/// of #58).
+async test "h3 on a UDP port in use fails serve, and stops its TCP listener" {
+  let udp = @socket.UdpServer(@socket.Addr::parse("127.0.0.1:0"))
+  defer udp.close()
+  let address = udp.addr.to_string()
+  let cert = @fs.read_text(testdata("localhost.pem"))
+  let key = @fs.read_text(testdata("localhost.key"))
+  let mut listened = false
+  let outcome = @async.with_timeout_opt(5000, () => {
+    @mttp_ng.serve(
+      request => answer(request),
+      addr=address,
+      cert~,
+      key~,
+      h3=true,
+      on_listen=_ => listened = true,
+    ) catch {
+      Listen(_) => return "refused"
+      error => return "other: \{error}"
+    }
+    "served"
+  })
+  assert_eq(outcome, Some("refused"))
+  assert_false(listened)
+}

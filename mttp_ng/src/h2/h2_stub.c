@@ -727,6 +727,23 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_submit_response(session_box *b,
   return rv;
 }
 
+// Submits an informational (1xx) head on `stream`, before its response: 0
+// or a negative nghttp2 error.
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_submit_info(session_box *b,
+                                                  int32_t stream,
+                                                  moonbit_bytes_t blob) {
+  if (!usable(b)) return NGHTTP2_ERR_INVALID_STATE;
+  session *s = b->s;
+  size_t n;
+  nghttp2_nv *nva = fields(blob, &n);
+  if (!nva) return NGHTTP2_ERR_INVALID_ARGUMENT;
+  int rv =
+      nghttp2_submit_headers(s->ng, NGHTTP2_FLAG_NONE, stream, NULL, nva, n,
+                             NULL);
+  free(nva);
+  return rv < 0 ? rv : 0;
+}
+
 // Queues `len` bytes of `data[offset..]` for `stream`'s body, ending it with
 // `end`: 0, or -1 when the stream has no queue (closed, or no body).
 MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_push(session_box *b, int32_t stream,

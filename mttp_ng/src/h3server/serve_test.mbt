@@ -845,3 +845,102 @@ async test "a connection the client drops frees the server's slot at once" {
     },
   )
 }
+
+///|
+/// `localhost` resolves to `[::1]` first (F77). With a socket there that
+/// takes the client's Initials and never answers, the first address family
+/// drops QUIC silently; the client still connects over 127.0.0.1, where
+/// the server is, because the other family's handshake starts 250 ms in
+/// rather than after the first's whole budget (Codex's review of #58).
+/// Where the host has no IPv6 loopback, there is nothing to race.
+async test "a silent first address family does not keep HTTP/3 from the other" {
+  with_server(port => {
+    let silent = @socket.UdpServer(@socket.Addr::parse("[::1]:\{port}")) catch {
+      _ => return
+    }
+    defer silent.close()
+    let b = client()
+    defer b.close()
+    let response = b.send(
+      @mttp_core.Request::get("https://localhost:\{port}/hello"),
+      defaults,
+    )
+    assert_eq(response.status, 200)
+    assert_eq(response.attributes.get(@mttp_core.protocol), Some("h3"))
+    assert_eq(text(response), "hello")
+  })
+}
+
+///|
+/// A bare QUIC client of the server on `port`, which sends a request body
+/// only after the server's 100 Continue, as a client that waits for it
+/// does (h3client sends its body at once, so it never makes the server
+/// send one).
+async test "Expect: 100-continue gets a 100 before the body is sent, over HTTP/3" {
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 2000, },
+    port => {
+      let server = @socket.Addr::parse("127.0.0.1:\{port}")
+      let udp = @socket.UdpClient(server)
+      defer udp.close()
+      let conn = @h3.QuicConn::client(
+        @h3.ClientQuic::new(trust=PemFile(testdata("root.pem"))),
+        host="localhost",
+        remote_address=server.to_string(),
+      )
+      defer conn.free()
+      let heads : Array[String] = []
+      let body = Buffer()
+      let mut ended = false
+      // Sends what the connection has to say, then reads until `done`.
+      let drive = async fn(done : () -> Bool) {
+        while !done() {
+          for datagram in conn.datagrams() {
+            udp.send(datagram)
+          }
+          for event in conn.events() {
+            match event {
+              Headers(fields~, end_stream~, ..) => {
+                heads.push(fields[0].1)
+                ended = ended || end_stream
+              }
+              Data(stream~, data) => {
+                body.write_bytes(data)
+                conn.consume(stream, data.length())
+              }
+              EndStream(..) => ended = true
+              _ => ()
+            }
+          }
+          if done() {
+            break
+          }
+          let got = @async.with_timeout_opt(
+            conn.expiry_ms().unwrap_or(50).max(1),
+            () => udp.recv(max_len=65536),
+          )
+          match got {
+            Some(datagram) => conn.read(datagram)
+            None => if conn.expiry_ms() == Some(0) { conn.on_expiry() }
+          }
+        }
+      }
+      drive(() => conn.handshake_done())
+      let stream = conn.submit_request(
+        [
+          (":method", "POST"),
+          (":scheme", "https"),
+          (":authority", "localhost"),
+          (":path", "/echo"),
+          ("expect", "100-continue"),
+        ],
+        body=true,
+      )
+      drive(() => heads.contains("100"))
+      conn.push(stream, b"sent after the 100", end=true)
+      drive(() => ended)
+      assert_eq(heads, ["100", "200"])
+      assert_eq(@utf8.decode_lossy(body.to_bytes()), "sent after the 100")
+    },
+  )
+}

@@ -303,19 +303,90 @@ async fn H3Backend::dial(
   } catch {
     _ => None
   }).filter(addr => addr != first)
-  let started = self.clock.now_unix_ms()
-  for addr in [Some(first), other] {
-    guard addr is Some(addr) else { continue }
-    let left = HANDSHAKE_MS - (self.clock.now_unix_ms() - started).to_int()
-    if left <= 0 {
-      return None
-    }
-    match self.attempt(quic, target, addr, left, phases) {
-      Some(connection) => return Some(connection)
-      None => continue
-    }
+  let won = match other {
+    None => self.attempt(quic, target, first, HANDSHAKE_MS)
+    Some(other) => self.race(quic, target, first, other)
   }
-  None
+  if won is Some(_) {
+    // Dialed and TlsDone only for the attempt that connected.
+    phases.emit(Dialed(addr=target.address))
+    phases.emit(TlsDone)
+  }
+  won
+}
+
+///|
+/// How long the first address has before the other family's starts too,
+/// as core/async's happy eyeballs staggers TCP connects (RFC 8305).
+const FAMILY_DELAY_MS : Int32 = 250
+
+///|
+/// Handshakes with `first` and, `FAMILY_DELAY_MS` later or as soon as
+/// `first` fails, with `other` too, all within `HANDSHAKE_MS`; the first to
+/// complete wins and the other is cancelled. Tried one after the other, a
+/// first address that drops QUIC silently took the whole budget, and the
+/// other family, which might have answered, was never tried (Codex's review
+/// of #58).
+async fn H3Backend::race(
+  self : H3Backend,
+  quic : @h3.ClientQuic,
+  target : @mux.Target,
+  first : @socket.Addr,
+  other : @socket.Addr,
+) -> Connection? noraise {
+  let started = self.clock.now_unix_ms()
+  let left = () => HANDSHAKE_MS - (self.clock.now_unix_ms() - started).to_int()
+  let mut won : Connection? = None
+  let mut first_failed = false
+  let mut other_done = false
+  let first_ended = self.coordination.signal()
+  let other_ended = self.coordination.signal()
+  // The other address's attempt ends the race by failing on purpose once
+  // it won, which cancels the first's.
+  let other_won = @mttp_core.TransportError(
+    kind=Closed,
+    phase=Dial,
+    detail="the other address family completed its handshake first",
+  )
+  self.coordination.supervise(
+    primary=() => {
+      won = self.attempt(quic, target, first, left())
+      if won is None {
+        first_failed = true
+        first_ended.notify()
+        // The other family's attempt still runs: wait for it.
+        while !other_done {
+          other_ended.wait()
+        }
+      }
+    },
+    monitor=() => {
+      ignore(
+        self.timer.within(FAMILY_DELAY_MS, () => {
+          while !first_failed {
+            first_ended.wait()
+          }
+        }),
+      )
+      let attempt = if left() > 0 {
+        self.attempt(quic, target, other, left())
+      } else {
+        None
+      }
+      other_done = true
+      other_ended.notify()
+      if attempt is Some(connection) {
+        if won is None {
+          won = Some(connection)
+          raise other_won
+        }
+        connection.close()
+      }
+    },
+  ) catch {
+    _ => ()
+  }
+  won
 }
 
 ///|
@@ -326,7 +397,6 @@ async fn H3Backend::attempt(
   target : @mux.Target,
   addr : @socket.Addr,
   ms : Int32,
-  phases : @mux.Phases,
 ) -> Connection? noraise {
   let udp = @socket.UdpClient(addr) catch { _ => return None }
   let conn = @h3.QuicConn::client(
@@ -360,9 +430,6 @@ async fn H3Backend::attempt(
   if !finished || !connection.handshake {
     return None
   }
-  // Dialed and TlsDone only for the attempt that connected.
-  phases.emit(Dialed(addr=target.address))
-  phases.emit(TlsDone)
   ok = true
   Some(connection)
 }

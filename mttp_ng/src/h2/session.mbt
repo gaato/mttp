@@ -62,6 +62,14 @@ extern "C" fn raw_submit_response(
 ) -> Int32 = "mttp_ng_h2_submit_response"
 
 ///|
+#borrow(raw, fields)
+extern "C" fn raw_submit_info(
+  raw : Raw,
+  stream : Int32,
+  fields : Bytes,
+) -> Int32 = "mttp_ng_h2_submit_info"
+
+///|
 #borrow(raw, data)
 extern "C" fn raw_push(
   raw : Raw,
@@ -342,6 +350,20 @@ pub fn H2Session::submit_response(
   body~ : Bool,
 ) -> Unit raise H2Error {
   let code = raw_submit_response(self.raw, stream, encode_fields(fields), body)
+  if code != 0 {
+    raise h2_error(code)
+  }
+}
+
+///|
+/// Submits an informational head (`:status` 1xx, such as 100 Continue) on
+/// `stream`, before its response.
+pub fn H2Session::submit_info(
+  self : H2Session,
+  stream : Int32,
+  fields : Array[(String, String)],
+) -> Unit raise H2Error {
+  let code = raw_submit_info(self.raw, stream, encode_fields(fields))
   if code != 0 {
     raise h2_error(code)
   }

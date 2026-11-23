@@ -86,6 +86,9 @@ pub(open) trait ServerConn {
   /// Submits the response head on `stream`; `false` when the stream took
   /// none (it closed).
   fn submit_response(Self, Int64, Array[(String, String)], body~ : Bool) -> Bool
+  /// Submits `100 Continue` on `stream`, before its response; `false` when
+  /// the stream took none.
+  fn send_continue(Self, Int64) -> Bool
   /// Queues body bytes on `stream`; `false` when it takes no more.
   fn push(Self, Int64, Bytes, end~ : Bool) -> Bool
   /// Bytes of `stream`'s body not yet sent.
@@ -144,6 +147,10 @@ priv struct RequestBody {
   stream : ServerStream
   mut deadline : Int64?
   mut done : Bool
+  /// The client asked for `100 Continue` and has not had it: it is sent
+  /// when the handler first reads the body, so a handler that refuses the
+  /// request does not invite the body, as h1server has it.
+  mut expect : Bool
 }
 
 ///|
@@ -157,6 +164,15 @@ impl @mttp_core.BodyStream for RequestBody with fn read_some(self) {
       let at = context.changes.deadline_in(ms)
       self.deadline = Some(at)
       at
+    }
+  }
+  if self.expect {
+    self.expect = false
+    // Bytes already here mean the client did not wait (RFC 9110, section
+    // 10.1.1 lets the server leave the 100 out then).
+    if !stream.ended && stream.body.is_empty() {
+      ignore(context.conn.send_continue(stream.id))
+      context.conn.flush()
     }
   }
   while !self.done {
@@ -240,6 +256,10 @@ fn ServerContext::request(
       (name, value) => headers = headers.add(name, value)
     }
   }
+  // CONNECT (with no `:path`) is not served, as h1server answers it.
+  if meth == Some("CONNECT") {
+    return Err(501)
+  }
   guard meth is Some(meth) && path is Some(path) else { return Err(400) }
   let authority = match authority {
     Some(authority) => authority
@@ -252,12 +272,25 @@ fn ServerContext::request(
   if length > self.limits.max_body_bytes.to_int64() {
     return Err(413)
   }
+  // `100-continue` is the one expectation served (RFC 9110, section
+  // 10.1.1); any other is refused with 417, as h1server refuses it.
+  let expect = match headers.get_all("expect") {
+    [] => false
+    [value] if value.trim().to_lower() == "100-continue" => true
+    _ => return Err(417)
+  }
   let body : @mttp_core.Body = if stream.ended && stream.body.is_empty() {
     Empty
   } else {
     Stream(
       @mttp_core.StreamBody::new(
-        RequestBody::{ context: self, stream, deadline: None, done: false, },
+        RequestBody::{
+          context: self,
+          stream,
+          deadline: None,
+          done: false,
+          expect: expect && !stream.ended,
+        },
         length?=if length >= 0L { Some(length) } else { None },
       ),
     )

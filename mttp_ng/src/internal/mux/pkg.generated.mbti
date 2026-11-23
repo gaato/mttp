@@ -139,6 +139,7 @@ pub(open) trait ClientConn {
 
 pub(open) trait ServerConn {
   fn submit_response(Self, Int64, Array[(String, String)], body~ : Bool) -> Bool
+  fn send_continue(Self, Int64) -> Bool
   fn push(Self, Int64, Bytes, end~ : Bool) -> Bool
   fn queued(Self, Int64) -> Int32
   fn consume(Self, Int64, Int32) -> Unit

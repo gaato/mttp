@@ -92,6 +92,7 @@ pub fn H2Session::recv(Self, Bytes) -> Unit raise H2Error
 pub fn H2Session::reset(Self, Int32, ErrorCode) -> Unit raise H2Error
 pub fn H2Session::server(settings? : H2Settings) -> Self raise H2Error
 pub fn H2Session::shutdown_notice(Self) -> Unit raise H2Error
+pub fn H2Session::submit_info(Self, Int32, Array[(String, String)]) -> Unit raise H2Error
 pub fn H2Session::submit_request(Self, Array[(String, String)], body~ : Bool) -> Int32 raise H2Error
 pub fn H2Session::submit_response(Self, Int32, Array[(String, String)], body~ : Bool) -> Unit raise H2Error
 pub fn H2Session::wants_io(Self) -> Bool

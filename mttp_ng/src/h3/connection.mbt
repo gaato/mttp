@@ -114,6 +114,14 @@ extern "C" fn raw_submit_request(
 
 ///|
 #borrow(raw, fields)
+extern "C" fn raw_submit_info(
+  raw : Raw,
+  stream : Int64,
+  fields : Bytes,
+) -> Int32 = "mttp_ng_h3_submit_info"
+
+///|
+#borrow(raw, fields)
 extern "C" fn raw_submit_response(
   raw : Raw,
   stream : Int64,
@@ -520,6 +528,20 @@ pub fn QuicConn::submit_response(
   body~ : Bool,
 ) -> Unit raise H3Error {
   let code = raw_submit_response(self.raw, stream, encode_fields(fields), body)
+  if code != 0 {
+    raise self.failure(code)
+  }
+}
+
+///|
+/// Submits an informational head (`:status` 1xx, such as 100 Continue) on
+/// `stream`, before its response.
+pub fn QuicConn::submit_info(
+  self : QuicConn,
+  stream : Int64,
+  fields : Array[(String, String)],
+) -> Unit raise H3Error {
+  let code = raw_submit_info(self.raw, stream, encode_fields(fields))
   if code != 0 {
     raise self.failure(code)
   }

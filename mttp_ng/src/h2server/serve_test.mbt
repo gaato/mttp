@@ -754,3 +754,93 @@ async test "an HTTP/1.0 body delimited by the close and cut at a stop ends witho
   guard outcome.val is Some((_, notified)) else { fail("no outcome") }
   assert_false(notified)
 }
+
+///|
+/// A request that expects `100 Continue` gets it when the handler reads its
+/// body, before the client sends any of it, as h1server sends it (Codex's
+/// review of #58); another expectation is refused with 417, and CONNECT
+/// with 501. The client here is a bare session that sends the body only
+/// after the 100, as a client that waits for it does.
+async test "Expect: 100-continue gets a 100 before the body is sent, over HTTP/2" {
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 2000, },
+    port => {
+      let conn = raw_tls(port, "h2")
+      defer conn.close()
+      let session = @h2.H2Session::client()
+      defer session.free()
+      let heads : Array[(Int32, String)] = []
+      let bodies : Map[Int32, Buffer] = Map([])
+      let ended : Array[Int32] = []
+      // Writes what the session has to say, then reads until `done`.
+      let exchange = async fn(done : () -> Bool) {
+        while true {
+          let out = session.output()
+          if out.length() > 0 {
+            conn.write(out)
+          }
+          for event in session.events() {
+            match event {
+              Headers(stream~, fields~, end_stream~, ..) => {
+                heads.push((stream, fields[0].1))
+                if end_stream {
+                  ended.push(stream)
+                }
+              }
+              Data(stream~, data) => {
+                session.consume_connection(data.length())
+                session.consume_stream(stream, data.length())
+                if !bodies.contains(stream) {
+                  bodies[stream] = Buffer()
+                }
+                bodies[stream].write_bytes(data)
+              }
+              EndStream(stream~) => ended.push(stream)
+              _ => ()
+            }
+          }
+          if done() {
+            break
+          }
+          guard conn.read(max_len=65536) is Some(bytes) else {
+            fail("the server closed the connection")
+          }
+          session.recv(bytes)
+        }
+      }
+      let request = (meth : String, path : String, expect : String) => {
+        [
+          (":method", meth),
+          (":scheme", "https"),
+          (":authority", "localhost"),
+          (":path", path),
+          ("expect", expect),
+        ]
+      }
+      let id = session.submit_request(
+        request("POST", "/echo", "100-continue"),
+        body=true,
+      )
+      exchange(() => heads.contains((id, "100")))
+      session.push(id, b"sent after the 100", end=true)
+      exchange(() => ended.contains(id))
+      assert_eq(heads.filter(h => h.0 == id).map(h => h.1), ["100", "200"])
+      assert_eq(
+        bodies.get(id).map(b => @utf8.decode_lossy(b.to_bytes())),
+        Some("sent after the 100"),
+      )
+      let refused = session.submit_request(
+        request("POST", "/echo", "something-else"),
+        body=false,
+      )
+      exchange(() => ended.contains(refused))
+      assert_eq(heads.filter(h => h.0 == refused).map(h => h.1), ["417"])
+      let connect = session.submit_request(
+        [(":method", "CONNECT"), (":authority", "example.com:443")],
+        body=false,
+      )
+      exchange(() => ended.contains(connect))
+      assert_eq(heads.filter(h => h.0 == connect).map(h => h.1), ["501"])
+    },
+  )
+}

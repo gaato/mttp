@@ -303,3 +303,51 @@ test "a datagram of another QUIC version is answered with Version Negotiation" {
   assert_true(@h3.version_negotiation(v1) is None)
   assert_true(@h3.version_negotiation(datagram[:100].to_owned()) is None)
 }
+
+///|
+/// An informational head (100 Continue) goes before the response, as a
+/// head of its own (RFC 9114, section 4.1).
+async test "an informational head goes before the response" {
+  @async.with_timeout(10000, () => {
+    let p = pair()
+    p.take()
+    let stream = p.client.submit_request(request(), body=false)
+    p.settle()
+    p.take()
+    p.server.submit_info(stream, [(":status", "100")])
+    p.server.submit_response(stream, [(":status", "200")], body=false)
+    p.settle()
+    let heads = p.client_events.filter(event => event is Headers(..))
+    assert_eq(heads, [
+      Headers(stream~, fields=[(":status", "100")], end_stream=false),
+      Headers(stream~, fields=[(":status", "200")], end_stream=true),
+    ])
+  })
+}
+
+///|
+/// A body whose last piece and FIN are pushed at once, larger than a
+/// packet, goes out over several writes; only the write that takes the
+/// last byte takes the FIN (ngtcp2 encodes it only with all the data
+/// offered), so `Sent` reports the end once, last (Codex's review of #58:
+/// it was reported with the first write, and an exchange took its upload
+/// for done).
+async test "Sent reports a stream's end only with the write that took it" {
+  @async.with_timeout(10000, () => {
+    let p = pair()
+    p.take()
+    let stream = p.client.submit_request(request(meth="POST"), body=true)
+    p.client.push(stream, Bytes::make(20000, b'u'), end=true)
+    p.settle()
+    let sent = p.client_events.filter_map(event => {
+      match event {
+        Sent(stream=s, end_stream~) if s == stream => Some(end_stream)
+        _ => None
+      }
+    })
+    assert_true(sent.length() > 1, msg="one write took the whole body")
+    assert_eq(sent.filter(end => end).length(), 1)
+    assert_eq(sent.last(), Some(true))
+    assert_eq(body_of(p.server_events, stream).length(), 20000)
+  })
+}

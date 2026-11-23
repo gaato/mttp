@@ -89,6 +89,18 @@ impl @mux.ServerConn for Served with fn submit_response(self, id, fields, body~)
 }
 
 ///|
+impl @mux.ServerConn for Served with fn send_continue(self, id) {
+  let ok = try {
+    self.session.submit_info(id.to_int(), [(":status", "100")])
+    true
+  } catch {
+    _ => false
+  }
+  self.wake()
+  ok
+}
+
+///|
 impl @mux.ServerConn for Served with fn push(self, id, data, end~) {
   let ok = try {
     self.session.push(id.to_int(), data, end~)

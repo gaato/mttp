@@ -131,8 +131,10 @@ pub async fn serve(
         on_error~,
       ) catch {
         error => {
+          // The group ends, and the HTTP/3 listener with it.
           failure.val = Some(Listen(error))
           ready.broadcast()
+          group.return_immediately()
         }
       }
     })
@@ -150,7 +152,12 @@ pub async fn serve(
       on_listen=_ => on_listen(address),
       on_error~,
     ) catch {
-      error => failure.val = Some(Listen(error))
+      // The group ends, and the TCP listener with it, rather than serving
+      // on and advertising an HTTP/3 that is not there.
+      error => {
+        failure.val = Some(Listen(error))
+        group.return_immediately()
+      }
     }
   }) catch {
     error =>
