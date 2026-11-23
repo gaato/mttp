@@ -31,6 +31,9 @@ pub(all) struct ServerStream {
   mut closed : Bool
   /// The response's last frame went out (HTTP/2 resets only after it).
   mut sent_end : Bool
+  /// How many times data of the response went out: the progress a stream
+  /// still sending makes.
+  mut sent : Int32
   /// Why the request body cannot be read on (too large, too slow).
   mut failure : @mttp_core.TransportError?
 }
@@ -45,6 +48,7 @@ pub fn ServerStream::new(id : Int64, ended~ : Bool) -> ServerStream {
     ended,
     closed: false,
     sent_end: false,
+    sent: 0,
     failure: None,
   }
 }
@@ -553,5 +557,33 @@ async fn ServerContext::respond(
   conn.flush()
   if !stream.ended && !stream.closed {
     conn.stop_reading(stream)
+  }
+  self.finish(stream)
+}
+
+///|
+/// Waits until `stream` closes: its response's last frame went (and, over
+/// QUIC, was acknowledged). Until then the stream's task runs, so the
+/// connection counts as busy: a stop does not close it as idle, and
+/// `header_timeout_ms` does not end it, while a response is still going
+/// out (a slow download). Each wait for progress (data of the stream sent,
+/// or the close) has `body_timeout_ms`; a response that makes none in that
+/// time is reset.
+async fn ServerContext::finish(
+  self : ServerContext,
+  stream : ServerStream,
+) -> Unit {
+  let conn = self.conn
+  while !stream.closed && !conn.gone() {
+    let before = stream.sent
+    let moved = self.changes.wait_until(
+      () => stream.closed || conn.gone() || stream.sent != before,
+      deadline=self.changes.deadline_in(self.limits.body_timeout_ms),
+    )
+    if !moved {
+      conn.abort(stream.id)
+      conn.flush()
+      return
+    }
   }
 }

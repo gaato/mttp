@@ -97,6 +97,7 @@ pub(all) struct ServerStream {
   mut ended : Bool
   mut closed : Bool
   mut sent_end : Bool
+  mut sent : Int32
   mut failure : @mttp_core.TransportError?
   // private fields
 }

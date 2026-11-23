@@ -245,9 +245,9 @@ gaato/mttp_core	gaato/mttp_core/attempt	wasm-gc	11
 gaato/mttp_ng	gaato/mttp_ng	native	4
 gaato/mttp_ng	gaato/mttp_ng/h2	native	12
 gaato/mttp_ng	gaato/mttp_ng/h2client	native	22
-gaato/mttp_ng	gaato/mttp_ng/h2server	native	14
+gaato/mttp_ng	gaato/mttp_ng/h2server	native	15
 gaato/mttp_ng	gaato/mttp_ng/h3	native	7
 gaato/mttp_ng	gaato/mttp_ng/h3client	native	5
-gaato/mttp_ng	gaato/mttp_ng/h3server	native	11
+gaato/mttp_ng	gaato/mttp_ng/h3server	native	12
 gaato/mttp_ng	gaato/mttp_ng/internal/mux	native	3
 gaato/mttp_ng	gaato/mttp_ng/tls	native	7

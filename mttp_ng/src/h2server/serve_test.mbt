@@ -90,6 +90,9 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
         200,
         headers=@mttp_core.Headers::of([("x-echo", "a\r\nset-cookie: b")]),
       )
+    "/bytes" =>
+      // A large fixed body: the handler is done once it is queued.
+      @mttp_core.Response::new(200, body=Bytes(Bytes::make(2000000, b'b')))
     "/events" =>
       // An endless event stream: one event, then silence.
       {
@@ -617,4 +620,30 @@ impl @mttp_core.BodyStream for Relay with fn read_some(self) {
 ///|
 impl @mttp_core.BodyStream for Relay with fn close(_) {
   ()
+}
+
+///|
+/// A response still going out keeps its connection busy after its handler
+/// returned: `header_timeout_ms` does not end the connection under a slow
+/// download (Codex's review of #58).
+async test "a slow download outlasts header_timeout_ms" {
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), header_timeout_ms: 300, },
+    port => {
+      let client = h2_client()
+      defer client.close()
+      let response = client.send(
+        @mttp_core.Request::get("https://localhost:\{port}/bytes"),
+        defaults,
+      )
+      guard response.body is Stream(cell) else { fail("no stream body") }
+      let source = cell.take()
+      let mut total = 0
+      while source.read_some() is Some(bytes) {
+        total += bytes.length()
+        @async.sleep(20)
+      }
+      assert_eq(total, 2000000)
+    },
+  )
 }

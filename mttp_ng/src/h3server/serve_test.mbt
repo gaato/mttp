@@ -508,3 +508,29 @@ async test "a connection on which no request starts is closed after header_timeo
     },
   )
 }
+
+///|
+/// A response still going out keeps its connection busy after its handler
+/// returned: `header_timeout_ms` does not close the connection under a
+/// slow download (Codex's review of #58).
+async test "a slow download outlasts header_timeout_ms over HTTP/3" {
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), header_timeout_ms: 300, },
+    port => {
+      let b = client()
+      defer b.close()
+      let response = b.send(
+        @mttp_core.Request::get("https://localhost:\{port}/big"),
+        defaults,
+      )
+      guard response.body is Stream(cell) else { fail("no stream body") }
+      let source = cell.take()
+      let mut total = 0
+      while source.read_some() is Some(bytes) {
+        total += bytes.length()
+        @async.sleep(20)
+      }
+      assert_eq(total, 2000000)
+    },
+  )
+}

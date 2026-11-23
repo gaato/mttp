@@ -403,11 +403,14 @@ fn Listener::dispatch(
             task.cancel()
           }
         }
-      Sent(stream~, end_stream=true) =>
+      Sent(stream~, end_stream~) =>
         if conn.streams.get(stream) is Some(entry) {
-          entry.stream.sent_end = true
+          entry.stream.sent += 1
+          if end_stream {
+            entry.stream.sent_end = true
+          }
         }
-      Sent(..) | GoAway(..) | Drained(..) | TooLarge(..) | HandshakeDone => ()
+      GoAway(..) | Drained(..) | TooLarge(..) | HandshakeDone => ()
       ConnectionClosed(..) =>
         for _, entry in conn.streams {
           if entry.task is Some(task) {

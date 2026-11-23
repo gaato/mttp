@@ -167,6 +167,8 @@ async fn Served::write_loop(self : Served) -> Unit noraise {
       next.wait()
       continue
     }
+    // Bytes left the streams' queues: the tasks waiting on them look again.
+    self.wake()
     let failed = Ref(false)
     let finished = self.timer.within(self.limits.body_timeout_ms, () => {
       self.conn.write(output) catch {
@@ -473,9 +475,12 @@ fn Served::dispatch(
         if self.streams.get(stream) is Some(entry) {
           entry.stream.ended = true
         }
-      Sent(stream~, end_stream=true) =>
+      Sent(stream~, end_stream~) =>
         if self.streams.get(stream) is Some(entry) {
-          entry.stream.sent_end = true
+          entry.stream.sent += 1
+          if end_stream {
+            entry.stream.sent_end = true
+          }
         }
       Closed(stream~, code~) =>
         if self.streams.get(stream) is Some(entry) {
@@ -485,7 +490,7 @@ fn Served::dispatch(
             task.cancel()
           }
         }
-      Headers(..) | Sent(..) | GoAway(..) | Settings(..) | Drained(..) => ()
+      Headers(..) | GoAway(..) | Settings(..) | Drained(..) => ()
       NotSent(..) | TooLarge(..) | PingAck => ()
       @h2.H2Event::.. => ()
     }
