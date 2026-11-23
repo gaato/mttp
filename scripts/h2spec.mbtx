@@ -17,10 +17,13 @@ import {
 // It builds interop_ng/server, starts it for each mode on a fixed loopback
 // port, runs h2spec with `-P /wait` (a path whose handler answers after
 // 200 ms, so that a request's stream is still open when a test's next frame
-// arrives) and reads h2spec's JUnit report. A failure the table does not
-// list, or a listed one that passes, fails the script. H2SPEC names the
-// h2spec binary (default `h2spec` on PATH; the repository's mise.toml pins
-// 2.6.0). Needs the libraries of the ng gate.
+// arrives) and reads h2spec's JUnit report. The table's rows are per
+// nghttp2 version (the server's `version` mode prints the linked one): for
+// a version the table names, a failure not listed for it, or a listed one
+// that passes, fails the script; for another version, failures listed for
+// other versions are printed as notes, and only one no row lists fails.
+// H2SPEC names the h2spec binary (default `h2spec` on PATH; the
+// repository's mise.toml pins 2.6.0). Needs the libraries of the ng gate.
 
 ///|
 suberror H2specError {
@@ -114,8 +117,17 @@ fn failures(report : String) -> Array[String] {
 }
 
 ///|
-/// The known failures of `mode`, as `package<TAB>case`.
-async fn known(mode : String) -> Array[String] {
+/// A row of the known table.
+struct Known {
+  mode : String
+  /// The nghttp2 versions, or `["*"]`.
+  versions : Array[String]
+  /// `package<TAB>case`
+  case_ : String
+}
+
+///|
+async fn known_rows() -> Array[Known] {
   let rows = []
   for raw in @fs.read_text(known_path).split("\n") {
     let line = raw.trim_end().to_owned()
@@ -123,14 +135,51 @@ async fn known(mode : String) -> Array[String] {
       continue
     }
     guard line.split("\t").map(s => s.to_owned()).to_array()
-      is [row_mode, pkg, name, _reason] else {
+      is [mode, versions, pkg, name, _reason] else {
       raise H2specError("\{known_path}: malformed row: \{line}")
     }
-    if row_mode == mode {
-      rows.push("\{pkg}\t\{name}")
+    let versions = versions
+      .split(" ")
+      .filter(v => !v.is_empty())
+      .map(v => v.to_owned())
+      .to_array()
+    if versions.is_empty() {
+      raise H2specError("\{known_path}: a row without versions: \{line}")
     }
+    rows.push({ mode, versions, case_: "\{pkg}\t\{name}", })
   }
   rows
+}
+
+///|
+/// Whether the table names `version` in some row.
+fn named(rows : Array[Known], version : String) -> Bool {
+  rows.iter().any(row => row.versions.contains(version))
+}
+
+///|
+/// What the table says of `mode` at `version`: the failures expected, and
+/// the ones only noted (listed for other versions, at a version it does
+/// not name).
+fn expectations(
+  rows : Array[Known],
+  mode : String,
+  version : String,
+) -> (Array[String], Array[String]) {
+  let strict = named(rows, version)
+  let expected = []
+  let noted = []
+  for row in rows {
+    if row.mode != mode {
+      continue
+    }
+    if row.versions.contains("*") || row.versions.contains(version) {
+      expected.push(row.case_)
+    } else if !strict && !noted.contains(row.case_) {
+      noted.push(row.case_)
+    }
+  }
+  (expected, noted)
 }
 
 ///|
@@ -139,10 +188,12 @@ async fn run_mode(
   mode : String,
   server_args : Array[String],
   flags : Array[String],
+  rows : Array[Known],
+  version : String,
 ) -> Array[String] {
   let report = "\{work}/\{mode}.xml"
   let log = "\{work}/\{mode}-server.log"
-  let mut problems = []
+  let problems = []
   @async.with_task_group(group => {
     let server = @process.spawn(
       group,
@@ -169,16 +220,24 @@ async fn run_mode(
       println("  \{line}")
     }
     let failed = failures(@fs.read_text(report))
-    let expected = known(mode)
-    problems = failed
-      .filter(f => !expected.contains(f))
-      .map(f => {
-        "\{mode}: unexpected failure: \{f.replace_all(old="\t", new=" / ")}"
-      })
+    let (expected, noted) = expectations(rows, mode, version)
+    let shown = (f : String) => f.replace_all(old="\t", new=" / ")
+    for f in failed {
+      if expected.contains(f) {
+        continue
+      }
+      if noted.contains(f) {
+        println(
+          "  note: \{mode}: fails, as listed for another nghttp2: \{shown(f)}",
+        )
+      } else {
+        problems.push("\{mode}: unexpected failure: \{shown(f)}")
+      }
+    }
     for f in expected {
       if !failed.contains(f) {
         problems.push(
-          "\{mode}: listed in \{known_path} but passes, remove it: \{f.replace_all(old="\t", new=" / ")}",
+          "\{mode}: listed in \{known_path} for nghttp2 \{version} but passes, remove it there: \{shown(f)}",
         )
       }
     }
@@ -201,10 +260,26 @@ async fn main {
   if !@fs.exists(work) {
     @fs.mkdir(work)
   }
+  // `nghttp2 1.71.0`
+  let printed = @shell.Cmd(server_exe, ["version"]).output(timeout_ms=10000)
+  guard printed.stdout().trim().to_owned().split(" ").to_array()
+    is ["nghttp2", version] else {
+    println("FAIL: \{server_exe} version printed: \{printed.stdout()}")
+    @env.exit(1)
+  }
+  let version = version.to_owned()
+  let rows = known_rows()
+  println(
+    if named(rows, version) {
+      "nghttp2 \{version}: \{known_path} names it"
+    } else {
+      "nghttp2 \{version}: \{known_path} does not name it; the failures of other versions are notes"
+    },
+  )
   let problems = []
   for mode in modes {
     let (name, server_args, flags) = mode
-    problems.append(run_mode(h2spec, name, server_args, flags))
+    problems.append(run_mode(h2spec, name, server_args, flags, rows, version))
   }
   if problems.is_empty() {
     println("h2spec: OK (every failure is listed in \{known_path})")

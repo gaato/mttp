@@ -10,6 +10,9 @@
 //                serves HTTP/1.1, HTTP/2 and, with `h3`, HTTP/3 over TLS
 //   server <address> h2c
 //                serves cleartext HTTP/1.1 and HTTP/2 by prior knowledge
+//   server version
+//                prints `nghttp2 <version>` of the linked library, for
+//                h2spec_known.tsv's versions column, and exits
 //
 // It prints `listening <address>` once bound, and runs until killed.
 
@@ -40,6 +43,10 @@ async fn main {
   let args = @env.args()
   let printed = (address : String) => println("listening \{address}")
   match args[1:].to_owned() {
+    ["version"] => {
+      let v = @h2.nghttp2_version()
+      println("nghttp2 \{(v >> 16) & 0xff}.\{(v >> 8) & 0xff}.\{v & 0xff}")
+    }
     [address, "h2c"] =>
       @mttp_ng.serve(answer, addr=address, h2c=true, on_listen=printed)
     [address, cert, key, .. rest] =>
@@ -53,7 +60,7 @@ async fn main {
       )
     _ => {
       println(
-        "usage: server <address> <cert.pem> <key.pem> [h3] | server <address> h2c",
+        "usage: server <address> <cert.pem> <key.pem> [h3] | server <address> h2c | server version",
       )
       return
     }
