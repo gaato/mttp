@@ -1,0 +1,217 @@
+----
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/async/process",
+  "moonbitlang/core/async/shell",
+  "moonbitlang/core/async/socket",
+  "moonbitlang/core/env",
+}
+----
+
+// h2spec against gaato/mttp_ng's HTTP/2 server, over TLS and over cleartext
+// with prior knowledge (h2c), compared with interop_ng/h2spec_known.tsv:
+//
+//   moon run scripts/h2spec.mbtx              (scripts/gates.sh h2spec)
+//
+// It builds interop_ng/server, starts it for each mode on a fixed loopback
+// port, runs h2spec with `-P /wait` (a path whose handler answers after
+// 200 ms, so that a request's stream is still open when a test's next frame
+// arrives) and reads h2spec's JUnit report. A failure the table does not
+// list, or a listed one that passes, fails the script. H2SPEC names the
+// h2spec binary (default `h2spec` on PATH; the repository's mise.toml pins
+// 2.6.0). Needs the libraries of the ng gate.
+
+///|
+suberror H2specError {
+  H2specError(String)
+}
+
+///|
+let server_exe : String = "_build/native/debug/build/gaato/mttp-interop-ng/server/server.exe"
+
+///|
+let known_path : String = "interop_ng/h2spec_known.tsv"
+
+///|
+let work : String = "_build/h2spec"
+
+///|
+/// The modes: name, server arguments after the address, h2spec flags.
+let modes : Array[(String, Array[String], Array[String])] = [
+  (
+    "tls",
+    ["mttp_ng/testdata/localhost.pem", "mttp_ng/testdata/localhost.key"],
+    ["-t", "-k"],
+  ),
+  ("h2c", ["h2c"], []),
+]
+
+///|
+let addr : String = "127.0.0.1:39443"
+
+///|
+async fn wait_port(addr : String) -> Unit {
+  let parsed = @socket.Addr::parse(addr)
+  for _ in 0..<150 {
+    let up = try {
+      @socket.Tcp::connect(parsed).close()
+      true
+    } catch {
+      _ => false
+    }
+    if up {
+      return
+    }
+    @async.sleep(100)
+  }
+  raise H2specError("the server does not accept connections on \{addr}")
+}
+
+///|
+fn unescape(text : StringView) -> String {
+  text
+  .to_owned()
+  .replace_all(old="&quot;", new="\"")
+  .replace_all(old="&#39;", new="'")
+  .replace_all(old="&lt;", new="<")
+  .replace_all(old="&gt;", new=">")
+  .replace_all(old="&amp;", new="&")
+}
+
+///|
+/// The value of `name="..."` in `tag`.
+fn attribute(tag : StringView, name : String) -> String? {
+  let key = "\{name}=\""
+  guard tag.find(key) is Some(start) else { return None }
+  let rest = tag[start + key.length():]
+  guard rest.find("\"") is Some(end) else { return None }
+  Some(unescape(rest[:end]))
+}
+
+///|
+/// The failed test cases of a JUnit report, as `package<TAB>case`.
+fn failures(report : String) -> Array[String] {
+  let failed = []
+  let parts = report.split("<testcase ").to_array()
+  for i, part in parts {
+    if i == 0 {
+      continue
+    }
+    let body = match part.find("</testcase>") {
+      Some(end) => part[:end]
+      None => part
+    }
+    guard attribute(part, "package") is Some(pkg) &&
+      attribute(part, "classname") is Some(name) else {
+      continue
+    }
+    if body.contains("<failure") || body.contains("<error") {
+      failed.push("\{pkg}\t\{name}")
+    }
+  }
+  failed
+}
+
+///|
+/// The known failures of `mode`, as `package<TAB>case`.
+async fn known(mode : String) -> Array[String] {
+  let rows = []
+  for raw in @fs.read_text(known_path).split("\n") {
+    let line = raw.trim_end().to_owned()
+    if line.is_empty() || line.has_prefix("#") || line.has_prefix("mode\t") {
+      continue
+    }
+    guard line.split("\t").map(s => s.to_owned()).to_array()
+      is [row_mode, pkg, name, _reason] else {
+      raise H2specError("\{known_path}: malformed row: \{line}")
+    }
+    if row_mode == mode {
+      rows.push("\{pkg}\t\{name}")
+    }
+  }
+  rows
+}
+
+///|
+async fn run_mode(
+  h2spec : String,
+  mode : String,
+  server_args : Array[String],
+  flags : Array[String],
+) -> Array[String] {
+  let report = "\{work}/\{mode}.xml"
+  let log = "\{work}/\{mode}-server.log"
+  let mut problems = []
+  @async.with_task_group(group => {
+    let server = @process.spawn(
+      group,
+      server_exe,
+      [addr, ..server_args],
+      stdout=ToFile(log),
+      stderr=ToFile(log),
+    )
+    defer server.cancel()
+    wait_port(addr)
+    let port = addr[addr.rev_find(":").unwrap() + 1:].to_owned()
+    println("+ \{h2spec} (\{mode})")
+    let output = @shell.Cmd(
+      h2spec,
+      [
+        ..flags, "-h", "127.0.0.1", "-p", port, "-o", "2", "-P", "/wait", "-j", report,
+      ],
+    ).output(timeout_ms=600000)
+    let summary = output
+      .stdout()
+      .split("\n")
+      .filter(l => l.contains(" tests, "))
+    for line in summary {
+      println("  \{line}")
+    }
+    let failed = failures(@fs.read_text(report))
+    let expected = known(mode)
+    problems = failed
+      .filter(f => !expected.contains(f))
+      .map(f => {
+        "\{mode}: unexpected failure: \{f.replace_all(old="\t", new=" / ")}"
+      })
+    for f in expected {
+      if !failed.contains(f) {
+        problems.push(
+          "\{mode}: listed in \{known_path} but passes, remove it: \{f.replace_all(old="\t", new=" / ")}",
+        )
+      }
+    }
+    group.return_immediately()
+  })
+  problems
+}
+
+///|
+async fn main {
+  let h2spec = @env.get_env_var("H2SPEC").unwrap_or("h2spec")
+  let built = @shell.Cmd("moon", [
+    "build", "--target", "native", "interop_ng/server",
+  ]).output(timeout_ms=1200000)
+  if built.exit_code() != 0 {
+    println(built.stdout() + built.stderr())
+    println("FAIL: moon build interop_ng/server")
+    @env.exit(1)
+  }
+  if !@fs.exists(work) {
+    @fs.mkdir(work)
+  }
+  let problems = []
+  for mode in modes {
+    let (name, server_args, flags) = mode
+    problems.append(run_mode(h2spec, name, server_args, flags))
+  }
+  if problems.is_empty() {
+    println("h2spec: OK (every failure is listed in \{known_path})")
+    return
+  }
+  for problem in problems {
+    println("FAIL: \{problem}")
+  }
+  @env.exit(1)
+}

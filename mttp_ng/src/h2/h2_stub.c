@@ -542,6 +542,13 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_want_io(session_box *b) {
          nghttp2_session_want_write(b->s->ng);
 }
 
+// 1 when nghttp2 still reads: 0 after a connection error it answered with
+// GOAWAY, or once a GOAWAY either way left no stream to finish.
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_want_read(session_box *b) {
+  if (!b->s || !b->s->ng) return 0;
+  return nghttp2_session_want_read(b->s->ng);
+}
+
 // Header fields arrive as one blob: a count, then name and value blobs.
 static nghttp2_nv *fields(moonbit_bytes_t blob, size_t *count) {
   const uint8_t *p = blob;

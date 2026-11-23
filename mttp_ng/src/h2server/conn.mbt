@@ -10,7 +10,8 @@
 pub(all) struct H2Limits {
   /// SETTINGS_MAX_CONCURRENT_STREAMS, and the handlers that may run on one
   /// connection at once, cancelled ones still finishing included: while
-  /// that many run, the connection is not read (CVE-2023-44487).
+  /// that many run, a new request stream is refused with REFUSED_STREAM
+  /// (CVE-2023-44487), and the connection is still read for the others.
   max_concurrent_streams : Int32
   /// SETTINGS_INITIAL_WINDOW_SIZE: what one request body may send before
   /// its handler reads it.
@@ -36,6 +37,10 @@ pub fn H2Limits::default() -> H2Limits {
     connection_window: 1024 * 1024,
   }
 }
+
+///|
+/// How long a closing connection's last input is read and dropped.
+const LINGER_MS : Int32 = 100
 
 ///|
 /// How often the reader looks at the stopping probe and the idle time.
@@ -73,8 +78,10 @@ priv struct Served {
   limits : @h1server.ServerLimits
   h2_limits : H2Limits
   streams : Map[Int32, ServerStream]
-  /// Broadcast after every change a waiter may wait for.
+  /// Broadcast after every change a waiter may wait for, with `generation`
+  /// counting the changes (see `wait`).
   changed : @cond_var.Cond
+  mut generation : Int32
   /// Handlers running, cancelled ones still finishing included.
   mut handlers : Int32
   /// The connection can carry nothing more.
@@ -83,13 +90,25 @@ priv struct Served {
 
 ///|
 fn Served::wake(self : Served) -> Unit {
+  self.generation += 1
   self.changed.broadcast()
 }
 
 ///|
 /// Waits for the next change, at most `ms`; false when the time ran out.
+/// The change counted is any after the call: `timer.within` suspends before
+/// its body waits on the condition, and a broadcast in between would be
+/// lost, so the body waits until the generation moves on from the one seen
+/// at the call. (A handler started while its request's DATA frames were
+/// still being dispatched missed their wake-up and waited out
+/// `body_timeout_ms`; h2spec's "Sends multiple DATA frames" found it.)
 async fn Served::wait(self : Served, ms : Int32) -> Bool noraise {
-  self.timer.within(ms, () => self.changed.wait())
+  let seen = self.generation
+  self.timer.within(ms, () => {
+    while self.generation == seen {
+      self.changed.wait()
+    }
+  })
 }
 
 ///|
@@ -193,6 +212,7 @@ pub async fn serve_h2_conn(
     h2_limits,
     streams: Map([]),
     changed: @cond_var.Cond(),
+    generation: 0,
     handlers: 0,
     dead: false,
   }
@@ -227,6 +247,17 @@ pub async fn serve_h2_conn(
         }),
       )
     }
+    // What the client sent after the last frame read (a PING after its
+    // GOAWAY) is read and dropped for a moment before the close: closing
+    // with unread bytes makes the kernel reset the connection, and the
+    // client may never see the GOAWAY.
+    ignore(
+      timer.within(LINGER_MS, () => {
+        while (conn.read(max_len=65536) catch { _ => None }) is Some(_) {
+          ()
+        }
+      }),
+    )
     group.return_immediately()
   }) catch {
     _ => ()
@@ -261,6 +292,10 @@ async fn Served::read_loop(
   let mut going = 0
   let mut notice_at = 0L
   while !self.dead {
+    // nghttp2 reads no more once it sent the GOAWAY of a connection error.
+    if !self.session.wants_read() {
+      return
+    }
     let now = self.clock.now_unix_ms()
     let has_streams = !self.streams.is_empty() || self.handlers > 0
     if has_streams != busy {
@@ -297,12 +332,6 @@ async fn Served::read_loop(
     if going == 2 && !has_streams {
       return
     }
-    // Backpressure: while the handlers allowed run, no more frames are read,
-    // so a client that opens and resets streams cannot pile up tasks.
-    if self.handlers >= self.h2_limits.max_concurrent_streams {
-      ignore(self.wait(POLL_MS))
-      continue
-    }
     let chunk : Ref[Bytes?] = Ref(None)
     let failed = Ref(false)
     let read = self.timer.within(POLL_MS, () => {
@@ -334,6 +363,12 @@ async fn Served::read_loop(
     }
     self.dispatch(group, context)
     self.wake()
+    // A connection error nghttp2 answered itself (a malformed frame, an
+    // invalid PING): it queued GOAWAY and reads no more, so the connection
+    // closes once that is written, as RFC 9113, section 5.4.1 asks.
+    if failure is None && !self.session.wants_read() {
+      return
+    }
     if failure is Some(error) {
       (context.on_error)(
         @mttp_core.TransportError(
@@ -357,6 +392,18 @@ fn Served::dispatch(
 ) -> Unit {
   for event in self.session.events() {
     match event {
+      // While the handlers allowed run (cancelled ones still finishing
+      // count), a new request is refused rather than started, so a client
+      // that opens and resets streams cannot pile up tasks
+      // (CVE-2023-44487). The connection is still read: the running
+      // handlers need its DATA and WINDOW_UPDATE frames. REFUSED_STREAM
+      // tells the client the request was not processed, so it may send it
+      // again.
+      Headers(stream~, kind=Request, ..) if self.handlers >=
+        self.h2_limits.max_concurrent_streams =>
+        self.session.reset(stream, RefusedStream) catch {
+          _ => ()
+        }
       Headers(stream~, kind=Request, fields~, end_stream~) => {
         let s = {
           id: stream,

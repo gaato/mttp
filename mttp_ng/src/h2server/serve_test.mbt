@@ -118,6 +118,7 @@ async fn with_server(
   tls~ : Bool = true,
   h2c~ : Bool = false,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
+  h2_limits~ : @h2server.H2Limits = @h2server.H2Limits::default(),
 ) -> Unit {
   let config = if tls { Some(server_tls()) } else { None }
   @async.with_timeout(30000, () => {
@@ -131,6 +132,7 @@ async fn with_server(
           tls?=config,
           h2c~,
           limits~,
+          h2_limits~,
           on_listen=addr => {
             port.val = Some(
               @string.parse_int(addr[addr.rev_find(":").unwrap() + 1:]) catch {
@@ -398,4 +400,28 @@ async test "a stop lets a stream in flight finish" {
     })
   })
   assert_eq(outcome.val, Some("drained"))
+}
+
+///|
+/// The handler cap refuses new streams but keeps reading the connection:
+/// a handler reading a body that arrives in many DATA frames gets it whole.
+/// (Pausing the reads at the cap starved such a handler, Codex's review of
+/// #58.)
+async test "at the handler cap, a running handler still gets its body" {
+  with_server(
+    h2_limits={ ..@h2server.H2Limits::default(), max_concurrent_streams: 1, },
+    port => {
+      let client = h2_client()
+      defer client.close()
+      let response = client.send(
+        {
+          ..@mttp_core.Request::post("https://localhost:\{port}/echo"),
+          body: Stream(@mttp_core.StreamBody::new({ left: 40, size: 10000, })),
+        },
+        defaults,
+      )
+      assert_eq(response.headers.get("x-received"), Some("400000"))
+      assert_eq(response.body.read_all(max=1 << 20).length(), 400000)
+    },
+  )
 }

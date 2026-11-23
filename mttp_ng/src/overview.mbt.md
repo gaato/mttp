@@ -37,7 +37,10 @@ A program that must build with HTTP/2 alone imports `h2client` and
   (trixie's own ngtcp2 has no OpenSSL crypto library)
 
 It is tested on Linux with nghttp2 1.71.0, nghttp3 1.19.0, ngtcp2 1.26.0
-and OpenSSL 3.5.3. Other Linux versions and macOS are not tested yet.
+and OpenSSL 3.5.3, and on Debian 13 with its and trixie-backports'
+versions. Its HTTP/2 server passes h2spec 2.6.0 but for the cases
+`interop_ng/h2spec_known.tsv` in the repository lists, which are nghttp2's
+own handling of frames it no longer tracks or does not validate. Other Linux versions and macOS are not tested yet.
 Windows, wasm and js are not supported.
 
 ## A client

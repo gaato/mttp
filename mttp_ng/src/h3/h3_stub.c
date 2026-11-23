@@ -507,7 +507,6 @@ static int acked_offset_cb(ngtcp2_conn *conn, int64_t stream, uint64_t offset,
 
 static int stream_close_cb(ngtcp2_conn *conn, uint32_t flags, int64_t stream,
                            uint64_t code, void *user, void *stream_user) {
-  (void)conn;
   (void)stream_user;
   qconn *q = user;
   if (!(flags & NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET))
@@ -519,6 +518,16 @@ static int stream_close_cb(ngtcp2_conn *conn, uint32_t flags, int64_t stream,
           &q->ccerr, nghttp3_err_infer_quic_app_error_code(rv), NULL, 0);
       return NGTCP2_ERR_CALLBACK_FAILURE;
     }
+  }
+  // QUIC counts the request streams a client may open over the connection's
+  // whole life, not those open at once (RFC 9000, section 4.6): a server
+  // gives one back for each of the client's bidirectional streams that
+  // closes, or the connection would take no request after the first
+  // `max_streams_bidi`.
+  // A client-initiated bidirectional stream has the two low bits clear
+  // (RFC 9000, section 2.1).
+  if (q->server && (stream & 0x3) == 0) {
+    ngtcp2_conn_extend_max_streams_bidi(conn, 1);
   }
   return 0;
 }

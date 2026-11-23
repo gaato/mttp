@@ -51,6 +51,12 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
         body=Stream(@mttp_core.StreamBody::new({ left: 50, size: 20000, })),
       )
     "/early" => @mttp_core.Response::new(413, body=Bytes(b"early"))
+    "/stuck" =>
+      // A response whose body never yields.
+      @mttp_core.Response::new(
+        200,
+        body=Stream(@mttp_core.StreamBody::new(Stuck::{ })),
+      )
     "/slow" => {
       @async.sleep(300)
       @mttp_core.Response::new(200, body=Bytes(b"slow"))
@@ -77,6 +83,21 @@ impl @mttp_core.BodyStream for Pieces with fn read_some(self) {
 
 ///|
 impl @mttp_core.BodyStream for Pieces with fn close(_) {
+  ()
+}
+
+///|
+/// A body source that never yields.
+priv struct Stuck {}
+
+///|
+impl @mttp_core.BodyStream for Stuck with fn read_some(_) {
+  @async.sleep(1000000)
+  None
+}
+
+///|
+impl @mttp_core.BodyStream for Stuck with fn close(_) {
   ()
 }
 
@@ -275,6 +296,47 @@ async test "streamed response bodies, early answers and the limits over HTTP/3" 
       )
       assert_eq(response.status, 504)
       ignore(text(response))
+    },
+  )
+}
+
+///|
+/// QUIC counts the request streams of a connection's life: the server gives
+/// one back for each that closes, so a connection carries more requests
+/// than `max_streams_bidi` (Codex's review of #58).
+async test "one connection carries more requests than the stream limit" {
+  with_server(port => {
+    let b = client()
+    defer b.close()
+    for _ in 0..<150 {
+      let response = b.send(
+        @mttp_core.Request::get("https://localhost:\{port}/hello"),
+        defaults,
+      )
+      assert_eq(text(response), "hello")
+    }
+    assert_eq(b.connections(), 1)
+  })
+}
+
+///|
+/// A response body whose source stops yielding is cut off after
+/// `body_timeout_ms`, as HTTP/1.1 and HTTP/2 do (Codex's review of #58).
+async test "a stuck response body is reset after body_timeout_ms" {
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 200, },
+    port => {
+      let b = client()
+      defer b.close()
+      let response = b.send(
+        @mttp_core.Request::get("https://localhost:\{port}/stuck"),
+        defaults,
+      )
+      try response.body.read_all(max=1024) catch {
+        @mttp_core.TransportError(phase~, ..) => assert_eq(phase, Body)
+      } noraise {
+        _ => fail("a stuck body ended")
+      }
     },
   )
 }

@@ -89,6 +89,12 @@
 #                                           a program calling each library.
 #                                           CI runs it as a job of its own,
 #                                           the one that installs them
+#   scripts/gates.sh h2spec                 h2spec against gaato/mttp_ng's
+#                                           HTTP/2 server over TLS and h2c,
+#                                           compared with
+#                                           interop_ng/h2spec_known.tsv (needs
+#                                           h2spec, H2SPEC or on PATH, and the
+#                                           ng gate's libraries)
 #   scripts/gates.sh curl-live              gaato/mttp_curl's tests against
 #                                           public HTTP/2 and HTTP/3 servers
 #                                           (needs the internet and a libcurl
@@ -311,6 +317,11 @@ case "$mode" in
     [ $# = 0 ] || usage
     print_versions
     ng_gate
+    finish
+    ;;
+  h2spec)
+    [ $# = 0 ] || usage
+    step script scripts/h2spec.mbtx
     finish
     ;;
   curl-live)

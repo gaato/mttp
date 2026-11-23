@@ -142,6 +142,15 @@ jobs:
       - run: moon update
       - name: gaato/mttp_ng's tests, coverage and resolver consumer
         run: scripts/gates.sh ng
+      # h2spec 2.6.0 (the latest release), the version mise.toml pins,
+      # checked against the digest taken when it was pinned.
+      - name: h2spec
+        run: |
+          curl -fsSL -o /tmp/h2spec.tar.gz https://github.com/summerwind/h2spec/releases/download/v2.6.0/h2spec_linux_amd64.tar.gz
+          echo '157ee0de702e01ad40e752dbf074b366027e550c8e7504f9450da2809e279318  /tmp/h2spec.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/h2spec.tar.gz -C /usr/local/bin h2spec
+      - name: h2spec against gaato/mttp_ng's HTTP/2 server
+        run: scripts/gates.sh h2spec
 
   gates:
     if: always()

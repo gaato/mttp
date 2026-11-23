@@ -30,7 +30,10 @@ priv struct Served {
 priv struct Listener {
   udp : @socket.UdpServer
   conns : Map[String, Served]
+  /// Broadcast after every change, with `generation` counting the changes,
+  /// as h2server's `Served` has them.
   changed : @cond_var.Cond
+  mut generation : Int32
   timer : &@rt.Timer
   clock : &@rt.Clock
   limits : @h1server.ServerLimits
@@ -89,6 +92,7 @@ pub async fn serve(
     udp,
     conns: Map([]),
     changed: @cond_var.Cond(),
+    generation: 0,
     timer: @runtime.ClockTimer::new(clock~),
     clock,
     limits,
@@ -238,7 +242,7 @@ fn Listener::dispatch(
               defer {
                 conn.handlers -= 1
                 conn.streams.remove(stream)
-                self.changed.broadcast()
+                self.wake()
               }
               self.serve_stream(conn, s, fields)
             })
@@ -288,12 +292,25 @@ fn Listener::dispatch(
       @h3.H3Event::.. => ()
     }
   }
+  self.wake()
+}
+
+///|
+fn Listener::wake(self : Listener) -> Unit {
+  self.generation += 1
   self.changed.broadcast()
 }
 
 ///|
 async fn Listener::wait(self : Listener, ms : Int32) -> Bool noraise {
-  self.timer.within(ms, () => self.changed.wait())
+  // A change between the call and the wait would be lost: the body waits
+  // until the generation moves on from the one seen here.
+  let seen = self.generation
+  self.timer.within(ms, () => {
+    while self.generation == seen {
+      self.changed.wait()
+    }
+  })
 }
 
 ///|
@@ -469,6 +486,28 @@ fn Listener::request(
 }
 
 ///|
+/// The next piece of a response body: `Some(None)` at its end, `None` when
+/// it failed or, with `wait`, took longer than `body_timeout_ms`, as
+/// h2server and h1server bound it. An event stream (`close_on_shutdown`)
+/// waits for its next event for any time.
+async fn Listener::next_piece(
+  self : Listener,
+  source : &@mttp_core.BodyStream,
+  wait~ : Bool,
+) -> Bytes?? {
+  if !wait {
+    return Some(source.read_some()) catch { _ => None }
+  }
+  let mut piece : Bytes?? = None
+  ignore(
+    self.timer.within(self.limits.body_timeout_ms, () => {
+      piece = Some(source.read_some()) catch { _ => None }
+    }),
+  )
+  piece
+}
+
+///|
 async fn Listener::respond(
   self : Listener,
   conn : Served,
@@ -514,6 +553,8 @@ async fn Listener::respond(
     Stream(cell) if has_body => {
       let source = cell.take() catch { _ => return }
       defer source.close()
+      let idle = response.attributes.get(@mttp_core.close_on_shutdown) ==
+        Some(true)
       while true {
         self.flush(conn)
         while quic.queued(stream.id).unwrap_or(0) >= 65536 {
@@ -529,12 +570,10 @@ async fn Listener::respond(
         if stream.closed is Some(_) || quic.closed() {
           return
         }
-        let piece = source.read_some() catch {
-          _ => {
-            quic.reset(stream.id, @h3.H3_INTERNAL_ERROR)
-            self.flush(conn)
-            return
-          }
+        guard self.next_piece(source, wait=!idle) is Some(piece) else {
+          quic.reset(stream.id, @h3.H3_INTERNAL_ERROR)
+          self.flush(conn)
+          return
         }
         match piece {
           Some(bytes) =>

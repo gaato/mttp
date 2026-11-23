@@ -246,9 +246,10 @@ Growth that follows what the caller asks for, not what the network sends.
 `mttp_ng` bounds that no test drives to their limit yet:
 
 - An HTTP/2 or HTTP/3 server runs at most `max_concurrent_streams` handlers
-  per connection, cancelled ones still finishing included, and does not read
-  the connection while that many run, so a client that opens and resets
-  streams (CVE-2023-44487) cannot pile up tasks; nghttp2's own reset rate
+  per connection, cancelled ones still finishing included, and refuses a
+  request stream that arrives while that many run with REFUSED_STREAM (the
+  connection is still read for the running ones), so a client that opens and
+  resets streams (CVE-2023-44487) cannot pile up tasks; nghttp2's own reset rate
   limit (1.57 or later) and its CONTINUATION and glitch limits (1.61, 1.67)
   apply where the linked version has them.
 - A request or response body waits in a stream's queue of at most 64 KiB

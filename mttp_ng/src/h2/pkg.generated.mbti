@@ -95,6 +95,7 @@ pub fn H2Session::shutdown_notice(Self) -> Unit raise H2Error
 pub fn H2Session::submit_request(Self, Array[(String, String)], body~ : Bool) -> Int32 raise H2Error
 pub fn H2Session::submit_response(Self, Int32, Array[(String, String)], body~ : Bool) -> Unit raise H2Error
 pub fn H2Session::wants_io(Self) -> Bool
+pub fn H2Session::wants_read(Self) -> Bool
 
 #derive(Eq, @debug.Debug)
 pub(all) struct H2Settings {

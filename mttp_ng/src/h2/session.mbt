@@ -41,6 +41,10 @@ extern "C" fn raw_events(raw : Raw) -> Bytes = "mttp_ng_h2_events"
 extern "C" fn raw_want_io(raw : Raw) -> Bool = "mttp_ng_h2_want_io"
 
 ///|
+#borrow(raw)
+extern "C" fn raw_want_read(raw : Raw) -> Bool = "mttp_ng_h2_want_read"
+
+///|
 #borrow(raw, fields)
 extern "C" fn raw_submit_request(
   raw : Raw,
@@ -271,6 +275,15 @@ pub fn H2Session::events(self : H2Session) -> Array[H2Event] {
 /// ways and every stream closed, or after a fatal error.
 pub fn H2Session::wants_io(self : H2Session) -> Bool {
   raw_want_io(self.raw)
+}
+
+///|
+/// Whether the session still reads: false after a connection error nghttp2
+/// answered with GOAWAY itself (it does not make `recv` raise), and once a
+/// GOAWAY either way left no stream to finish. The connection then only has
+/// `output` left to write before it closes.
+pub fn H2Session::wants_read(self : H2Session) -> Bool {
+  raw_want_read(self.raw)
 }
 
 ///|
