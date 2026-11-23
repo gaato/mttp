@@ -278,3 +278,81 @@ async test "configurations OpenSSL cannot use are refused" {
     _ => fail("a 256-byte ALPN identifier was accepted")
   }
 }
+
+///|
+/// A connection whose writes wait while `blocked` is set.
+priv struct Gated {
+  inner : &@rt.Conn
+  mut blocked : Bool
+}
+
+///|
+impl @rt.Conn for Gated with fn read(self, max_len~) {
+  self.inner.read(max_len~)
+}
+
+///|
+impl @rt.Conn for Gated with fn write(self, bytes) {
+  while self.blocked {
+    @async.sleep(5)
+  }
+  self.inner.write(bytes)
+}
+
+///|
+impl @rt.Conn for Gated with fn close(self) {
+  self.inner.close()
+}
+
+///|
+/// A read writes nothing beneath, so a read cancelled at any point loses
+/// no bytes and breaks nothing: the answer to a KeyUpdate goes with this
+/// end's next write, before its data (RFC 8446, section 4.6.3). Writing it
+/// from the read let a cancelled read lose what it had decrypted and cut
+/// the stream for later writes (Codex's review of #58).
+async test "a read writes nothing, and a KeyUpdate's answer goes with the next write" {
+  @async.with_timeout(10000, () => {
+    let coordination = @runtime.RuntimeCoordination::new()
+    let (left, right) = @sim.pair(coordination)
+    let gated = { inner: left, blocked: false, }
+    let accepted : Ref[@tls.TlsConn?] = Ref(None)
+    let connected : Ref[@tls.TlsConn?] = Ref(None)
+    let server_side = server_tls()
+    let client_side = trusted()
+    @async.with_task_group(group => {
+      group.spawn_bg(() => {
+        accepted.val = Some(server_side.accept(right, coordination~))
+      })
+      connected.val = Some(
+        client_side.connect(gated, host="localhost", coordination~),
+      )
+    })
+    let client = connected.val.unwrap()
+    let server = accepted.val.unwrap()
+    defer client.close()
+    defer server.close()
+    assert_eq(client.version(), "TLSv1.3")
+    // Updates asked for both ways: the server's KeyUpdate comes with its
+    // data, and the client has its own and the answer to send. Its reads
+    // must not try to, the gate being shut.
+    server.update_keys()
+    server.write(b"after the update")
+    client.update_keys()
+    gated.blocked = true
+    assert_eq(client.read(max_len=64), Some(b"after the update"))
+    let cut = try {
+      @async.with_timeout(50, () => ignore(client.read(max_len=64)))
+      false
+    } catch {
+      _ => true
+    }
+    assert_true(cut)
+    gated.blocked = false
+    // The next write sends the KeyUpdates before its data, and both ends
+    // go on with their new keys.
+    client.write(b"back")
+    assert_eq(server.read(max_len=64), Some(b"back"))
+    server.write(b"and again")
+    assert_eq(client.read(max_len=64), Some(b"and again"))
+  })
+}

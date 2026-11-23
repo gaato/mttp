@@ -85,6 +85,10 @@ extern "C" fn read_step(
 ) -> Int32 = "mttp_ng_tls_read"
 
 ///|
+#borrow(session)
+extern "C" fn key_update(session : Session) -> Int32 = "mttp_ng_tls_key_update"
+
+///|
 #borrow(session, data)
 extern "C" fn write_step(
   session : Session,
@@ -452,8 +456,8 @@ async fn TlsConn::flush(self : TlsConn) -> Unit raise @mttp_core.TransportError 
 }
 
 ///|
-/// Writes the session's own output from a read, unless a writer is at work
-/// and will write it. A failure is kept for the writes; the read goes on.
+/// Writes the session's own output from a failed read (its alert), unless
+/// a writer is at work and will write it.
 async fn TlsConn::flush_for_read(self : TlsConn) -> Unit noraise {
   if !self.flushing && !self.closed && pending(self.session) > 0 {
     self.flush() catch {
@@ -476,24 +480,33 @@ pub impl @rt.Conn for TlsConn with fn read(self, max_len~) {
       Open => ()
     }
     let got = read_step(self.session, buffer, 0, size)
+    // A read writes nothing beneath. A write could be cancelled with the
+    // read (readers of HTTP/2 are, routinely), and a write cut short
+    // breaks the stream for every later write; and between taking bytes
+    // from OpenSSL and returning them nothing may suspend, or a
+    // cancellation would lose them. What OpenSSL produces while reading
+    // is the answer to a peer's KeyUpdate, which may wait for this end's
+    // next application data (RFC 8446, section 4.6.3): `write` sends it
+    // first. Renegotiation, which would need a write to go on, is off.
     if got > 0 {
-      self.flush_for_read()
       return Some(Bytes::makei(got, i => buffer[i]))
     }
     match -got {
-      STEP_WANT_READ => {
-        self.flush_for_read()
+      STEP_WANT_READ =>
         match self.inner.read(max_len=RECORD_BYTES) {
           Some(chunk) => ignore(feed(self.session, chunk, 0, chunk.length()))
           None => self.read_end = Incomplete
         }
-      }
       STEP_CLOSED => self.read_end = Eof
       _ => {
         if self.closed {
           raise closed_error()
         }
-        raise self.session_failure()
+        let failure = self.session_failure()
+        // The alert OpenSSL queued for the peer, as far as it goes: the
+        // session is over either way.
+        self.flush_for_read()
+        raise failure
       }
     }
   } nobreak {
@@ -541,6 +554,22 @@ pub impl @rt.Conn for TlsConn with fn close(self) {
     waiter.notify()
   }
   free_session(self.session)
+}
+
+///|
+/// Asks the peer to update its keys and to ask for this end's (a TLS 1.3
+/// KeyUpdate with update_requested), sent with the next write; for a long
+/// connection that wants fresh keys. Raises when the session cannot (TLS
+/// 1.2, or closed).
+pub fn TlsConn::update_keys(
+  self : TlsConn,
+) -> Unit raise @mttp_core.TransportError {
+  if self.closed {
+    raise closed_error()
+  }
+  if key_update(self.session) == 0 {
+    raise self.session_failure()
+  }
 }
 
 ///|

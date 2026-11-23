@@ -40,6 +40,7 @@ pub fn TlsConn::alpn(Self) -> String?
 pub fn TlsConn::close(Self) -> Unit
 pub async fn TlsConn::read(Self, max_len~ : Int32) -> Bytes? raise @mttp_core.TransportError
 pub async fn TlsConn::shutdown(Self) -> Unit raise @mttp_core.TransportError
+pub fn TlsConn::update_keys(Self) -> Unit raise @mttp_core.TransportError
 pub fn TlsConn::version(Self) -> String
 pub async fn TlsConn::write(Self, Bytes) -> Unit raise @mttp_core.TransportError
 pub impl @rt.Conn for TlsConn

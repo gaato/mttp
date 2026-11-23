@@ -158,6 +158,19 @@ fn Connection::dispatch(self : Connection) -> Unit {
       GoAway(id~) => {
         self.goaway = Some(id)
         self.retired = true
+        // A request stream from `id` up was not processed (RFC 9114,
+        // section 5.2), and the server need not reset it: it is closed
+        // here, so that whatever waits on it (a head, an upload, a body)
+        // sees `Refused` now rather than at its deadline, and its stream
+        // is given up. nghttp2 closes HTTP/2's such streams itself.
+        for _, s in self.streams {
+          if s.id >= id && s.head is None && s.closed is None {
+            s.closed = Some(
+              Refused("the server's GOAWAY left stream \{s.id} unprocessed"),
+            )
+            self.quic.reset(s.id, @h3.H3_REQUEST_CANCELLED)
+          }
+        }
       }
       Sent(stream~, end_stream~) =>
         if self.streams.get(stream) is Some(s) {

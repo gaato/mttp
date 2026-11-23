@@ -534,3 +534,91 @@ async test "a slow download outlasts header_timeout_ms over HTTP/3" {
     },
   )
 }
+
+///|
+/// A server's GOAWAY that leaves a request unprocessed, without a reset of
+/// its stream (RFC 9114, section 5.2, lets it), fails the request with
+/// `Refused` at once, not at its deadline (Codex's review of #58). The
+/// server here sends GOAWAY as soon as its handshake is done, before it
+/// reads any request, and then reads nothing more: nghttp3 itself would
+/// reset a request that arrives after its GOAWAY, which other servers need
+/// not do.
+async test "a GOAWAY that leaves a request unprocessed refuses it at once" {
+  let quic = @h3.ServerQuic::from_pem(
+    chain=@fs.read_text(testdata("localhost.pem")),
+    key=@fs.read_text(testdata("localhost.key")),
+  )
+  let udp = @socket.UdpServer(@socket.Addr::parse("127.0.0.1:0"))
+  defer udp.close()
+  let bound = udp.addr.to_string()
+  let port = bound[bound.rev_find(":").unwrap() + 1:].to_owned()
+  @async.with_timeout(10000, () => {
+    @async.with_task_group(group => {
+      group.spawn_bg(() => {
+        let buffer = FixedArray::make(65536, b'\x00')
+        let mut conn : @h3.QuicConn? = None
+        let mut shut = false
+        defer (if conn is Some(c) { c.free() })
+        while true {
+          let got : Ref[(Int32, @socket.Addr)?] = Ref(None)
+          @async.with_timeout(20, () => {
+            got.val = Some(udp.recv_into(buffer.mut_view()))
+          }) catch {
+            _ => ()
+          }
+          guard got.val is Some((n, peer)) else {
+            if conn is Some(c) && c.expiry_ms() == Some(0) {
+              c.on_expiry() catch {
+                _ => ()
+              }
+            }
+            continue
+          }
+          if shut {
+            continue
+          }
+          let datagram = Bytes::from_array(buffer[:n])
+          let c = match conn {
+            Some(c) => c
+            None => {
+              let c = @h3.QuicConn::server(
+                quic,
+                datagram,
+                local_address=bound,
+                remote_address=peer.to_string(),
+              ) catch {
+                _ => continue
+              }
+              conn = Some(c)
+              c
+            }
+          }
+          c.read(datagram) catch {
+            _ => ()
+          }
+          if !shut && c.events().contains(HandshakeDone) {
+            // No request read yet: GOAWAY names stream 0.
+            c.shutdown(notice=false)
+            shut = true
+          }
+          for out in c.datagrams() {
+            udp.send(out, peer)
+          }
+        }
+      })
+      let b = client()
+      defer b.close()
+      try
+        b.send(
+          @mttp_core.Request::get("https://localhost:\{port}/unprocessed"),
+          defaults,
+        )
+      catch {
+        @mttp_core.TransportError(kind~, ..) => assert_eq(kind, Refused)
+      } noraise {
+        _ => fail("a request the GOAWAY left unprocessed got an answer")
+      }
+      group.return_immediately()
+    })
+  })
+}

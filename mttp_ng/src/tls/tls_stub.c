@@ -463,6 +463,16 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_tls_write(session_box *b,
   return -outcome(s, ret);
 }
 
+// Asks for a TLS 1.3 KeyUpdate that the peer answers with its own; the
+// message goes with the next write. 1, or 0 when the session cannot (not
+// TLS 1.3, or the handshake not done).
+MOONBIT_FFI_EXPORT int32_t mttp_ng_tls_key_update(session_box *b) {
+  session *s = b->s;
+  if (!s || !s->ssl) return 0;
+  ERR_clear_error();
+  return SSL_key_update(s->ssl, SSL_KEY_UPDATE_REQUESTED) == 1;
+}
+
 // Queues close_notify; MoonBit takes and writes it.
 MOONBIT_FFI_EXPORT void mttp_ng_tls_shutdown(session_box *b) {
   session *s = b->s;

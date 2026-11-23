@@ -6,6 +6,7 @@ import {
 }
 
 import {
+  "gaato/mttp_core/rt",
   "gaato/mttp_core/sim",
   "gaato/mttp/runtime",
   "moonbitlang/core/async",
