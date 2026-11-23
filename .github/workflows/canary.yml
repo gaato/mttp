@@ -164,6 +164,41 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  # Coverage-guided fuzzing of gaato/mttp_ng (fuzz_ng/, TEST_COVERAGE.md):
+  # the HTTP/2 server session, the in-memory HTTP/2 and HTTP/3 pairs, and
+  # the module's C stubs, built with libFuzzer and ASan. In the gate image,
+  # as the ng job is, for Debian 13's libraries; clang and its libFuzzer
+  # runtime come from Debian too. A failure leaves the input in _build/fuzz.
+  fuzz-ng:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.22-124d61d05
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: nghttp2, nghttp3, ngtcp2 and OpenSSL, and clang with libFuzzer
+        run: |
+          echo 'deb http://deb.debian.org/debian trixie-backports main' > /etc/apt/sources.list.d/backports.list
+          apt-get update
+          apt-get install -y --no-install-recommends pkg-config libnghttp2-dev libssl-dev clang
+          apt-get install -y --no-install-recommends -t trixie-backports libngtcp2-dev libngtcp2-crypto-ossl-dev libnghttp3-dev
+          apt-get install -y --no-install-recommends "libclang-rt-$(clang -dumpversion | cut -d. -f1)-dev"
+      - run: moon update
+      - name: Fuzz each target for five minutes
+        env:
+          MOON_CC: cc
+        run: scripts/gates.sh fuzz --gate ng 300
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-ng-artifacts-${{ github.run_id }}
+          path: _build/fuzz
+          if-no-files-found: ignore
+          retention-days: 30
+
   # The interoperability suite (interop/README.md). It runs on the runner
   # itself, not in the gate image: the third-party programs run in
   # containers of their own, and the runner's docker starts them. moon comes

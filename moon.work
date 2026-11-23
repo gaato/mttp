@@ -16,4 +16,5 @@ members = [
   "benchmarks/transport",
   "interop",
   "fuzz",
+  "fuzz_ng",
 ]

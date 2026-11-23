@@ -131,7 +131,33 @@ typedef struct {
   size_t max_header_bytes;
   int fatal; // nghttp2 returned a fatal error
   int flooded; // nghttp2 found a flood: nothing more is written
+  // Requests submitted whose HEADERS have not gone out yet, the only
+  // streams without nghttp2's stream object that may be reset (`reset`).
+  int32_t *unsent;
+  size_t unsent_len, unsent_cap;
 } session;
+
+static void unsent_add(session *s, int32_t stream) {
+  if (s->unsent_len == s->unsent_cap) {
+    size_t cap = s->unsent_cap ? s->unsent_cap * 2 : 8;
+    int32_t *grown = realloc(s->unsent, cap * sizeof *grown);
+    if (!grown) return;
+    s->unsent = grown;
+    s->unsent_cap = cap;
+  }
+  s->unsent[s->unsent_len++] = stream;
+}
+
+// Removes `stream`; whether it was there.
+static int unsent_remove(session *s, int32_t stream) {
+  for (size_t i = 0; i < s->unsent_len; i++) {
+    if (s->unsent[i] == stream) {
+      s->unsent[i] = s->unsent[--s->unsent_len];
+      return 1;
+    }
+  }
+  return 0;
+}
 
 typedef struct {
   session *s;
@@ -152,6 +178,7 @@ static void session_free(session *s) {
   if (!s) return;
   if (s->ng) nghttp2_session_del(s->ng);
   queue_free_all(s);
+  free(s->unsent);
   free(s->events.data);
   free(s->out.data);
   free(s);
@@ -199,6 +226,25 @@ static int on_begin_headers(nghttp2_session *ng, const nghttp2_frame *frame,
   put_i32(&s->events, frame->hd.stream_id);
   put_i32(&s->events, category_of(frame));
   return 0;
+}
+
+// A field with characters RFC 9113 forbids in a field (section 8.2.1). Left
+// to itself, nghttp2 drops such a field and passes the rest of the block
+// on ("silently ignored if neither this callback nor ... is set",
+// nghttp2_on_invalid_header_callback2); the RFC makes the message
+// malformed, a stream error of type PROTOCOL_ERROR (section 8.1.1), as
+// h1server refuses such a request. Returning TEMPORAL_CALLBACK_FAILURE
+// resets the stream with PROTOCOL_ERROR.
+static int on_invalid_header(nghttp2_session *ng, const nghttp2_frame *frame,
+                             nghttp2_rcbuf *name, nghttp2_rcbuf *value,
+                             uint8_t flags, void *user) {
+  (void)ng;
+  (void)frame;
+  (void)name;
+  (void)value;
+  (void)flags;
+  (void)user;
+  return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
 }
 
 static int on_header(nghttp2_session *ng, const nghttp2_frame *frame,
@@ -285,6 +331,7 @@ static int on_stream_close(nghttp2_session *ng, int32_t stream,
   session *s = user;
   outq *q = queue_of(s, stream);
   if (q) queue_remove(s, q);
+  unsent_remove(s, stream);
   put_u8(&s->events, EV_CLOSED);
   put_i32(&s->events, stream);
   put_i32(&s->events, (int32_t)error_code);
@@ -295,6 +342,7 @@ static int on_frame_send(nghttp2_session *ng, const nghttp2_frame *frame,
                          void *user) {
   (void)ng;
   session *s = user;
+  if (frame->hd.type == NGHTTP2_HEADERS) unsent_remove(s, frame->hd.stream_id);
   if (frame->hd.type == NGHTTP2_HEADERS || frame->hd.type == NGHTTP2_DATA) {
     put_u8(&s->events, EV_SENT);
     put_i32(&s->events, frame->hd.stream_id);
@@ -317,6 +365,7 @@ static int on_frame_not_send(nghttp2_session *ng, const nghttp2_frame *frame,
     if (frame->hd.type == NGHTTP2_HEADERS) {
       outq *q = queue_of(s, frame->hd.stream_id);
       if (q) queue_remove(s, q);
+      unsent_remove(s, frame->hd.stream_id);
     }
   }
   return 0;
@@ -379,6 +428,8 @@ static session *session_new(int server, const int32_t *values) {
   }
   nghttp2_session_callbacks_set_on_begin_headers_callback(cb, on_begin_headers);
   nghttp2_session_callbacks_set_on_header_callback(cb, on_header);
+  nghttp2_session_callbacks_set_on_invalid_header_callback2(cb,
+                                                            on_invalid_header);
   nghttp2_session_callbacks_set_on_frame_recv_callback(cb, on_frame_recv);
   nghttp2_session_callbacks_set_on_data_chunk_recv_callback(cb, on_data_chunk);
   nghttp2_session_callbacks_set_on_stream_close_callback(cb, on_stream_close);
@@ -638,6 +689,7 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_submit_request(session_box *b,
   }
   int32_t stream = ng_submit_request(s->ng, NULL, nva, n, body ? &provider : NULL, NULL);
   free(nva);
+  if (stream > 0) unsent_add(s, stream);
   if (q) {
     if (stream < 0) {
       queue_remove(s, q);
@@ -710,9 +762,21 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_queued(session_box *b, int32_t stream) {
   return q ? (int32_t)(q->len - q->off) : -1;
 }
 
+// Resets `stream` when it is open, or a request whose HEADERS are still
+// queued (nghttp2 then does not send them); otherwise does nothing. A
+// stream that closed before its HEADERS went (NOT_SENT) is idle to the
+// peer, and RST_STREAM "MUST NOT be sent for a stream in the idle state"
+// (RFC 9113, section 6.4): nghttp2 1.64 sends one for it on a second
+// reset all the same, which the peer takes for a connection error (found
+// by fuzz_ng's HTTP/2 pair on Debian 13); 1.71 does not.
 MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_reset(session_box *b, int32_t stream,
                                             int32_t code) {
   if (!usable(b)) return NGHTTP2_ERR_INVALID_STATE;
+  session *s = b->s;
+  nghttp2_stream *st = nghttp2_session_find_stream(s->ng, stream);
+  int open = st && nghttp2_stream_get_state(st) != NGHTTP2_STREAM_STATE_IDLE &&
+             nghttp2_stream_get_state(st) != NGHTTP2_STREAM_STATE_CLOSED;
+  if (!open && !unsent_remove(s, stream)) return 0;
   return nghttp2_submit_rst_stream(b->s->ng, NGHTTP2_FLAG_NONE, stream,
                                    (uint32_t)code);
 }

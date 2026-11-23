@@ -318,3 +318,42 @@ test "a header block read across two drains of events keeps every field" {
     second.contains(Headers(stream~, kind=Request, fields~, end_stream=true)),
   )
 }
+
+///|
+/// RFC 9113, section 8.2.1: a field with a character a field may not hold
+/// makes the message malformed, a stream error (section 8.1.1). nghttp2
+/// would drop such a field and pass the rest on; the session resets the
+/// stream instead (found by fuzz_ng's HTTP/2 pair).
+test "a request with an invalid field is reset, not passed on without it" {
+  for field in [("\u{10}a", "1"), ("x", "a\u{00}b"), ("x", "a\u{01}b")] {
+    let p = pair()
+    let stream = p.client.submit_request([..request(), field], body=false)
+    p.settle()
+    assert_false(p.server_events.iter().any(e => e is Headers(..)))
+    assert_true(p.client_events.contains(Closed(stream~, code=ProtocolError)))
+  }
+}
+
+///|
+/// A request reset before its HEADERS went is not sent; resetting it again
+/// sends nothing either: to the server the stream is idle, and RST_STREAM
+/// on an idle stream is a connection error (RFC 9113, section 6.4). nghttp2
+/// 1.64 sent one (found by fuzz_ng's HTTP/2 pair on Debian 13).
+test "a request reset before it went out is not sent, nor reset again" {
+  let p = pair()
+  let stream = p.client.submit_request(request(), body=false)
+  p.client.reset(stream, Cancel)
+  p.settle()
+  p.client.reset(stream, Cancel)
+  p.settle()
+  assert_false(p.server_events.iter().any(e => e is Headers(..)))
+  assert_false(p.server_events.iter().any(e => e is GoAway(..)))
+  assert_false(p.client_events.iter().any(e => e is GoAway(..)))
+  // The connection still carries requests.
+  p.take()
+  let next = p.client.submit_request(request(), body=false)
+  p.settle()
+  assert_true(
+    p.server_events.iter().any(e => e is Headers(stream=s, ..) && s == next),
+  )
+}

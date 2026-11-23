@@ -314,7 +314,9 @@ and benchmarks. Mutation testing and proofs are manual gates.
   in both directions reflect the fixed 15-bit encoding window; raw suite
   verdicts, including FAILED, remain visible rather than becoming passes.
 - [Coverage-guided fuzzing](fuzz) runs the HTTP/1 reader and WebSocket frame
-  parser through libFuzzer and AddressSanitizer. The manual
+  parser through libFuzzer and AddressSanitizer, and
+  [another set](fuzz_ng) runs `gaato/mttp_ng`'s HTTP/2 server session, its
+  HTTP/2 and HTTP/3 client–server pairs and its C stubs. The manual
   [mutation sample](scripts/mutate.mbtx) checks HTTP/1 framing regressions.
 - [Proofs](mttp_core/src/h1/PROOFS.md) with Z3 and CVC5 cover the integer
   core used for Content-Length and chunk-size, including overflow rejection.

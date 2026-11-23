@@ -60,6 +60,12 @@
 #                                           each (default 60); needs clang
 #                                           with libFuzzer (FUZZ_CC). Daily
 #                                           in canary, outside full
+#   scripts/gates.sh fuzz --gate ng [SECONDS]
+#                                           The same for gaato/mttp_ng's
+#                                           targets (fuzz_ng/: HTTP/2 server,
+#                                           HTTP/2 and HTTP/3 pairs) and its
+#                                           C stubs; needs the ng gate's
+#                                           libraries. Daily in canary
 #   scripts/gates.sh mutate [SITE]...       the hand-run HTTP/1 mutation
 #                                           sample; not part of full or CI
 #   scripts/gates.sh prove [--solver z3|cvc5] the number core and negative
@@ -350,7 +356,7 @@ case "$mode" in
     finish
     ;;
   fuzz)
-    [ $# -le 1 ] || usage
+    [ $# -le 3 ] || usage
     step script scripts/fuzz.mbtx -- "$@"
     finish
     ;;

@@ -1,0 +1,24 @@
+import {
+  "gaato/mttp_ng/h2",
+  "gaato/mttp_ng/h3",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/env",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "native"
+
+// Stable C names for fuzz/harness.c's LLVMFuzzerTestOneInput.
+
+options(
+  link: {
+    "native": {
+      "exports": [
+        "fuzz_h2_server:mttp_fuzz_h2_server",
+        "fuzz_h2_pair:mttp_fuzz_h2_pair",
+        "fuzz_h3_pair:mttp_fuzz_h3_pair",
+      ],
+    },
+  },
+)

@@ -253,6 +253,60 @@ Each has a regression test in `h1/property_test.mbt`. After both fixes a
 further 10 minutes each (1.30M h1 inputs at 2,200 exec/s, 0.70M ws at
 1,200) found nothing.
 
+## Coverage-guided fuzzing of gaato/mttp_ng (2026-11-23)
+
+`fuzz_ng/` (gate `ng`) holds three libFuzzer targets over gaato/mttp_ng's
+codecs. `scripts/gates.sh fuzz --gate ng [SECONDS]` (daily in canary at
+300, in the gate image for Debian 13's libraries) builds them as `fuzz`
+builds its targets, and also compiles the module's C stubs (`h2_stub.c`,
+`h3_stub.c`) with libFuzzer's coverage and ASan, so that the code of ours
+that touches memory directly is what the runs explore and check; nghttp2,
+nghttp3, ngtcp2 and OpenSSL are the system's, linked as they are.
+
+- `h2_server` feeds a client's bytes, cut at a fuzzer-chosen size, to a
+  server `H2Session` that answers every request, under a mode byte (small
+  header bound, small windows, a response body, the reader taking bytes at
+  once). It aborts when a header block over the bound is handed on, or
+  when DATA comes before its stream's head.
+- `h2_pair` and `h3_pair` join a client and a server in memory (QUIC past
+  its handshake) and read the input as a program: requests and responses
+  with fuzzer-chosen fields, body pieces both ways, resets, the bytes in
+  flight delivered in pieces (and, for QUIC, datagrams of the fuzzer's own),
+  the readers taking what arrived. They abort when a head that arrives is
+  not the one submitted, when body bytes that arrive are not a prefix of
+  those pushed, and (HTTP/2 only; QUIC paces sends on a clock the run does
+  not move) when, once the sessions settle, a stream that went out and
+  nobody reset lacks part of a body that ended.
+
+Seeds come from `fuzz_ng seeds`: a real client session's bytes for the
+server target, short programs for the pairs. `moon run --target native
+fuzz_ng -- run TARGET HEX` replays a kept input, and the abort message
+names the fields or the stream's state.
+
+What the first runs found (MoonBit 0.10.22; clang 23 with nghttp2 1.71.0,
+nghttp3 1.19.0 and ngtcp2 1.26.0 on openSUSE, five minutes per target,
+1,300 to 3,000 exec/s for HTTP/2 and 350 for HTTP/3; and clang 19 with
+Debian 13's nghttp2 1.64.0, nghttp3 1.15.0 and ngtcp2 1.22.1 in the gate
+image): no crash and no ASan report in the stubs or the libraries. Two
+faults, each with a regression test in `h2/session_test.mbt`:
+
+- nghttp2 dropped a field with characters RFC 9113 forbids (section
+  8.2.1) and passed the rest of the request on, where the RFC makes the
+  message malformed, a stream error (section 8.1.1); `h2_stub.c` now
+  resets such a stream with PROTOCOL_ERROR.
+- On nghttp2 1.64 only, a second reset of a request reset before its
+  HEADERS went sent RST_STREAM for a stream the server never saw, which
+  RFC 9113 forbids for an idle stream (section 6.4) and the server answers
+  with GOAWAY(PROTOCOL_ERROR), ending the connection. `H2Session::reset`
+  now resets only an open stream, or a request whose HEADERS are still
+  queued (nghttp2 then does not send them). nghttp3 drops such fields too (a name or a value
+outside RFC 9110's characters), with no setting to make the message
+malformed instead; the field never reaches a handler, and `h3_pair` allows
+for it. Three findings were the targets' own assumptions, now encoded:
+nghttp2 and nghttp3 send field names in lower case; nghttp2 holds a request
+over the server's concurrent stream limit back until a stream closes; and
+small windows need many round trips to settle.
+
 ## Accepted uncovered
 
 | File | Budget | Reason |
