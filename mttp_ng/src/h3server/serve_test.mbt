@@ -57,10 +57,17 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
       @mttp_core.Response::new(200, body=Bytes(b"ignored"))
     }
     "/stuck" =>
-      // A response whose body never yields.
+      // A response whose body stops yielding after its first piece (the
+      // first is pulled before the head).
       @mttp_core.Response::new(
         200,
-        body=Stream(@mttp_core.StreamBody::new(Stuck::{ })),
+        body=Stream(@mttp_core.StreamBody::new(Stuck::{ started: false, })),
+      )
+    "/silent" =>
+      // A response whose body never yields its first piece.
+      @mttp_core.Response::new(
+        200,
+        body=Stream(@mttp_core.StreamBody::new(Stuck::{ started: true, })),
       )
     "/slow" => {
       @async.sleep(300)
@@ -92,11 +99,17 @@ impl @mttp_core.BodyStream for Pieces with fn close(_) {
 }
 
 ///|
-/// A body source that never yields.
-priv struct Stuck {}
+/// A body source that yields one piece, then never again.
+priv struct Stuck {
+  mut started : Bool
+}
 
 ///|
-impl @mttp_core.BodyStream for Stuck with fn read_some(_) {
+impl @mttp_core.BodyStream for Stuck with fn read_some(self) {
+  if !self.started {
+    self.started = true
+    return Some(b"x")
+  }
   @async.sleep(1000000)
   None
 }
@@ -419,4 +432,23 @@ async test "request bodies nobody read leave the connection's window open" {
     ignore(text(response))
     assert_eq(b.connections(), 1)
   })
+}
+
+///|
+/// The first piece of a streamed response is pulled before the head: a
+/// producer silent for `body_timeout_ms` from the start is answered 500.
+async test "a response body silent from its start is answered 500" {
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), body_timeout_ms: 200, },
+    port => {
+      let b = client()
+      defer b.close()
+      let response = b.send(
+        @mttp_core.Request::get("https://localhost:\{port}/silent"),
+        defaults,
+      )
+      assert_eq(response.status, 500)
+      ignore(text(response))
+    },
+  )
 }

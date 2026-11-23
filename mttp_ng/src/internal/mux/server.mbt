@@ -117,7 +117,18 @@ pub(all) struct ServerContext {
   timer : &@rt.Timer
   on_error : (@mttp_core.TransportError) -> Unit
   background : ((async () -> Unit) -> Unit)?
+  /// The server has begun to stop: a response marked `close_on_shutdown`
+  /// ends where its stream got to (as h1server ends one). The connection
+  /// rings `changes` when it sees the stop; it is also looked at every
+  /// `STOP_POLL_MS`.
+  stopping : () -> Bool
+  coordination : &@rt.Coordination
 }
+
+///|
+/// How often a response marked `close_on_shutdown` looks at `stopping`
+/// while its producer is silent, as h1server's `shutdown_poll_ms`.
+const STOP_POLL_MS : Int32 = 250
 
 ///|
 /// A request body read from its stream's buffer. One `body_timeout_ms`
@@ -332,23 +343,76 @@ pub async fn ServerContext::serve(
 }
 
 ///|
-/// The next piece of a response body: `Some(None)` at its end, `None` when
-/// it failed or, with `wait`, took longer than `body_timeout_ms`.
+/// What a pull of a response body gave.
+priv enum Piece {
+  More(Bytes)
+  End
+  /// The producer failed or, without `cut`, took longer than
+  /// `body_timeout_ms`.
+  Broken
+  /// The server began to stop, and the response is marked
+  /// `close_on_shutdown`.
+  Stopped
+}
+
+///|
+/// The next piece of a response body. Without `cut`, within
+/// `body_timeout_ms`. With `cut` (`close_on_shutdown`), the pull may wait
+/// any time (an event stream is silent until it has an event), and gives
+/// `Stopped` once the server stops, before the pull or while it waits (the
+/// pull is then cancelled), as h1server's `Session::produce`.
 async fn ServerContext::next_piece(
   self : ServerContext,
   source : &@mttp_core.BodyStream,
-  wait~ : Bool,
-) -> Bytes?? {
-  if !wait {
-    return Some(source.read_some()) catch { _ => None }
+  cut~ : Bool,
+) -> Piece {
+  let got = (piece : Bytes?) => {
+    match piece {
+      Some(bytes) => More(bytes)
+      None => End
+    }
   }
-  let mut piece : Bytes?? = None
-  ignore(
-    self.timer.within(self.limits.body_timeout_ms, () => {
-      piece = Some(source.read_some()) catch { _ => None }
-    }),
-  )
-  piece
+  if !cut {
+    let mut piece = Broken
+    ignore(
+      self.timer.within(self.limits.body_timeout_ms, () => {
+        piece = got(source.read_some()) catch { _ => Broken }
+      }),
+    )
+    return piece
+  }
+  if (self.stopping)() {
+    return Stopped
+  }
+  let mut piece = Broken
+  let stopped = Ref(false)
+  self.coordination.supervise(
+    primary=() => piece = got(source.read_some()) catch { _ => Broken },
+    monitor=() => {
+      while !(self.stopping)() {
+        ignore(
+          self.changes.wait_until(
+            () => (self.stopping)(),
+            deadline=self.changes.deadline_in(STOP_POLL_MS),
+          ),
+        )
+      }
+      stopped.val = true
+      // Cancels the pull.
+      raise @mttp_core.TransportError(
+        kind=Closed,
+        phase=Body,
+        detail="the server is stopping",
+      )
+    },
+  ) catch {
+    _ => ()
+  }
+  if stopped.val {
+    Stopped
+  } else {
+    piece
+  }
 }
 
 ///|
@@ -405,6 +469,34 @@ async fn ServerContext::respond(
     fields.push(("date", @mttp_core.format_http_date(self.clock.now_unix_ms())))
   }
   let bodiless = head || response.status == 204 || response.status == 304
+  let cut = response.attributes.get(@mttp_core.close_on_shutdown) == Some(true)
+  // A streamed body's first piece is pulled before the head goes, as
+  // h1server pulls it: a producer that reads the request body may meet its
+  // failure (too large, too slow), which then decides the answer.
+  let (source, first) = match response.body {
+    Stream(cell) if !bodiless => {
+      let source = cell.take() catch { _ => return }
+      let first = self.next_piece(source, cut~)
+      if stream.failure is Some(error) {
+        source.close()
+        (self.on_error)(error)
+        self.respond(
+          stream,
+          @mttp_core.Response::new(body_status(error)),
+          head~,
+        )
+        return
+      }
+      if first is Broken {
+        source.close()
+        self.respond(stream, @mttp_core.Response::new(500), head~)
+        return
+      }
+      (Some(source), first)
+    }
+    _ => (None, End)
+  }
+  defer (if source is Some(source) { source.close() })
   let has_body = match response.body {
     _ if bodiless => false
     Empty => false
@@ -416,14 +508,27 @@ async fn ServerContext::respond(
     return
   }
   conn.flush()
-  match response.body {
-    Bytes(bytes) if has_body => ignore(conn.push(stream.id, bytes, end=true))
-    Stream(cell) if has_body => {
-      let source = cell.take() catch { _ => return }
-      defer source.close()
-      let idle = response.attributes.get(@mttp_core.close_on_shutdown) ==
-        Some(true)
+  match (response.body, source) {
+    (Bytes(bytes), _) if has_body =>
+      ignore(conn.push(stream.id, bytes, end=true))
+    (_, Some(source)) => {
+      let mut piece = first
       while true {
+        match piece {
+          More(bytes) => if !conn.push(stream.id, bytes, end=false) { return }
+          // At its end, or where the stream got to when the server began
+          // to stop.
+          End | Stopped => {
+            ignore(conn.push(stream.id, b"", end=true))
+            break
+          }
+          Broken => {
+            conn.abort(stream.id)
+            conn.flush()
+            return
+          }
+        }
+        conn.flush()
         // Room in the queue first, so a slow client holds back the body;
         // each wait has its own `body_timeout_ms`.
         let room = self.changes.wait_until(
@@ -440,19 +545,7 @@ async fn ServerContext::respond(
           conn.flush()
           return
         }
-        guard self.next_piece(source, wait=!idle) is Some(piece) else {
-          conn.abort(stream.id)
-          conn.flush()
-          return
-        }
-        match piece {
-          Some(bytes) => if !conn.push(stream.id, bytes, end=false) { return }
-          None => {
-            ignore(conn.push(stream.id, b"", end=true))
-            break
-          }
-        }
-        conn.flush()
+        piece = self.next_piece(source, cut~)
       }
     }
     _ => ()

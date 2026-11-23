@@ -148,9 +148,12 @@ impl @mux.ServerConn for Served with fn flush(self) {
 }
 
 ///|
-/// Writes what the session has to say until the connection ends.
+/// Writes what the session has to say, the connection's only writer: two
+/// writes at once would interleave their frames. Once the connection is
+/// `dead`, it writes what is left (GOAWAY, the last frames of finished
+/// streams) and ends, or ends at once when a write failed.
 async fn Served::write_loop(self : Served) -> Unit noraise {
-  while !self.dead {
+  while true {
     // Taken before the session is asked, so a change after the question
     // wakes the wait below.
     let next = self.changes.next()
@@ -158,6 +161,9 @@ async fn Served::write_loop(self : Served) -> Unit noraise {
     // What serializing it caused: frames sent, streams closed.
     self.dispatch(None)
     if output.length() == 0 {
+      if self.dead {
+        return
+      }
       next.wait()
       continue
     }
@@ -267,12 +273,16 @@ pub async fn serve_h2_conn(
     timer,
     on_error,
     background,
+    stopping,
+    coordination,
   }
   @async.with_task_group(group => {
-    group.spawn_bg(() => served.write_loop())
+    let writer = group.spawn(() => served.write_loop())
     served.read_loop(group, context, stopping, activity)
     // Whatever ended the loop, what the session still has to say (GOAWAY,
-    // the last frames of finished streams) goes out before the close.
+    // the last frames of finished streams) goes out before the close, by
+    // the writer, which ends once it is said (each write is bounded by
+    // `body_timeout_ms`).
     served.dead = true
     for _, entry in served.streams {
       if entry.task is Some(task) {
@@ -280,15 +290,8 @@ pub async fn serve_h2_conn(
       }
     }
     served.wake()
-    let rest = session.output()
-    if rest.length() > 0 {
-      ignore(
-        timer.within(limits.body_timeout_ms, () => {
-          conn.write(rest) catch {
-            @mttp_core.TransportError(..) => ()
-          }
-        }),
-      )
+    writer.wait() catch {
+      _ => ()
     }
     // What the client sent after the last frame read (a PING after its
     // GOAWAY) is read and dropped for a moment before the close: closing

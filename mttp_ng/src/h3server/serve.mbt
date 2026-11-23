@@ -97,6 +97,7 @@ priv struct Listener {
   udp : @socket.UdpServer
   conns : Map[String, Served]
   changes : @mux.Changes
+  coordination : &@rt.Coordination
   timer : &@rt.Timer
   clock : &@rt.Clock
   limits : @h1server.ServerLimits
@@ -144,14 +145,12 @@ pub async fn serve(
   on_listen(bound_address)
   let clock = @runtime.AsyncClock::new()
   let timer = @runtime.ClockTimer::new(clock~)
+  let coordination = @runtime.RuntimeCoordination::new()
   let listener = {
     udp,
     conns: Map([]),
-    changes: @mux.Changes::new(
-      @runtime.RuntimeCoordination::new(),
-      clock,
-      timer,
-    ),
+    changes: @mux.Changes::new(coordination, clock, timer),
+    coordination,
     timer,
     clock,
     limits,
@@ -324,6 +323,10 @@ fn Listener::dispatch(
               timer: self.timer,
               on_error: self.on_error,
               background: None,
+              // A stop closes every connection at once; nothing to end
+              // gracefully.
+              stopping: () => false,
+              coordination: self.coordination,
             }
             let task = group.spawn(allow_failure=true, () => {
               defer {

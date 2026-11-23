@@ -90,6 +90,25 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
         200,
         headers=@mttp_core.Headers::of([("x-echo", "a\r\nset-cookie: b")]),
       )
+    "/events" =>
+      // An endless event stream: one event, then silence.
+      {
+        ..@mttp_core.Response::new(
+          200,
+          body=Stream(@mttp_core.StreamBody::new(Events::{ sent: false, })),
+        ),
+        attributes: @mttp_core.Attributes::empty().put(
+          @mttp_core.close_on_shutdown, true,
+        ),
+      }
+    "/relay" =>
+      // Streams the request body back, read by the response's producer.
+      @mttp_core.Response::new(
+        200,
+        body=Stream(
+          @mttp_core.StreamBody::new(Relay::{ request, done: false, }),
+        ),
+      )
     "/early" =>
       // Answers without reading the request body.
       @mttp_core.Response::new(413, body=Bytes(b"early"))
@@ -493,4 +512,109 @@ async test "a response with an invalid field is answered 500" {
     assert_eq(response.headers.get("x-echo"), None)
     ignore(text(response))
   })
+}
+
+///|
+/// One event, then nothing until the server stops.
+priv struct Events {
+  mut sent : Bool
+}
+
+///|
+impl @mttp_core.BodyStream for Events with fn read_some(self) {
+  if !self.sent {
+    self.sent = true
+    return Some(b"data: one\n\n")
+  }
+  @async.sleep(1000000)
+  None
+}
+
+///|
+impl @mttp_core.BodyStream for Events with fn close(_) {
+  ()
+}
+
+///|
+/// A response marked `close_on_shutdown` ends where its stream got to when
+/// the server stops, as h1server ends one, instead of holding the stop for
+/// its whole drain time and being cut off (Codex's review of #58).
+async test "a stop ends a close_on_shutdown stream cleanly" {
+  let config = server_tls()
+  let client = h2_client()
+  defer client.close()
+  let outcome : Ref[String?] = Ref(None)
+  @async.with_timeout(20000, () => {
+    @async.with_task_group(outer => {
+      let port : Ref[Int32?] = Ref(None)
+      let listening = @cond_var.Cond()
+      let server = outer.spawn(allow_failure=true, () => {
+        @h2server.serve(answer, addr="127.0.0.1:0", tls=config, on_listen=addr => {
+          port.val = Some(
+            @string.parse_int(addr[addr.rev_find(":").unwrap() + 1:]) catch {
+              _ => 0
+            },
+          )
+          listening.broadcast()
+        })
+      })
+      while port.val is None {
+        listening.wait()
+      }
+      let port = port.val.unwrap()
+      let response = client.send(
+        @mttp_core.Request::get("https://localhost:\{port}/events"),
+        defaults,
+      )
+      // The head comes after the first event was pulled.
+      assert_eq(response.status, 200)
+      server.cancel()
+      outcome.val = Some(text(response))
+    })
+  })
+  assert_eq(outcome.val, Some("data: one\n\n"))
+}
+
+///|
+/// A streamed response's first piece is pulled before the head, so a
+/// producer that meets the request body's failure decides the answer, as
+/// in h1server.
+async test "a producer meeting the request body's failure is answered with it" {
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), max_body_bytes: 1000, },
+    port => {
+      let client = h2_client()
+      defer client.close()
+      let response = client.send(
+        {
+          ..@mttp_core.Request::post("https://localhost:\{port}/relay"),
+          body: Stream(@mttp_core.StreamBody::new({ left: 10, size: 1000, })),
+        },
+        defaults,
+      )
+      assert_eq(response.status, 413)
+      ignore(text(response))
+    },
+  )
+}
+
+///|
+/// A response body that reads the request's, whole, as its one piece.
+priv struct Relay {
+  request : @mttp_core.Request
+  mut done : Bool
+}
+
+///|
+impl @mttp_core.BodyStream for Relay with fn read_some(self) {
+  if self.done {
+    return None
+  }
+  self.done = true
+  Some(self.request.body.read_all(max=1 << 20))
+}
+
+///|
+impl @mttp_core.BodyStream for Relay with fn close(_) {
+  ()
 }

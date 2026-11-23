@@ -86,6 +86,8 @@ pub(all) struct ServerContext {
   timer : &@rt.Timer
   on_error : (@mttp_core.TransportError) -> Unit
   background : ((async () -> Unit) -> Unit)?
+  stopping : () -> Bool
+  coordination : &@rt.Coordination
 }
 pub async fn ServerContext::serve(Self, ServerStream, Array[(String, String)]) -> Unit
 
