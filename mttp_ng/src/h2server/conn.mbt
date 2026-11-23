@@ -506,8 +506,13 @@ fn Served::dispatch(
       Closed(stream~, code~) =>
         if self.streams.get(stream) is Some(entry) {
           entry.stream.closed = true
-          // A reset before the response ended: its handler is not waited for.
-          if code != NoError && entry.task is Some(task) {
+          // Closed before its response was all sent, by any reset, NO_ERROR
+          // included: the handler is not waited for. A NO_ERROR reset after
+          // the response is the end of a request body nobody reads on, and
+          // the task ends by itself (Codex's review of #58: a code of zero
+          // was taken for a completed exchange).
+          if entry.task is Some(task) &&
+            (code != NoError || !entry.stream.sent_end) {
             task.cancel()
           }
         }

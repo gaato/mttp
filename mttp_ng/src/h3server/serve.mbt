@@ -462,7 +462,11 @@ fn Listener::dispatch(
       Closed(stream~, code~) =>
         if conn.streams.get(stream) is Some(entry) {
           entry.stream.closed = true
-          if code != @h3.H3_NO_ERROR && entry.task is Some(task) {
+          // Closed before its response was all sent, by any reset,
+          // H3_NO_ERROR included: the handler is not waited for, as over
+          // HTTP/2.
+          if entry.task is Some(task) &&
+            (code != @h3.H3_NO_ERROR || !entry.stream.sent_end) {
             task.cancel()
           }
         }

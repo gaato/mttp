@@ -1011,7 +1011,10 @@ async test "a reset stream's handler counts against the cap until it ends, over 
     // back, while the first's handler still runs.
     let mut second = None
     drive(() => {
-      if second is None {
+      // Opened only once the server gave the credit back, as h3client
+      // opens one: a stream past the server's MAX_STREAMS is a
+      // connection error.
+      if second is None && conn.streams_left() > 0L {
         second = Some(conn.submit_request(get("/hello"), body=false)) catch {
           _ => None
         }
@@ -1020,5 +1023,82 @@ async test "a reset stream's handler counts against the cap until it ends, over 
     })
     guard second is Some(id) else { fail("no second stream") }
     assert_eq(closed.get(id), Some(@h3.H3_REQUEST_REJECTED))
+  })
+}
+
+///|
+/// A stream reset with H3_NO_ERROR before its response ended ends its
+/// handler as any other reset does, as over HTTP/2: a silent
+/// `close_on_shutdown` stream otherwise held the only handler slot.
+async test "a NO_ERROR reset before the response ended frees the handler, over HTTP/3" {
+  with_server(settings={ ..@h3.H3Settings::default(), max_streams_bidi: 1, }, port => {
+    let server = @socket.Addr::parse("127.0.0.1:\{port}")
+    let udp = @socket.UdpClient(server)
+    defer udp.close()
+    let conn = @h3.QuicConn::client(
+      @h3.ClientQuic::new(trust=PemFile(testdata("root.pem"))),
+      host="localhost",
+      remote_address=server.to_string(),
+    )
+    defer conn.free()
+    let heads : Map[Int64, String] = Map([])
+    let drive = async fn(done : () -> Bool) {
+      while !done() {
+        for datagram in conn.datagrams() {
+          udp.send(datagram)
+        }
+        for event in conn.events() {
+          match event {
+            Headers(stream~, fields~, ..) => heads[stream] = fields[0].1
+            Data(stream~, data) => conn.consume(stream, data.length())
+            _ => ()
+          }
+        }
+        if done() {
+          break
+        }
+        let got = @async.with_timeout_opt(
+          conn.expiry_ms().unwrap_or(20).max(1).min(20),
+          () => udp.recv(max_len=65536),
+        )
+        match got {
+          Some(datagram) => conn.read(datagram)
+          None => if conn.expiry_ms() == Some(0) { conn.on_expiry() }
+        }
+      }
+    }
+    drive(() => conn.handshake_done())
+    let get = (path : String) => {
+      [
+        (":method", "GET"),
+        (":scheme", "https"),
+        (":authority", "localhost"),
+        (":path", path),
+      ]
+    }
+    let events = conn.submit_request(get("/events"), body=false)
+    drive(() => heads.contains(events))
+    conn.reset(events, @h3.H3_NO_ERROR)
+    // The handler is cancelled when the stream closes, which is also when
+    // QUIC gives its credit back; a request opened before the handler ended
+    // would be refused, by design (the cap counts handlers still ending).
+    let until = @env.now().reinterpret_as_int64() + 200L
+    drive(() => @env.now().reinterpret_as_int64() >= until)
+    // The handler is cancelled, its slot comes back once it ended, and
+    // the stream's credit once the stream closed.
+    let mut next = None
+    drive(() => {
+      // Opened only once the server gave the credit back, as h3client
+      // opens one: a stream past the server's MAX_STREAMS is a
+      // connection error.
+      if next is None && conn.streams_left() > 0L {
+        next = Some(conn.submit_request(get("/hello"), body=false)) catch {
+          _ => None
+        }
+      }
+      next is Some(id) && heads.contains(id)
+    })
+    guard next is Some(id) else { fail("no second stream") }
+    assert_eq(heads.get(id), Some("200"))
   })
 }

@@ -920,3 +920,74 @@ async test "a reset stream's handler counts against the cap until it ends" {
     },
   )
 }
+
+///|
+/// A stream reset with NO_ERROR before its response ended ends its handler
+/// as any other reset does: a silent `close_on_shutdown` stream reset so
+/// otherwise held its handler, and with it the only slot under a cap of one,
+/// until the server stopped (Codex's review of #58).
+async test "a NO_ERROR reset before the response ended frees the handler" {
+  with_server(
+    h2_limits={ ..@h2server.H2Limits::default(), max_concurrent_streams: 1, },
+    port => {
+      let conn = raw_tls(port, "h2")
+      defer conn.close()
+      let session = @h2.H2Session::client()
+      defer session.free()
+      let heads : Map[Int32, String] = Map([])
+      let closed : Map[Int32, @h2.ErrorCode] = Map([])
+      let flush = async fn() {
+        let out = session.output()
+        if out.length() > 0 {
+          conn.write(out)
+        }
+      }
+      let step = async fn() {
+        guard conn.read(max_len=65536) is Some(bytes) else {
+          fail("the server closed the connection")
+        }
+        session.recv(bytes)
+        for event in session.events() {
+          match event {
+            Headers(stream~, fields~, ..) => heads[stream] = fields[0].1
+            Data(stream~, data) => {
+              session.consume_connection(data.length())
+              session.consume_stream(stream, data.length())
+            }
+            Closed(stream~, code~) => closed[stream] = code
+            _ => ()
+          }
+        }
+        flush()
+      }
+      let get = (path : String) => {
+        [
+          (":method", "GET"),
+          (":scheme", "https"),
+          (":authority", "localhost"),
+          (":path", path),
+        ]
+      }
+      flush()
+      while session.peer_max_streams() != 1 {
+        step()
+      }
+      let events = session.submit_request(get("/events"), body=false)
+      flush()
+      while !heads.contains(events) {
+        step()
+      }
+      session.reset(events, NoError)
+      flush()
+      // The handler is cancelled, and its slot comes back once it ended.
+      @async.sleep(200)
+      let next = session.submit_request(get("/hello"), body=false)
+      flush()
+      while !closed.contains(next) {
+        step()
+      }
+      assert_eq(heads.get(next), Some("200"))
+      assert_eq(closed.get(next), Some(NoError))
+    },
+  )
+}
