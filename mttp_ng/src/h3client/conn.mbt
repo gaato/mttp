@@ -85,9 +85,43 @@ fn Connection::fail(
 }
 
 ///|
-/// Closes the socket and frees the connection. The CONNECTION_CLOSE is not
-/// sent, since closing cannot wait for a send: the server's idle timeout
-/// ends its side.
+/// How long the CONNECTION_CLOSE of a connection this end drops may take
+/// to go: a datagram send seldom waits at all.
+const CLOSE_SEND_MS : Int32 = 100
+
+///|
+/// Tells the server the connection is done (CONNECTION_CLOSE with
+/// H3_NO_ERROR, RFC 9000, section 10.2), so that its side ends now rather
+/// than at its idle timeout, then closes it. The send is bounded and runs
+/// even when the caller is cancelled.
+async fn Connection::close_gracefully(self : Connection) -> Unit noraise {
+  if self.closed {
+    return
+  }
+  if !self.quic.closed() {
+    self.quic.close()
+    let datagrams = self.quic.datagrams() catch { _ => [] }
+    self.coordination.protect(work=() => {
+      ignore(
+        self.timer.within(CLOSE_SEND_MS, () => {
+          for datagram in datagrams {
+            self.udp.send(datagram) catch {
+              _ => ()
+            }
+          }
+        }),
+      )
+    }) catch {
+      _ => ()
+    }
+  }
+  self.close()
+}
+
+///|
+/// Closes the socket and frees the connection, sending nothing: for a
+/// caller that cannot wait for a send (`close_gracefully` sends the
+/// CONNECTION_CLOSE first).
 fn Connection::close(self : Connection) -> Unit {
   if self.closed {
     return

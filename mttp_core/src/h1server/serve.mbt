@@ -59,6 +59,14 @@
 /// failure and cancellation. Pre-handler refusals, handler timeouts and
 /// successful upgrades do not call it: an upgrade retains the connection
 /// until its callback ends.
+/// `before_close` runs once the exchanges have ended, before the
+/// connection is closed, with whether the last message written ended as its
+/// framing says: `false` after a response cut short (a body delimited by
+/// the close or with a Content-Length, cut at shutdown) or a write that
+/// failed; `true` otherwise, also when nothing was written. A TLS adapter
+/// sends close_notify there only when it is `true`, so that a client never
+/// reads a body cut short as one delimited by the close (RFC 9112, section
+/// 9.8). The caller bounds it and handles its failures.
 ///
 /// ```mbt check
 /// test {
@@ -109,6 +117,7 @@ pub async fn serve_conn(
   on_response_complete~ : () -> Unit = () => (),
   stopping~ : () -> Bool = () => false,
   background? : (async () -> Unit) -> Unit,
+  before_close? : async (Bool) -> Unit noraise,
 ) -> Unit raise ServerConfigError {
   defer conn.close()
   limits.validate()
@@ -140,6 +149,10 @@ pub async fn serve_conn(
     background,
     control: @control.SessionState::new(),
     upgrade: None,
+    clean: true,
   }
   session.run()
+  if before_close is Some(before_close) {
+    before_close(session.clean)
+  }
 }

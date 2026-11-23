@@ -54,6 +54,10 @@
 #                                           using a disposable source/toolchain
 #                                           copy; needs libcurl. Daily in
 #                                           canary, outside full
+#   scripts/gates.sh sanitize --gate ng     The same for gaato/mttp_ng (with
+#                                           mttp_core and mttp) and its C
+#                                           stubs; needs the ng gate's
+#                                           libraries. Daily in canary
 #   scripts/gates.sh fuzz [SECONDS]         Linux libFuzzer+ASan runs of the
 #                                           fuzz/ targets (HTTP/1.1 reader,
 #                                           WebSocket frame parser), SECONDS
@@ -95,6 +99,13 @@
 #                                           a program calling each library.
 #                                           CI runs it as a job of its own,
 #                                           the one that installs them
+#   scripts/gates.sh ng-h2                  gaato/mttp_ng's HTTP/2 packages
+#                                           (tls, h2, h2client, h2server,
+#                                           internal/mux) alone: tests and a
+#                                           resolver consumer that links
+#                                           nghttp2 and OpenSSL only. CI runs
+#                                           it on Ubuntu 24.04 (nghttp2 1.59,
+#                                           OpenSSL 3.0)
 #   scripts/gates.sh h2spec                 h2spec against gaato/mttp_ng's
 #                                           HTTP/2 server over TLS and h2c,
 #                                           compared with
@@ -247,6 +258,18 @@ ng_gate() {
   step script scripts/resolver_gate.mbtx -- --gate ng
 }
 
+# gaato/mttp_ng's HTTP/2 packages alone, for a host with nghttp2 and OpenSSL
+# but no ngtcp2 with OpenSSL's QUIC (Ubuntu 24.04: nghttp2 1.59, OpenSSL
+# 3.0): they must build, pass and link without the HTTP/3 libraries. The
+# coverage budgets are the whole module's, so coverage is the ng gate's.
+NG_H2_PACKAGES=tls,h2,h2client,h2server,internal/mux
+ng_h2_gate() {
+  step script scripts/runtime_gates.mbtx -- tests --target native --gate ng \
+    --packages "$(printf '%s' "$NG_H2_PACKAGES" | sed 's|[^,]*|gaato/mttp_ng/&|g')"
+  step script scripts/resolver_gate.mbtx -- --gate ng \
+    --packages "${NG_H2_PACKAGES%,internal/mux}" --smoke mttp_ng_h2
+}
+
 # The Node tests of the fetch package run the host shims under Node, which
 # allows what Workers refuses (random values in global scope, for one); this
 # runs the Workers entry the README shows on the runtime itself.
@@ -325,6 +348,12 @@ case "$mode" in
     ng_gate
     finish
     ;;
+  ng-h2)
+    [ $# = 0 ] || usage
+    print_versions
+    ng_h2_gate
+    finish
+    ;;
   h2spec)
     [ $# = 0 ] || usage
     step script scripts/h2spec.mbtx
@@ -351,8 +380,8 @@ case "$mode" in
     finish
     ;;
   sanitize)
-    [ $# = 0 ] || usage
-    step script scripts/sanitize.mbtx
+    [ $# = 0 ] || { [ $# = 2 ] && [ "$1" = --gate ]; } || usage
+    step script scripts/sanitize.mbtx -- "$@"
     finish
     ;;
   fuzz)

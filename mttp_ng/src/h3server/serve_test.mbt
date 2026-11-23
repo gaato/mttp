@@ -73,9 +73,34 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
       @async.sleep(300)
       @mttp_core.Response::new(200, body=Bytes(b"slow"))
     }
+    "/drained" => {
+      drained_started.val += 1
+      @async.sleep(300)
+      @mttp_core.Response::new(200, body=Bytes(b"drained"))
+    }
+    "/hang" => {
+      drained_started.val += 1
+      @async.sleep(1000000)
+      @mttp_core.Response::new(200)
+    }
+    "/events" =>
+      // An endless event stream: one event, then silence.
+      {
+        ..@mttp_core.Response::new(
+          200,
+          body=Stream(@mttp_core.StreamBody::new(Stuck::{ started: false, })),
+        ),
+        attributes: @mttp_core.Attributes::empty().put(
+          @mttp_core.close_on_shutdown, true,
+        ),
+      }
     _ => @mttp_core.Response::new(404)
   }
 }
+
+///|
+/// How many `/drained` and `/hang` handlers started.
+let drained_started : Ref[Int32] = Ref(0)
 
 ///|
 /// `left` pieces of `size` bytes.
@@ -263,11 +288,10 @@ async test "curl speaks HTTP/3 to it" {
 ///|
 async test "streamed response bodies, early answers and the limits over HTTP/3" {
   with_server(
-    limits={
-      ..@h1server.ServerLimits::default(),
-      max_body_bytes: 100000,
-      handler_timeout_ms: Some(100),
-    },
+    // No handler deadline here: how long a body takes to stream depends on
+    // the host (ASan makes it several times slower), and the limits below
+    // must not turn into 504s.
+    limits={ ..@h1server.ServerLimits::default(), max_body_bytes: 100000, },
     port => {
       let b = client()
       defer b.close()
@@ -307,7 +331,17 @@ async test "streamed response bodies, early answers and the limits over HTTP/3" 
       )
       assert_eq(response.status, 413)
       assert_eq(text(response), "early")
-      // A handler over its deadline: 504.
+    },
+  )
+  // A handler over its deadline: 504 (the handler sleeps 300 ms).
+  with_server(
+    limits={
+      ..@h1server.ServerLimits::default(),
+      handler_timeout_ms: Some(100),
+    },
+    port => {
+      let b = client()
+      defer b.close()
       let response = b.send(
         @mttp_core.Request::get("https://localhost:\{port}/slow"),
         defaults,
@@ -621,4 +655,185 @@ async test "a GOAWAY that leaves a request unprocessed refuses it at once" {
       group.return_immediately()
     })
   })
+}
+
+///|
+/// Runs `run` with a server on 127.0.0.1 and a function that stops it (as
+/// cancelling `serve` does), then waits for the server to end; the
+/// milliseconds from the stop to the end.
+async fn with_stopped_server(
+  run : async (Int32, () -> Unit) -> Unit,
+  limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
+) -> Int64 {
+  let quic = @h3.ServerQuic::from_pem(
+    chain=@fs.read_text(testdata("localhost.pem")),
+    key=@fs.read_text(testdata("localhost.key")),
+  )
+  let mut stopped_at = 0L
+  let mut ended_at = 0L
+  @async.with_timeout(30000, () => {
+    @async.with_task_group(group => {
+      let port : Ref[Int32?] = Ref(None)
+      let listening = @cond_var.Cond()
+      let server = group.spawn(allow_failure=true, () => {
+        defer {
+          ended_at = @env.now().reinterpret_as_int64()
+        }
+        @h3server.serve(answer, addr="127.0.0.1:0", quic~, limits~, on_listen=addr => {
+          port.val = Some(
+            @string.parse_int(addr[addr.rev_find(":").unwrap() + 1:]) catch {
+              _ => 0
+            },
+          )
+          listening.broadcast()
+        })
+      })
+      while port.val is None {
+        listening.wait()
+      }
+      run(port.val.unwrap(), () => {
+        stopped_at = @env.now().reinterpret_as_int64()
+        server.cancel()
+      })
+      server.wait() catch {
+        _ => ()
+      }
+    })
+  })
+  ended_at - stopped_at
+}
+
+///|
+/// Waits until a `/drained` or `/hang` handler started after `started`.
+async fn handler_started(started : Int32) -> Unit {
+  while drained_started.val == started {
+    @async.sleep(10)
+  }
+}
+
+///|
+async test "a stop lets a request in flight finish over HTTP/3, and takes no new one" {
+  let outcome : Ref[String?] = Ref(None)
+  let refused : Ref[Bool] = Ref(false)
+  ignore(
+    with_stopped_server(
+      limits={ ..@h1server.ServerLimits::default(), drain_ms: 10000, },
+      (port, stop) => {
+        let b = client()
+        defer b.close()
+        @async.with_task_group(group => {
+          group.spawn_bg(() => {
+            let response = b.send(
+              @mttp_core.Request::get("https://localhost:\{port}/drained"),
+              defaults,
+            )
+            outcome.val = Some(text(response))
+          })
+          handler_started(drained_started.val)
+          stop()
+          // A new client is not taken while the server stops.
+          let late = client()
+          defer late.close()
+          (late.send(
+            @mttp_core.Request::get("https://localhost:\{port}/hello"),
+            { ..defaults, timeout_ms: Some(1000), },
+          )
+          |> ignore) catch {
+            _ => refused.val = true
+          }
+        })
+      },
+    ),
+  )
+  assert_eq(outcome.val, Some("drained"))
+  assert_true(refused.val)
+}
+
+///|
+async test "a stop ends a close_on_shutdown stream over HTTP/3" {
+  let body : Ref[String?] = Ref(None)
+  let took = with_stopped_server(
+    limits={ ..@h1server.ServerLimits::default(), drain_ms: 10000, },
+    (port, stop) => {
+      let b = client()
+      defer b.close()
+      let response = b.send(
+        @mttp_core.Request::get("https://localhost:\{port}/events"),
+        defaults,
+      )
+      guard response.body is Stream(cell) else { fail("no stream body") }
+      let source = cell.take()
+      let got = Buffer()
+      if source.read_some() is Some(first) {
+        got.write_bytes(first)
+      }
+      stop()
+      while source.read_some() is Some(bytes) {
+        got.write_bytes(bytes)
+      }
+      body.val = Some(@utf8.decode_lossy(got.to_bytes()))
+    },
+  )
+  assert_eq(body.val, Some("x"))
+  // Ended by the stop, not by the drain time.
+  assert_true(took < 5000L, msg="the stop took \{took} ms")
+}
+
+///|
+async test "a stop cuts what is still running when drain_ms is out over HTTP/3" {
+  let failed : Ref[Bool] = Ref(false)
+  let took = with_stopped_server(
+    limits={ ..@h1server.ServerLimits::default(), drain_ms: 300, },
+    (port, stop) => {
+      let b = client()
+      defer b.close()
+      @async.with_task_group(group => {
+        group.spawn_bg(() => {
+          (b.send(
+            @mttp_core.Request::get("https://localhost:\{port}/hang"),
+            defaults,
+          )
+          |> ignore) catch {
+            _ => failed.val = true
+          }
+        })
+        handler_started(drained_started.val)
+        stop()
+      })
+    },
+  )
+  assert_true(failed.val)
+  assert_true(took >= 300L && took < 5000L, msg="the stop took \{took} ms")
+}
+
+///|
+/// A connection the client drops (here retired by its age) is closed on
+/// the server's side at once by the client's CONNECTION_CLOSE, not at the
+/// server's idle timeout: under `max_connections: 1`, the next connection
+/// is taken.
+async test "a connection the client drops frees the server's slot at once" {
+  with_server(
+    limits={
+      ..@h1server.ServerLimits::default(),
+      max_connections: 1,
+      header_timeout_ms: 20000,
+    },
+    port => {
+      let b = @h3client.H3Backend::new(
+        trust=PemFile(testdata("root.pem")),
+        max_connection_age_ms=100,
+      )
+      defer b.close()
+      let url = "https://localhost:\{port}/hello"
+      assert_eq(text(b.send(@mttp_core.Request::get(url), defaults)), "hello")
+      @async.sleep(200)
+      // The first connection is retired: the send drops it and dials anew.
+      let response = b.send(@mttp_core.Request::get(url), {
+        ..defaults,
+        timeout_ms: Some(3000),
+      })
+      assert_eq(text(response), "hello")
+      assert_eq(b.connections(), 1)
+    },
+  )
 }

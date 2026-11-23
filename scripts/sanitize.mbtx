@@ -102,7 +102,20 @@ async fn instrument_tree(root : String) -> Unit {
 }
 
 ///|
-async fn sanitize(root : String) -> Unit {
+/// The modules a gate tests under ASan, beside mttp_core and mttp, which
+/// every gate needs: `full` adds gaato/mttp_curl (its libcurl stub and the
+/// thread it starts), `ng` gaato/mttp_ng (its nghttp2, nghttp3, ngtcp2 and
+/// OpenSSL stubs). Each needs its gate's system libraries installed.
+fn gate_modules(gate : String) -> Array[String] raise SanitizeError {
+  match gate {
+    "full" => ["mttp_core", "mttp", "mttp_curl"]
+    "ng" => ["mttp_core", "mttp", "mttp_ng"]
+    other => raise SanitizeError("no sanitizer gate \{other}: full or ng")
+  }
+}
+
+///|
+async fn sanitize(root : String, modules : Array[String]) -> Unit {
   // Resolve PATH, not ~/.moon: canary installs the pinned image elsewhere.
   let binary = @fs.realpath(command("which", ["moon"]))
   let toolchain = binary[:binary.length() - "/bin/moon".length()].to_owned()
@@ -112,25 +125,24 @@ async fn sanitize(root : String) -> Unit {
   // Dereference symlinks; hard links would let writes escape the copy.
   ignore(command("cp", ["-aL", "--reflink=auto", toolchain, home]))
   ignore(
-    command("tar", [
-      "--exclude=_build",
-      "--exclude=target",
-      "--exclude=.mooncakes",
-      "-cf",
-      root + "/source.tar",
-      "mttp_core",
-      "mttp",
-      "mttp_curl",
-    ]),
+    command(
+      "tar",
+      [
+        "--exclude=_build",
+        "--exclude=target",
+        "--exclude=.mooncakes",
+        "-cf",
+        root + "/source.tar",
+        ..modules,
+      ],
+    ),
   )
   ignore(command("tar", ["-xf", root + "/source.tar", "-C", source]))
-  // gaato/mttp_curl links the system's libcurl, so this gate needs it
-  // installed, as the curl gate does; its stub and the thread it starts are
-  // the C this gate most needs to see.
-  @fs.write_text(
-    source + "/moon.work",
-    "members = [\"mttp_core\", \"mttp\", \"mttp_curl\"]\n",
-  )
+  // The gate's module links system libraries (libcurl, or nghttp2 and the
+  // rest), so this gate needs them installed, as its own gate does; their
+  // stubs are the C this gate most needs to see.
+  let members = modules.map(m => "\"\{m}\"").join(", ")
+  @fs.write_text(source + "/moon.work", "members = [\{members}]\n")
   // ASan's slow allocation unwinder can consume the smoke test's entire
   // 200ms budget before its fast local request completes on a busy host.
   // In the disposable copy only, allow 1s: the slow handler still sleeps
@@ -182,9 +194,9 @@ async fn sanitize(root : String) -> Unit {
   @shell.Cmd(moon, ["check", "--target", "native"], cwd=source, env=vars).run(
     timeout_ms=600000,
   )
-  instrument_tree(source + "/mttp_core/src")
-  instrument_tree(source + "/mttp/src")
-  instrument_tree(source + "/mttp_curl/src")
+  for module_dir in modules {
+    instrument_tree(source + "/" + module_dir + "/src")
+  }
   @fs.write_text(root + "/empty.c", "")
   ignore(
     command(compiler, [
@@ -197,7 +209,7 @@ async fn sanitize(root : String) -> Unit {
   println("sanitize: \{flags}; ASAN_OPTIONS=\{vars["ASAN_OPTIONS"]}")
   // Each package has its own run so a native abort cannot hide later ones.
   let packages : Array[String] = []
-  for module_dir in ["mttp_core", "mttp", "mttp_curl"] {
+  for module_dir in modules {
     @fs.walk(
       source + "/" + module_dir + "/src",
       (dir, files) => {
@@ -244,8 +256,16 @@ async fn main {
     )
     return
   }
+  // `--gate ng` tests gaato/mttp_ng; without it, gaato/mttp_curl.
+  let args = @env.args()
+  let gate = match args.search("--gate") {
+    Some(i) if i + 1 < args.length() => args[i + 1]
+    Some(_) => raise SanitizeError("--gate needs a name: full or ng")
+    None => "full"
+  }
+  let modules = gate_modules(gate)
   let root = @fs.tmpdir(prefix="mttp-sanitize-")
-  println("sanitize: disposable copy at " + root)
+  println("sanitize: gate \{gate}, disposable copy at " + root)
   defer @fs.remove(root, recursive=true)
-  sanitize(root)
+  sanitize(root, modules)
 }

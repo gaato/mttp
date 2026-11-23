@@ -1048,6 +1048,13 @@ MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_client_new(
   ngtcp2_settings_default(&settings);
   settings.initial_ts = now_ns();
   settings.max_tx_udp_payload_size = MAX_DATAGRAM;
+  // Every packet is acknowledged with the next datagram, which the reader
+  // sends after each read. A client connection runs only while someone
+  // waits on it, so a delayed acknowledgement (two packets, or
+  // max_ack_delay later by default) of the last packets of a response
+  // would wait for the next request; the server, which keeps a stream
+  // until its data is acknowledged, would wait for it to time out.
+  settings.ack_thresh = 1;
   ngtcp2_transport_params params;
   fill_params(&params, &c, 0);
   int rv = ngtcp2_conn_client_new(&q->conn, &dcid, &scid, &q->path,

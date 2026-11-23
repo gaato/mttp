@@ -39,8 +39,8 @@ pub extend ServeError with Show::{output, to_string}
 /// streams and windows. `on_listen` hears the TCP address once both
 /// listeners are bound.
 ///
-/// Cancelling it stops it: TCP connections get `limits.drain_ms` to finish,
-/// HTTP/3 connections are closed at once.
+/// Cancelling it stops it: connections of every protocol are told to go
+/// away and get `limits.drain_ms` to finish what is in flight.
 pub async fn serve(
   handler : @mttp_core.Handler,
   addr~ : String,

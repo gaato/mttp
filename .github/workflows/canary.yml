@@ -199,6 +199,29 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  # gaato/mttp_ng's native tests under ASan, its C stubs instrumented with
+  # the generated C, in the gate image with the ng gate's libraries.
+  sanitize-ng:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    container:
+      image: ghcr.io/gaato/moonbit:0.10.22-124d61d05
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: nghttp2, nghttp3, ngtcp2 and OpenSSL, and curl
+        run: |
+          echo 'deb http://deb.debian.org/debian trixie-backports main' > /etc/apt/sources.list.d/backports.list
+          apt-get update
+          apt-get install -y --no-install-recommends pkg-config libnghttp2-dev libssl-dev curl
+          apt-get install -y --no-install-recommends -t trixie-backports libngtcp2-dev libngtcp2-crypto-ossl-dev libnghttp3-dev
+      - run: moon update
+      - name: Run gaato/mttp_ng's native tests with sanitizers
+        env:
+          MOON_CC: cc
+        run: scripts/gates.sh sanitize --gate ng
+
   # The interoperability suite (interop/README.md). It runs on the runner
   # itself, not in the gate image: the third-party programs run in
   # containers of their own, and the runner's docker starts them. moon comes

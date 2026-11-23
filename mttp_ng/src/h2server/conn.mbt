@@ -209,7 +209,10 @@ async fn Served::write_loop(self : Served) -> Unit noraise {
 /// and `Date` is added unless `auto_date` is false. A response ended
 /// before the request body is reset with NO_ERROR (RFC 9113, section 8.1),
 /// so the client stops sending it. `activity` hears `true` while the
-/// connection has streams and `false` when it has none.
+/// connection has streams and `false` when it has none. `before_close` runs
+/// once the last frames are written, before the connection is closed: a
+/// TLS connection sends close_notify there (HTTP/2 frames every message, so
+/// it may always).
 pub async fn serve_h2_conn(
   conn : &@rt.Conn,
   handler : @mttp_core.Handler,
@@ -225,6 +228,7 @@ pub async fn serve_h2_conn(
   activity~ : (Bool) -> Unit = _ => (),
   background? : (async () -> Unit) -> Unit,
   coordination? : &@rt.Coordination,
+  before_close? : async () -> Unit noraise,
 ) -> Unit {
   defer conn.close()
   let session = @h2.H2Session::server(settings={
@@ -294,6 +298,11 @@ pub async fn serve_h2_conn(
     served.wake()
     writer.wait() catch {
       _ => ()
+    }
+    // HTTP/2 frames every message, so whatever was cut is seen as cut by
+    // its stream, and the close may always be announced (TLS close_notify).
+    if before_close is Some(before_close) {
+      before_close()
     }
     // What the client sent after the last frame read (a PING after its
     // GOAWAY) is read and dropped for a moment before the close: closing

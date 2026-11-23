@@ -120,9 +120,11 @@ handler type, listener, admission bound and graceful stop, through
 - A request carries `@mttp_core.protocol` (`http/1.1`, `h2` or `h3`),
   `connection_scheme` and `remote_addr`.
 
-Cancelling `serve()` stops it. HTTP/1.1 and HTTP/2 connections get
-`limits.drain_ms` to finish, and an HTTP/2 client is told to go away first
-(GOAWAY). HTTP/3 connections are closed at once.
+Cancelling `serve()` stops it. Connections of every protocol get
+`limits.drain_ms` to finish what is in flight, and HTTP/2 and HTTP/3
+clients are told to go away first (GOAWAY). A TLS connection ends with
+close_notify, except after a body delimited by the close (an HTTP/1.0
+client's) that the stop cut short, so that the client can tell.
 
 ## What it does not do
 
@@ -133,5 +135,10 @@ Cancelling `serve()` stops it. HTTP/1.1 and HTTP/2 connections get
 - Trailers are not exposed, on either side.
 - A QUIC client that changes its address loses its connection: the server
   routes datagrams by the client's address and disables migration.
-- Closing a client backend does not send QUIC's CONNECTION_CLOSE; the
-  server's idle timeout ends the connection on its side.
+- `close()` of a client backend does not send QUIC's CONNECTION_CLOSE,
+  since it cannot wait for a send; the server's idle timeout ends those
+  connections on its side. A connection the backend drops by itself (idle
+  too long, too old, or after the server's GOAWAY) is closed with one.
+- The HTTP/3 server has no Retry and no limit per client address: clients
+  that send Initials from forged addresses can hold its `max_connections`
+  slots, each until `header_timeout_ms`.

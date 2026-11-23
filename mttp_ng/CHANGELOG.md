@@ -16,7 +16,10 @@ never does.
   `@mttp.backend()`.
 - `serve(handler, addr~, cert?, key?, h2c?, h3?, ...)`: `@server.serve`
   with HTTP/2 by ALPN, cleartext HTTP/2 by prior knowledge with `h2c`, and
-  HTTP/3 on the same port with `h3`, advertised by `Alt-Svc`.
+  HTTP/3 on the same port with `h3`, advertised by `Alt-Svc`. Cancelling
+  it drains every protocol for `limits.drain_ms`, with GOAWAY for HTTP/2
+  and HTTP/3; TLS connections end with close_notify unless a body
+  delimited by the close was cut short.
 - The packages beneath: `tls` (TLS with ALPN over any `rt.Conn`), `h2` and
   `h3` (HTTP/2 and QUIC with HTTP/3 without I/O, over nghttp2, ngtcp2 and
   nghttp3), `h2client` and `h3client` (`Backend`s), `h2server` and

@@ -108,12 +108,28 @@ priv struct Listener {
   handler : @mttp_core.Handler
   auto_date : Bool
   on_error : (@mttp_core.TransportError) -> Unit
+  /// The server stops: no new connection, and each is told to go away.
+  mut stopping : Bool
+  /// 0: serving; 1: the GOAWAY notice went; 2: the last GOAWAY went.
+  mut going : Int32
+  mut notice_at : Int64
 }
 
 ///|
+/// One round trip, as HTTP/2's server takes it: the time between the
+/// GOAWAY notice and the GOAWAY naming the last stream (RFC 9114, section
+/// 5.2), and how often a stopping listener looks at its connections.
+const STOP_POLL_MS : Int32 = 250
+
+///|
 /// Serves `handler` over HTTP/3 on UDP `addr` (`host:port`), with `quic`'s
-/// certificate, until cancelled; then every connection is closed with
-/// H3_NO_ERROR. `limits` applies as it does to HTTP/2 (`serve_h2_conn`):
+/// certificate, until cancelled. Cancelling it stops it as `@server.serve`
+/// stops: no new connection is taken, each connection is told to go away
+/// (GOAWAY, first a notice, then the last stream it will process), a stream
+/// marked `@mttp_core.close_on_shutdown` is ended, and the requests in
+/// flight get `limits.drain_ms` to finish; a connection is closed with
+/// H3_NO_ERROR once none runs, and every one when the time is out.
+/// `limits` applies as it does to HTTP/2 (`serve_h2_conn`):
 /// the body bound, the timeouts, the header bound and `max_connections`
 /// (more clients' Initials are dropped), and `header_timeout_ms` for a
 /// connection on which no handler runs, which is then closed with
@@ -163,22 +179,44 @@ pub async fn serve(
     handler,
     auto_date,
     on_error,
+    stopping: false,
+    going: 0,
+    notice_at: 0L,
   }
-  @async.with_task_group(group => {
-    // Stopped: every client hears the close at once.
-    defer (for _, conn in listener.conns {
-      conn.quic.close()
-      let datagrams = conn.quic.datagrams() catch { _ => [] }
-      for datagram in datagrams {
-        @async.protect_from_cancel(() => {
-          udp.send(datagram, conn.peer) catch {
+  @async.with_task_group(outer => {
+    // Whatever is left (a listener that failed): every client hears the
+    // close at once.
+    defer {
+      @async.protect_from_cancel(() => listener.expire())
+      for _, conn in listener.conns {
+        conn.quic.free()
+      }
+    }
+    // The listener and its handlers run beyond a cancellation, which
+    // starts the stop, as gaato/mttp's listener does.
+    let worker = outer.spawn(allow_failure=true, () => {
+      @async.protect_from_cancel(() => {
+        @async.with_task_group(group => listener.run(group, quic, bound_address))
+      })
+    })
+    let result = @async.handle_cancellation(() => worker.wait())
+    if result is None {
+      @async.protect_from_cancel(() => {
+        listener.stop()
+        let drained = @async.with_timeout_opt(limits.drain_ms, () => {
+          worker.wait()
+        }) catch {
+          _ => Some(())
+        }
+        if drained is None {
+          listener.expire()
+          worker.wait() catch {
             _ => ()
           }
-        })
-      }
-      conn.quic.free()
-    })
-    listener.run(group, quic, bound_address)
+        }
+      })
+      @async.pause()
+    }
   }) catch {
     error =>
       raise @server.ListenError::Accept(
@@ -209,10 +247,10 @@ async fn Listener::run(
   bound_address : String,
 ) -> Unit {
   let buffer = FixedArray::make(65536, b'\x00')
-  while true {
+  while !(self.stopping && self.conns.is_empty()) {
     // The nearest timer of any connection, or idle deadline, bounds the
-    // wait.
-    let mut wait = 1000
+    // wait; while stopping, the next look at the connections too.
+    let mut wait = if self.stopping { STOP_POLL_MS } else { 1000 }
     let now = self.clock.now_unix_ms()
     for _, conn in self.conns {
       if conn.quic.expiry_ms() is Some(ms) && ms < wait {
@@ -241,7 +279,22 @@ async fn Listener::run(
     }
     let gone = []
     let now = self.clock.now_unix_ms()
+    // One round trip after the notice, the GOAWAY naming the last request
+    // stream; once it went, a connection with no handler is done.
+    if self.going == 1 && now - self.notice_at >= STOP_POLL_MS.to_int64() {
+      self.going = 2
+      for _, conn in self.conns {
+        conn.quic.shutdown(notice=false) catch {
+          _ => ()
+        }
+        conn.send()
+      }
+    }
     for key, conn in self.conns {
+      if self.going == 2 && conn.handlers == 0 && !conn.quic.closed() {
+        conn.quic.close()
+        conn.send()
+      }
       if self.idle_deadline(conn) is Some(at) && now >= at {
         conn.quic.close()
         conn.send()
@@ -289,7 +342,7 @@ async fn Listener::receive(
         }
         return
       }
-      if self.conns.length() >= self.limits.max_connections {
+      if self.stopping || self.conns.length() >= self.limits.max_connections {
         return
       }
       let connection = @h3.QuicConn::server(
@@ -356,9 +409,7 @@ fn Listener::dispatch(
               timer: self.timer,
               on_error: self.on_error,
               background: None,
-              // A stop closes every connection at once; nothing to end
-              // gracefully.
-              stopping: () => false,
+              stopping: () => self.stopping,
               coordination: self.coordination,
             }
             let task = group.spawn(allow_failure=true, () => {
@@ -418,6 +469,41 @@ fn Listener::dispatch(
           }
         }
       @h3.H3Event::.. => ()
+    }
+  }
+  self.changes.notify()
+}
+
+///|
+/// Starts the stop: no new connection, and every connection hears the
+/// GOAWAY notice. The listener sends the last GOAWAY a round trip later.
+async fn Listener::stop(self : Listener) -> Unit noraise {
+  self.stopping = true
+  self.going = 1
+  self.notice_at = self.clock.now_unix_ms()
+  for _, conn in self.conns {
+    conn.quic.shutdown(notice=true) catch {
+      _ => ()
+    }
+    conn.send()
+  }
+  // Streams marked close_on_shutdown end now.
+  self.changes.notify()
+}
+
+///|
+/// The drain time is out: every handler is cancelled and every connection
+/// closed with H3_NO_ERROR; the listener frees them as their handlers end.
+async fn Listener::expire(self : Listener) -> Unit noraise {
+  for _, conn in self.conns {
+    for _, entry in conn.streams {
+      if entry.task is Some(task) {
+        task.cancel()
+      }
+    }
+    if !conn.quic.closed() {
+      conn.quic.close()
+      conn.send()
     }
   }
   self.changes.notify()

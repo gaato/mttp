@@ -647,3 +647,110 @@ async test "a slow download outlasts header_timeout_ms" {
     },
   )
 }
+
+///|
+/// A TLS connection of this module's client to the server on `port`,
+/// offering `alpn`.
+async fn raw_tls(port : Int32, alpn : String) -> @tls.TlsConn {
+  let tcp = @conn.TcpDialer::new().connect(host="127.0.0.1", port~)
+  @tls.ClientTls::new(trust=PemFile(testdata("root.pem")), alpn=[alpn]).connect(
+    tcp,
+    host="localhost",
+    coordination=@runtime.RuntimeCoordination::new(),
+  )
+}
+
+///|
+/// Reads `conn` to its end: the bytes, and whether the server ended the
+/// session with close_notify (EOF) rather than without (IncompleteClose).
+async fn read_to_end(conn : @tls.TlsConn) -> (Bytes, Bool) {
+  let got = Buffer()
+  while true {
+    let chunk = conn.read(max_len=65536) catch {
+      @mttp_core.TransportError(kind=IncompleteClose, ..) =>
+        return (got.to_bytes(), false)
+      error => raise error
+    }
+    match chunk {
+      Some(bytes) => got.write_bytes(bytes)
+      None => return (got.to_bytes(), true)
+    }
+  }
+  (got.to_bytes(), true)
+}
+
+///|
+/// A body delimited by the close is whole only if close_notify follows it
+/// (RFC 9112, section 9.8): the server sends it once the body ended.
+async test "an HTTP/1.0 body delimited by the close ends with close_notify" {
+  with_server(port => {
+    let conn = raw_tls(port, "http/1.1")
+    defer conn.close()
+    conn.write(b"GET /big HTTP/1.0\r\nhost: localhost\r\n\r\n")
+    let (bytes, notified) = read_to_end(conn)
+    let text = @utf8.decode_lossy(bytes)
+    assert_true(text.has_prefix("HTTP/1.1 200 "))
+    assert_true(
+      !text.contains("transfer-encoding") && !text.contains("content-length"),
+    )
+    let head_end = text.find("\r\n\r\n").unwrap() + 4
+    assert_eq(bytes.length() - head_end, 3000000)
+    assert_true(notified)
+  })
+}
+
+///|
+async test "an HTTP/2 connection over TLS ends with close_notify" {
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), header_timeout_ms: 200, },
+    port => {
+      let conn = raw_tls(port, "h2")
+      defer conn.close()
+      assert_eq(conn.alpn(), Some("h2"))
+      // The preface and empty SETTINGS; then nothing, so the server ends
+      // the idle connection with GOAWAY.
+      conn.write(
+        b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n\x00\x00\x00\x04\x00\x00\x00\x00\x00",
+      )
+      let (_, notified) = read_to_end(conn)
+      assert_true(notified)
+    },
+  )
+}
+
+///|
+/// A body delimited by the close and cut at shutdown must not look whole:
+/// the server closes without close_notify.
+async test "an HTTP/1.0 body delimited by the close and cut at a stop ends without close_notify" {
+  let config = server_tls()
+  let outcome : Ref[(Bytes, Bool)?] = Ref(None)
+  @async.with_timeout(30000, () => {
+    @async.with_task_group(outer => {
+      let port : Ref[Int32?] = Ref(None)
+      let listening = @cond_var.Cond()
+      let server = outer.spawn(allow_failure=true, () => {
+        @h2server.serve(answer, addr="127.0.0.1:0", tls=config, on_listen=addr => {
+          port.val = Some(
+            @string.parse_int(addr[addr.rev_find(":").unwrap() + 1:]) catch {
+              _ => 0
+            },
+          )
+          listening.broadcast()
+        })
+      })
+      while port.val is None {
+        listening.wait()
+      }
+      let conn = raw_tls(port.val.unwrap(), "http/1.1")
+      defer conn.close()
+      conn.write(b"GET /events HTTP/1.0\r\nhost: localhost\r\n\r\n")
+      // The head and the first event, then the stop.
+      let first = conn.read(max_len=65536)
+      assert_true(first is Some(_))
+      server.cancel()
+      outcome.val = Some(read_to_end(conn))
+    })
+  })
+  guard outcome.val is Some((_, notified)) else { fail("no outcome") }
+  assert_false(notified)
+}

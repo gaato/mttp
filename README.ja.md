@@ -235,10 +235,10 @@ push とプルリクエストごとに、[`scripts/gates.sh full`](scripts/gates
 - [CONTRACT.md](CONTRACT.md) は、バックエンド・実行環境のアダプター・テストダブルが守るべきことを定めています。同じ契約の検査を、メモリ内のダブルと `gaato/mttp` のアダプターの両方に対して回します。
 - [TEST_COVERAGE.md](TEST_COVERAGE.md) は、テストが通らない行すべてに理由を付けています。
 - この README のコードと出力は例そのもので、[scripts/readme_check.mbtx](scripts/readme_check.mbtx) が照合します。
-- 毎日、`gaato/mttp_core` と `gaato/mttp` の native のテストを、リンクする C ごと AddressSanitizer のもとで回します(`scripts/gates.sh sanitize`)。
+- 毎日、`gaato/mttp_core` と `gaato/mttp` の native のテストを、リンクする C ごと AddressSanitizer のもとで回します(`scripts/gates.sh sanitize`)。`gaato/mttp_ng` のテストも、その C スタブごと同じように回します(`scripts/gates.sh sanitize --gate ng`)。
 - [相互運用のスイート](interop)は、クライアントを nginx・Caddy・Apache と、サーバーを curl・Go・httpx・Node・Bun・Deno と、直接とリバースプロキシ越しに照合します。Http11Probe がプロトコルへの準拠を探り、Schemathesis が型付きエンドポイントをその OpenAPI 文書と照合します。[HTTP Garden](interop/README.md#http-garden) には手動の差分テスト用アダプターがあります。
 - Autobahn が WebSocket を permessage-deflate を含めて両方向で確かめます。[記録した native クライアントの実行](interop/README.md)は、合格 460、既知の判定と完全に一致するもの 57、想定外の失敗 0 です。両方向の既知の圧縮のケースは、エンコードのウィンドウを 15 ビットに固定していることによるものです。スイートの生の判定は FAILED も含めてそのまま見えるようにしており、合格に書き換えてはいません。
-- [カバレッジ誘導のファジング](fuzz)が、HTTP/1 の読み取り部と WebSocket のフレーム解析を libFuzzer と AddressSanitizer で回します。手動の [ミューテーションのサンプル](scripts/mutate.mbtx)は HTTP/1 のフレーミングの回帰を確かめます。
+- [カバレッジ誘導のファジング](fuzz)が、HTTP/1 の読み取り部と WebSocket のフレーム解析を libFuzzer と AddressSanitizer で回します。[もう一組](fuzz_ng)は、`gaato/mttp_ng` の HTTP/2 サーバーのセッション、HTTP/2 と HTTP/3 のクライアントとサーバーの組、その C スタブを回します。手動の [ミューテーションのサンプル](scripts/mutate.mbtx)は HTTP/1 のフレーミングの回帰を確かめます。
 - Z3 と CVC5 による [証明](mttp_core/src/h1/PROOFS.md)は、Content-Length とチャンクサイズに使う整数の中核を、桁あふれの拒否を含めて扱います。文字列、バイトの変換、その他のフレーミングは、証明の外にあるテスト済みの統合コードです。
 - [転送のベンチマーク](benchmarks/README.md)は、固定したループバックの負荷で mttp を core/async/http・Go・Node と比べます。CI は毎日の表を成果物として記録しますが、性能を合否の閾値にはしていません(`scripts/gates.sh bench`)。
 

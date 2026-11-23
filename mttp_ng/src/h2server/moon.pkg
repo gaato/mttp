@@ -24,6 +24,8 @@ options(
 
 import {
   "gaato/mttp/backend",
+  "gaato/mttp/conn",
+  "gaato/mttp/runtime",
   "gaato/mttp_core",
   "gaato/mttp_core/h1client",
   "gaato/mttp_core/h1server",

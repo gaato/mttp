@@ -166,9 +166,12 @@ fn H3Backend::mark_broken(self : H3Backend, origin : String) -> Unit {
 }
 
 ///|
-fn H3Backend::sweep(self : H3Backend, origin : Origin) -> Unit {
+/// Takes the connections of `origin` that are done (idle, and unusable or
+/// idle too long) out of it, and returns them for the caller to close.
+fn H3Backend::sweep(self : H3Backend, origin : Origin) -> Array[Connection] {
   let now = self.clock.now_unix_ms()
   let keep = []
+  let done = []
   for connection in origin.conns {
     if connection.closed {
       continue
@@ -183,13 +186,14 @@ fn H3Backend::sweep(self : H3Backend, origin : Origin) -> Unit {
         !connection.usable() ||
         now - connection.idle_since >= self.config.idle_max_ms.to_int64()
       ) {
-      connection.close()
+      done.push(connection)
       continue
     }
     keep.push(connection)
   }
   origin.conns.clear()
   origin.conns.append(keep)
+  done
 }
 
 ///|
@@ -214,7 +218,10 @@ async fn H3Backend::connection(
     if self.closed {
       raise closed_error()
     }
-    self.sweep(origin)
+    // Taken out of the origin first, so no other send picks them meanwhile.
+    for connection in self.sweep(origin) {
+      connection.close_gracefully()
+    }
     if origin.conns.filter(c => c.usable()).last() is Some(connection) {
       if connection.has_room(self.settings.max_streams_bidi) {
         connection.reserved += 1
@@ -251,7 +258,7 @@ async fn H3Backend::connection(
       return None
     }
     if self.closed {
-      connection.close()
+      connection.close_gracefully()
       raise closed_error()
     }
     origin.conns.push(connection)

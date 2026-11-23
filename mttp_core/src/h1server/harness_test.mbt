@@ -64,6 +64,7 @@ fn Harness::serve_on(
   stopping~ : () -> Bool = () => false,
   auto_date~ : Bool = true,
   on_response_complete~ : () -> Unit = () => (),
+  before_close? : async (Bool) -> Unit noraise,
 ) -> @driver.Task {
   self.driver.spawn(() => {
     @h1server.serve_conn(
@@ -79,6 +80,7 @@ fn Harness::serve_on(
       stopping~,
       auto_date~,
       on_response_complete~,
+      before_close?,
       on_error=error => self.errors.push(error),
     )
   })

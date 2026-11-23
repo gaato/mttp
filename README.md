@@ -301,7 +301,9 @@ and benchmarks. Mutation testing and proofs are manual gates.
 - The code and outputs in this README are those of the examples;
   [scripts/readme_check.mbtx](scripts/readme_check.mbtx) compares them.
 - Daily, the native tests of `gaato/mttp_core` and `gaato/mttp`, with the
-  C they link, run under AddressSanitizer (`scripts/gates.sh sanitize`).
+  C they link, run under AddressSanitizer (`scripts/gates.sh sanitize`),
+  and so do those of `gaato/mttp_ng` with its C stubs
+  (`scripts/gates.sh sanitize --gate ng`).
 - The [interop suite](interop) checks the client against nginx, Caddy and
   Apache, and the server against curl, Go, httpx, Node, Bun and Deno, directly
   and through reverse proxies. Http11Probe probes protocol compliance;

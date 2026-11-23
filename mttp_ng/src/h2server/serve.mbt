@@ -91,6 +91,10 @@ async fn sniff(
 ///
 /// At stop, an HTTP/2 connection is told to go away (GOAWAY) and its
 /// streams get `limits.drain_ms` to finish, as HTTP/1.1 exchanges do.
+///
+/// A TLS connection ends with close_notify, except after a body delimited
+/// by the close (an HTTP/1.0 client's) that a stop cut short, so that the
+/// client can tell it was cut (RFC 9112, section 9.8).
 pub async fn serve(
   handler : @mttp_core.Handler,
   addr~ : String,
@@ -104,7 +108,11 @@ pub async fn serve(
 ) -> Unit raise @server.ListenError {
   @server.serve_conns(
     accepted => {
-      let speak_h2 = (conn : &@rt.Conn, scheme : String) => {
+      let speak_h2 = (
+        conn : &@rt.Conn,
+        scheme : String,
+        before_close : (async () -> Unit noraise)?,
+      ) => {
         serve_h2_conn(
           conn,
           handler,
@@ -120,10 +128,17 @@ pub async fn serve(
           activity=accepted.activity,
           background=accepted.background,
           coordination=accepted.coordination,
+          before_close?,
         )
       }
-      let speak_h1 = (conn : &@rt.Conn, scheme : String) => {
-        serve_h1(conn, scheme, handler, accepted, limits, auto_date)
+      let speak_h1 = (
+        conn : &@rt.Conn,
+        scheme : String,
+        before_close : (async (Bool) -> Unit noraise)?,
+      ) => {
+        serve_h1(
+          conn, scheme, handler, accepted, limits, auto_date, before_close,
+        )
       }
       match tls {
         Some(tls) => {
@@ -141,19 +156,23 @@ pub async fn serve(
             }),
           )
           guard session is Some(session) else { return }
+          // TLS ends with close_notify (RFC 8446, section 6.1), unless a
+          // body delimited by the close was cut short: its missing
+          // close_notify is how the client tells (RFC 9112, section 9.8).
+          let notify = () => close_notify(session, accepted.timer)
           if session.alpn() == Some("h2") {
-            speak_h2(session, "https")
+            speak_h2(session, "https", Some(notify))
           } else {
-            speak_h1(session, "https")
+            speak_h1(session, "https", Some(clean => if clean { notify() }))
           }
         }
         None if h2c =>
           match sniff(accepted.conn, accepted.timer, limits.header_timeout_ms) {
-            Some((true, conn)) => speak_h2(conn, "http")
-            Some((false, conn)) => speak_h1(conn, "http")
+            Some((true, conn)) => speak_h2(conn, "http", None)
+            Some((false, conn)) => speak_h1(conn, "http", None)
             None => ()
           }
-        None => speak_h1(accepted.conn, "http")
+        None => speak_h1(accepted.conn, "http", None)
       }
     },
     addr~,
@@ -172,6 +191,7 @@ async fn serve_h1(
   accepted : @server.Accepted,
   limits : @h1server.ServerLimits,
   auto_date : Bool,
+  before_close : (async (Bool) -> Unit noraise)?,
 ) -> Unit {
   let response_finished = Ref(false)
   @h1server.serve_conn(
@@ -201,6 +221,7 @@ async fn serve_h1(
       (accepted.stopping)()
     },
     background=accepted.background,
+    before_close?,
   ) catch {
     _ =>
       (accepted.on_error)(
@@ -211,4 +232,14 @@ async fn serve_h1(
         ),
       )
   }
+}
+
+///|
+/// Sends close_notify on `session`, for at most LINGER_MS: a client that
+/// reads nothing more cannot hold the close.
+async fn close_notify(
+  session : @tls.TlsConn,
+  timer : &@rt.Timer,
+) -> Unit noraise {
+  ignore(timer.within(LINGER_MS, () => session.shutdown() catch { _ => () }))
 }
