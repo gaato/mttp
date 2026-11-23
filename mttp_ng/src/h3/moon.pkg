@@ -10,6 +10,11 @@ import {
   "moonbitlang/core/async/fs",
 } for "test"
 
+import {
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+} for "wbtest"
+
 supported_targets = "native"
 
 options(

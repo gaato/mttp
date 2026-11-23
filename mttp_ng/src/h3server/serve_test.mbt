@@ -83,6 +83,14 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
       @async.sleep(1000000)
       @mttp_core.Response::new(200)
     }
+    "/protected" => {
+      // A handler that finishes its work even when its stream is reset.
+      drained_started.val += 1
+      @async.protect_from_cancel(() => @async.sleep(500)) catch {
+        _ => ()
+      }
+      @mttp_core.Response::new(200, body=Bytes(b"protected"))
+    }
     "/events" =>
       // An endless event stream: one event, then silence.
       {
@@ -148,6 +156,7 @@ impl @mttp_core.BodyStream for Stuck with fn close(_) {
 async fn with_server(
   run : async (Int32) -> Unit,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
+  settings~ : @h3.H3Settings = @h3.H3Settings::default(),
 ) -> Unit {
   let quic = @h3.ServerQuic::from_pem(
     chain=@fs.read_text(testdata("localhost.pem")),
@@ -158,7 +167,7 @@ async fn with_server(
       let port : Ref[Int32?] = Ref(None)
       let listening = @cond_var.Cond()
       group.spawn_bg(() => {
-        @h3server.serve(answer, addr="127.0.0.1:0", quic~, limits~, on_listen=addr => {
+        @h3server.serve(answer, addr="127.0.0.1:0", quic~, limits~, settings~, on_listen=addr => {
           port.val = Some(
             @string.parse_int(addr[addr.rev_find(":").unwrap() + 1:]) catch {
               _ => 0
@@ -943,4 +952,73 @@ async test "Expect: 100-continue gets a 100 before the body is sent, over HTTP/3
       assert_eq(@utf8.decode_lossy(body.to_bytes()), "sent after the 100")
     },
   )
+}
+
+///|
+/// The handler cap counts a handler whose stream was reset until it ends,
+/// as HTTP/2's does: with one stream allowed, a request opened once QUIC
+/// gave the first stream's credit back, while its handler still runs, is
+/// refused with H3_REQUEST_REJECTED (CVE-2023-44487).
+async test "a reset stream's handler counts against the cap until it ends, over HTTP/3" {
+  with_server(settings={ ..@h3.H3Settings::default(), max_streams_bidi: 1, }, port => {
+    let server = @socket.Addr::parse("127.0.0.1:\{port}")
+    let udp = @socket.UdpClient(server)
+    defer udp.close()
+    let conn = @h3.QuicConn::client(
+      @h3.ClientQuic::new(trust=PemFile(testdata("root.pem"))),
+      host="localhost",
+      remote_address=server.to_string(),
+    )
+    defer conn.free()
+    let closed : Map[Int64, Int64] = Map([])
+    let drive = async fn(done : () -> Bool) {
+      while !done() {
+        for datagram in conn.datagrams() {
+          udp.send(datagram)
+        }
+        for event in conn.events() {
+          if event is Closed(stream~, code~) {
+            closed[stream] = code
+          }
+        }
+        if done() {
+          break
+        }
+        let got = @async.with_timeout_opt(
+          conn.expiry_ms().unwrap_or(20).max(1).min(20),
+          () => udp.recv(max_len=65536),
+        )
+        match got {
+          Some(datagram) => conn.read(datagram)
+          None => if conn.expiry_ms() == Some(0) { conn.on_expiry() }
+        }
+      }
+    }
+    drive(() => conn.handshake_done())
+    let get = (path : String) => {
+      [
+        (":method", "GET"),
+        (":scheme", "https"),
+        (":authority", "localhost"),
+        (":path", path),
+      ]
+    }
+    let started = drained_started.val
+    let first = conn.submit_request(get("/protected"), body=false)
+    drive(() => drained_started.val != started)
+    conn.reset(first, @h3.H3_REQUEST_CANCELLED)
+    // The second stream opens once the server gave the first's credit
+    // back, while the first's handler still runs.
+    let mut second = None
+    drive(() => {
+      if second is None {
+        second = Some(conn.submit_request(get("/hello"), body=false)) catch {
+          _ => None
+        }
+      }
+      second is Some(id) && closed.contains(id)
+    })
+    guard second is Some(id) else { fail("no second stream") }
+    assert_eq(closed.get(id), Some(@h3.H3_REQUEST_REJECTED))
+  })
 }

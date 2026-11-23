@@ -754,7 +754,14 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_push(session_box *b, int32_t stream,
   outq *q = queue_of(s, stream);
   if (!q || q->ended) return -1;
   if (len > 0) {
-    if (q->off > 0 && q->off == q->len) q->off = q->len = 0;
+    // What was sent is dropped before the queue grows: a body whose reader
+    // never quite catches up keeps its queue nonempty, and the queue grew
+    // by everything that ever went through it (Codex's review of #58).
+    if (q->off > 0) {
+      memmove(q->data, q->data + q->off, q->len - q->off);
+      q->len -= q->off;
+      q->off = 0;
+    }
     if (q->len + (size_t)len > q->cap) {
       size_t cap = q->cap ? q->cap : 16384;
       while (cap < q->len + (size_t)len) cap *= 2;
@@ -770,6 +777,15 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_push(session_box *b, int32_t stream,
   q->drained = 0;
   nghttp2_session_resume_data(s->ng, stream);
   return 0;
+}
+
+// The bytes `stream`'s queue holds room for, or -1 without one: for the
+// test that bounds it (session_wbtest.mbt).
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_queue_capacity(session_box *b,
+                                                     int32_t stream) {
+  if (!b->s) return -1;
+  outq *q = queue_of(b->s, stream);
+  return q ? (int32_t)q->cap : -1;
 }
 
 // How many bytes wait in `stream`'s queue, or -1 without one.

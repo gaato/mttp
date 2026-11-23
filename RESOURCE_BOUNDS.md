@@ -198,6 +198,9 @@ a test from hanging.
 | `mttp_ng` QUIC received body per stream and per connection | `H3Settings.stream_window` (256 KiB) and `connection_window` (1 MiB) as transport parameters; both open only as the reader takes bytes | The peer is held by flow control | `mttp_ng/src/h3/connection_test.mbt`: "a body larger than the windows arrives as the reader takes it" |
 | `mttp_ng` HTTP/3 server connection on which no handler runs | `ServerLimits.header_timeout_ms` from its first datagram or its last handler's end (a handler's task lasts until its response's stream closes, so a slow download keeps it busy), as HTTP/2's server ends a connection without streams; QUIC traffic alone does not extend it, so a request whose headers never complete holds no `max_connections` slot past it | CONNECTION_CLOSE with H3_NO_ERROR | `mttp_ng/src/h3server/serve_test.mbt`: "a connection on which no request starts is closed after header_timeout_ms" |
 | `mttp_ng` HTTP/3 server stop | `ServerLimits.drain_ms` from the cancellation, as gaato/mttp's listener drains TCP: each connection gets the GOAWAY notice, then the last stream a round trip later, and is closed once no handler runs; no new connection is made | Handlers cancelled and every connection closed with H3_NO_ERROR | `mttp_ng/src/h3server/serve_test.mbt`: "a stop lets a request in flight finish over HTTP/3, and takes no new one", "a stop cuts what is still running when drain_ms is out over HTTP/3" |
+| `mttp_ng` body queue of a stream (both directions, HTTP/2 and HTTP/3) | 64 KiB waiting unsent before the next piece is read from its source; HTTP/2 drops what was sent before the queue grows, and HTTP/3 frees each piece as the peer acknowledges it, so what a queue holds is what is unsent and, over QUIC, what is in flight (the peer's stream window) | The writer waits for room (`Drained`) | `mttp_ng/src/h2/session_wbtest.mbt`: "a body queue that never empties holds only what is unsent"; `mttp_ng/src/h3/connection_wbtest.mbt`: "a long body's queue holds what is queued and in flight, no more" |
+| `mttp_ng` HTTP/3 server connections | `ServerLimits.max_connections`; further clients' Initials are dropped, and a slot comes back when a connection closes (a client's CONNECTION_CLOSE, `header_timeout_ms`, the idle timeout) | The client's handshake does not complete | `mttp_ng/src/h3server/serve_test.mbt`: "a connection the client drops frees the server's slot at once" |
+| `mttp_ng` handlers per server connection | `H2Limits.max_concurrent_streams` (HTTP/2) and `H3Settings.max_streams_bidi` (HTTP/3), cancelled handlers still finishing included; the connection is still read for the running ones, so a client that opens and resets streams (CVE-2023-44487) cannot pile up tasks | A request stream that arrives at the cap is refused: REFUSED_STREAM, H3_REQUEST_REJECTED | `mttp_ng/src/h2server/serve_test.mbt`: "a reset stream's handler counts against the cap until it ends"; `mttp_ng/src/h3server/serve_test.mbt`: "a reset stream's handler counts against the cap until it ends, over HTTP/3" |
 
 ## Bounded by rate and lifetime
 
@@ -247,19 +250,8 @@ Growth that follows what the caller asks for, not what the network sends.
 
 `mttp_ng` bounds that no test drives to their limit yet:
 
-- An HTTP/2 or HTTP/3 server runs at most `max_concurrent_streams` handlers
-  per connection, cancelled ones still finishing included, and refuses a
-  request stream that arrives while that many run with REFUSED_STREAM, or
-  H3_REQUEST_REJECTED over HTTP/3 (the
-  connection is still read for the running ones), so a client that opens and
-  resets streams (CVE-2023-44487) cannot pile up tasks; nghttp2's own reset rate
-  limit (1.57 or later) and its CONTINUATION and glitch limits (1.61, 1.67)
-  apply where the linked version has them.
-- A request or response body waits in a stream's queue of at most 64 KiB
-  before the next piece is read from its source, in both directions and
-  both protocols.
-- An HTTP/3 server takes at most `max_connections` connections; further
-  clients' Initials are dropped.
+- nghttp2's own reset rate limit (1.57 or later) and its CONTINUATION and
+  glitch limits (1.61, 1.67), where the linked version has them.
 - A TLS session (`mttp_ng/tls`) buffers at most one record of ciphertext a
   read took from the connection beneath.
 

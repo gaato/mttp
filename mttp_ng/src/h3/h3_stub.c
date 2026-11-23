@@ -1577,6 +1577,19 @@ MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_queued(qconn_box *b, int64_t stream) {
   return o ? (int64_t)o->queued : -1;
 }
 
+// The body bytes `stream`'s queue holds, sent or not, until the peer
+// acknowledges them, or -1 without one: for the test that bounds it
+// (connection_wbtest.mbt).
+MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_queue_held(qconn_box *b,
+                                                 int64_t stream) {
+  if (!b->q) return -1;
+  outq *o = queue_of(b->q, stream);
+  if (!o) return -1;
+  int64_t held = 0;
+  for (chunk *c = o->head; c; c = c->next) held += (int64_t)(c->len - c->acked);
+  return held;
+}
+
 // Ends `stream` both ways with `code` (H3_REQUEST_CANCELLED for a client
 // giving up, H3_NO_ERROR for a server that will not read on).
 MOONBIT_FFI_EXPORT void mttp_ng_h3_reset(qconn_box *b, int64_t stream,

@@ -112,6 +112,14 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
           @mttp_core.StreamBody::new(Relay::{ request, done: false, }),
         ),
       )
+    "/protected" => {
+      // A handler that finishes its work even when its stream is reset.
+      drained_started.val += 1
+      @async.protect_from_cancel(() => @async.sleep(500)) catch {
+        _ => ()
+      }
+      @mttp_core.Response::new(200, body=Bytes(b"protected"))
+    }
     "/early" =>
       // Answers without reading the request body.
       @mttp_core.Response::new(413, body=Bytes(b"early"))
@@ -841,6 +849,74 @@ async test "Expect: 100-continue gets a 100 before the body is sent, over HTTP/2
       )
       exchange(() => ended.contains(connect))
       assert_eq(heads.filter(h => h.0 == connect).map(h => h.1), ["501"])
+    },
+  )
+}
+
+///|
+/// The handler cap counts a handler whose stream was reset until it ends:
+/// with a cap of one, a request opened right after resetting the first,
+/// while its handler still runs, is refused with REFUSED_STREAM, so a
+/// client that opens and resets streams cannot pile up handlers
+/// (CVE-2023-44487).
+async test "a reset stream's handler counts against the cap until it ends" {
+  with_server(
+    h2_limits={ ..@h2server.H2Limits::default(), max_concurrent_streams: 1, },
+    port => {
+      let conn = raw_tls(port, "h2")
+      defer conn.close()
+      let session = @h2.H2Session::client()
+      defer session.free()
+      let closed : Map[Int32, @h2.ErrorCode] = Map([])
+      let flush = async fn() {
+        let out = session.output()
+        if out.length() > 0 {
+          conn.write(out)
+        }
+      }
+      let get = (path : String) => {
+        [
+          (":method", "GET"),
+          (":scheme", "https"),
+          (":authority", "localhost"),
+          (":path", path),
+        ]
+      }
+      // SETTINGS both ways, so the client knows the limit of one.
+      flush()
+      while true {
+        guard conn.read(max_len=65536) is Some(bytes) else {
+          fail("the server closed the connection")
+        }
+        session.recv(bytes)
+        ignore(session.events())
+        flush()
+        if session.peer_max_streams() == 1 {
+          break
+        }
+      }
+      let started = drained_started.val
+      let first = session.submit_request(get("/protected"), body=false)
+      flush()
+      while drained_started.val == started {
+        @async.sleep(5)
+      }
+      session.reset(first, Cancel)
+      let second = session.submit_request(get("/hello"), body=false)
+      flush()
+      while !closed.contains(second) {
+        guard conn.read(max_len=65536) is Some(bytes) else {
+          fail("the server closed the connection")
+        }
+        session.recv(bytes)
+        for event in session.events() {
+          if event is Closed(stream~, code~) {
+            closed[stream] = code
+          }
+        }
+        flush()
+      }
+      assert_eq(closed.get(second), Some(RefusedStream))
     },
   )
 }
