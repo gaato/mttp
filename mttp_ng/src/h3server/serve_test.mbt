@@ -559,10 +559,18 @@ async test "a slow download outlasts header_timeout_ms over HTTP/3" {
       )
       guard response.body is Stream(cell) else { fail("no stream body") }
       let source = cell.take()
+      // A pause after every 100 kB, not after every read: a read gives
+      // about one datagram, so pausing per read made the download take
+      // tens of seconds. Twenty pauses of 25 ms still outlast
+      // header_timeout_ms (300 ms) whatever the datagram size.
       let mut total = 0
+      let mut paused_at = 0
       while source.read_some() is Some(bytes) {
         total += bytes.length()
-        @async.sleep(20)
+        if total - paused_at >= 100000 {
+          paused_at = total
+          @async.sleep(25)
+        }
       }
       assert_eq(total, 2000000)
     },

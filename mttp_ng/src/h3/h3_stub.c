@@ -393,8 +393,15 @@ typedef struct {
 
 static void qconn_free(qconn *q) {
   if (!q) return;
+  // ngtcp2_crypto_ossl asks for the SSL's app data to be cleared before
+  // SSL_free: SSL_free releases the crypto data OpenSSL still holds through
+  // a callback that reaches the ngtcp2_conn through it, which by then is
+  // freed. Debug builds of ngtcp2 (Homebrew's) abort there on an assertion;
+  // release builds read freed memory.
+  if (q->ssl) SSL_set_app_data(q->ssl, NULL);
   if (q->h3) nghttp3_conn_del(q->h3);
   if (q->conn) ngtcp2_conn_del(q->conn);
+  q->conn = NULL;
   if (q->ossl) ngtcp2_crypto_ossl_ctx_del(q->ossl);
   if (q->ssl) SSL_free(q->ssl);
   while (q->headers) header_count_remove(&q->headers, q->headers->stream);
