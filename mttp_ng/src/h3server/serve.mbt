@@ -21,6 +21,9 @@ priv struct Served {
   /// Handlers running, cancelled ones still finishing included.
   mut handlers : Int32
   changes : @mux.Changes
+  /// Since when no handler runs (from the first datagram, for a new
+  /// connection), for `header_timeout_ms`.
+  mut idle_since : Int64
 }
 
 ///|
@@ -112,7 +115,9 @@ priv struct Listener {
 /// certificate, until cancelled; then every connection is closed with
 /// H3_NO_ERROR. `limits` applies as it does to HTTP/2 (`serve_h2_conn`):
 /// the body bound, the timeouts, the header bound and `max_connections`
-/// (more clients' Initials are dropped). `settings` gives the streams and
+/// (more clients' Initials are dropped), and `header_timeout_ms` for a
+/// connection on which no handler runs, which is then closed with
+/// H3_NO_ERROR. `settings` gives the streams and
 /// windows. Requests carry the `protocol` attribute `h3` and
 /// `connection_scheme` `https`. While `settings.max_streams_bidi` handlers
 /// of a connection run (cancelled ones still finishing included), a new
@@ -183,6 +188,20 @@ pub async fn serve(
 }
 
 ///|
+/// When `conn`, idle, is closed: `header_timeout_ms` after its last handler
+/// ended or its first datagram, as HTTP/2's server ends a connection
+/// without streams; `None` while a handler runs. A request whose headers
+/// never complete starts no handler, so a client that keeps the connection
+/// alive with QUIC traffic alone holds its `max_connections` slot no longer.
+fn Listener::idle_deadline(self : Listener, conn : Served) -> Int64? {
+  if conn.handlers > 0 || conn.quic.closed() {
+    None
+  } else {
+    Some(conn.idle_since + self.limits.header_timeout_ms.to_int64())
+  }
+}
+
+///|
 async fn Listener::run(
   self : Listener,
   group : @async.TaskGroup,
@@ -191,11 +210,19 @@ async fn Listener::run(
 ) -> Unit {
   let buffer = FixedArray::make(65536, b'\x00')
   while true {
-    // The nearest timer of any connection bounds the wait.
+    // The nearest timer of any connection, or idle deadline, bounds the
+    // wait.
     let mut wait = 1000
+    let now = self.clock.now_unix_ms()
     for _, conn in self.conns {
       if conn.quic.expiry_ms() is Some(ms) && ms < wait {
         wait = ms
+      }
+      if self.idle_deadline(conn) is Some(at) {
+        let ms = (at - now).max(0L).min(1000L).to_int()
+        if ms < wait {
+          wait = ms
+        }
       }
     }
     let got : Ref[(Int32, @socket.Addr)?] = Ref(None)
@@ -213,7 +240,12 @@ async fn Listener::run(
       self.receive(group, quic, bound_address, datagram, peer)
     }
     let gone = []
+    let now = self.clock.now_unix_ms()
     for key, conn in self.conns {
+      if self.idle_deadline(conn) is Some(at) && now >= at {
+        conn.quic.close()
+        conn.send()
+      }
       if conn.quic.expiry_ms() == Some(0) {
         conn.quic.on_expiry() catch {
           _ => ()
@@ -277,6 +309,7 @@ async fn Listener::receive(
         streams: Map([]),
         handlers: 0,
         changes: self.changes,
+        idle_since: self.clock.now_unix_ms(),
       }
       self.conns[key] = conn
       conn
@@ -331,6 +364,9 @@ fn Listener::dispatch(
             let task = group.spawn(allow_failure=true, () => {
               defer {
                 conn.handlers -= 1
+                if conn.handlers == 0 {
+                  conn.idle_since = self.clock.now_unix_ms()
+                }
                 conn.streams.remove(stream)
                 // What the handler left unread gives the windows back:
                 // `consume` opens the connection's window with the

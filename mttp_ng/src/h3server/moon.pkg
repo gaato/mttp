@@ -20,6 +20,7 @@ import {
   "moonbitlang/core/async/cond_var",
   "moonbitlang/core/async/fs",
   "moonbitlang/core/async/process",
+  "moonbitlang/core/async/socket",
   "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/string",
 } for "test"

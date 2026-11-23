@@ -1168,11 +1168,25 @@ MOONBIT_FFI_EXPORT void mttp_ng_h3_free(qconn_box *b) {
 
 // --- steps -----------------------------------------------------------------
 
+// The connection close the peer sent. ngtcp2 1.23 renamed the getter
+// (the old one is deprecated there); Debian 13's backport is 1.22.
+static const ngtcp2_ccerr *peer_ccerr(ngtcp2_conn *conn) {
+#if NGTCP2_VERSION_NUM >= 0x011700
+  return ngtcp2_conn_get_ccerr2(conn);
+#else
+  return ngtcp2_conn_get_ccerr(conn);
+#endif
+}
+
+// Records the close: with the peer's code when the peer closed, with this
+// end's otherwise.
 static void note_close(qconn *q, int by_peer) {
   if (q->closed) return;
   q->closed = 1;
+  uint64_t code = by_peer && q->conn ? peer_ccerr(q->conn)->error_code
+                                     : q->ccerr.error_code;
   put_u8(&q->events, EV_CLOSE);
-  put_i64(&q->events, (int64_t)q->ccerr.error_code);
+  put_i64(&q->events, (int64_t)code);
   put_i64(&q->events, by_peer);
 }
 

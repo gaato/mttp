@@ -452,3 +452,59 @@ async test "a response body silent from its start is answered 500" {
     },
   )
 }
+
+///|
+/// A connection on which no request starts (a client that completes its
+/// handshake and then keeps the connection alive without a request) is
+/// closed after `header_timeout_ms`, as HTTP/2's server ends a connection
+/// without streams (Codex's review of #58).
+async test "a connection on which no request starts is closed after header_timeout_ms" {
+  with_server(
+    limits={ ..@h1server.ServerLimits::default(), header_timeout_ms: 300, },
+    port => {
+      let addr = @socket.Addr::parse("127.0.0.1:\{port}")
+      let udp = @socket.UdpClient(addr)
+      defer udp.close()
+      let quic = @h3.QuicConn::client(
+        @h3.ClientQuic::new(trust=PemFile(testdata("root.pem"))),
+        host="localhost",
+        remote_address=addr.to_string(),
+      )
+      defer quic.free()
+      let mut handshake = false
+      let mut closed = None
+      // Answers what the server sends, and sends no request; the QUIC
+      // idle timeout (30 s) is far off.
+      for _ in 0..<400 {
+        for datagram in quic.datagrams() {
+          udp.send(datagram)
+        }
+        let got : Ref[Bytes?] = Ref(None)
+        @async.with_timeout(25, () => got.val = Some(udp.recv(max_len=65536))) catch {
+          _ => ()
+        }
+        match got.val {
+          Some(datagram) => quic.read(datagram) catch { _ => () }
+          None =>
+            if quic.expiry_ms() == Some(0) {
+              quic.on_expiry() catch {
+                _ => ()
+              }
+            }
+        }
+        for event in quic.events() {
+          match event {
+            HandshakeDone => handshake = true
+            ConnectionClosed(by_peer~, code~) => closed = Some((by_peer, code))
+            _ => ()
+          }
+        }
+        if closed is Some(_) {
+          break
+        }
+      }
+      assert_true(handshake)
+      assert_eq(closed, Some((true, @h3.H3_NO_ERROR)))
+    },
+  )
+}
