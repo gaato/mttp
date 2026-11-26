@@ -24,6 +24,19 @@ never does.
   `h3` (HTTP/2 and QUIC with HTTP/3 without I/O, over nghttp2, ngtcp2 and
   nghttp3), `h2client` and `h3client` (`Backend`s), `h2server` and
   `h3server`.
+- The HTTP/3 server routes datagrams by connection ID, so a client may
+  change its address; sends Retry once a quarter of `max_connections` are
+  open handshakes; keeps a closed connection's IDs for its closing or
+  draining period, sending a lost CONNECTION_CLOSE again; and answers a
+  packet for a connection it no longer has with a Stateless Reset. `h3`
+  has what a server on a socket of its own needs for that:
+  `QuicConn::read(from?)`, `addressed_datagrams`, `connection_ids`,
+  `remote_address`, `close_datagram`, `closed_by_peer`, `pto_ms`,
+  `destination_cid`, `stateless_reset` and `answer_initial`, the last two
+  and `QuicConn::server(keys?)` under a listener's own `ServerKeys`.
+- The HTTP/3 client tells the server with CONNECTION_CLOSE whenever it
+  closes a connection, `close()` of the backend included, so the server's
+  side ends at once rather than at its idle timeout.
 - Trailer sections both ways over HTTP/2 and HTTP/3, clients and servers,
   through gaato/mttp_core's `BodyStream::trailers`: received ones are the
   body's once it was read, and a stream's are sent after its last byte; a

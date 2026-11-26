@@ -876,6 +876,39 @@ async test "a connection the client drops frees the server's slot at once" {
 }
 
 ///|
+/// `close()` of a backend is synchronous (the Backend contract), and still
+/// tells the server: each connection's CONNECTION_CLOSE goes in one send
+/// that does not wait, so under `max_connections: 1` another backend is
+/// served at once. Sending nothing, as first written, the server kept the
+/// slot until its idle timeout (30 s) and dropped the second backend's
+/// Initials.
+async test "a backend's close frees the server's slot at once" {
+  with_server(
+    limits={
+      ..@h1server.ServerLimits::default(),
+      max_connections: 1,
+      header_timeout_ms: 20000,
+    },
+    port => {
+      let url = "https://localhost:\{port}/hello"
+      let first = client()
+      assert_eq(
+        text(first.send(@mttp_core.Request::get(url), defaults)),
+        "hello",
+      )
+      first.close()
+      let second = client()
+      defer second.close()
+      let response = second.send(@mttp_core.Request::get(url), {
+        ..defaults,
+        timeout_ms: Some(3000),
+      })
+      assert_eq(text(response), "hello")
+    },
+  )
+}
+
+///|
 /// `localhost` resolves to `[::1]` first (F77). With a socket there that
 /// takes the client's Initials and never answers, the first address family
 /// drops QUIC silently; the client still connects over 127.0.0.1, where

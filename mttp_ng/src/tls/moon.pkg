@@ -13,6 +13,13 @@ import {
   "moonbitlang/core/async/fs",
 } for "test"
 
+import {
+  "gaato/mttp_core/sim",
+  "gaato/mttp/runtime",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+} for "wbtest"
+
 supported_targets = "native"
 
 options(

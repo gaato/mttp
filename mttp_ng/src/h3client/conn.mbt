@@ -85,48 +85,32 @@ fn Connection::fail(
 }
 
 ///|
-/// How long the CONNECTION_CLOSE of a connection this end drops may take
-/// to go: a datagram send seldom waits at all.
-const CLOSE_SEND_MS : Int32 = 100
+/// Sends `datagram` on the connected socket `fd` without waiting (h3_stub.c).
+/// core/async guarantees `Fd` the ABI of the OS's descriptor; it is opaque
+/// outside core/async, so the compiler asks for an annotation, and it holds
+/// no reference to borrow.
+#borrow(fd, datagram)
+extern "C" fn send_now(fd : @types.Fd, datagram : Bytes) -> Int32 = "mttp_ng_h3_send_now"
 
 ///|
 /// Tells the server the connection is done (CONNECTION_CLOSE with
 /// H3_NO_ERROR, RFC 9000, section 10.2), so that its side ends now rather
-/// than at its idle timeout, then closes it. The send is bounded and runs
-/// even when the caller is cancelled.
-async fn Connection::close_gracefully(self : Connection) -> Unit noraise {
-  if self.closed {
-    return
-  }
-  if !self.quic.closed() {
-    self.quic.close()
-    let datagrams = self.quic.datagrams() catch { _ => [] }
-    self.coordination.protect(work=() => {
-      ignore(
-        self.timer.within(CLOSE_SEND_MS, () => {
-          for datagram in datagrams {
-            self.udp.send(datagram) catch {
-              _ => ()
-            }
-          }
-        }),
-      )
-    }) catch {
-      _ => ()
-    }
-  }
-  self.close()
-}
-
-///|
-/// Closes the socket and frees the connection, sending nothing: for a
-/// caller that cannot wait for a send (`close_gracefully` sends the
-/// CONNECTION_CLOSE first).
+/// than at its idle timeout; then closes the socket and frees the
+/// connection. Synchronous, since `H3Backend::close` is (the Backend
+/// contract): the close goes in one send that does not wait, and a socket
+/// that cannot take it at once drops it, as the network may drop it anyway.
 fn Connection::close(self : Connection) -> Unit {
   if self.closed {
     return
   }
   self.closed = true
+  if !self.quic.closed() {
+    self.quic.close()
+    let datagrams = self.quic.datagrams() catch { _ => [] }
+    for datagram in datagrams {
+      ignore(send_now(self.udp.fd(), datagram))
+    }
+  }
   self.fail(
     @mttp_core.TransportError(
       kind=Closed,
