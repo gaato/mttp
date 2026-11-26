@@ -32,7 +32,8 @@ never does.
   has what a server on a socket of its own needs for that:
   `QuicConn::read(from?)`, `addressed_datagrams`, `connection_ids`,
   `remote_address`, `close_datagram`, `closed_by_peer`, `pto_ms`,
-  `destination_cid`, `stateless_reset` and `answer_initial`.
+  `destination_cid`, `stateless_reset` and `answer_initial`, the last two
+  and `QuicConn::server(keys?)` under a listener's own `ServerKeys`.
 - The HTTP/3 client tells the server with CONNECTION_CLOSE whenever it
   closes a connection, `close()` of the backend included, so the server's
   side ends at once rather than at its idle timeout.

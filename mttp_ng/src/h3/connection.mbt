@@ -35,14 +35,18 @@ extern "C" fn client_new(
 ) -> Raw = "mttp_ng_h3_client_new"
 
 ///|
-#borrow(context, data, local_address, remote_address, values)
+#borrow(context, data, local_address, remote_address, values, keys)
 extern "C" fn server_new(
   context : Context,
   data : Bytes,
   local_address : Bytes,
   remote_address : Bytes,
   values : FixedArray[Int64],
+  keys : Bytes,
 ) -> Raw = "mttp_ng_h3_server_new"
+
+///|
+extern "C" fn raw_new_keys() -> Bytes = "mttp_ng_h3_new_keys"
 
 ///|
 #borrow(raw)
@@ -109,15 +113,16 @@ extern "C" fn raw_version_negotiation(datagram : Bytes) -> Bytes = "mttp_ng_h3_v
 extern "C" fn raw_dcid(datagram : Bytes) -> Bytes = "mttp_ng_h3_dcid"
 
 ///|
-#borrow(datagram)
-extern "C" fn raw_stateless_reset(datagram : Bytes) -> Bytes = "mttp_ng_h3_stateless_reset"
+#borrow(datagram, keys)
+extern "C" fn raw_stateless_reset(datagram : Bytes, keys : Bytes) -> Bytes = "mttp_ng_h3_stateless_reset"
 
 ///|
-#borrow(datagram, remote)
+#borrow(datagram, remote, keys)
 extern "C" fn raw_answer_initial(
   datagram : Bytes,
   remote : Bytes,
   validate : Bool,
+  keys : Bytes,
 ) -> Bytes = "mttp_ng_h3_answer_initial"
 
 ///|
@@ -373,15 +378,44 @@ pub fn QuicConn::client(
 }
 
 ///|
+/// The keys of one server listener: of its stateless reset tokens and its
+/// Retry tokens. Every connection, reset and Retry of a listener uses the
+/// listener's, and no other listener's: a listener that does not route
+/// another's connections would answer a packet for one of them with the
+/// reset token its client accepts, an oracle that ends any connection
+/// whose ID it learns (RFC 9000, section 21.11).
+pub struct ServerKeys {
+  priv bytes : Bytes
+}
+
+///|
+/// Fresh random keys, for a new listener. Raises when the system's random
+/// source fails.
+pub fn ServerKeys::new() -> ServerKeys raise H3Error {
+  let bytes = raw_new_keys()
+  if bytes.length() == 0 {
+    raise H3Error(code=0, detail="no random bytes for the server's keys")
+  }
+  { bytes, }
+}
+
+///|
 /// A server connection for a client's first Initial datagram, which is
-/// then to be `read`. Raises when the datagram does not start a connection.
+/// then to be `read`, under its listener's `keys` (by default fresh ones,
+/// for a connection served alone). Raises when the datagram does not start
+/// a connection, or carries a Retry token these keys did not make.
 pub fn QuicConn::server(
   quic : ServerQuic,
   initial : Bytes,
   local_address~ : String,
   remote_address~ : String,
   settings~ : H3Settings = H3Settings::default(),
+  keys? : ServerKeys,
 ) -> QuicConn raise H3Error {
+  let keys = match keys {
+    Some(keys) => keys
+    None => ServerKeys::new()
+  }
   opened(
     server_new(
       quic.context,
@@ -389,6 +423,7 @@ pub fn QuicConn::server(
       @utf8.encode(local_address),
       @utf8.encode(remote_address),
       values(settings),
+      keys.bytes,
     ),
   )
 }
@@ -604,9 +639,11 @@ pub fn destination_cid(datagram : Bytes) -> Bytes? {
 /// have (it forgot it, or restarted), so that the client learns at once
 /// that the connection is gone. Smaller than `datagram` (one byte smaller
 /// up to 43 bytes), so two endpoints cannot answer each other's resets for
-/// ever; `None` for a long header packet or one under 22 bytes.
-pub fn stateless_reset(datagram : Bytes) -> Bytes? {
-  nonempty(raw_stateless_reset(datagram))
+/// ever; `None` for a long header packet or one under 22 bytes. Its token
+/// is the one `keys` gave the connection ID, so a listener answers with its
+/// own keys only.
+pub fn stateless_reset(datagram : Bytes, keys~ : ServerKeys) -> Bytes? {
+  nonempty(raw_stateless_reset(datagram, keys.bytes))
 }
 
 ///|
@@ -619,13 +656,21 @@ pub fn stateless_reset(datagram : Bytes) -> Bytes? {
 /// is not valid (expired, or for another address; section 8.1.3). Both
 /// are smaller than the Initial. `None`: start the connection with
 /// `QuicConn::server`, which takes a valid Retry token as the address
-/// validated.
+/// validated. The token is made and checked with the listener's `keys`.
 pub fn answer_initial(
   datagram : Bytes,
   remote_address~ : String,
   validate~ : Bool,
+  keys~ : ServerKeys,
 ) -> Bytes? {
-  nonempty(raw_answer_initial(datagram, @utf8.encode(remote_address), validate))
+  nonempty(
+    raw_answer_initial(
+      datagram,
+      @utf8.encode(remote_address),
+      validate,
+      keys.bytes,
+    ),
+  )
 }
 
 ///|

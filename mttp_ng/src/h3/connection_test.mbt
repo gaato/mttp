@@ -372,13 +372,24 @@ async test "a Retry's token starts the connection only from the address it was s
     local_address=CLIENT_ADDR,
     remote_address=SERVER_ADDR,
   )
+  let keys = @h3.ServerKeys::new()
   let first = client.datagrams()
   // Without `validate`, an Initial without a token needs no answer.
   assert_eq(
-    @h3.answer_initial(first[0], remote_address=CLIENT_ADDR, validate=false),
+    @h3.answer_initial(
+      first[0],
+      remote_address=CLIENT_ADDR,
+      validate=false,
+      keys~,
+    ),
     None,
   )
-  guard @h3.answer_initial(first[0], remote_address=CLIENT_ADDR, validate=true)
+  guard @h3.answer_initial(
+      first[0],
+      remote_address=CLIENT_ADDR,
+      validate=true,
+      keys~,
+    )
     is Some(retry) else {
     fail("no Retry")
   }
@@ -394,13 +405,19 @@ async test "a Retry's token starts the connection only from the address it was s
       second[0],
       remote_address="127.0.0.1:50001",
       validate=true,
+      keys~,
     )
     is Some(close) else {
     fail("a token from another address was taken")
   }
   assert_true(close.length() < second[0].length())
   assert_eq(
-    @h3.answer_initial(second[0], remote_address=CLIENT_ADDR, validate=true),
+    @h3.answer_initial(
+      second[0],
+      remote_address=CLIENT_ADDR,
+      validate=true,
+      keys~,
+    ),
     None,
   )
   let quic = @h3.ServerQuic::from_pem(
@@ -414,6 +431,7 @@ async test "a Retry's token starts the connection only from the address it was s
     second[0],
     local_address=SERVER_ADDR,
     remote_address=CLIENT_ADDR,
+    keys~,
   )
   for datagram in second {
     server.read(datagram)
@@ -430,22 +448,51 @@ async test "a Retry's token starts the connection only from the address it was s
 /// answers (one byte up to 43, so two endpoints cannot answer each other's
 /// for ever), at least 21 bytes, and answers short header packets only.
 test "a Stateless Reset is smaller than what it answers, and only for short headers" {
+  let keys = @h3.ServerKeys::new() catch { e => fail("\{e}") }
   let short = n => Bytes::makei(n, i => if i == 0 { b'\x40' } else { b'\x07' })
-  assert_eq(@h3.stateless_reset(short(21)), None)
-  assert_eq(@h3.stateless_reset(short(22)).map(b => b.length()), Some(21))
-  assert_eq(@h3.stateless_reset(short(43)).map(b => b.length()), Some(42))
-  assert_eq(@h3.stateless_reset(short(44)).map(b => b.length()), Some(43))
-  assert_eq(@h3.stateless_reset(short(1200)).map(b => b.length()), Some(43))
+  assert_eq(@h3.stateless_reset(short(21), keys~), None)
+  assert_eq(
+    @h3.stateless_reset(short(22), keys~).map(b => b.length()),
+    Some(21),
+  )
+  assert_eq(
+    @h3.stateless_reset(short(43), keys~).map(b => b.length()),
+    Some(42),
+  )
+  assert_eq(
+    @h3.stateless_reset(short(44), keys~).map(b => b.length()),
+    Some(43),
+  )
+  assert_eq(
+    @h3.stateless_reset(short(1200), keys~).map(b => b.length()),
+    Some(43),
+  )
   // A reset looks like a short header packet.
   assert_eq(
-    @h3.stateless_reset(short(100)).map(b => b[0].to_int() & 0xc0),
+    @h3.stateless_reset(short(100), keys~).map(b => b[0].to_int() & 0xc0),
     Some(0x40),
   )
   let long = Bytes::makei(1200, i => if i == 0 { b'\xc0' } else { b'\x07' })
-  assert_eq(@h3.stateless_reset(long), None)
+  assert_eq(@h3.stateless_reset(long, keys~), None)
   // The ID a short header's reset is for is read at this server's length.
   assert_eq(
     @h3.destination_cid(short(30)),
     Some(Bytes::makei(17, _ => b'\x07')),
   )
+}
+
+///|
+/// RFC 9000, section 21.11: a reset token is the listener's own; another
+/// listener's keys give a connection ID another token, so a listener that
+/// does not route a connection cannot hand out the token that ends it.
+test "two listeners' keys give a connection ID different reset tokens" {
+  let a = @h3.ServerKeys::new() catch { e => fail("\{e}") }
+  let b = @h3.ServerKeys::new() catch { e => fail("\{e}") }
+  let packet = Bytes::makei(60, i => if i == 0 { b'\x40' } else { b'\x07' })
+  let token = (keys : @h3.ServerKeys) => {
+    let reset = @h3.stateless_reset(packet, keys~).unwrap()
+    reset[reset.length() - 16:].to_owned()
+  }
+  assert_eq(token(a), token(a))
+  assert_true(token(a) != token(b))
 }

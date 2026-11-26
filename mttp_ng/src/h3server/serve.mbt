@@ -205,6 +205,8 @@ priv struct Listener {
   /// Closed connections in their closing or draining period, oldest first;
   /// at most `max_connections`.
   ended : Array[Ended]
+  /// The listener's own keys of reset and Retry tokens.
+  keys : @h3.ServerKeys
   /// Stateless Resets sent in the current second, and when it began.
   mut resets : Int32
   mut resets_since : Int64
@@ -298,6 +300,10 @@ pub async fn serve(
     next_id: 0,
     routes: Map([]),
     ended: [],
+    keys: @h3.ServerKeys::new() catch {
+      error =>
+        raise @server.ListenError::Bind(detail="HTTP/3 server keys: \{error}")
+    },
     resets: 0,
     resets_since: 0L,
     changes: @mux.Changes::new(coordination, clock, timer),
@@ -565,7 +571,7 @@ async fn Listener::accept(
       self.resets = 0
     }
     if self.resets < RESETS_PER_SECOND &&
-      @h3.stateless_reset(datagram) is Some(reset) {
+      @h3.stateless_reset(datagram, keys=self.keys) is Some(reset) {
       self.resets += 1
       self.udp.send(reset, peer) catch {
         _ => ()
@@ -597,7 +603,8 @@ async fn Listener::accept(
     }
   }
   let validate = open >= (self.limits.max_connections / 4).max(1)
-  if @h3.answer_initial(datagram, remote_address=key, validate~) is Some(answer) {
+  if @h3.answer_initial(datagram, remote_address=key, validate~, keys=self.keys)
+    is Some(answer) {
     self.udp.send(answer, peer) catch {
       _ => ()
     }
@@ -609,6 +616,7 @@ async fn Listener::accept(
     local_address=bound_address,
     remote_address=key,
     settings=self.settings,
+    keys=self.keys,
   ) catch {
     // Not a client's Initial: dropped.
     _ => return
