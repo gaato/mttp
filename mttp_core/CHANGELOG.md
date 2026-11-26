@@ -7,6 +7,8 @@ never does.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-27
+
 ### Added
 
 - `attempt`: what `SendOptions` promise for one attempt, for any `Backend`
@@ -17,7 +19,8 @@ never does.
   `BodyTiming`. `BodyBudget` counts body bytes in `Int64` against a bound
   and refuses a declared length past it before reading; `body_limit` gives
   the bound under a `BodyTiming`. A Backend over another transport (such as
-  libcurl) uses them instead of writing these rules again.
+  gaato/mttp_ng's HTTP/2 and HTTP/3) uses them instead of writing these
+  rules again.
 - `h1server.serve_conn(before_close?)`: runs before the connection is
   closed, with whether the last message written ended as its framing says
   (`false` after a body delimited by the close, or one with a length, cut
@@ -34,7 +37,8 @@ never does.
   body with a declared length sends none. The router, endpoint and client
   wrappers pass trailers on; `httpcache` does not store a response that
   had them. CONTRACT.md, BodyStream rule 7.
-
+  `@sim.check_body_stream_contract(trailers?)` checks a stream's trailers
+  too.
 - `h1client.https_tunnel(dialer, config, url~, agent?)`: the byte stream
   to an https origin through the proxy `config` gives it (HTTP CONNECT or
   SOCKS5, `no_proxy` applied), or `None` when it goes direct, for a client
