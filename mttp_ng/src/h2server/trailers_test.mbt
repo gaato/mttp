@@ -40,3 +40,29 @@ async test "a response trailer HTTP/2 cannot carry resets the stream" {
     assert_eq(failed, Some(Body))
   })
 }
+
+///|
+/// A request whose trailers HTTP/2 cannot carry fails its upload; the
+/// stream is reset rather than ended as whole.
+async test "a request trailer HTTP/2 cannot carry fails the upload" {
+  with_server(port => {
+    let b = h2_client()
+    defer b.close()
+    let request = {
+      ..@mttp_core.Request::post("https://localhost:\{port}/trailers"),
+      body: @mttp_core.Body::with_trailers(
+        b"abc",
+        trailers=@mttp_core.Headers::of([("te", "gzip")]),
+      ),
+    }
+    let failed = try b.send(request, defaults) catch {
+      @mttp_core.TransportError(kind~, ..) => Some(kind)
+    } noraise {
+      response => {
+        response.close()
+        None
+      }
+    }
+    assert_eq(failed, Some(Invalid))
+  })
+}

@@ -305,8 +305,11 @@ async fn H2Backend::dial(
 ) -> Connection? raise @mttp_core.TransportError {
   // Through the proxy configured for https, as h1client would route the
   // origin (`no_proxy` included); directly otherwise.
+  // The dialer h1client gets, whose TLS (an https proxy's) is under this
+  // backend's trust, as it was when h1client opened these tunnels (Codex's
+  // review of #62).
   let tunnel = if target.secure && self.config.proxy.https is Some(_) {
-    @h1client.https_tunnel(self.dialer, self.config, url=target.origin)
+    @h1client.https_tunnel(self.handoff, self.config, url=target.origin)
   } else {
     None
   }
