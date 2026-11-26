@@ -821,6 +821,8 @@ impl @mttp_core.BodyStream for BrokenStream with fn read_some(self) {
     2 => Some(b"a")
     3 => if self.calls == 1 { Some(b"ba") } else { None }
     4 => if self.calls == 2 { Some(b"after EOF") } else { None }
+    // Bytes kept; trailers broken (`trailers`).
+    6 | 7 | 8 => if self.calls == 1 { Some(b"ab") } else { None }
     _ =>
       if self.closed {
         Some(b"after close")
@@ -838,9 +840,21 @@ impl @mttp_core.BodyStream for BrokenStream with fn close(self) {
 }
 
 ///|
+/// Mode 6 shows trailers before EOF, 7 has none at EOF, 8 drops them at
+/// close.
+impl @mttp_core.BodyStream for BrokenStream with fn trailers(self) {
+  let trailers = @mttp_core.Headers::of([("x-checksum", "9")])
+  match self.mode {
+    6 => trailers
+    8 if self.calls >= 2 && !self.closed => trailers
+    _ => @mttp_core.Headers::empty()
+  }
+}
+
+///|
 test "body stream check refuses each broken rule" {
   let rules = []
-  for mode in 0..<6 {
+  for mode in 0..<9 {
     rules.push(
       @driver.run_sync(() => {
         outcome(() => {
@@ -852,6 +866,11 @@ test "body stream check refuses each broken rule" {
               _ => b"ab"
             },
             max_reads=4,
+            trailers=if mode >= 6 {
+              @mttp_core.Headers::of([("x-checksum", "9")])
+            } else {
+              @mttp_core.Headers::empty()
+            },
           )
         })
       }),
@@ -867,6 +886,9 @@ test "body stream check refuses each broken rule" {
       #|  "check_body_stream_contract: the bytes read differ from the expected bytes",
       #|  "check_body_stream_contract: EOF is not sticky",
       #|  "check_body_stream_contract: a read after close must return EOF",
+      #|  "check_body_stream_contract: trailers showed before EOF",
+      #|  "check_body_stream_contract: the trailers at EOF differ from the expected ones",
+      #|  "check_body_stream_contract: the trailers did not stay after close",
       #|]
     ),
   )

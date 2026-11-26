@@ -346,6 +346,7 @@ pub async fn HttpCache::send(
           limit: self.max_entry_bytes,
           over: false,
           closed: false,
+          ended: false,
           commit: body => self.offer(key, { ..base, body, }, generation),
         },
         length?=response.body.length(),

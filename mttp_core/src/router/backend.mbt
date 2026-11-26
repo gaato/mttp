@@ -34,7 +34,7 @@ pub impl @mttp_core.Backend for Router with fn send(self, request, options) {
         let first = reader.read_some()
         @mttp_core.Body::Stream(
           @mttp_core.StreamBody::new(
-            Prefetched::{ reader, first, closed: false, },
+            Prefetched::{ reader, first, closed: false, ended: false, },
             length?=body.length(),
           ),
         )
@@ -86,6 +86,7 @@ pub impl @mttp_core.Backend for Router with fn send(self, request, options) {
             cap,
             read: 0,
             closed: false,
+            ended: false,
           },
           length?=stream.length(),
         ),
@@ -131,11 +132,19 @@ priv struct Prefetched {
   reader : &@mttp_core.BodyStream
   mut first : Bytes?
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
 }
 
 ///|
 impl @mttp_core.BodyStream for Prefetched with fn trailers(self) {
-  self.reader.trailers()
+  if self.ended {
+    self.reader.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -150,6 +159,7 @@ impl @mttp_core.BodyStream for Prefetched with fn read_some(self) {
   }
   let chunk = self.reader.read_some()
   if chunk is None {
+    self.ended = true
     @mttp_core.BodyStream::close(self)
   }
   chunk
@@ -175,11 +185,19 @@ priv struct BackendBody {
   cap : Int32?
   mut read : Int32
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
 }
 
 ///|
 impl @mttp_core.BodyStream for BackendBody with fn trailers(self) {
-  self.reader.trailers()
+  if self.ended {
+    self.reader.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -211,6 +229,7 @@ impl @mttp_core.BodyStream for BackendBody with fn read_some(self) {
       self.read += bytes.length()
     }
   } else {
+    self.ended = true
     @mttp_core.BodyStream::close(self)
   }
   chunk

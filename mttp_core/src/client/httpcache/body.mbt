@@ -42,6 +42,10 @@ priv struct Collected {
   mut over : Bool
   mut closed : Bool
   commit : async (Bytes) -> Unit noraise
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
 }
 
 ///|
@@ -64,6 +68,7 @@ impl @mttp_core.BodyStream for Collected with fn read_some(self) {
     None => {
       // Close transport before a potentially suspending store operation.
       let bytes = self.buffer.to_bytes()
+      self.ended = true
       @mttp_core.BodyStream::close(self)
       // A stored body is bytes, which carry no trailers: a response that
       // had them is not stored, so that no hit serves it without them.
@@ -77,7 +82,11 @@ impl @mttp_core.BodyStream for Collected with fn read_some(self) {
 
 ///|
 impl @mttp_core.BodyStream for Collected with fn trailers(self) {
-  self.origin.trailers()
+  if self.ended {
+    self.origin.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|

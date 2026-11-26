@@ -506,3 +506,27 @@ test "Decompress and encode_body pass a body's trailers on" {
     assert_eq(body.trailers().get("x-checksum"), Some("9"))
   })
 }
+
+///|
+/// An encoded body has bytes to hand out after its source ended (gzip's
+/// footer): its trailers are its own end's, so none show before it
+/// returned EOF (Codex's review of #60).
+test "an encoded body shows its trailers only at its own end" {
+  @driver.run_sync(() => {
+    let body = @codings.encode_body(
+      @mttp_core.Body::with_trailers(
+        b"hello",
+        trailers=@mttp_core.Headers::of([("x-checksum", "9")]),
+      ),
+      Gzip,
+    )
+    guard body is Stream(cell) else { fail("not a stream") }
+    let stream = cell.take()
+    while stream.read_some() is Some(_) {
+      assert_eq(body.trailers().length(), 0)
+      assert_eq(stream.trailers().length(), 0)
+    }
+    assert_eq(stream.trailers().get("x-checksum"), Some("9"))
+    assert_eq(body.trailers().get("x-checksum"), Some("9"))
+  })
+}

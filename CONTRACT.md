@@ -81,7 +81,9 @@ suites. For the implementations in this repository,
    Trailer; and over HTTP/2 and HTTP/3 the other connection-specific
    fields and TE) fails the message as the producer's failure does, so it
    does not end as whole. A wrapper that passes a body through passes its
-   trailers on; trailers are never merged into the head. The JavaScript
+   trailers on, at its own EOF, which may come after its source's (an
+   encoder still has bytes to hand out) or not at all (a check at the end
+   failed); trailers are never merged into the head. The JavaScript
    fetch backend and Workers server have no trailers (fetch exposes none),
    and `httpcache` does not store a response that had them, since a stored
    body is bytes.

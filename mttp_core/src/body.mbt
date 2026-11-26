@@ -76,7 +76,14 @@ pub fn Body::as_bytes(self : Body) -> Bytes? {
 /// ```
 pub fn Body::trailers(self : Body) -> Headers {
   match self {
-    Stream(stream) => stream.source.trailers()
+    // The reader's, which gives them only once it reached its own end:
+    // a stream that failed there (shorter than its declared length) has
+    // none.
+    Stream(stream) =>
+      match stream.reader {
+        Some(reader) => reader.trailers()
+        None => Headers::empty()
+      }
     Empty | Bytes(_) => Headers::empty()
   }
 }
@@ -88,17 +95,15 @@ pub fn Body::trailers(self : Body) -> Headers {
 /// `Content-Length`, and its trailers are not sent). The stream is read
 /// once, as any.
 pub fn Body::with_trailers(bytes : Bytes, trailers~ : Headers) -> Body {
-  Stream(
-    StreamBody::new(Trailed::{ bytes: Some(bytes), trailers, done: false, }),
-  )
+  Stream(StreamBody::new(Trailed::{ bytes: Some(bytes), trailers, }))
 }
 
 ///|
-/// The source of `Body::with_trailers`.
+/// The source of `Body::with_trailers`, read only through the stream `take`
+/// hands out, which gives the trailers at its own end.
 priv struct Trailed {
   mut bytes : Bytes?
   trailers : Headers
-  mut done : Bool
 }
 
 ///|
@@ -107,10 +112,7 @@ impl BodyStream for Trailed with fn read_some(self) {
   self.bytes = None
   match bytes {
     Some(chunk) if chunk.length() > 0 => Some(chunk)
-    _ => {
-      self.done = true
-      None
-    }
+    _ => None
   }
 }
 
@@ -121,11 +123,7 @@ impl BodyStream for Trailed with fn close(self) {
 
 ///|
 impl BodyStream for Trailed with fn trailers(self) {
-  if self.done {
-    self.trailers
-  } else {
-    Headers::empty()
-  }
+  self.trailers
 }
 
 ///|
@@ -197,12 +195,14 @@ pub struct StreamBody {
   priv source : &BodyStream
   priv length : Int64?
   priv mut taken : Bool
+  /// The stream `take` handed out, whose trailers are the body's.
+  priv mut reader : &BodyStream?
 }
 
 ///|
 /// Wraps `source`, declared to produce exactly `length` bytes when given.
 pub fn StreamBody::new(source : &BodyStream, length? : Int64) -> StreamBody {
-  { source, length, taken: false, }
+  { source, length, taken: false, reader: None, }
 }
 
 ///|
@@ -242,12 +242,15 @@ pub fn StreamBody::take(self : StreamBody) -> &BodyStream raise TransportError {
     )
   }
   self.taken = true
-  TakenStream::{
+  let reader = TakenStream::{
     source: self.source,
     length: self.length,
     read: 0L,
     closed: false,
+    ended: false,
   }
+  self.reader = Some(reader)
+  reader
 }
 
 ///|
@@ -283,6 +286,8 @@ priv struct TakenStream {
   length : Int64?
   mut read : Int64
   mut closed : Bool
+  /// It returned EOF, past the length check.
+  mut ended : Bool
 }
 
 ///|
@@ -304,6 +309,7 @@ impl BodyStream for TakenStream with fn read_some(self) {
   if chunk is Some(bytes) {
     self.read += bytes.length().to_int64()
   } else {
+    self.ended = true
     BodyStream::close(self)
   }
   chunk
@@ -311,7 +317,11 @@ impl BodyStream for TakenStream with fn read_some(self) {
 
 ///|
 impl BodyStream for TakenStream with fn trailers(self) {
-  self.source.trailers()
+  if self.ended {
+    self.source.trailers()
+  } else {
+    Headers::empty()
+  }
 }
 
 ///|

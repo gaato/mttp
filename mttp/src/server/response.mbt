@@ -10,7 +10,11 @@ priv struct ResponseLease {
 
 ///|
 impl @mttp_core.BodyStream for ResponseLease with fn trailers(self) {
-  @mttp_core.Body::Stream(self.body).trailers()
+  // The taken reader's, which it gives at its own end.
+  match self.reader {
+    Some(reader) => reader.trailers()
+    None => @mttp_core.Headers::empty()
+  }
 }
 
 ///|

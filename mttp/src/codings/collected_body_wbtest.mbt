@@ -11,6 +11,7 @@ async test "a closed collected body reads as ended, as BodyStream requires" {
     over: false,
     on_end: _ => abort("not ended"),
     closed: false,
+    ended: false,
   }
   @mttp_core.BodyStream::close(body)
   assert_eq(@mttp_core.BodyStream::read_some(body), None)
@@ -41,6 +42,7 @@ async test "collection gathers small chunks into blocks and stops at the limit w
     over: false,
     on_end: bytes => ended.val = Some(bytes),
     closed: false,
+    ended: false,
   }
   while @mttp_core.BodyStream::read_some(body) is Some(_) {
     // A few blocks, not one entry per one-byte chunk.
@@ -62,6 +64,7 @@ async test "collection gathers small chunks into blocks and stops at the limit w
     over: false,
     on_end: _ => abort("not ended"),
     closed: false,
+    ended: false,
   }
   @mttp_core.BodyStream::read_some(near) |> ignore
   assert_true(near.over)

@@ -7,11 +7,19 @@ priv struct DecodedBody {
   origin : @mttp_core.Body
   decoder : ContentDecoder
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
 }
 
 ///|
 impl @mttp_core.BodyStream for DecodedBody with fn trailers(self) {
-  self.origin.trailers()
+  if self.ended {
+    self.origin.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -30,6 +38,7 @@ impl @mttp_core.BodyStream for DecodedBody with fn read_some(self) {
       )
   }
   if bytes is None {
+    self.ended = true
     @mttp_core.BodyStream::close(self)
   }
   bytes
@@ -68,6 +77,10 @@ priv struct CollectedBody {
   mut over : Bool
   on_end : (Bytes) -> Unit
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
 }
 
 ///|
@@ -84,7 +97,11 @@ fn CollectedBody::flush_block(self : CollectedBody) -> Unit {
 
 ///|
 impl @mttp_core.BodyStream for CollectedBody with fn trailers(self) {
-  self.origin.trailers()
+  if self.ended {
+    self.origin.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -128,6 +145,7 @@ impl @mttp_core.BodyStream for CollectedBody with fn read_some(self) {
         self.collected = []
         (self.on_end)(body.to_bytes())
       }
+      self.ended = true
       @mttp_core.BodyStream::close(self)
     }
   }
@@ -251,6 +269,7 @@ pub impl @mttp_core.Backend for Decompress with fn send(self, request, options) 
               origin: response.body,
               decoder,
               closed: false,
+              ended: false,
             }),
           ),
         }
@@ -286,6 +305,7 @@ pub impl @mttp_core.Backend for Decompress with fn send(self, request, options) 
               |> ignore
             },
             closed: false,
+            ended: false,
           }),
         ),
       }

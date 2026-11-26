@@ -7,11 +7,19 @@ priv struct EncodedBody {
   origin : @mttp_core.Body
   encoder : ContentEncoder
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
 }
 
 ///|
 impl @mttp_core.BodyStream for EncodedBody with fn trailers(self) {
-  self.origin.trailers()
+  if self.ended {
+    self.origin.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -30,6 +38,7 @@ impl @mttp_core.BodyStream for EncodedBody with fn read_some(self) {
       )
   }
   if chunk is None {
+    self.ended = true
     @mttp_core.BodyStream::close(self)
   }
   chunk
@@ -70,6 +79,7 @@ pub fn encode_body(
       origin: body,
       encoder,
       closed: false,
+      ended: false,
     }),
   )
 }

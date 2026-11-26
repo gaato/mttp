@@ -27,11 +27,19 @@ priv struct FaultStream {
   error : @mttp_core.TransportError
   mut remaining : Int32
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
 }
 
 ///|
 impl @mttp_core.BodyStream for FaultStream with fn trailers(self) {
-  self.source.trailers()
+  if self.ended {
+    self.source.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -45,6 +53,7 @@ impl @mttp_core.BodyStream for FaultStream with fn read_some(self) {
   }
   match self.source.read_some() {
     None => {
+      self.ended = true
       @mttp_core.BodyStream::close(self)
       None
     }
@@ -89,5 +98,11 @@ pub fn fail_after(
       detail="negative fault offset",
     )
   }
-  FaultStream::{ source, error, remaining: after_bytes, closed: false, }
+  FaultStream::{
+    source,
+    error,
+    remaining: after_bytes,
+    closed: false,
+    ended: false,
+  }
 }
