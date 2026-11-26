@@ -9,6 +9,15 @@ priv struct ResponseLease {
 }
 
 ///|
+impl @mttp_core.BodyStream for ResponseLease with fn trailers(self) {
+  // The taken reader's, which it gives at its own end.
+  match self.reader {
+    Some(reader) => reader.trailers()
+    None => @mttp_core.Headers::empty()
+  }
+}
+
+///|
 impl @mttp_core.BodyStream for ResponseLease with fn read_some(self) {
   if self.closed {
     return None

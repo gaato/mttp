@@ -474,12 +474,15 @@ pub async fn check_conn(
 ///|
 /// Checks the BodyStream rules on a fresh stream from `make` that should
 /// produce `expected`: nonempty chunks, exactly the expected bytes, a sticky
-/// EOF, idempotent close and EOF after close. A stream that has not ended
-/// within `max_reads` reads fails the check instead of keeping it running.
+/// EOF, idempotent close and EOF after close, and `trailers` (none by
+/// default) only once it returned EOF, kept after close (CONTRACT.md,
+/// BodyStream rule 7). A stream that has not ended within `max_reads`
+/// reads fails the check instead of keeping it running.
 pub async fn check_body_stream_contract(
   make : () -> &@mttp_core.BodyStream,
   expected : Bytes,
   max_reads~ : Int32 = 1024,
+  trailers~ : @mttp_core.Headers = @mttp_core.Headers::empty(),
 ) -> Unit {
   let check = "check_body_stream_contract"
   let stream = make()
@@ -487,6 +490,9 @@ pub async fn check_body_stream_contract(
   let actual = Buffer()
   let mut ended = false
   for _ in 0..<max_reads.max(0) {
+    if stream.trailers().length() > 0 {
+      raise violation(check, "trailers showed before EOF")
+    }
     match stream.read_some() {
       None => {
         ended = true
@@ -510,10 +516,16 @@ pub async fn check_body_stream_contract(
   if stream.read_some() is Some(_) {
     raise violation(check, "EOF is not sticky")
   }
+  if stream.trailers() != trailers {
+    raise violation(check, "the trailers at EOF differ from the expected ones")
+  }
   stream.close()
   stream.close()
   if stream.read_some() is Some(_) {
     raise violation(check, "a read after close must return EOF")
+  }
+  if stream.trailers() != trailers {
+    raise violation(check, "the trailers did not stay after close")
   }
 }
 

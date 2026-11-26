@@ -1,6 +1,7 @@
 ///|
 async test "a closed collected body reads as ended, as BodyStream requires" {
   let body = CollectedBody::{
+    origin: @mttp_core.Body::Empty,
     read: () => Some(b"x"),
     close_: () => (),
     collected: [],
@@ -10,6 +11,7 @@ async test "a closed collected body reads as ended, as BodyStream requires" {
     over: false,
     on_end: _ => abort("not ended"),
     closed: false,
+    ended: false,
   }
   @mttp_core.BodyStream::close(body)
   assert_eq(@mttp_core.BodyStream::read_some(body), None)
@@ -26,6 +28,7 @@ async test "collection gathers small chunks into blocks and stops at the limit w
   }
   let at = Ref(0)
   let body = CollectedBody::{
+    origin: @mttp_core.Body::Empty,
     read: () => {
       guard at.val < chunks.length() else { return None }
       at.val += 1
@@ -39,6 +42,7 @@ async test "collection gathers small chunks into blocks and stops at the limit w
     over: false,
     on_end: bytes => ended.val = Some(bytes),
     closed: false,
+    ended: false,
   }
   while @mttp_core.BodyStream::read_some(body) is Some(_) {
     // A few blocks, not one entry per one-byte chunk.
@@ -50,6 +54,7 @@ async test "collection gathers small chunks into blocks and stops at the limit w
   assert_eq(whole[70003], b'y')
   // Near Int's top the comparison does not wrap: the chunk is refused.
   let near = CollectedBody::{
+    origin: @mttp_core.Body::Empty,
     read: () => Some(b"0123456789"),
     close_: () => (),
     collected: [],
@@ -59,6 +64,7 @@ async test "collection gathers small chunks into blocks and stops at the limit w
     over: false,
     on_end: _ => abort("not ended"),
     closed: false,
+    ended: false,
   }
   @mttp_core.BodyStream::read_some(near) |> ignore
   assert_true(near.over)

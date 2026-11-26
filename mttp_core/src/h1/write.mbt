@@ -214,3 +214,33 @@ pub fn encode_chunk(bytes : BytesView) -> Bytes {
   buffer.write_bytes(b"\r\n")
   buffer.to_bytes()
 }
+
+///|
+/// Encodes the last chunk of the chunked coding with `trailers` as its
+/// trailer section (RFC 9112, section 7.1.2), which ends the body; no
+/// trailers encode as `encode_chunk(b"")` does. Refuses invalid fields and
+/// those that would change framing or routing if a recipient merged them
+/// into the head (Content-Length, Transfer-Encoding, Host, Connection,
+/// Trailer), as the decoder refuses them.
+///
+/// ```mbt check
+/// test {
+///   let trailers = @mttp_core.Headers::of([("x-sum", "1")])
+///   assert_eq(@h1.encode_last_chunk(trailers), b"0\r\nx-sum: 1\r\n\r\n")
+///   assert_eq(@h1.encode_last_chunk(@mttp_core.Headers::empty()), b"0\r\n\r\n")
+/// }
+/// ```
+pub fn encode_last_chunk(
+  trailers : @mttp_core.Headers,
+) -> Bytes raise ParseError {
+  trailers.validate() catch {
+    @mttp_core.TransportError(detail~, ..) => raise malformed(detail)
+  }
+  let fields = trailers.iter().to_array()
+  for field in fields {
+    if forbidden_trailers.contains(field.0) {
+      raise malformed("\{field.0} cannot be a trailer field")
+    }
+  }
+  head_bytes("0", fields[:])
+}

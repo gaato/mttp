@@ -144,6 +144,7 @@ fn own_response(
       reader: stream.take(),
       request,
       closed: false,
+      ended: false,
     }
     {
       ..response,
@@ -315,6 +316,7 @@ fn[S, I, E, O, P, M] Endpoint::pipeline(
           count: 0L,
           failure: stream_failure,
           closed: false,
+          ended: false,
         })
       } else {
         Buffered(

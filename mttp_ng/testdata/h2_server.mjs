@@ -13,6 +13,8 @@
 // answer by path:
 //
 //   /hello              200 "hello"
+//   /trailers           200, the request body and its x-checksum trailer
+//                       ("none" without), then the trailer grpc-status: 0
 //   /echo               200, the request body; x-method, x-fields (the
 //                       request fields as JSON), x-received (body bytes) and
 //                       x-target (the request target as it arrived)
@@ -71,6 +73,17 @@ function answer(req, res) {
     case "hello":
       res.writeHead(200, { "content-type": "text/plain" });
       return res.end("hello");
+    case "trailers": {
+      const chunks = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => {
+        const sum = req.trailers["x-checksum"] ?? "none";
+        res.writeHead(200);
+        res.addTrailers({ "grpc-status": "0" });
+        res.end(Buffer.concat(chunks).toString() + " " + sum);
+      });
+      return;
+    }
     case "echo": {
       const chunks = [];
       req.on("data", (c) => chunks.push(c));

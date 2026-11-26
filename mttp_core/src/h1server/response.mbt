@@ -150,7 +150,20 @@ async fn Session::write_response(
         next = self.produce(reader, cut~, stopped~)
       }
       if chunked {
-        self.wire.write(@h1.encode_chunk(b""), limit)
+        // The producer's trailers end the body, unless the stop cut it:
+        // a cut producer's trailers describe a body that was not sent.
+        // Fields a trailer section cannot carry fail the message as a
+        // producer's failure does, so it does not end as whole.
+        let trailers = if stopped.val {
+          @mttp_core.Headers::empty()
+        } else {
+          reader.trailers()
+        }
+        let last = @h1.encode_last_chunk(trailers) catch {
+          @h1.ParseError(detail~, ..) =>
+            raise @mttp_core.TransportError(kind=Invalid, phase=Body, detail~)
+        }
+        self.wire.write(last, limit)
       }
     }
     _ => ()
