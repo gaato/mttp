@@ -14,7 +14,11 @@ extern "C" fn client_context(trust : Int32, path : Bytes) -> Context = "mttp_ng_
 
 ///|
 #borrow(chain, key)
-extern "C" fn server_context(chain : Bytes, key : Bytes) -> Context = "mttp_ng_h3_server_context"
+extern "C" fn server_context(
+  early : Bool,
+  chain : Bytes,
+  key : Bytes,
+) -> Context = "mttp_ng_h3_server_context"
 
 ///|
 #borrow(context)
@@ -25,14 +29,23 @@ extern "C" fn context_failed(context : Context) -> Bool = "mttp_ng_h3_context_fa
 extern "C" fn context_error(context : Context) -> Bytes = "mttp_ng_h3_context_error"
 
 ///|
-#borrow(context, host, local_address, remote_address, values)
+#borrow(context, host, local_address, remote_address, values, resumption)
 extern "C" fn client_new(
   context : Context,
   host : Bytes,
   local_address : Bytes,
   remote_address : Bytes,
   values : FixedArray[Int64],
+  resumption : Bytes,
 ) -> Raw = "mttp_ng_h3_client_new"
+
+///|
+#borrow(raw)
+extern "C" fn raw_resumption(raw : Raw) -> Bytes = "mttp_ng_h3_resumption"
+
+///|
+#borrow(raw)
+extern "C" fn raw_early(raw : Raw) -> Bool = "mttp_ng_h3_early"
 
 ///|
 #borrow(context, data, local_address, remote_address, values, keys)
@@ -263,18 +276,34 @@ pub fn ClientQuic::new(
 
 ///|
 /// What a server connection presents: a PEM certificate chain (leaf first)
-/// and its private key. ALPN is `h3`; no session tickets, so no 0-RTT.
+/// and its private key. ALPN is `h3`. Without `early_data`, no session
+/// tickets, so no 0-RTT.
 pub struct ServerQuic {
   priv context : Context
 }
 
 ///|
 /// A server configuration.
+///
+/// With `early_data`, each connection gets a session ticket good for 0-RTT
+/// on a later one (RFC 9001, section 4.6), stamped with the QUIC version
+/// and the connection's settings: a ticket from a server whose settings
+/// differ resumes with a full handshake. Each ticket is taken once, from
+/// OpenSSL's session cache of at most 4096 (a second use, the replay of
+/// one connection's early data, gets a full handshake); a server spread
+/// over several processes or hosts shares no cache, so early requests can
+/// still be replayed there, which is why only safe ones reach a handler
+/// (`h3server.serve`, RFC 8470).
 pub fn ServerQuic::from_pem(
   chain~ : String,
   key~ : String,
+  early_data~ : Bool = false,
 ) -> ServerQuic raise H3Error {
-  let context = server_context(@utf8.encode(chain), @utf8.encode(key))
+  let context = server_context(
+    early_data,
+    @utf8.encode(chain),
+    @utf8.encode(key),
+  )
   if context_failed(context) {
     raise H3Error(code=0, detail=@utf8.decode_lossy(context_error(context)))
   }
@@ -359,12 +388,21 @@ fn opened(raw : Raw) -> QuicConn raise H3Error {
 /// (`host:port`, IPv6 in brackets), from `local_address` (by default the
 /// any-address of the remote's family, enough for a connected UDP socket).
 /// Its first datagrams come from the first `datagrams`.
+///
+/// With `resumption`, an earlier connection's to the same server,
+/// the session resumes, and when its ticket allows early data the
+/// connection takes requests at once, sent in 0-RTT before the handshake
+/// completes (`early` says so while it lasts). The server may reject them
+/// (`EarlyDataRejected`): their streams are gone, and the requests are the
+/// caller's to send again over 1-RTT. A resumption that no longer applies
+/// resumes nothing, and the connection makes a full handshake.
 pub fn QuicConn::client(
   quic : ClientQuic,
   host~ : String,
   local_address~ : String = "",
   remote_address~ : String,
   settings~ : H3Settings = H3Settings::default(),
+  resumption? : Bytes,
 ) -> QuicConn raise H3Error {
   opened(
     client_new(
@@ -373,8 +411,25 @@ pub fn QuicConn::client(
       @utf8.encode(local_address),
       @utf8.encode(remote_address),
       values(settings),
+      resumption.unwrap_or(b""),
     ),
   )
+}
+
+///|
+/// The session ticket the server sent last, with its transport parameters,
+/// for `QuicConn::client(resumption=...)` to the same server; `None` before a
+/// ticket arrived (`Ticket`). A ticket is good for one resumption.
+pub fn QuicConn::resumption(self : QuicConn) -> Bytes? {
+  nonempty(raw_resumption(self.raw))
+}
+
+///|
+/// Whether requests may go in 0-RTT now: the connection resumed with early
+/// data, its handshake has not completed, and the server has not rejected
+/// them.
+pub fn QuicConn::early(self : QuicConn) -> Bool {
+  raw_early(self.raw)
 }
 
 ///|

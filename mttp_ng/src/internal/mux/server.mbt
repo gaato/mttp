@@ -36,11 +36,17 @@ pub(all) struct ServerStream {
   mut sent : Int32
   /// Why the request body cannot be read on (too large, too slow).
   mut failure : @mttp_core.TransportError?
+  /// The request came in 0-RTT early data, which an attacker can replay.
+  early : Bool
 }
 
 ///|
 /// A stream whose request head arrived, ending its half with `ended`.
-pub fn ServerStream::new(id : Int64, ended~ : Bool) -> ServerStream {
+pub fn ServerStream::new(
+  id : Int64,
+  ended~ : Bool,
+  early~ : Bool = false,
+) -> ServerStream {
   {
     id,
     body: [],
@@ -50,8 +56,19 @@ pub fn ServerStream::new(id : Int64, ended~ : Bool) -> ServerStream {
     sent_end: false,
     sent: 0,
     failure: None,
+    early,
   }
 }
+
+///|
+/// Set on a request that came in 0-RTT early data, which an attacker who
+/// saw it can replay (RFC 8470, RFC 9001 section 9.2). Only requests of a
+/// safe method get this far (GET, HEAD, OPTIONS, TRACE: RFC 9110, section
+/// 9.2.1); a handler for which even those must not be repeated answers
+/// 425 Too Early, which a client sends again after the handshake.
+pub let early_data : @mttp_core.AttributeKey[Bool] = @mttp_core.AttributeKey::new(
+  "early_data",
+)
 
 ///|
 /// Body bytes arrived: kept for the handler, or, past `limit`, dropped with
@@ -260,6 +277,13 @@ fn ServerContext::request(
   if meth == Some("CONNECT") {
     return Err(501)
   }
+  // A request in early data may be a replay: only a safe method is served
+  // before the handshake proves the client fresh; any other is answered
+  // 425 Too Early, which a client sends again over 1-RTT (RFC 8470,
+  // section 5.2).
+  if stream.early && !(meth is Some("GET" | "HEAD" | "OPTIONS" | "TRACE")) {
+    return Err(425)
+  }
   guard meth is Some(meth) && path is Some(path) else { return Err(400) }
   let authority = match authority {
     Some(authority) => authority
@@ -307,6 +331,9 @@ fn ServerContext::request(
   }
   if self.background is Some(schedule) {
     attributes = attributes.put(@mttp_core.background, schedule)
+  }
+  if stream.early {
+    attributes = attributes.put(early_data, true)
   }
   Ok({
     ..@mttp_core.Request::new(

@@ -60,8 +60,13 @@
 #define EV_TOO_LARGE 12
 #define EV_HANDSHAKE 14 // the handshake completed
 #define EV_CLOSE 15     // the connection closed: error code, whether by the peer
+#define EV_EARLY 16     // stream: data of it arrived in 0-RTT (a server's)
+#define EV_EARLY_REJECTED 17 // the server rejected this client's early data
+#define EV_TICKET 18    // a session ticket arrived: `resumption` has it
 
 #define MAX_DATAGRAM 1452
+// The tickets a server's internal session cache keeps for single use.
+#define SESSION_CACHE 4096
 // The length of the connection IDs a server issues, so that a short header
 // packet's DCID can be read before its connection is known.
 #define SERVER_CIDLEN 17
@@ -136,8 +141,17 @@ static moonbit_bytes_t to_bytes(const char *text) {
 
 typedef struct {
   SSL_CTX *ctx;
+  int early; // a server's: it issues tickets and accepts early data
   char error[ERROR_CAPACITY];
 } context;
+
+// Defined with the connections, which they read.
+static int gen_ticket_cb(SSL *ssl, void *arg);
+static SSL_TICKET_RETURN decrypt_ticket_cb(SSL *ssl, SSL_SESSION *session,
+                                           const unsigned char *keyname,
+                                           size_t keynamelen,
+                                           SSL_TICKET_STATUS status, void *arg);
+static int new_session_cb(SSL *ssl, SSL_SESSION *session);
 
 typedef struct {
   context *c;
@@ -227,6 +241,11 @@ MOONBIT_FFI_EXPORT context_box *mttp_ng_h3_client_context(int32_t trust,
                                                           moonbit_bytes_t path) {
   context *c = context_new(0);
   if (!c || !c->ctx) return box_context(c);
+  // A ticket the server sends goes to its connection (`new_session_cb`),
+  // which keeps it for `resumption`; OpenSSL keeps none itself.
+  SSL_CTX_set_session_cache_mode(c->ctx, SSL_SESS_CACHE_CLIENT |
+                                             SSL_SESS_CACHE_NO_INTERNAL);
+  SSL_CTX_sess_set_new_cb(c->ctx, new_session_cb);
   switch (trust) {
   case 0:
     SSL_CTX_set_verify(c->ctx, SSL_VERIFY_PEER, NULL);
@@ -271,7 +290,8 @@ static int select_h3(SSL *ssl, const unsigned char **out, unsigned char *outlen,
   return SSL_TLSEXT_ERR_OK;
 }
 
-MOONBIT_FFI_EXPORT context_box *mttp_ng_h3_server_context(moonbit_bytes_t chain,
+MOONBIT_FFI_EXPORT context_box *mttp_ng_h3_server_context(int32_t early,
+                                                          moonbit_bytes_t chain,
                                                           moonbit_bytes_t key) {
   context *c = context_new(1);
   if (!c || !c->ctx) return box_context(c);
@@ -311,10 +331,27 @@ MOONBIT_FFI_EXPORT context_box *mttp_ng_h3_server_context(moonbit_bytes_t chain,
     return box_context(c);
   }
   SSL_CTX_set_alpn_select_cb(c->ctx, select_h3, NULL);
-  // No session tickets and so no 0-RTT: the server never sees early data.
-  SSL_CTX_set_num_tickets(c->ctx, 0);
-  SSL_CTX_set_options(c->ctx, SSL_OP_NO_TICKET);
-  SSL_CTX_set_max_early_data(c->ctx, 0);
+  if (!early) {
+    // No session tickets and so no 0-RTT: the server never sees early data.
+    SSL_CTX_set_num_tickets(c->ctx, 0);
+    SSL_CTX_set_options(c->ctx, SSL_OP_NO_TICKET);
+    SSL_CTX_set_max_early_data(c->ctx, 0);
+    return box_context(c);
+  }
+  // One ticket per connection, good for early data. A nonzero maximum makes
+  // OpenSSL keep each ticket in its internal session cache and take it once
+  // (SSL_read_early_data(3), REPLAY PROTECTION): a second use of a ticket
+  // gets a full handshake and its early data is dropped, within this
+  // context. QUIC asks for the maximum to be 0xffffffff (RFC 9001, section
+  // 4.6.1). The cache holds at most SESSION_CACHE tickets; an evicted one
+  // resumes nothing.
+  c->early = 1;
+  SSL_CTX_set_num_tickets(c->ctx, 1);
+  SSL_CTX_set_max_early_data(c->ctx, UINT32_MAX);
+  static const unsigned char sid[] = "gaato/mttp_ng h3";
+  SSL_CTX_set_session_id_context(c->ctx, sid, sizeof sid - 1);
+  SSL_CTX_sess_set_cache_size(c->ctx, SESSION_CACHE);
+  SSL_CTX_set_session_ticket_cb(c->ctx, gen_ticket_cb, decrypt_ticket_cb, NULL);
   return box_context(c);
 }
 
@@ -405,6 +442,18 @@ typedef struct {
   // The key of this end's stateless reset tokens: its listener's for a
   // server, a random one for a client (no reset is ever sent for it).
   uint8_t reset_key[KEY_BYTES];
+  // The settings it was made with, which a server stamps into its tickets
+  // and requires of a ticket for its early data.
+  int64_t values[6];
+  // A client's: it sent early data (`early`), and the server's answer.
+  int early;
+  int early_rejected;
+  // A client's latest ticket (DER) and the server's transport parameters
+  // that go with it, for `resumption`.
+  uint8_t *ticket;
+  size_t ticket_len;
+  uint8_t tp[256];
+  size_t tp_len;
   struct header_count *headers; // header sections being received
   uint64_t max_streams_bidi;
   char error[ERROR_CAPACITY];
@@ -422,6 +471,13 @@ static void qconn_free(qconn *q) {
   // freed. Debug builds of ngtcp2 (Homebrew's) abort there on an assertion;
   // release builds read freed memory.
   if (q->ssl) SSL_set_app_data(q->ssl, NULL);
+  // QUIC ends a connection with CONNECTION_CLOSE, never a TLS shutdown;
+  // OpenSSL takes an SSL freed without one for a bad session and drops it
+  // from the session cache, where a server's early data needs its ticket to
+  // be (replay protection takes each ticket from there once). A completed
+  // handshake's session is good.
+  if (q->ssl && q->handshake)
+    SSL_set_shutdown(q->ssl, SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN);
   if (q->h3) nghttp3_conn_del(q->h3);
   if (q->conn) ngtcp2_conn_del(q->conn);
   q->conn = NULL;
@@ -437,6 +493,7 @@ static void qconn_free(qconn *q) {
   free(q->events.data);
   free(q->out.data);
   free(q->close_pkt);
+  free(q->ticket);
   free(q);
 }
 
@@ -568,6 +625,12 @@ static int recv_stream_data_cb(ngtcp2_conn *conn, uint32_t flags, int64_t stream
   (void)stream_user;
   qconn *q = user;
   if (!q->h3) return 0;
+  // A server learns which requests came in early data, which a replay
+  // could repeat (RFC 8470): before nghttp3 reports the request.
+  if (q->server && (flags & NGTCP2_STREAM_DATA_FLAG_0RTT)) {
+    put_u8(&q->events, EV_EARLY);
+    put_i64(&q->events, stream);
+  }
   nghttp3_ssize n = nghttp3_conn_read_stream(
       q->h3, stream, data, datalen, (flags & NGTCP2_STREAM_DATA_FLAG_FIN) != 0);
   if (n < 0) {
@@ -934,11 +997,127 @@ static int setup_h3(qconn *q) {
   return 0;
 }
 
+// --- 0-RTT -------------------------------------------------------------------
+
+// What a server stamps into a ticket and requires of one for early data:
+// the QUIC version and its settings. Early data obeys the limits of the
+// connection the ticket came from (RFC 9000, section 7.4.1), so a server
+// whose settings changed since takes the ticket for a full handshake only.
+static size_t ticket_stamp(qconn *q, uint8_t *out) {
+#if NGTCP2_VERSION_NUM >= 0x011700
+  uint32_t version = ngtcp2_conn_get_negotiated_version2(q->conn);
+#else
+  uint32_t version = ngtcp2_conn_get_negotiated_version(q->conn);
+#endif
+  memcpy(out, &version, sizeof version);
+  memcpy(out + sizeof version, q->values, sizeof q->values);
+  return sizeof version + sizeof q->values;
+}
+
+static int gen_ticket_cb(SSL *ssl, void *arg) {
+  (void)arg;
+  ngtcp2_crypto_conn_ref *ref = SSL_get_app_data(ssl);
+  if (!ref) return 0;
+  qconn *q = ref->user_data;
+  uint8_t stamp[64];
+  size_t n = ticket_stamp(q, stamp);
+  return SSL_SESSION_set1_ticket_appdata(SSL_get0_session(ssl), stamp, n);
+}
+
+static SSL_TICKET_RETURN decrypt_ticket_cb(SSL *ssl, SSL_SESSION *session,
+                                           const unsigned char *keyname,
+                                           size_t keynamelen,
+                                           SSL_TICKET_STATUS status, void *arg) {
+  (void)keyname;
+  (void)keynamelen;
+  (void)arg;
+  if (status == SSL_TICKET_EMPTY || status == SSL_TICKET_NO_DECRYPT)
+    return SSL_TICKET_RETURN_IGNORE_RENEW;
+  int renew = status == SSL_TICKET_SUCCESS_RENEW;
+  ngtcp2_crypto_conn_ref *ref = SSL_get_app_data(ssl);
+  void *data;
+  size_t len;
+  uint8_t stamp[64];
+  if (!ref || !SSL_SESSION_get0_ticket_appdata(session, &data, &len) ||
+      len != ticket_stamp(ref->user_data, stamp) || memcmp(data, stamp, len) != 0)
+    return renew ? SSL_TICKET_RETURN_IGNORE_RENEW : SSL_TICKET_RETURN_IGNORE;
+  return renew ? SSL_TICKET_RETURN_USE_RENEW : SSL_TICKET_RETURN_USE;
+}
+
+// A client's ticket, with the server's transport parameters that early
+// data on it must keep to (RFC 9000, section 7.4.1).
+static int new_session_cb(SSL *ssl, SSL_SESSION *session) {
+  ngtcp2_crypto_conn_ref *ref = SSL_get_app_data(ssl);
+  if (!ref) return 0;
+  qconn *q = ref->user_data;
+  if (!q->conn) return 0;
+  int n = i2d_SSL_SESSION(session, NULL);
+  if (n <= 0) return 0;
+  uint8_t *der = malloc((size_t)n);
+  if (!der) return 0;
+  uint8_t *p = der;
+  i2d_SSL_SESSION(session, &p);
+#if NGTCP2_VERSION_NUM >= 0x011700
+  ngtcp2_ssize tp = ngtcp2_conn_encode_0rtt_transport_params2(q->conn, q->tp,
+                                                               sizeof q->tp);
+#else
+  ngtcp2_ssize tp = ngtcp2_conn_encode_0rtt_transport_params(q->conn, q->tp,
+                                                              sizeof q->tp);
+#endif
+  if (tp < 0) {
+    free(der);
+    return 0;
+  }
+  free(q->ticket);
+  q->ticket = der;
+  q->ticket_len = (size_t)n;
+  q->tp_len = (size_t)tp;
+  put_u8(&q->events, EV_TICKET);
+  // 0: OpenSSL keeps no reference to the session.
+  return 0;
+}
+
+// The server rejected this client's early data: ngtcp2 discards the
+// streams opened in 0-RTT, so the HTTP/3 layer over them goes too and is
+// made again over 1-RTT; their requests are MoonBit's to send again.
+static int early_data_rejected_cb(ngtcp2_conn *conn, void *user) {
+  (void)conn;
+  qconn *q = user;
+  if (q->h3) nghttp3_conn_del(q->h3);
+  q->h3 = NULL;
+  while (q->headers) header_count_remove(&q->headers, q->headers->stream);
+  outq *o = q->queues;
+  while (o) {
+    outq *next = o->next;
+    outq_free(o);
+    o = next;
+  }
+  q->queues = NULL;
+  q->early_rejected = 1;
+  put_u8(&q->events, EV_EARLY_REJECTED);
+  return 0;
+}
+
+// A server's HTTP/3 layer is made with its 1-RTT keys, before the
+// handshake completes, so that requests a client sent in 0-RTT find it.
+static int recv_tx_key_cb(ngtcp2_conn *conn, ngtcp2_encryption_level level,
+                          void *user) {
+  (void)conn;
+  qconn *q = user;
+  if (level != NGTCP2_ENCRYPTION_LEVEL_1RTT || !q->server || q->h3) return 0;
+  return setup_h3(q) != 0 ? NGTCP2_ERR_CALLBACK_FAILURE : 0;
+}
+
 static int handshake_completed_cb(ngtcp2_conn *conn, void *user) {
   (void)conn;
   qconn *q = user;
   q->handshake = 1;
-  if (setup_h3(q) != 0) return NGTCP2_ERR_CALLBACK_FAILURE;
+  // OpenSSL tells a client whether the server took its early data only
+  // now; ngtcp2 then discards the 0-RTT streams (`early_data_rejected_cb`).
+  if (q->early && SSL_get_early_data_status(q->ssl) != SSL_EARLY_DATA_ACCEPTED &&
+      ngtcp2_conn_tls_early_data_rejected(q->conn) != 0)
+    return NGTCP2_ERR_CALLBACK_FAILURE;
+  if (!q->h3 && setup_h3(q) != 0) return NGTCP2_ERR_CALLBACK_FAILURE;
   put_u8(&q->events, EV_HANDSHAKE);
   return 0;
 }
@@ -975,6 +1154,11 @@ static void fill_callbacks(ngtcp2_callbacks *cb, int server) {
   cb->rand = rand_cb;
   cb->get_new_connection_id = new_cid_cb;
   cb->handshake_completed = handshake_completed_cb;
+  if (server) {
+    cb->recv_tx_key = recv_tx_key_cb;
+  } else {
+    cb->tls_early_data_rejected = early_data_rejected_cb;
+  }
   cb->recv_stream_data = recv_stream_data_cb;
   cb->acked_stream_data_offset = acked_offset_cb;
   cb->stream_close = stream_close_cb;
@@ -1010,6 +1194,7 @@ static qconn *qconn_new(int server, const int64_t *values) {
   q->low = values[4] > 0 ? (size_t)values[4] : 16384;
   q->max_header_bytes = values[3] > 0 ? (size_t)values[3] : 0;
   q->max_streams_bidi = (uint64_t)values[0];
+  memcpy(q->values, values, sizeof q->values);
   if (RAND_bytes(q->reset_key, KEY_BYTES) != 1) {
     free(q);
     return NULL;
@@ -1057,9 +1242,40 @@ static int is_ip_literal(const char *host) {
 
 // A client connection to `host` (SNI and the certificate's identity) at
 // `remote`, from `local`, both `host:port` with IPv6 in brackets.
+// Resumes the session in `resume` (`mttp_ng_h3_resumption`'s: the ticket's
+// length in four bytes, the ticket, then the server's transport
+// parameters) and, when the ticket allows early data and the parameters
+// decode, sends requests in 0-RTT: the HTTP/3 layer is made now, over the
+// remembered parameters. A resumption that does not parse resumes nothing;
+// the connection goes on with a full handshake.
+static void resume_session(qconn *q, moonbit_bytes_t resume) {
+  size_t len = (size_t)Moonbit_array_length(resume);
+  if (len < 4) return;
+  size_t ticket_len = ((size_t)resume[0] << 24) | ((size_t)resume[1] << 16) |
+                      ((size_t)resume[2] << 8) | resume[3];
+  if (ticket_len > len - 4) return;
+  const uint8_t *p = resume + 4;
+  SSL_SESSION *session = d2i_SSL_SESSION(NULL, &p, (long)ticket_len);
+  if (!session) {
+    ERR_clear_error();
+    return;
+  }
+  int ok = SSL_set_session(q->ssl, session);
+  uint32_t max_early = SSL_SESSION_get_max_early_data(session);
+  SSL_SESSION_free(session);
+  if (!ok || max_early == 0) return;
+  const uint8_t *tp = resume + 4 + ticket_len;
+  if (ngtcp2_conn_decode_and_set_0rtt_transport_params(
+          q->conn, tp, len - 4 - ticket_len) != 0)
+    return;
+  if (setup_h3(q) != 0) return;
+  SSL_set_quic_tls_early_data_enabled(q->ssl, 1);
+  q->early = 1;
+}
+
 MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_client_new(
     context_box *cb, moonbit_bytes_t host_b, moonbit_bytes_t local_b,
-    moonbit_bytes_t remote_b, int64_t *values) {
+    moonbit_bytes_t remote_b, int64_t *values, moonbit_bytes_t resume) {
   qconn *q = qconn_new(0, values);
   if (!q) return box(NULL);
   config c = {values[0], values[1], values[2], values[3], values[4], values[5]};
@@ -1120,6 +1336,7 @@ MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_client_new(
     goto done;
   }
   ngtcp2_conn_set_tls_native_handle(q->conn, q->ossl);
+  if (Moonbit_array_length(resume) > 0) resume_session(q, resume);
 done:
   free(host);
   free(local);
@@ -1200,6 +1417,7 @@ MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_server_new(
     record_error(q->error, "cannot configure the QUIC TLS session");
     goto done;
   }
+  if (cb->c->early) SSL_set_quic_tls_early_data_enabled(q->ssl, 1);
   ngtcp2_cid scid;
   scid.datalen = SERVER_CIDLEN;
   RAND_bytes(scid.data, (int)scid.datalen);
@@ -1875,6 +2093,33 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_answer_initial(
   }
   if (n <= 0) return moonbit_make_bytes(0, 0);
   return copy_out(buf, (size_t)n);
+}
+
+// --- 0-RTT --------------------------------------------------------------------
+
+// The client's latest ticket and the server's transport parameters, for a
+// later connection's `resume`: the ticket's length in four bytes, the
+// ticket, the parameters. Empty before a ticket came.
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_resumption(qconn_box *b) {
+  qconn *q = b->q;
+  if (!q || !q->ticket) return moonbit_make_bytes(0, 0);
+  size_t n = 4 + q->ticket_len + q->tp_len;
+  moonbit_bytes_t out = moonbit_make_bytes((int32_t)n, 0);
+  out[0] = (uint8_t)(q->ticket_len >> 24);
+  out[1] = (uint8_t)(q->ticket_len >> 16);
+  out[2] = (uint8_t)(q->ticket_len >> 8);
+  out[3] = (uint8_t)q->ticket_len;
+  memcpy(out + 4, q->ticket, q->ticket_len);
+  memcpy(out + 4 + q->ticket_len, q->tp, q->tp_len);
+  return out;
+}
+
+// 1 while a client may send requests in 0-RTT: it resumed with early data,
+// the handshake has not completed, and the server has not rejected it.
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_early(qconn_box *b) {
+  qconn *q = b->q;
+  return q && q->conn && !q->closed && q->early && !q->handshake &&
+         !q->early_rejected;
 }
 
 // --- a connection's identity and end ---------------------------------------

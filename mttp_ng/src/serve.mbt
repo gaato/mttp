@@ -37,7 +37,10 @@ pub extend ServeError with Show::{output, to_string}
 /// with `h2c` also HTTP/2 by prior knowledge. `limits` applies to every
 /// protocol; `h2_limits` and `h3_settings` give HTTP/2's and HTTP/3's
 /// streams and windows. `on_listen` hears the TCP address once both
-/// listeners are bound.
+/// listeners are bound. With `h3` and `early_data`, HTTP/3 clients may
+/// resume in 0-RTT (`@h3.ServerQuic::from_pem`); a request in early data
+/// reaches the handler only with a safe method, marked
+/// `@h3server.early_data`, and any other is answered 425 Too Early.
 ///
 /// Cancelling it stops it: connections of every protocol are told to go
 /// away and get `limits.drain_ms` to finish what is in flight.
@@ -48,6 +51,7 @@ pub async fn serve(
   key? : String,
   h2c~ : Bool = false,
   h3~ : Bool = false,
+  early_data~ : Bool = false,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
   h2_limits~ : @h2server.H2Limits = @h2server.H2Limits::default(),
   h3_settings~ : @h3.H3Settings = @h3.H3Settings::default(),
@@ -62,7 +66,7 @@ pub async fn serve(
       }
       let quic = if h3 {
         Some(
-          @h3.ServerQuic::from_pem(chain=cert, key~) catch {
+          @h3.ServerQuic::from_pem(chain=cert, key~, early_data~) catch {
             error => raise Config(error.to_string())
           },
         )
