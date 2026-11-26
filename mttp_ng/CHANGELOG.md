@@ -24,6 +24,15 @@ never does.
   `h3` (HTTP/2 and QUIC with HTTP/3 without I/O, over nghttp2, ngtcp2 and
   nghttp3), `h2client` and `h3client` (`Backend`s), `h2server` and
   `h3server`.
+- The HTTP/3 server routes datagrams by connection ID, so a client may
+  change its address; sends Retry once a quarter of `max_connections` are
+  open handshakes; keeps a closed connection's IDs for its closing or
+  draining period, sending a lost CONNECTION_CLOSE again; and answers a
+  packet for a connection it no longer has with a Stateless Reset. `h3`
+  has what a server on a socket of its own needs for that:
+  `QuicConn::read(from?)`, `addressed_datagrams`, `connection_ids`,
+  `remote_address`, `close_datagram`, `closed_by_peer`, `pto_ms`,
+  `destination_cid`, `stateless_reset` and `answer_initial`.
 - `build.js`, run under Node when a program that imports the module
   builds, finds the libraries with pkg-config and puts them on that
   program's link line.
