@@ -4,7 +4,7 @@
 // an HTTP proxy, all on 127.0.0.1; and, for the HTTP/1.1 fallback of
 // gaato/mttp_ng, a cleartext HTTP/1.1 listener (h1) and a TLS one that
 // offers only http/1.1 by ALPN (tls11), with the same paths. It prints
-// {"h2c":PORT,"tls":PORT,"proxy":PORT,"h1":PORT,"tls11":PORT} on one line
+// {"h2c":PORT,"tls":PORT,"proxy":PORT,"tlsproxy":PORT,"h1":PORT,"tls11":PORT} on one line
 // once all listen. The proxy tunnels CONNECT to the named port of 127.0.0.1 and
 // forwards absolute-form requests there, adding x-via-proxy: yes to the
 // forwarded answers; it answers 407 to a CONNECT or request for the host
@@ -206,8 +206,9 @@ const tls11 = https.createServer(
   answer,
 );
 // The proxy: CONNECT tunnels and absolute-form forwarding, to this machine
-// only; the host deny.invalid is refused with 407.
-const proxy = http.createServer((req, res) => {
+// only; the host deny.invalid is refused with 407. `tlsproxy` is the same
+// proxy over TLS, with the test certificate (an https:// proxy).
+function forward(req, res) {
   const target = new URL(req.url);
   if (target.hostname === "deny.invalid") {
     res.writeHead(407, { "proxy-authenticate": "Basic" });
@@ -235,8 +236,8 @@ const proxy = http.createServer((req, res) => {
     res.end();
   });
   req.pipe(upstream);
-});
-proxy.on("connect", (req, socket, head) => {
+}
+function tunnel(req, socket, head) {
   const [host, port] = req.url.split(":");
   if (host === "deny.invalid") {
     socket.end("HTTP/1.1 407 Proxy Authentication Required\r\ncontent-length: 0\r\n\r\n");
@@ -250,11 +251,22 @@ proxy.on("connect", (req, socket, head) => {
   });
   upstream.on("error", () => socket.destroy());
   socket.on("error", () => upstream.destroy());
-});
+}
+const proxy = http.createServer(forward);
+proxy.on("connect", tunnel);
+const tlsproxy = https.createServer(
+  {
+    key: fs.readFileSync(path.join(here, "localhost.key")),
+    cert: fs.readFileSync(path.join(here, "localhost.pem")),
+  },
+  forward,
+);
+tlsproxy.on("connect", tunnel);
 await Promise.all([
   new Promise((ok) => h2c.listen(0, "127.0.0.1", ok)),
   new Promise((ok) => tls.listen(0, "127.0.0.1", ok)),
   new Promise((ok) => proxy.listen(0, "127.0.0.1", ok)),
+  new Promise((ok) => tlsproxy.listen(0, "127.0.0.1", ok)),
   new Promise((ok) => h1.listen(0, "127.0.0.1", ok)),
   new Promise((ok) => tls11.listen(0, "127.0.0.1", ok)),
 ]);
@@ -263,6 +275,7 @@ process.stdout.write(
     h2c: h2c.address().port,
     tls: tls.address().port,
     proxy: proxy.address().port,
+    tlsproxy: tlsproxy.address().port,
     h1: h1.address().port,
     tls11: tls11.address().port,
   }) + "\n",

@@ -91,6 +91,9 @@ pub let connection_fields : Array[String] = [
 /// The request's header block: the pseudo fields, then the request's own
 /// fields with lowercase names. A Host field becomes `:authority`;
 /// connection-specific fields are left out, and TE only as `trailers`.
+/// The request's own `Proxy-Authorization` is left out too, as h1client
+/// drops it on every route: a proxy's credentials go on its CONNECT, never
+/// to the origin through its tunnel (Codex's review of #62).
 /// Content-Length is written for a body of known length, as the HTTP/1
 /// client frames it: an empty body only for POST, PUT and PATCH.
 pub fn request_fields(
@@ -107,7 +110,8 @@ pub fn request_fields(
   for field in request.headers.iter() {
     let (name, value) = field
     let name = name.to_lower()
-    if connection_fields.contains(name) || name == "content-length" {
+    if connection_fields.contains(name) ||
+      name is ("content-length" | "proxy-authorization") {
       continue
     }
     if name == "te" && value.trim(chars=" \t").to_lower() != "trailers" {

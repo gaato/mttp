@@ -37,6 +37,9 @@ never does.
 - The HTTP/3 client tells the server with CONNECTION_CLOSE whenever it
   closes a connection, `close()` of the backend included, so the server's
   side ends at once rather than at its idle timeout.
+- An `https` origin behind a proxy gets HTTP/2 through the proxy's tunnel
+  (`@h1client.https_tunnel`); one that chooses http/1.1 there, and `http`
+  URLs with a proxy, go over HTTP/1.1 through it, as before.
 - 0-RTT over HTTP/3, off by default: `ServerQuic::from_pem(early_data?)`
   (and `serve(early_data?)`) issues session tickets; a request in early
   data reaches a handler only with a safe method, marked

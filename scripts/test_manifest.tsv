@@ -46,10 +46,10 @@ gaato/mttp_core	gaato/mttp_core/h1	js	59
 gaato/mttp_core	gaato/mttp_core/h1	native	59
 gaato/mttp_core	gaato/mttp_core/h1	wasm	59
 gaato/mttp_core	gaato/mttp_core/h1	wasm-gc	59
-gaato/mttp_core	gaato/mttp_core/h1client	js	128
-gaato/mttp_core	gaato/mttp_core/h1client	native	128
-gaato/mttp_core	gaato/mttp_core/h1client	wasm	128
-gaato/mttp_core	gaato/mttp_core/h1client	wasm-gc	128
+gaato/mttp_core	gaato/mttp_core/h1client	js	132
+gaato/mttp_core	gaato/mttp_core/h1client	native	132
+gaato/mttp_core	gaato/mttp_core/h1client	wasm	132
+gaato/mttp_core	gaato/mttp_core/h1client	wasm-gc	132
 gaato/mttp_core	gaato/mttp_core/h1server	js	111
 gaato/mttp_core	gaato/mttp_core/h1server	native	111
 gaato/mttp_core	gaato/mttp_core/h1server	wasm	111
@@ -243,8 +243,8 @@ gaato/mttp_core	gaato/mttp_core/attempt	wasm	11
 gaato/mttp_core	gaato/mttp_core/attempt	wasm-gc	11
 gaato/mttp_ng	gaato/mttp_ng	native	8
 gaato/mttp_ng	gaato/mttp_ng/h2	native	15
-gaato/mttp_ng	gaato/mttp_ng/h2client	native	23
-gaato/mttp_ng	gaato/mttp_ng/h2server	native	23
+gaato/mttp_ng	gaato/mttp_ng/h2client	native	25
+gaato/mttp_ng	gaato/mttp_ng/h2server	native	24
 gaato/mttp_ng	gaato/mttp_ng/h3	native	13
 gaato/mttp_ng	gaato/mttp_ng/h3client	native	9
 gaato/mttp_ng	gaato/mttp_ng/h3server	native	37

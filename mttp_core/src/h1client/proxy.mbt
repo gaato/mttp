@@ -408,3 +408,47 @@ async fn open_tunnel(
     detail="invalid informational answer to CONNECT",
   )
 }
+
+///|
+/// The byte stream to the `https` origin of `url` that `config`'s proxies
+/// give it, as this client would route it: through the proxy configured for
+/// https (HTTP CONNECT, over TLS to an `https://` proxy, with the proxy's
+/// credentials; or SOCKS5), the proxy's answer read within
+/// `config.head_limits`, all in phase Dial. `None` when the origin goes
+/// direct: no proxy for https, or `no_proxy` bypasses it. The caller runs
+/// the origin's TLS inside the tunnel, with the ALPN it chooses, so that an
+/// HTTP/2 client reaches an origin through the proxies this client uses.
+///
+/// Raises as a send through the proxy would: `Invalid` in phase Pool for a
+/// URL that is not absolute `https`, `Protocol` in phase Pool for a proxy
+/// setting that does not parse, `Proxy(status)` in phase Dial when the
+/// proxy refuses, `Protocol` in phase Dial for a malformed answer.
+pub async fn https_tunnel(
+  dialer : &@rt.Dialer,
+  config : ClientConfig,
+  url~ : String,
+  agent? : String,
+) -> &@rt.Conn? raise @mttp_core.TransportError {
+  let target = target(@mttp_core.Request::get(url))
+  if !target.secure {
+    raise invalid("an https tunnel needs an https URL")
+  }
+  guard Proxies::new(config.proxy).route(target) is Tunnel(proxy) else {
+    return None
+  }
+  let wire = Wire::dial(
+    dialer,
+    proxy.host,
+    proxy.port,
+    proxy.secure,
+    PhaseLog::none(),
+    report_tls=false,
+  )
+  errdefer wire.close()
+  if proxy.socks {
+    open_socks_tunnel(wire, target, proxy.socks_auth)
+  } else {
+    open_tunnel(wire, target, proxy, agent, config.head_limits)
+  }
+  Some(wire.conn)
+}

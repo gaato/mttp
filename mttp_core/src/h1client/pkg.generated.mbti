@@ -9,6 +9,8 @@ import {
 }
 
 // Values
+pub async fn https_tunnel(&@rt.Dialer, ClientConfig, url~ : String, agent? : String) -> &@rt.Conn? raise @mttp_core.TransportError
+
 pub let stale_resend : @mttp_core.AttributeKey[Bool]
 
 // Errors
