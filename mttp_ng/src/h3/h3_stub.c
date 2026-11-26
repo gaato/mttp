@@ -1909,6 +1909,15 @@ MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_pto_ms(qconn_box *b) {
   return ms > 0 ? ms : 1;
 }
 
+// Sends `data` on the connected socket `fd` without waiting, for a client
+// that closes a connection synchronously: 0, or -1 when the socket could
+// not take it at once (then it is dropped, as the network may drop it).
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_send_now(int32_t fd, moonbit_bytes_t data) {
+  return send(fd, data, (size_t)Moonbit_array_length(data), MSG_DONTWAIT) < 0
+             ? -1
+             : 0;
+}
+
 MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_strerror(int32_t code) {
   return to_bytes(code > -200 ? ngtcp2_strerror(code) : nghttp3_strerror(code));
 }

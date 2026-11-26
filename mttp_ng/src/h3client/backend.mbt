@@ -104,8 +104,9 @@ pub fn H3Backend::connections(self : H3Backend) -> Int32 {
 }
 
 ///|
-/// Closes every connection and refuses later sends with `Closed` in phase
-/// Pool. Idempotent.
+/// Closes every connection, telling each server with CONNECTION_CLOSE (a
+/// send that does not wait, so a socket that cannot take it at once drops
+/// it), and refuses later sends with `Closed` in phase Pool. Idempotent.
 pub fn H3Backend::close(self : H3Backend) -> Unit {
   if self.closed {
     return
@@ -220,7 +221,7 @@ async fn H3Backend::connection(
     }
     // Taken out of the origin first, so no other send picks them meanwhile.
     for connection in self.sweep(origin) {
-      connection.close_gracefully()
+      connection.close()
     }
     if origin.conns.filter(c => c.usable()).last() is Some(connection) {
       if connection.has_room(self.settings.max_streams_bidi) {
@@ -258,7 +259,7 @@ async fn H3Backend::connection(
       return None
     }
     if self.closed {
-      connection.close_gracefully()
+      connection.close()
       raise closed_error()
     }
     origin.conns.push(connection)

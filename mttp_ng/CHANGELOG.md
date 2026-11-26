@@ -33,6 +33,9 @@ never does.
   `QuicConn::read(from?)`, `addressed_datagrams`, `connection_ids`,
   `remote_address`, `close_datagram`, `closed_by_peer`, `pto_ms`,
   `destination_cid`, `stateless_reset` and `answer_initial`.
+- The HTTP/3 client tells the server with CONNECTION_CLOSE whenever it
+  closes a connection, `close()` of the backend included, so the server's
+  side ends at once rather than at its idle timeout.
 - `build.js`, run under Node when a program that imports the module
   builds, finds the libraries with pkg-config and puts them on that
   program's link line.

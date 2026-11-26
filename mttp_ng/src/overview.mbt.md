@@ -145,10 +145,6 @@ Reset, so the client learns at once that it is gone.
 - HTTP/2 and HTTP/3 are not sent through proxies. While a proxy is
   configured for a scheme, its requests go over HTTP/1.1 through it.
 - Trailers are not exposed, on either side.
-- `close()` of a client backend does not send QUIC's CONNECTION_CLOSE,
-  since it cannot wait for a send; the server's idle timeout ends those
-  connections on its side. A connection the backend drops by itself (idle
-  too long, too old, or after the server's GOAWAY) is closed with one.
 - The HTTP/3 server has no limit of connections per client address, as
   gaato/mttp's TCP listener has none; `max_connections` bounds them all.
 
