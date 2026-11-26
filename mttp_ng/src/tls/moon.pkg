@@ -1,0 +1,27 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "gaato/mttp/trust",
+  "moonbitlang/core/encoding/utf8",
+}
+
+import {
+  "gaato/mttp_core/rt",
+  "gaato/mttp_core/sim",
+  "gaato/mttp/runtime",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+} for "test"
+
+supported_targets = "native"
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/fs",
+  ],
+  "native-stub": [ "tls_stub.c" ],
+  // The include flags pkg-config gives (build.js); the link flags reach
+  // every program through build.js's link_configs.
+  link: { "native": { "stub-cc-flags": "${build.TLS_CFLAGS}" } },
+)

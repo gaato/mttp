@@ -21,6 +21,9 @@ priv struct Session {
   background : ((async () -> Unit) -> Unit)?
   mut control : @control.SessionState
   mut upgrade : (async (&@rt.Conn, Bytes, () -> Bool) -> Unit noraise)?
+  /// Whether the last message written ended as its framing says, so that a
+  /// close now cuts nothing short (`serve_conn`'s `before_close`).
+  mut clean : Bool
 }
 
 ///|
@@ -172,6 +175,8 @@ async fn Session::exchange(
     let pending = self.wire.pending
     self.wire.pending = b""
     upgrade(self.wire.conn, pending, self.stopping)
+    // The upgraded protocol frames its own messages.
+    self.clean = true
     return false
   }
   keep
@@ -373,9 +378,11 @@ async fn Session::read_peer(
 async fn Session::reject(self : Session, status : Int32) -> Unit noraise {
   let date = if self.auto_date { "date: \{self.date()}\r\n" } else { "" }
   let head = "HTTP/1.1 \{status} \{@mttp_core.reason_phrase(status)}\r\nconnection: close\r\n\{date}content-length: 0\r\n\r\n"
+  self.clean = false
   self.wire.write(@mttp_core.encode_utf8(head), self.limits.body_timeout_ms) catch {
-    _ => ()
+    _ => return
   }
+  self.clean = true
 }
 
 ///|

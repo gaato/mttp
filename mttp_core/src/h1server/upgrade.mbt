@@ -15,5 +15,6 @@ async fn Session::write_upgrade(
     @h1.ParseError(detail~, ..) => raise invalid_response(detail)
   }
   sent.val = true
+  self.clean = false
   self.wire.write(head, self.limits.body_timeout_ms)
 }

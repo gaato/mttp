@@ -1,9 +1,9 @@
 name: Release
 
 # Publishes one module to mooncakes.io when its release tag is pushed:
-# `mttp_core-v<version>`, `mttp-v<version>`, `mttp_curl-v<version>`,
-# `mttp_digest-v<version>` or `mttp_schemagen-v<version>`. The
-# module's directory is the tag before `-v`.
+# `mttp_core-v<version>`, `mttp-v<version>`, `mttp_ng-v<version>`,
+# `mttp_digest-v<version>` or `mttp_schemagen-v<version>`. The module's
+# directory is the tag before `-v`.
 # Pushing the tag is the approval; nothing else publishes. The tag must name a
 # release module of scripts/modules.tsv at the version in its moon.mod and
 # point at a commit on main whose CI passed: the ci job waits for the CI run
@@ -32,7 +32,7 @@ on:
     tags:
       - 'mttp_core-v*'
       - 'mttp-v*'
-      - 'mttp_curl-v*'
+      - 'mttp_ng-v*'
       - 'mttp_digest-v*'
       - 'mttp_schemagen-v*'
   workflow_dispatch:
@@ -131,13 +131,16 @@ jobs:
           fi
           echo "module=$module" >> "$GITHUB_OUTPUT"
 
-      # gaato/mttp_curl links the system's libcurl, which the image lacks;
-      # the dry run builds the module.
-      - name: libcurl, for gaato/mttp_curl
-        if: steps.tag.outputs.module == 'mttp_curl'
+      # gaato/mttp_ng links nghttp2, OpenSSL and, for HTTP/3, ngtcp2 with its
+      # OpenSSL crypto library and nghttp3, which Debian 13 has in
+      # trixie-backports only; the dry run builds the module.
+      - name: nghttp2, nghttp3 and ngtcp2, for gaato/mttp_ng
+        if: steps.tag.outputs.module == 'mttp_ng'
         run: |
+          echo 'deb http://deb.debian.org/debian trixie-backports main' > /etc/apt/sources.list.d/backports.list
           apt-get update
-          apt-get install -y --no-install-recommends libcurl4-openssl-dev
+          apt-get install -y --no-install-recommends pkg-config libnghttp2-dev libssl-dev
+          apt-get install -y --no-install-recommends -t trixie-backports libngtcp2-dev libngtcp2-crypto-ossl-dev libnghttp3-dev
 
       - run: moon update
 

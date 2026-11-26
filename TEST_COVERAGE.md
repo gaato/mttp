@@ -253,11 +253,82 @@ Each has a regression test in `h1/property_test.mbt`. After both fixes a
 further 10 minutes each (1.30M h1 inputs at 2,200 exec/s, 0.70M ws at
 1,200) found nothing.
 
+## Coverage-guided fuzzing of gaato/mttp_ng (2026-11-23)
+
+`fuzz_ng/` (gate `ng`) holds three libFuzzer targets over gaato/mttp_ng's
+codecs. `scripts/gates.sh fuzz --gate ng [SECONDS]` (daily in canary at
+300, in the gate image for Debian 13's libraries) builds them as `fuzz`
+builds its targets, and also compiles the module's C stubs (`h2_stub.c`,
+`h3_stub.c`) with libFuzzer's coverage and ASan, so that the code of ours
+that touches memory directly is what the runs explore and check; nghttp2,
+nghttp3, ngtcp2 and OpenSSL are the system's, linked as they are.
+
+- `h2_server` feeds a client's bytes, cut at a fuzzer-chosen size, to a
+  server `H2Session` that answers every request, under a mode byte (small
+  header bound, small windows, a response body, the reader taking bytes at
+  once). It aborts when a header block over the bound is handed on, or
+  when DATA comes before its stream's head.
+- `h2_pair` and `h3_pair` join a client and a server in memory (QUIC past
+  its handshake) and read the input as a program: requests and responses
+  with fuzzer-chosen fields, body pieces both ways, resets, the bytes in
+  flight delivered in pieces (and, for QUIC, datagrams of the fuzzer's own),
+  the readers taking what arrived. They abort when a head that arrives is
+  not the one submitted, when body bytes that arrive are not a prefix of
+  those pushed, and (HTTP/2 only; QUIC paces sends on a clock the run does
+  not move) when, once the sessions settle, a stream that went out and
+  nobody reset lacks part of a body that ended.
+
+Seeds come from `fuzz_ng seeds`: a real client session's bytes for the
+server target, short programs for the pairs. `moon run --target native
+fuzz_ng -- run TARGET HEX` replays a kept input, and the abort message
+names the fields or the stream's state.
+
+What the first runs found (MoonBit 0.10.22; clang 23 with nghttp2 1.71.0,
+nghttp3 1.19.0 and ngtcp2 1.26.0 on openSUSE, five minutes per target,
+1,300 to 3,000 exec/s for HTTP/2 and 350 for HTTP/3; and clang 19 with
+Debian 13's nghttp2 1.64.0, nghttp3 1.15.0 and ngtcp2 1.22.1 in the gate
+image): no crash and no ASan report in the stubs or the libraries. Two
+faults, each with a regression test in `h2/session_test.mbt`:
+
+- nghttp2 dropped a field with characters RFC 9113 forbids (section
+  8.2.1) and passed the rest of the request on, where the RFC makes the
+  message malformed, a stream error (section 8.1.1); `h2_stub.c` now
+  resets such a stream with PROTOCOL_ERROR.
+- On nghttp2 1.64 only, a second reset of a request reset before its
+  HEADERS went sent RST_STREAM for a stream the server never saw, which
+  RFC 9113 forbids for an idle stream (section 6.4) and the server answers
+  with GOAWAY(PROTOCOL_ERROR), ending the connection. `H2Session::reset`
+  now resets only an open stream, or a request whose HEADERS are still
+  queued (nghttp2 then does not send them). nghttp3 drops such fields too (a name or a value
+outside RFC 9110's characters), with no setting to make the message
+malformed instead; the field never reaches a handler, and `h3_pair` allows
+for it. Three findings were the targets' own assumptions, now encoded:
+nghttp2 and nghttp3 send field names in lower case; nghttp2 holds a request
+over the server's concurrent stream limit back until a stream closes; and
+small windows need many round trips to settle.
+
 ## Accepted uncovered
 
 | File | Budget | Reason |
 | --- | --- | --- |
-| mttp_curl/src/backend.mbt | 26 | Measured by the curl gate only (`coverage_report.mbtx -- --gate curl`). Defensive arms no current caller reaches: an exchange whose primary returns without a response head (it returns only after one), a Content-Length the HTTP/1 codec cannot read (libcurl refuses such a head first), the uploader finding the transfer already ended when it looks (the exchange ends it by cancellation first); the forward-compatible `BodyTiming`, `Body` and `Trust` arms; a dialled address without a port (http and https always have a default one); an engine, transfer or eventfd libcurl or the kernel could not make; a nonpositive timeout, an unparsable URL, URL credentials and conflicting framing, which `SendOptions::validate` and `Request::validate` refuse first; a read after the end, which StreamBody's sticky EOF answers before the source is called again; CURL_HTTP_VERSION_1_0 and unknown versions. HTTP/3 (`http3=true`, the `h3` protocol id) runs only in the opt-in `curl-live` gate, which needs the internet. Not yet driven: a folded or colon-less response field line (Node's node:http2 cannot send one), phase Write on a libcurl that reports when a request was sent (8.10 or later, as here; the Ubuntu 24.04 run takes that path), libcurl's own timeout code 28 (the backend sets no libcurl timeout) and the eventfd read failing. |
+| mttp_ng/src/backend.mbt | 5 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). The default configuration from the environment's proxy variables (the tests pass one without proxies, since a proxy in the environment would change what they test), and the deadline that `http3=true` shortens after QUIC declined an origin, which only a send with `timeout_ms` takes (the fallback test sends without one). |
+| mttp_ng/src/serve.mbt | 16 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). `ServeError`'s text, certificates or keys OpenSSL refuses (`tls` tests them), `cert` without `key`, the TCP and UDP listeners failing to bind, an `Alt-Svc` the handler set itself, and the path without HTTP/3, which `h2server`'s tests drive through `@h2server.serve`. |
+| mttp_ng/src/tls/tls.mbt | 30 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). The count depends on which of the concurrent flush paths a run takes (one line between openSUSE and CI). `TlsConfigError`'s text, the forward-compatible `Trust` arm and OpenSSL failing to make a session. A second writer while one is at work (the tests write from one task at a time), so its waits and the close waking them; a write cancelled midway, which marks the stream broken; a session that fails after its handshake (a corrupted record), whose read then writes the alert; `update_keys` on a session that cannot (TLS 1.2, closed); a read or a write after `close` racing its check; and a close that comes while a read waits. |
+| mttp_ng/src/h2/events.mbt | 30 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). One-line mappings of HTTP/2 error codes no test peer sends (each `ErrorCode` arm both ways), PUSH_PROMISE header blocks (a client refuses push, so nghttp2 sends none up), a header record without its block's begin record (h2_stub.c always writes one), `NotSent` (a frame nghttp2 drops because its stream closed first) and the abort for a record h2_stub.c does not write. |
+| mttp_ng/src/h2/session.mbt | 12 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). `H2Error`'s text, nghttp2 failing to allocate a session, `is_server`, `wants_io` (the server's writer waits on its connection's changes and asks `wants_read` only), and the nghttp2 errors of `submit_response`, `submit_info`, `queued`, `reset`, `goaway`, `shutdown_notice` and `ping` that their callers' state prevents (a stream that exists, a session not yet fatal). |
+| mttp_ng/src/h2client/backend.mbt | 25 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). The count varies from run to run with the timing of the connection choice (21 to 23 seen; the budget leaves two more). Ports and a dialer passed explicitly (the tests use the runtime's), `ClientTls::new` refusing the fixed ALPN lists, the connection age limit, the backend closed while a dial ran, an idle connection probed after 100 ms and found gone, session creation failing, the forward-compatible `BodyTiming` arm and a negative body ceiling. |
+| mttp_ng/src/h2client/conn.mbt | 33 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). The count varies from run to run with which waiter takes the reader's role (30 to 33 seen). A server whose response head is malformed or interim (nghttp2 and node:http2 send neither), PROTOCOL_ERROR resets, `NotSent`, a read of the connection failing with an error rather than EOF, a fatal HTTP/2 protocol error from the server, the writer finding another writer at work and the write timing out (`WRITE_MS`), the probe of an idle connection (it runs only after 100 ms of idleness, which no test waits for), `submit_request` refusing after a GOAWAY that came between the choice of connection and the stream, a push the session refuses, and `ClientConn::dead`, which only a failure arm the tests reach in other ways asks. |
+| mttp_ng/src/h2client/fallback.mbt | 10 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). Closing parked hand-overs no dial took, evicting the oldest of 256 remembered HTTP/1.1 origins, an origin's HTTP/1.1 record expiring after ten minutes, the deadline a hand-over shortens (the tests send without one), and a hand-over of a request without an `on_phase` callback. |
+| mttp_ng/src/h2server/conn.mbt | 34 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). The count varies from run to run with the order of the reader's and the writer's steps (31 to 32 seen in CI; the budget leaves two more). A write that fails or takes longer than `body_timeout_ms`, nghttp2 failing to allocate a session, `serve_h2_conn` without a `coordination` (`serve` passes one), a stop that cancels handlers still running, a fatal protocol error from a client, request trailers, DATA for a stream already finished, a client's reset while its handler runs, a response or body push the session refuses, and `abort` (a response body that fails while read). A request refused with REFUSED_STREAM at the handler cap (a client that keeps to SETTINGS_MAX_CONCURRENT_STREAMS never meets it; only resets that leave cancelled handlers finishing do, which no test sends yet), and the paths h2spec drives outside the coverage run: the loop finding that nghttp2 reads no more before its next read, and the bytes a closing connection reads and drops. |
+| mttp_ng/src/h2server/serve.mbt | 16 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). A client that sends the HTTP/2 preface in pieces smaller than its first byte, or nothing before `header_timeout_ms`, or goes during the sniff; a TLS handshake that fails or times out; and HTTP/1.1 on a cleartext listener without `h2c` (`@server.serve` covers that session). |
+| mttp_ng/src/h3/connection.mbt | 20 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). `H3Error`'s text, `System` and `Insecure` trust (the tests trust the test root), contexts OpenSSL refuses, a connection ngtcp2 cannot create, an expiry beyond `Int` milliseconds, and the error paths of `datagrams`, `on_expiry`, `submit_request`, `submit_response`, `push`, `queued` without a queue, `reset` and `shutdown`, which the client and server reach only on failures no test causes. |
+| mttp_ng/src/h3/events.mbt | 7 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). A header record without its block's begin record (h3_stub.c always writes one), GOAWAY (no test server sends one yet), `Drained` and `TooLarge`, and the abort for a record h3_stub.c does not write. |
+| mttp_ng/src/h3client/backend.mbt | 41 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). Ports passed explicitly, a PEM file ngtcp2's TLS cannot read, the expiry and eviction of origins remembered as without HTTP/3, the connection age limit and idle connections swept, the wait for room under the server's stream limit or for a dial in progress, the backend closed while dialling, resolution and UDP socket failures, an attempt whose connection cannot be created, the `Backend` trait's forwarding methods (the tests call the methods), `send` declining an origin, the forward-compatible `BodyTiming` arm, a negative body ceiling, and a reserved stream given back when the request body's first read fails. |
+| mttp_ng/src/h3client/conn.mbt | 32 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). The count varies from run to run with the timing of datagrams and timers (30 seen; the budget leaves two more). An interim or malformed response head, DATA for a stream already released, the server's GOAWAY, a too-large head, the connection closed by the server or by its idle timeout, the sender finding another sender at work, a UDP send or receive failing, an H3_REQUEST_REJECTED reset, `submit_request` refusing, a push the connection refuses, a stream released with unread bytes, and `ClientConn::dead` and `beyond_goaway`, which only failure arms the tests reach in other ways ask. |
+| mttp_ng/src/h3server/serve.mbt | 25 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). The count depends on which timer-driven arms a run takes (on ngtcp2 1.22 in the gate image the same tests have left up to six more lines uncovered than on openSUSE's 1.26). UDP send failures, an address that does not parse or bind, the listener's task failing, a datagram that does not start a connection, more Initials than `max_connections`, request trailers, a request refused with H3_REQUEST_REJECTED at the handler cap (as HTTP/2's REFUSED_STREAM), DATA after a stream finished, resets while a handler runs, and a connection closed with handlers running. |
+| mttp_ng/src/internal/mux/client.mbt | 21 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). Response heads the engines' libraries refuse before they reach here (an interim or malformed one after the final, a malformed one), the failure arms the tests reach only in other phases (a malformed head, a reset with another code than the test servers send, a connection that died without a reset, a stream closed without an error and without a response), an upload stopped because the stream closed or the connection refused a push, a body read that fails, a declared length that disagrees with a reset without an error, and the forward-compatible `Body` phase of a stream whose head arrived. |
+| mttp_ng/src/internal/mux/request.mbt | 13 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). URLs the Client's validation refuses first, a query string, TE other than `trailers`, a Host field among the request's own, and response heads nghttp2 and nghttp3 refuse before they reach here (no `:status` first, an invalid one, 101, a pseudo field after regular ones) or that the test servers never send (an interim response). |
+| mttp_ng/src/internal/mux/server.mbt | 15 | Measured by the ng gate only (`coverage_report.mbtx -- --gate ng`). A request body read that meets a reset, a request without `:method`, `:path` or `:authority` (nghttp2 and nghttp3 refuse the first two), a 101 or interim response, the forward-compatible `Body` arm, a source that fails while read, a response body that waits for the client's window longer than `body_timeout_ms` or fails while read (`abort`), a stop seen before a `close_on_shutdown` pull starts (the tests stop while it waits), and a response that makes no progress for `body_timeout_ms` after its handler returned (`finish`; the tests' clients keep reading). |
 | mttp/src/conn/dialer.mbt | 2 | Forward-compatible Trust arm: Trust belongs to the cross-target trust package, so the dialer must refuse future constructors that cannot be constructed in this release. Not yet tested: `Tcp::connect(addr)` after the refuse_internal guard accepts a public address. Loopback integration deliberately refuses those local destinations, and an external public-IP dependency would make the suite nondeterministic. The classifier's allowed and denied boundaries and the HTTP-to-real-resolver refusal path are tested; a controlled public-address network fixture remains future work. |
 | mttp/src/conn/conn_io_next.mbt | 1 | `flush_partial_data` is not called: mttp never flushes a TLS session, and ConnIo holds no bytes to flush. |
 | mttp/src/conn/conn_io.mbt | 1 | BinaryWriterImpl::get_controller is not called by core's current writer defaults; the controller is a stateless marker reserved for future buffering/locking. Each bridge still constructs and owns its controller as required by the core trait. |

@@ -3,7 +3,7 @@
 # which moonbit-version pins (CI uses the image of that version; canary.yml
 # runs these gates on the latest and nightly images). The modules and what
 # each may depend on are listed in scripts/modules.tsv, whose gate column
-# says which of `full` and `curl` links and tests each module. Checks that
+# says which of `full` and `ng` links and tests each module. Checks that
 # only read text or type-check (fmt, info, interfaces, architecture, docs)
 # cover every module in both.
 #
@@ -49,17 +49,26 @@
 #                                           --record writes today's JSON in
 #                                           benchmarks/results. CI instead
 #                                           passes --output and --summary.
-#   scripts/gates.sh sanitize               Linux native tests of mttp_core,
-#                                           mttp and mttp_curl under ASan,
-#                                           using a disposable source/toolchain
-#                                           copy; needs libcurl. Daily in
-#                                           canary, outside full
+#   scripts/gates.sh sanitize               Linux native tests of mttp_core
+#                                           and mttp under ASan, using a
+#                                           disposable source/toolchain copy.
+#                                           Daily in canary, outside full
+#   scripts/gates.sh sanitize --gate ng     The same for gaato/mttp_ng (with
+#                                           mttp_core and mttp) and its C
+#                                           stubs; needs the ng gate's
+#                                           libraries. Daily in canary
 #   scripts/gates.sh fuzz [SECONDS]         Linux libFuzzer+ASan runs of the
 #                                           fuzz/ targets (HTTP/1.1 reader,
 #                                           WebSocket frame parser), SECONDS
 #                                           each (default 60); needs clang
 #                                           with libFuzzer (FUZZ_CC). Daily
 #                                           in canary, outside full
+#   scripts/gates.sh fuzz --gate ng [SECONDS]
+#                                           The same for gaato/mttp_ng's
+#                                           targets (fuzz_ng/: HTTP/2 server,
+#                                           HTTP/2 and HTTP/3 pairs) and its
+#                                           C stubs; needs the ng gate's
+#                                           libraries. Daily in canary
 #   scripts/gates.sh mutate [SITE]...       the hand-run HTTP/1 mutation
 #                                           sample; not part of full or CI
 #   scripts/gates.sh prove [--solver z3|cvc5] the number core and negative
@@ -73,23 +82,36 @@
 #                                           the self-test of this script, the
 #                                           resolver gate and workerd, for the
 #                                           modules of gate full
-#   scripts/gates.sh curl                   gaato/mttp_curl, which links the
-#                                           system's libcurl (with HTTP/2):
-#                                           its native tests, its coverage
-#                                           and its resolver consumer, which
-#                                           runs a program calling libcurl
-#                                           (scripts/resolver_smoke/). CI runs
-#                                           it as a job of its own, the one
-#                                           that installs libcurl
-#   scripts/gates.sh curl-live              gaato/mttp_curl's tests against
+#   scripts/gates.sh ng                     gaato/mttp_ng, which links the
+#                                           system's nghttp2, nghttp3, ngtcp2
+#                                           and OpenSSL 3.5 or later: its
+#                                           native tests, its coverage and
+#                                           its resolver consumer, which runs
+#                                           a program calling each library.
+#                                           CI runs it as a job of its own,
+#                                           the one that installs them
+#   scripts/gates.sh ng-h2                  gaato/mttp_ng's HTTP/2 packages
+#                                           (tls, h2, h2client, h2server,
+#                                           internal/mux) alone: tests and a
+#                                           resolver consumer that links
+#                                           nghttp2 and OpenSSL only. CI runs
+#                                           it on Ubuntu 24.04 (nghttp2 1.59,
+#                                           OpenSSL 3.0)
+#   scripts/gates.sh h2spec                 h2spec against gaato/mttp_ng's
+#                                           HTTP/2 server over TLS and h2c,
+#                                           compared with
+#                                           interop_ng/h2spec_known.tsv (needs
+#                                           h2spec, H2SPEC or on PATH, and the
+#                                           ng gate's libraries)
+#   scripts/gates.sh ng-live                gaato/mttp_ng's client against
 #                                           public HTTP/2 and HTTP/3 servers
-#                                           (needs the internet and a libcurl
-#                                           with HTTP/3)
+#                                           (needs the internet and the ng
+#                                           gate's libraries)
 #   scripts/gates.sh manifest --update      runs every package's tests on
 #                                           every target and rewrites
 #                                           scripts/test_manifest.tsv; every
-#                                           gate's modules, so it needs
-#                                           libcurl too
+#                                           gate's modules, so it needs the
+#                                           ng gate's libraries too
 #
 # This launcher is bash, unlike the .mbtx scripts beside it: it runs `moon`
 # itself, on every toolchain including nightly; it filters the experimental
@@ -207,16 +229,29 @@ static_gates() {
   step script interop/run.mbtx -- --self-test
   step script scripts/runtime_gates.mbtx -- interfaces
   step script scripts/runtime_gates.mbtx -- manifest --check
-  # Measuring links the modules; the curl gate measures its own.
+  # Measuring links the modules; the ng gate measures its own.
   step script scripts/coverage_report.mbtx -- --gate full
 }
 
-# gaato/mttp_curl links the system's libcurl, so these run where it is
-# installed and nowhere else; a libcurl problem cannot fail the full gate.
-curl_gate() {
-  step script scripts/runtime_gates.mbtx -- tests --target native --gate curl
-  step script scripts/coverage_report.mbtx -- --gate curl
-  step script scripts/resolver_gate.mbtx -- --gate curl
+# gaato/mttp_ng links nghttp2, nghttp3, ngtcp2 and OpenSSL, so these run
+# where they are installed and nowhere else; a problem with those libraries
+# cannot fail the full gate.
+ng_gate() {
+  step script scripts/runtime_gates.mbtx -- tests --target native --gate ng
+  step script scripts/coverage_report.mbtx -- --gate ng
+  step script scripts/resolver_gate.mbtx -- --gate ng
+}
+
+# gaato/mttp_ng's HTTP/2 packages alone, for a host with nghttp2 and OpenSSL
+# but no ngtcp2 with OpenSSL's QUIC (Ubuntu 24.04: nghttp2 1.59, OpenSSL
+# 3.0): they must build, pass and link without the HTTP/3 libraries. The
+# coverage budgets are the whole module's, so coverage is the ng gate's.
+NG_H2_PACKAGES=tls,h2,h2client,h2server,internal/mux
+ng_h2_gate() {
+  step script scripts/runtime_gates.mbtx -- tests --target native --gate ng \
+    --packages "$(printf '%s' "$NG_H2_PACKAGES" | sed 's|[^,]*|gaato/mttp_ng/&|g')"
+  step script scripts/resolver_gate.mbtx -- --gate ng \
+    --packages "${NG_H2_PACKAGES%,internal/mux}" --smoke mttp_ng_h2
 }
 
 # The Node tests of the fetch package run the host shims under Node, which
@@ -285,16 +320,27 @@ case "$mode" in
     step script scripts/resolver_gate.mbtx -- --gate full
     finish
     ;;
-  curl)
+  ng)
     [ $# = 0 ] || usage
     print_versions
-    curl_gate
+    ng_gate
     finish
     ;;
-  curl-live)
+  ng-h2)
     [ $# = 0 ] || usage
-    step env MTTP_CURL_LIVE=1 MOON_CC="${MOON_CC:-cc}" \
-      moon test --deny-warn --target native mttp_curl/src/live_test.mbt
+    print_versions
+    ng_h2_gate
+    finish
+    ;;
+  h2spec)
+    [ $# = 0 ] || usage
+    step script scripts/h2spec.mbtx
+    finish
+    ;;
+  ng-live)
+    [ $# = 0 ] || usage
+    step env MTTP_NG_LIVE=1 MOON_CC="${MOON_CC:-cc}" \
+      moon test --deny-warn --target native mttp_ng/src/live_test.mbt
     finish
     ;;
   workerd)
@@ -312,12 +358,12 @@ case "$mode" in
     finish
     ;;
   sanitize)
-    [ $# = 0 ] || usage
-    step script scripts/sanitize.mbtx
+    [ $# = 0 ] || { [ $# = 2 ] && [ "$1" = --gate ]; } || usage
+    step script scripts/sanitize.mbtx -- "$@"
     finish
     ;;
   fuzz)
-    [ $# -le 1 ] || usage
+    [ $# -le 3 ] || usage
     step script scripts/fuzz.mbtx -- "$@"
     finish
     ;;

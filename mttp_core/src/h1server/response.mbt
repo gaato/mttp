@@ -103,6 +103,8 @@ async fn Session::write_response(
     @h1.ParseError(detail~, ..) => raise invalid_response(detail)
   }
   sent.val = true
+  // Until the message ends, a close would cut it short.
+  self.clean = false
   let coalesced = match response.body {
     Bytes(bytes) if !bodiless &&
       !stopped.val &&
@@ -153,6 +155,9 @@ async fn Session::write_response(
     }
     _ => ()
   }
+  // A body cut at shutdown ended as its framing allows: whole only when
+  // chunked, with its last chunk.
+  self.clean = !stopped.val || framing is Chunked
   !close && !stopped.val
 }
 

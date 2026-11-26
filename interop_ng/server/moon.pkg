@@ -1,0 +1,19 @@
+import {
+  "gaato/mttp_core",
+  "gaato/mttp_ng",
+  "gaato/mttp_ng/h2",
+  "moonbitlang/core/async",
+  "moonbitlang/core/async/fs",
+  "moonbitlang/core/env",
+}
+
+supported_targets = "native"
+
+pkgtype(kind: "executable")
+
+options(
+  "allow-experimental-packages": [
+    "moonbitlang/core/async",
+    "moonbitlang/core/async/fs",
+  ],
+)

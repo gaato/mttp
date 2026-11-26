@@ -1,0 +1,50 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_ng/tls"
+
+import {
+  "gaato/mttp/trust",
+  "gaato/mttp_core",
+  "gaato/mttp_core/rt",
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn openssl_version() -> Int64
+
+// Errors
+#derive(@debug.Debug)
+pub suberror TlsConfigError {
+  TlsConfigError(String)
+}
+pub fn TlsConfigError::output(Self, &Logger) -> Unit
+pub fn TlsConfigError::to_string(Self) -> String
+pub impl Show for TlsConfigError
+
+// Types and methods
+pub struct ClientTls {
+  // private fields
+}
+pub async fn ClientTls::connect(Self, &@rt.Conn, host~ : String, coordination~ : &@rt.Coordination) -> TlsConn raise @mttp_core.TransportError
+pub fn ClientTls::new(trust? : @trust.Trust, alpn? : Array[String]) -> Self raise TlsConfigError
+
+pub struct ServerTls {
+  // private fields
+}
+pub async fn ServerTls::accept(Self, &@rt.Conn, coordination~ : &@rt.Coordination) -> TlsConn raise @mttp_core.TransportError
+pub fn ServerTls::from_pem(chain~ : String, key~ : String, alpn? : Array[String]) -> Self raise TlsConfigError
+
+pub struct TlsConn {
+  // private fields
+}
+pub fn TlsConn::alpn(Self) -> String?
+pub fn TlsConn::close(Self) -> Unit
+pub async fn TlsConn::read(Self, max_len~ : Int32) -> Bytes? raise @mttp_core.TransportError
+pub async fn TlsConn::shutdown(Self) -> Unit raise @mttp_core.TransportError
+pub fn TlsConn::update_keys(Self) -> Unit raise @mttp_core.TransportError
+pub fn TlsConn::version(Self) -> String
+pub async fn TlsConn::write(Self, Bytes) -> Unit raise @mttp_core.TransportError
+pub impl @rt.Conn for TlsConn
+
+// Type aliases
+
+// Traits

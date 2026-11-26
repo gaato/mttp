@@ -1,7 +1,8 @@
 members = [
   "mttp_core",
   "mttp",
-  "mttp_curl",
+  "mttp_ng",
+  "interop_ng",
   "mttp_digest",
   "conformance",
   "conformance/cache-tests",
@@ -14,4 +15,5 @@ members = [
   "benchmarks/transport",
   "interop",
   "fuzz",
+  "fuzz_ng",
 ]

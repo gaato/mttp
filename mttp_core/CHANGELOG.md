@@ -18,6 +18,11 @@ never does.
   and refuses a declared length past it before reading; `body_limit` gives
   the bound under a `BodyTiming`. A Backend over another transport (such as
   libcurl) uses them instead of writing these rules again.
+- `h1server.serve_conn(before_close?)`: runs before the connection is
+  closed, with whether the last message written ended as its framing says
+  (`false` after a body delimited by the close, or one with a length, cut
+  at shutdown, or a failed write), so that a TLS adapter sends close_notify
+  only when no response was cut short.
 
 ### Changed
 

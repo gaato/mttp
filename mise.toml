@@ -1,0 +1,6 @@
+# 手元の検証用ツール。ゲートは CI のコンテナ(moonbit-version の版のイメージ)
+# と interop/images.tsv の digest 固定イメージで動くので、ここは手元で外部の
+# 検証ツールを使うときのためのもの。h2spec は gaato/mttp_ng の HTTP/2 サーバー
+# を RFC 9113 に照らすのに使う。
+[tools]
+"github:summerwind/h2spec" = "2.6.0"

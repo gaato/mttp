@@ -16,12 +16,19 @@ import {
 // allow-experimental-packages, and a second build without the list must warn,
 // so the opt-in a user needs is the opt-in the module documents. Nothing is
 // uploaded or published.
-// Usage: moon run scripts/resolver_gate.mbtx [-- --self-test | --gate G]
+// Usage: moon run scripts/resolver_gate.mbtx [-- --self-test | --gate G
+//   [--packages P,... --smoke DIR]]
+//
+// `--packages` narrows the consumer to some packages of the gate's modules,
+// with the smoke package scripts/resolver_smoke/DIR, for a host whose
+// libraries serve only those (gaato/mttp_ng's HTTP/2 packages on Ubuntu
+// 24.04, which has no ngtcp2 with OpenSSL).
 //
 // `--gate G` builds consumers only for the modules whose `gate` cell in
 // scripts/modules.tsv is G, since a consumer build links the module and
-// gaato/mttp_curl links the system's libcurl. Every module is still staged,
-// so a gate's modules resolve their workspace dependencies from the archives.
+// gaato/mttp_ng links the system's nghttp2 and the rest. Every module is
+// still staged, so a gate's modules resolve their workspace dependencies from
+// the archives.
 
 ///|
 suberror GateError {
@@ -167,7 +174,7 @@ async fn run(program : String, args : Array[String], cwd~ : String) -> String {
 
 ///|
 /// Copies the registry index and cache, as reflinks where the file system
-/// can. `--reflink` is GNU cp's; macOS's cp (the curl gate runs there too)
+/// can. `--reflink` is GNU cp's; macOS's cp (the ng gate runs there too)
 /// refuses it, and copies plainly instead.
 async fn copy_registry(
   source : String,
@@ -476,13 +483,32 @@ async fn module_gates(root : String) -> Map[String, String] {
 }
 
 ///|
-async fn check(gate : String?) -> Unit {
+async fn check(gate : String?, only? : (Array[String], String)) -> Unit {
   let root = @fs.realpath(".")
   let modules = workspace_modules(root)
   let gates = module_gates(root)
   let chosen = match gate {
     None => modules
     Some(name) => modules.filter(m => gates.get(m.name) == Some(name))
+  }
+  // `--packages`: the consumer imports only these packages of the gate's
+  // modules (paths below the module, `` for its root), for a host whose
+  // libraries serve only those, and calls `--smoke`'s package instead of
+  // the module's own smoke (scripts/resolver_smoke/DIR).
+  let chosen = match only {
+    None => chosen
+    Some((names, _)) => {
+      for name in names {
+        if !chosen.iter().any(m => m.packages.contains(name)) {
+          raise GateError("--packages: no package \{name} in the gate")
+        }
+      }
+      chosen.map(m => {
+        ..m,
+        packages: m.packages.filter(pkg => names.contains(pkg)),
+        experimental: m.experimental.filter(pkg => names.contains(pkg)),
+      })
+    }
   }
   // A gate no module names would build nothing and pass.
   if gate is Some(name) && chosen.is_empty() {
@@ -533,7 +559,10 @@ async fn check(gate : String?) -> Unit {
     // `pub fn run() -> Unit` that does; the consumer calls it and runs.
     let smoke_dir = root +
       "/scripts/resolver_smoke/" +
-      candidate.dir[root.length() + 1:].to_owned()
+      (match only {
+        Some((_, smoke)) => smoke
+        None => candidate.dir[root.length() + 1:].to_owned()
+      })
     let smoke = @fs.exists(smoke_dir)
     if smoke {
       copy_module(smoke_dir, consumer + "/smoke")
@@ -734,11 +763,17 @@ async fn main {
       }
     } else if @env.args()[1:] is ["--gate", name] {
       check(Some(name))
+    } else if @env.args()[1:]
+      is ["--gate", name, "--packages", list, "--smoke", smoke] {
+      check(
+        Some(name),
+        only=(list.split(",").map(s => s.to_owned()).to_array(), smoke),
+      )
     } else if @env.args()[1:] is [] {
       check(None)
     } else {
       raise GateError(
-        "usage: moon run scripts/resolver_gate.mbtx [-- --self-test | --gate G]",
+        "usage: moon run scripts/resolver_gate.mbtx [-- --self-test | --gate G [--packages P,... --smoke DIR]]",
       )
     }
   }

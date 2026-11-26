@@ -8,10 +8,13 @@ import {
 }
 ----
 
-// Coverage-guided fuzzing of the HTTP/1.1 reader and the WebSocket frame
-// parser (fuzz/), with libFuzzer and ASan, on Linux:
+// Coverage-guided fuzzing with libFuzzer and ASan, on Linux, of the
+// HTTP/1.1 reader and the WebSocket frame parser (fuzz/), or with
+// `--gate ng` of gaato/mttp_ng's HTTP/2 server session and its in-memory
+// HTTP/2 and HTTP/3 pairs (fuzz_ng/):
 //
-//   moon run scripts/fuzz.mbtx -- [SECONDS]    (scripts/gates.sh fuzz)
+//   moon run scripts/fuzz.mbtx -- [--gate ng] [SECONDS]
+//                                  (scripts/gates.sh fuzz [--gate ng] [SECONDS])
 //
 // moonc emits C for the native target only when a package sets cc-flags
 // (otherwise 0.10.20 writes machine code directly, which nothing can
@@ -24,6 +27,13 @@ import {
 // conformance vectors. A violated invariant aborts; the input is kept in
 // _build/fuzz/ and the script fails. FUZZ_CC names the compiler (default
 // clang; it needs libFuzzer).
+//
+// With `--gate ng`, gaato/mttp_ng's C stubs (h2_stub.c, h3_stub.c) are
+// compiled the same way, with pkg-config's flags for the libraries, so
+// their code is instrumented and checked too; the libraries themselves are
+// the system's, linked as they are. The seeds are what `fuzz_ng seeds`
+// prints: a real client's bytes for the server target, and short programs
+// for the pairs. This needs the ng gate's libraries and Node (build.js).
 
 ///|
 suberror FuzzError {
@@ -38,9 +48,21 @@ let c_flags : Array[String] = [
 ]
 
 ///|
-/// The targets: the entry harness.c calls, the test sources whose byte
-/// literals seed it, and the mode bytes each seed is tried under (the first
-/// input byte of fuzz/h1.mbt and fuzz/ws.mbt).
+/// What one gate fuzzes: the modules copied, the fuzz package and its
+/// generated C, the C stubs to compile beside it with the pkg-config
+/// modules of their libraries, and the targets.
+struct Gate {
+  modules : Array[String]
+  pkg : String
+  generated : String
+  stubs : Array[(String, Array[String])]
+  targets : Array[(String, Array[String], Array[Int32])]
+}
+
+///|
+/// The full gate's targets: the entry harness.c calls, the test sources
+/// whose byte literals seed it, and the mode bytes each seed is tried under
+/// (the first input byte of fuzz/h1.mbt and fuzz/ws.mbt).
 let targets : Array[(String, Array[String], Array[Int32])] = [
   (
     "h1",
@@ -55,6 +77,32 @@ let targets : Array[(String, Array[String], Array[Int32])] = [
     [0x0c, 0x0d, 0x0e, 0x04],
   ),
 ]
+
+///|
+let full_gate : Gate = {
+  modules: ["mttp_core", "fuzz"],
+  pkg: "fuzz",
+  generated: "gaato/mttp-fuzz/mttp-fuzz.c",
+  stubs: [],
+  targets,
+}
+
+///|
+/// gaato/mttp_ng's targets (fuzz_ng/); their seeds come from `fuzz_ng
+/// seeds`, so they name no test sources and no modes.
+let ng_gate : Gate = {
+  modules: ["mttp_core", "mttp", "mttp_ng", "fuzz", "fuzz_ng"],
+  pkg: "fuzz_ng",
+  generated: "gaato/mttp-fuzz-ng/mttp-fuzz-ng.c",
+  stubs: [
+    ("mttp_ng/src/h2/h2_stub.c", ["libnghttp2"]),
+    (
+      "mttp_ng/src/h3/h3_stub.c",
+      ["libngtcp2_crypto_ossl", "libngtcp2", "libnghttp3", "openssl"],
+    ),
+  ],
+  targets: [("h2_server", [], []), ("h2_pair", [], []), ("h3_pair", [], [])],
+}
 
 ///|
 async fn command(
@@ -186,6 +234,35 @@ async fn write_seeds(
 }
 
 ///|
+/// Writes the seeds `fuzz_ng seeds` prints for `name` under `dir`.
+async fn write_printed_seeds(
+  printed : String,
+  name : String,
+  dir : String,
+) -> Int32 {
+  @fs.mkdir(dir, recursive=true)
+  let mut count = 0
+  for line in printed.split("\n") {
+    guard line.split(" ").map(s => s.to_owned()).to_array()
+      is [target, hex_text] &&
+      target == name else {
+      continue
+    }
+    let seed = Buffer()
+    let chars = hex_text.to_array()
+    for i = 0; i + 1 < chars.length(); i = i + 2 {
+      guard (hex(chars[i]), hex(chars[i + 1])) is (Some(h), Some(l)) else {
+        raise FuzzError("fuzz_ng seeds printed a bad line: \{line}")
+      }
+      seed.write_byte((h * 16 + l).to_byte())
+    }
+    @fs.write_binary("\{dir}/seed-\{count}", seed.to_bytes())
+    count += 1
+  }
+  count
+}
+
+///|
 /// The value after `key` on the last line of `log` that holds it.
 fn last_stat(log : String, key : String) -> String {
   let mut value = "?"
@@ -198,7 +275,7 @@ fn last_stat(log : String, key : String) -> String {
 }
 
 ///|
-async fn fuzz(root : String, seconds : Int32) -> Unit {
+async fn fuzz(root : String, seconds : Int32, gate : Gate) -> Unit {
   let repo = @fs.realpath(".")
   let binary = @fs.realpath(command("which", ["moon"]))
   let toolchain = binary[:binary.length() - "/bin/moon".length()].to_owned()
@@ -206,23 +283,29 @@ async fn fuzz(root : String, seconds : Int32) -> Unit {
   let source = root + "/source"
   @fs.mkdir(source)
   ignore(
-    command("tar", [
-      "--exclude=_build",
-      "--exclude=target",
-      "--exclude=.mooncakes",
-      "-cf",
-      root + "/source.tar",
-      "mttp_core",
-      "fuzz",
-    ]),
+    command(
+      "tar",
+      [
+        "--exclude=_build",
+        "--exclude=target",
+        "--exclude=.mooncakes",
+        "-cf",
+        root + "/source.tar",
+        ..gate.modules,
+      ],
+    ),
   )
   ignore(command("tar", ["-xf", root + "/source.tar", "-C", source]))
-  @fs.write_text(source + "/moon.work", "members = [\"mttp_core\", \"fuzz\"]\n")
-  let pkg = source + "/fuzz/moon.pkg"
+  // fuzz/ is copied for harness.c; only the fuzzed package's module builds.
+  let members = gate.modules
+    .filter(m => m != "fuzz" || gate.pkg == "fuzz")
+    .map(m => "\"\{m}\"")
+  @fs.write_text(source + "/moon.work", "members = [\{members.join(", ")}]\n")
+  let pkg = source + "/" + gate.pkg + "/moon.pkg"
   let pkg_text = @fs.read_text(pkg)
   let native = "\"native\": {"
   guard pkg_text.contains(native) else {
-    raise FuzzError("fuzz/moon.pkg: no native link options to extend")
+    raise FuzzError("\{gate.pkg}/moon.pkg: no native link options to extend")
   }
   // Any cc-flags make moonc emit C; the flags that matter come below.
   @fs.write_text(
@@ -239,13 +322,12 @@ async fn fuzz(root : String, seconds : Int32) -> Unit {
   ignore(
     command(
       "moon",
-      ["build", "--deny-warn", "--release", "--target", "native", "fuzz"],
+      ["build", "--deny-warn", "--release", "--target", "native", gate.pkg],
       cwd=source,
       env=vars,
     ),
   )
-  let generated = source +
-    "/_build/native/release/build/gaato/mttp-fuzz/mttp-fuzz.c"
+  let generated = source + "/_build/native/release/build/" + gate.generated
   guard @fs.exists(generated) else {
     raise FuzzError("moon did not write \{generated}")
   }
@@ -290,10 +372,55 @@ async fn fuzz(root : String, seconds : Int32) -> Unit {
       ],
     ),
   )
+  // The C stubs, instrumented as the generated C is, and the libraries
+  // they bind.
+  let stub_objects = []
+  let libraries = []
+  for stub in gate.stubs {
+    let (path, pc_modules) = stub
+    let cflags = command("pkg-config", ["--cflags", ..pc_modules])
+      .split(" ")
+      .filter(f => !f.is_empty())
+      .map(f => f.to_owned())
+      .to_array()
+    let out = "\{obj}/stub-\{stub_objects.length()}.o"
+    ignore(
+      command(
+        compiler,
+        [
+          ..c_flags,
+          includes,
+          ..cflags,
+          "-fsanitize=fuzzer-no-link,address",
+          "-c",
+          source + "/" + path,
+          "-o",
+          out,
+        ],
+      ),
+    )
+    stub_objects.push(out)
+    for flag in command("pkg-config", ["--libs", ..pc_modules]).split(" ") {
+      if !flag.is_empty() && !libraries.contains(flag.to_owned()) {
+        libraries.push(flag.to_owned())
+      }
+    }
+  }
+  // The seeds the fuzz package prints, for gates whose targets have them.
+  let printed = if gate.pkg == "fuzz" {
+    ""
+  } else {
+    command(
+      "moon",
+      ["run", "--target", "native", gate.pkg, "--", "seeds"],
+      cwd=source,
+      env=vars,
+    )
+  }
   let artifacts = repo + "/_build/fuzz"
   @fs.mkdir(artifacts, recursive=true, allow_existing=true)
   let failures = []
-  for target in targets {
+  for target in gate.targets {
     let (name, seed_dirs, modes) = target
     let program = "\{root}/fuzz_\{name}"
     ignore(
@@ -318,8 +445,10 @@ async fn fuzz(root : String, seconds : Int32) -> Unit {
           "-fsanitize=fuzzer,address",
           obj + "/target.o",
           "\{obj}/harness_\{name}.o",
+          ..stub_objects,
           ..runtime_objects,
           toolchain + "/lib/libbacktrace.a",
+          ..libraries,
           "-lm",
           "-o",
           program,
@@ -327,7 +456,11 @@ async fn fuzz(root : String, seconds : Int32) -> Unit {
       ),
     )
     let seeds = "\{root}/seeds/\{name}"
-    let count = write_seeds(repo, seed_dirs, modes, seeds)
+    let count = if seed_dirs.is_empty() {
+      write_printed_seeds(printed, name, seeds)
+    } else {
+      write_seeds(repo, seed_dirs, modes, seeds)
+    }
     let corpus = "\{root}/corpus/\{name}"
     @fs.mkdir(corpus, recursive=true)
     println("+ fuzz \{name}: \{count} seeds, \{seconds}s")
@@ -372,6 +505,11 @@ async fn fuzz(root : String, seconds : Int32) -> Unit {
   }
   if !failures.is_empty() {
     let message = "fuzz: failed targets: \{failures.join(", ")}; inputs in \{artifacts}"
+    if gate.pkg != "fuzz" {
+      println(
+        "reproduce with: moon run --target native \{gate.pkg} -- run TARGET $(xxd -p -c0 FILE)",
+      )
+    }
     println(message)
     raise FuzzError(message)
   }
@@ -384,16 +522,22 @@ async fn main {
     println("fuzz: skipped; this gate uses Linux libFuzzer and ASan")
     return
   }
-  let args = @env.args()
-  let seconds = if args.length() > 1 {
-    @string.parse_int(args[args.length() - 1]) catch {
-      _ => raise FuzzError("usage: fuzz.mbtx [SECONDS]")
-    }
-  } else {
-    60
+  let args = @env.args()[1:].to_owned()
+  let (gate, args) = match args {
+    ["--gate", "ng", .. rest] => (ng_gate, rest.to_owned())
+    ["--gate", ..] => raise FuzzError("usage: fuzz.mbtx [--gate ng] [SECONDS]")
+    _ => (full_gate, args)
+  }
+  let seconds = match args {
+    [] => 60
+    [text] =>
+      @string.parse_int(text) catch {
+        _ => raise FuzzError("usage: fuzz.mbtx [--gate ng] [SECONDS]")
+      }
+    _ => raise FuzzError("usage: fuzz.mbtx [--gate ng] [SECONDS]")
   }
   let root = @fs.tmpdir(prefix="mttp-fuzz-")
   println("fuzz: disposable copy at " + root)
   defer @fs.remove(root, recursive=true)
-  fuzz(root, seconds)
+  fuzz(root, seconds, gate)
 }

@@ -67,11 +67,10 @@ async test "a real accept failure raises ListenError Accept" {
     try
       run_listener(
         listener,
-        _ => @mttp_core.Response::new(204),
+        _ => (),
         _ => listener.close(),
         @h1server.ServerLimits::default(),
         _ => (),
-        true,
       )
     catch {
       Accept(detail~) => {

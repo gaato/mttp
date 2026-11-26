@@ -1,0 +1,27 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "gaato/mttp_ng/h2client"
+
+import {
+  "gaato/mttp/trust",
+  "gaato/mttp_core",
+  "gaato/mttp_core/h1client",
+  "gaato/mttp_core/rt",
+}
+
+// Values
+
+// Errors
+
+// Types and methods
+pub struct H2Backend {
+  // private fields
+}
+pub fn H2Backend::close(Self) -> Unit
+pub fn H2Backend::connections(Self) -> Int32
+pub fn H2Backend::new(dialer? : &@rt.Dialer, trust? : @trust.Trust, config? : @h1client.ClientConfig, h2c? : Bool, max_connection_age_ms? : Int32, clock? : &@rt.Clock, timer? : &@rt.Timer, coordination? : &@rt.Coordination) -> Self
+pub async fn H2Backend::send(Self, @mttp_core.Request, @mttp_core.SendOptions) -> @mttp_core.Response raise @mttp_core.TransportError
+pub impl @mttp_core.Backend for H2Backend
+
+// Type aliases
+
+// Traits
