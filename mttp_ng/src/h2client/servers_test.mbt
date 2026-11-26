@@ -432,7 +432,12 @@ async test "a closed backend refuses sends in phase Pool" {
 }
 
 ///|
-async test "behind a proxy, https goes over HTTP/1.1 through its tunnel" {
+/// Behind a proxy, an https origin is reached through the proxy's tunnel,
+/// as h1client reaches it (`@h1client.https_tunnel`), and HTTP/2 runs in it
+/// when the origin chooses h2; one that chooses http/1.1 is left to
+/// h1client, through the proxy too. As first written, every proxied
+/// scheme went over HTTP/1.1.
+async test "behind a proxy, https goes through its tunnel, over HTTP/2 where the origin speaks it" {
   with_server(server => {
     let b = @h2client.H2Backend::new(trust=PemFile(testdata("root.pem")), config={
       ..@h1client.ClientConfig::default(),
@@ -443,9 +448,15 @@ async test "behind a proxy, https goes over HTTP/1.1 through its tunnel" {
       @mttp_core.Request::get(server.tls + "/hello"),
       defaults,
     )
+    assert_eq(response.attributes.get(@mttp_core.protocol), Some("h2"))
+    assert_eq(text(response), "hello")
+    assert_eq(b.connections(), 1)
+    let response = b.send(
+      @mttp_core.Request::get(server.tls11 + "/hello"),
+      defaults,
+    )
     assert_eq(response.attributes.get(@mttp_core.protocol), Some("http/1.1"))
     assert_eq(text(response), "hello")
-    assert_eq(b.connections(), 0)
     let error = failure(b, @mttp_core.Request::get("https://deny.invalid/"))
     guard error
       is @mttp_core.TransportError(kind=Proxy(status=407), phase=Dial, ..) else {

@@ -55,9 +55,12 @@ priv struct Origin {
 /// ceiling, the response head bound (as SETTINGS_MAX_HEADER_LIST_SIZE) and
 /// how long a connection may stay idle (`idle_max_ms`); all of it, the proxy
 /// and the connection caps included, applies to the requests that go over
-/// HTTP/1.1. HTTP/2 is not sent through proxies: while the configuration
-/// has a proxy for a URL's scheme, its requests go over HTTP/1.1 through
-/// the HTTP/1 client, which tunnels them and applies NO_PROXY. `max_connection_age_ms`
+/// HTTP/1.1. An `https` origin with a proxy configured for https is reached
+/// through the proxy's tunnel, as the HTTP/1 client reaches it
+/// (`@h1client.https_tunnel`, NO_PROXY applied), and gets HTTP/2 when it
+/// chooses h2 there; one that chooses http/1.1 goes to the HTTP/1 client,
+/// through the proxy too. An `http` URL with a proxy goes over HTTP/1.1 to
+/// the proxy, which forwards it. `max_connection_age_ms`
 /// retires a connection at that age: it takes no new stream, and closes when
 /// its last one ends. `h2c` lets `http` URLs speak HTTP/2 with prior
 /// knowledge.
@@ -300,7 +303,18 @@ async fn H2Backend::dial(
   target : @mux.Target,
   phases : @mux.Phases,
 ) -> Connection? raise @mttp_core.TransportError {
-  let tcp = self.dialer.connect(host=target.host, port=target.port)
+  // Through the proxy configured for https, as h1client would route the
+  // origin (`no_proxy` included); directly otherwise.
+  let tunnel = if target.secure && self.config.proxy.https is Some(_) {
+    @h1client.https_tunnel(self.dialer, self.config, url=target.origin)
+  } else {
+    None
+  }
+  let tunneled = tunnel is Some(_)
+  let tcp = match tunnel {
+    Some(conn) => conn
+    None => self.dialer.connect(host=target.host, port=target.port)
+  }
   let mut owned = true
   defer (if owned { tcp.close() })
   phases.emit(Dialed(addr=target.address))
@@ -313,8 +327,14 @@ async fn H2Backend::dial(
     owned = false
     phases.emit(TlsDone)
     if tls.alpn() != Some("h2") {
-      self.handoff.park(target.host, target.port, tls)
       self.remember_http11(target.origin)
+      // h1client reaches a proxied origin through the proxy, not through
+      // a hand-over to the origin's address: it makes its own tunnel.
+      if tunneled {
+        tls.close()
+      } else {
+        self.handoff.park(target.host, target.port, tls)
+      }
       return None
     }
     (tls : &@rt.Conn)
@@ -381,13 +401,11 @@ pub async fn H2Backend::send(
     raise @mux.invalid("negative body byte ceiling")
   }
   let target = @mux.target(request)
-  let proxied = if target.secure {
-    self.config.proxy.https is Some(_)
-  } else {
-    self.config.proxy.http is Some(_)
-  }
+  // A forward proxy takes HTTP/1.1; an https origin goes through the
+  // proxy's tunnel, over HTTP/2 when it chooses h2 (`dial`).
+  let forwarded = !target.secure && self.config.proxy.http is Some(_)
   if (!target.secure && !self.h2c) ||
-    proxied ||
+    forwarded ||
     request.meth is Connect ||
     request.headers.contains("upgrade") ||
     self.speaks_http11(target.origin) {

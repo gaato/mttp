@@ -142,8 +142,9 @@ Reset, so the client learns at once that it is gone.
 
 - No 0-RTT, no server push, and no WebSockets over HTTP/2 or HTTP/3: a
   request with `Upgrade` goes over HTTP/1.1.
-- HTTP/2 and HTTP/3 are not sent through proxies. While a proxy is
-  configured for a scheme, its requests go over HTTP/1.1 through it.
+- HTTP/3 is not sent through proxies, which would take CONNECT-UDP
+  (RFC 9298), and `http` URLs go to a proxy over HTTP/1.1. An `https`
+  origin behind a proxy gets HTTP/2 through the proxy's tunnel.
 - Trailers are not exposed, on either side.
 - The HTTP/3 server has no limit of connections per client address, as
   gaato/mttp's TCP listener has none; `max_connections` bounds them all.

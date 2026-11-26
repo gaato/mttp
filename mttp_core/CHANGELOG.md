@@ -24,6 +24,11 @@ never does.
   at shutdown, or a failed write), so that a TLS adapter sends close_notify
   only when no response was cut short.
 
+- `h1client.https_tunnel(dialer, config, url~, agent?)`: the byte stream
+  to an https origin through the proxy `config` gives it (HTTP CONNECT or
+  SOCKS5, `no_proxy` applied), or `None` when it goes direct, for a client
+  that runs its own TLS inside (gaato/mttp_ng's HTTP/2 client).
+
 ### Changed
 
 - `h1client` runs on `attempt`; its behaviour is unchanged.

@@ -37,6 +37,9 @@ never does.
 - The HTTP/3 client tells the server with CONNECTION_CLOSE whenever it
   closes a connection, `close()` of the backend included, so the server's
   side ends at once rather than at its idle timeout.
+- An `https` origin behind a proxy gets HTTP/2 through the proxy's tunnel
+  (`@h1client.https_tunnel`); one that chooses http/1.1 there, and `http`
+  URLs with a proxy, go over HTTP/1.1 through it, as before.
 - `build.js`, run under Node when a program that imports the module
   builds, finds the libraries with pkg-config and puts them on that
   program's link line.

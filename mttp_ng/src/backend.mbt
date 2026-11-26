@@ -12,8 +12,9 @@
 /// HTTP/1.1 on the same connection otherwise; `http` URLs get HTTP/1.1.
 /// With no `config`, proxy variables (`http_proxy`, `https_proxy`,
 /// `all_proxy`, `no_proxy`) are read from the process environment once, as
-/// `@mttp.backend()` reads them, and a scheme with a proxy goes over
-/// HTTP/1.1 through it. An explicit `config` is used as it is;
+/// `@mttp.backend()` reads them: an `https` origin goes through the
+/// proxy's tunnel, over HTTP/2 when it chooses h2, and an `http` URL over
+/// HTTP/1.1 to the proxy. An explicit `config` is used as it is;
 /// `@h1client.ProxyConfig::none()` in it turns proxies off.
 /// `max_connection_age_ms` closes connections at that age once their last
 /// request ends; zero or less prevents reuse.
