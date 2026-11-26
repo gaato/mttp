@@ -57,8 +57,31 @@ fn Raw::take_events(self : Raw) -> Unit {
 }
 
 ///|
-/// Sends what the connection has to say and feeds it what arrives, until
-/// `done` or `within_ms`.
+/// Sends what the connection has to say, then waits for a datagram (no
+/// longer than its next timer) and feeds it, or runs the timer.
+async fn Raw::step(self : Raw) -> Unit {
+  for datagram in (self.conn.datagrams() catch { _ => [] }) {
+    self.udp.send(datagram)
+  }
+  self.take_events()
+  let got = @async.with_timeout_opt(
+    self.conn.expiry_ms().unwrap_or(50).max(1),
+    () => self.udp.recv(max_len=65536),
+  )
+  match got {
+    Some(datagram) => self.conn.read(datagram) catch { _ => () }
+    None =>
+      if self.conn.expiry_ms() == Some(0) {
+        self.conn.on_expiry() catch {
+          _ => ()
+        }
+      }
+  }
+  self.take_events()
+}
+
+///|
+/// Steps until `done` or `within_ms`.
 async fn Raw::drive(
   self : Raw,
   done : () -> Bool,
@@ -66,31 +89,34 @@ async fn Raw::drive(
 ) -> Unit {
   let finished = @async.with_timeout_opt(within_ms, () => {
     while !done() {
-      for datagram in (self.conn.datagrams() catch { _ => [] }) {
-        self.udp.send(datagram)
-      }
-      self.take_events()
-      if done() {
-        break
-      }
-      let got = @async.with_timeout_opt(
-        self.conn.expiry_ms().unwrap_or(50).max(1),
-        () => self.udp.recv(max_len=65536),
-      )
-      match got {
-        Some(datagram) => self.conn.read(datagram) catch { _ => () }
-        None =>
-          if self.conn.expiry_ms() == Some(0) {
-            self.conn.on_expiry() catch {
-              _ => ()
-            }
-          }
-      }
-      self.take_events()
+      self.step()
     }
   })
   if finished is None {
     fail("not done within \{within_ms} ms")
+  }
+}
+
+///|
+/// Steps for `ms`: what is left of the handshake (its last flights and
+/// their acknowledgements) is done, and the server has nothing more to
+/// say until its own timers.
+async fn Raw::settle(self : Raw, ms~ : Int32) -> Unit {
+  ignore(
+    @async.with_timeout_opt(ms, () => {
+      while true {
+        self.step()
+      }
+    }),
+  )
+}
+
+///|
+/// Receives the server's next datagram and drops it, as if it were lost.
+async fn Raw::lose_next(self : Raw, within_ms~ : Int32) -> Unit {
+  guard @async.with_timeout_opt(within_ms, () => self.udp.recv(max_len=65536))
+    is Some(_) else {
+    fail("nothing arrived within \{within_ms} ms")
   }
 }
 
@@ -148,7 +174,8 @@ async test "a client whose address changes keeps its connection" {
 /// period the server sends it again when the client's next packet comes
 /// (RFC 9000, section 10.2.1), so the client learns why at once, by the
 /// close's own code. Freed at once, as first written, the server answered
-/// nothing, and the client waited out its idle timeout.
+/// nothing, and the client waited out its idle timeout. Only the address
+/// the connection had gets it again (Codex's review of #59).
 async test "a CONNECTION_CLOSE that was lost is sent again in the closing period" {
   with_server(
     limits={ ..@h1server.ServerLimits::default(), header_timeout_ms: 300, },
@@ -156,9 +183,23 @@ async test "a CONNECTION_CLOSE that was lost is sent again in the closing period
       let raw = Raw::open(port)
       defer raw.close()
       raw.drive(() => raw.conn.handshake_done())
-      // The client hears nothing more: what remains of the handshake, and
-      // then the close at 300 ms, are lost.
-      assert_true(raw.lose(quiet_ms=600) > 0)
+      raw.settle(ms=100)
+      // The next datagram is the close, at 300 ms; it is lost. The closing
+      // period is three probe timeouts, under 100 ms on a loopback, so
+      // the probes below follow it at once.
+      raw.lose_next(within_ms=1000)
+      // A packet of the connection from another address gets nothing: a
+      // connection ID proves nothing of who sends, and answering would
+      // reflect the close at whoever the source names.
+      let first = raw.udp
+      raw.udp = @socket.UdpClient(raw.server)
+      ignore(raw.get())
+      for datagram in raw.conn.datagrams() {
+        raw.udp.send(datagram)
+      }
+      assert_eq(raw.lose(quiet_ms=20), 0)
+      raw.udp.close()
+      raw.udp = first
       ignore(raw.get())
       raw.drive(() => raw.closed is Some(_), within_ms=2000)
       assert_eq(raw.closed, Some((true, @h3.H3_NO_ERROR)))
@@ -180,9 +221,10 @@ async test "a packet for a connection the server forgot gets a Stateless Reset" 
       let raw = Raw::open(port)
       defer raw.close()
       raw.drive(() => raw.conn.handshake_done())
-      ignore(raw.lose(quiet_ms=600))
+      raw.settle(ms=100)
+      raw.lose_next(within_ms=1000)
       // Three probe timeouts on a loopback are well under a second.
-      @async.sleep(1500)
+      @async.sleep(1000)
       ignore(raw.get())
       raw.drive(() => raw.closed is Some(_), within_ms=2000)
       guard raw.closed is Some((by_peer, code)) else { fail("not closed") }

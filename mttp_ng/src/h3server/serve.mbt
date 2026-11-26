@@ -58,6 +58,13 @@ priv struct Ended {
   /// 2nd, 4th, 8th..., so a client that keeps sending gets fewer answers,
   /// as section 10.2.1 asks.
   mut received : Int32
+  /// The client's address when the connection closed, one QUIC had
+  /// validated: the close goes again only to it. A connection ID is no
+  /// proof of who sends (another client of the server sees one, and a
+  /// source address can be forged), and the close may be larger than the
+  /// packet that asks for it, so answering any address would reflect it
+  /// at a victim (Codex's review of #59).
+  peer : String
 }
 
 ///|
@@ -456,7 +463,13 @@ fn Listener::retire(self : Listener, conn : Served, now : Int64) -> Unit {
     }
   } else {
     let period = (conn.quic.pto_ms() * 3L).min(ENDED_MAX_MS)
-    let ended = { ids: conn.ids, until: now + period, close, received: 0, }
+    let ended = {
+      ids: conn.ids,
+      until: now + period,
+      close,
+      received: 0,
+      peer: conn.peer_text,
+    }
     for id in conn.ids {
       self.routes[id] = Ended(ended)
     }
@@ -520,7 +533,7 @@ async fn Listener::receive(
       conn.send()
     }
     Some(Ended(ended)) =>
-      if ended.close is Some(close) {
+      if ended.close is Some(close) && peer.to_string() == ended.peer {
         ended.received += 1
         if (ended.received & (ended.received - 1)) == 0 {
           self.udp.send(close, peer) catch {
