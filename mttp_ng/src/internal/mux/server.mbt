@@ -36,6 +36,8 @@ pub(all) struct ServerStream {
   mut sent : Int32
   /// Why the request body cannot be read on (too large, too slow).
   mut failure : @mttp_core.TransportError?
+  /// The trailer section that followed the request body.
+  mut trailers : @mttp_core.Headers
 }
 
 ///|
@@ -50,6 +52,22 @@ pub fn ServerStream::new(id : Int64, ended~ : Bool) -> ServerStream {
     sent_end: false,
     sent: 0,
     failure: None,
+    trailers: @mttp_core.Headers::empty(),
+  }
+}
+
+///|
+/// A header section arrived after the request head: the trailers, which
+/// end the client's half with `ended`. nghttp2 and nghttp3 have refused
+/// pseudo fields in it.
+pub fn ServerStream::trailers_arrived(
+  self : ServerStream,
+  fields : Array[(String, String)],
+  ended~ : Bool,
+) -> Unit {
+  self.trailers = @mttp_core.Headers::of(fields)
+  if ended {
+    self.ended = true
   }
 }
 
@@ -91,6 +109,9 @@ pub(open) trait ServerConn {
   fn send_continue(Self, Int64) -> Bool
   /// Queues body bytes on `stream`; `false` when it takes no more.
   fn push(Self, Int64, Bytes, end~ : Bool) -> Bool
+  /// Ends the response body after what was pushed with a trailer section;
+  /// false as `push`.
+  fn end_with_trailers(Self, Int64, Array[(String, String)]) -> Bool
   /// Bytes of `stream`'s body not yet sent.
   fn queued(Self, Int64) -> Int32
   /// Acknowledges `len` body bytes of `stream` the handler took.
@@ -222,6 +243,16 @@ impl @mttp_core.BodyStream for RequestBody with fn read_some(self) {
 ///|
 impl @mttp_core.BodyStream for RequestBody with fn close(self) {
   self.done = true
+}
+
+///|
+/// The request's trailers, once its body was read to the end.
+impl @mttp_core.BodyStream for RequestBody with fn trailers(self) {
+  if self.done && self.stream.ended {
+    self.stream.trailers
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -553,9 +584,35 @@ async fn ServerContext::respond(
       while true {
         match piece {
           More(bytes) => if !conn.push(stream.id, bytes, end=false) { return }
-          // At its end, or where the stream got to when the server began
-          // to stop.
-          End | Stopped => {
+          // At its end, with the producer's trailers; trailers that
+          // cannot be sent reset the stream rather than end the response
+          // as whole, as a producer's failure does.
+          End => {
+            let trailers = source.trailers()
+            if trailers.length() == 0 {
+              ignore(conn.push(stream.id, b"", end=true))
+            } else {
+              match trailer_fields(trailers) {
+                Ok(fields) => ignore(conn.end_with_trailers(stream.id, fields))
+                Err(detail) => {
+                  (self.on_error)(
+                    @mttp_core.TransportError(
+                      kind=Invalid,
+                      phase=Body,
+                      detail="the response's trailers cannot be sent: \{detail}",
+                    ),
+                  )
+                  conn.abort(stream.id)
+                  conn.flush()
+                  return
+                }
+              }
+            }
+            break
+          }
+          // Where the stream got to when the server began to stop: a cut
+          // producer's trailers describe a body that was not sent.
+          Stopped => {
             ignore(conn.push(stream.id, b"", end=true))
             break
           }

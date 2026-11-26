@@ -2,8 +2,24 @@
 priv struct DecodedBody {
   read : async () -> Bytes? raise @mttp_core.TransportError
   close_ : () -> Unit
+  /// The body read beneath, whose trailers pass on unchanged: a content
+  /// coding covers the bytes, not the trailer fields.
+  origin : @mttp_core.Body
   decoder : ContentDecoder
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
+}
+
+///|
+impl @mttp_core.BodyStream for DecodedBody with fn trailers(self) {
+  if self.ended {
+    self.origin.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -22,6 +38,7 @@ impl @mttp_core.BodyStream for DecodedBody with fn read_some(self) {
       )
   }
   if bytes is None {
+    self.ended = true
     @mttp_core.BodyStream::close(self)
   }
   bytes
@@ -46,6 +63,9 @@ impl @mttp_core.BodyStream for DecodedBody with fn close(self) {
 priv struct CollectedBody {
   read : async () -> Bytes? raise @mttp_core.TransportError
   close_ : () -> Unit
+  /// The body read beneath, whose trailers pass on unchanged: a content
+  /// coding covers the bytes, not the trailer fields.
+  origin : @mttp_core.Body
   // The bytes read so far: chunks of 64 KiB or more as they came, smaller
   // ones gathered into blocks of 64 KiB, so neither a growing buffer nor a
   // body of one-byte chunks holds much more than the bytes themselves.
@@ -57,6 +77,10 @@ priv struct CollectedBody {
   mut over : Bool
   on_end : (Bytes) -> Unit
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
 }
 
 ///|
@@ -68,6 +92,15 @@ fn CollectedBody::flush_block(self : CollectedBody) -> Unit {
   if self.block.length() > 0 {
     self.collected.push(self.block.to_bytes())
     self.block = Buffer(capacity=collected_block_bytes)
+  }
+}
+
+///|
+impl @mttp_core.BodyStream for CollectedBody with fn trailers(self) {
+  if self.ended {
+    self.origin.trailers()
+  } else {
+    @mttp_core.Headers::empty()
   }
 }
 
@@ -112,6 +145,7 @@ impl @mttp_core.BodyStream for CollectedBody with fn read_some(self) {
         self.collected = []
         (self.on_end)(body.to_bytes())
       }
+      self.ended = true
       @mttp_core.BodyStream::close(self)
     }
   }
@@ -232,8 +266,10 @@ pub impl @mttp_core.Backend for Decompress with fn send(self, request, options) 
             @mttp_core.StreamBody::new(DecodedBody::{
               read,
               close_,
+              origin: response.body,
               decoder,
               closed: false,
+              ended: false,
             }),
           ),
         }
@@ -258,6 +294,7 @@ pub impl @mttp_core.Backend for Decompress with fn send(self, request, options) 
           @mttp_core.StreamBody::new(CollectedBody::{
             read,
             close_,
+            origin: response.body,
             collected: [],
             collected_bytes: 0,
             block: Buffer(capacity=0),
@@ -268,6 +305,7 @@ pub impl @mttp_core.Backend for Decompress with fn send(self, request, options) 
               |> ignore
             },
             closed: false,
+            ended: false,
           }),
         ),
       }

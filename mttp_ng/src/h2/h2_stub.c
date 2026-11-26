@@ -111,6 +111,11 @@ typedef struct outq {
   uint8_t *data;
   size_t len, off, cap;
   int ended;      // MoonBit pushed the last bytes
+  // The trailer section that ends the body (a copy of its field blob), or
+  // NULL: submitted when the provider reaches the end, which then leaves
+  // the stream open for it (RFC 9113, section 8.1).
+  uint8_t *trailers;
+  size_t trailers_len;
   int finished;   // the provider gave EOF
   int drained;    // DRAINED was recorded since the last push
   int32_t stream; // 0 until nghttp2 assigned the request its stream
@@ -168,6 +173,7 @@ static void queue_free_all(session *s) {
   while (q) {
     outq *next = q->next;
     free(q->data);
+    free(q->trailers);
     free(q);
     q = next;
   }
@@ -202,6 +208,7 @@ static void queue_remove(session *s, outq *target) {
     if (*link == target) {
       *link = target->next;
       free(target->data);
+      free(target->trailers);
       free(target);
       return;
     }
@@ -371,10 +378,12 @@ static int on_frame_not_send(nghttp2_session *ng, const nghttp2_frame *frame,
   return 0;
 }
 
+static nghttp2_nv *fields_of(const uint8_t *blob, size_t bloblen,
+                             size_t *count);
+
 static NG_SSIZE read_body(nghttp2_session *ng, int32_t stream, uint8_t *buf,
                           size_t length, uint32_t *flags,
                           nghttp2_data_source *source, void *user) {
-  (void)ng;
   session *s = user;
   outq *q = source->ptr;
   if (q->stream == 0) q->stream = stream;
@@ -393,6 +402,18 @@ static NG_SSIZE read_body(nghttp2_session *ng, int32_t stream, uint8_t *buf,
   if (q->len == q->off && q->ended) {
     *flags |= NGHTTP2_DATA_FLAG_EOF;
     q->finished = 1;
+    if (q->trailers) {
+      // The trailers' HEADERS frame ends the stream instead of this DATA.
+      size_t count;
+      nghttp2_nv *nva = fields_of(q->trailers, q->trailers_len, &count);
+      if (!nva) return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+      int rv = nghttp2_submit_trailer(ng, stream, nva, count);
+      free(nva);
+      free(q->trailers);
+      q->trailers = NULL;
+      if (rv != 0) return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+      *flags |= NGHTTP2_DATA_FLAG_NO_END_STREAM;
+    }
     return (NG_SSIZE)n;
   }
   if (n == 0) return NGHTTP2_ERR_DEFERRED;
@@ -613,9 +634,11 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_want_read(session_box *b) {
 }
 
 // Header fields arrive as one blob: a count, then name and value blobs.
-static nghttp2_nv *fields(moonbit_bytes_t blob, size_t *count) {
+// The fields point into the blob.
+static nghttp2_nv *fields_of(const uint8_t *blob, size_t bloblen,
+                             size_t *count) {
   const uint8_t *p = blob;
-  const uint8_t *end = blob + Moonbit_array_length(blob);
+  const uint8_t *end = blob + bloblen;
 #define READ_I32(v)                                                            \
   do {                                                                         \
     if (end - p < 4) goto bad;                                                 \
@@ -651,6 +674,10 @@ bad:
   *count = 0;
   return NULL;
 #undef READ_I32
+}
+
+static nghttp2_nv *fields(moonbit_bytes_t blob, size_t *count) {
+  return fields_of(blob, (size_t)Moonbit_array_length(blob), count);
 }
 
 static outq *queue_new(session *s, int32_t stream) {
@@ -774,6 +801,27 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_push(session_box *b, int32_t stream,
     q->len += (size_t)len;
   }
   if (end) q->ended = 1;
+  q->drained = 0;
+  nghttp2_session_resume_data(s->ng, stream);
+  return 0;
+}
+
+// Ends `stream`'s body after what was pushed with the trailer section in
+// the field blob `blob`, which nghttp2 sends once the body went: 0, or -1
+// when the stream has no queue or its body already ended.
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h2_end_with_trailers(session_box *b,
+                                                        int32_t stream,
+                                                        moonbit_bytes_t blob) {
+  if (!usable(b)) return -1;
+  session *s = b->s;
+  outq *q = queue_of(s, stream);
+  if (!q || q->ended) return -1;
+  size_t len = (size_t)Moonbit_array_length(blob);
+  q->trailers = malloc(len ? len : 1);
+  if (!q->trailers) return -1;
+  memcpy(q->trailers, blob, len);
+  q->trailers_len = len;
+  q->ended = 1;
   q->drained = 0;
   nghttp2_session_resume_data(s->ng, stream);
   return 0;

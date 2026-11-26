@@ -22,6 +22,10 @@ priv struct ResponseBody {
   mut index : Int32
   /// The message ended on the wire.
   mut raw_done : Bool
+  /// The trailer section of a chunked body, once it ended.
+  mut trailers : @mttp_core.Headers
+  /// The reader got EOF.
+  mut ended : Bool
   mut closed : Bool
   mut busy : Bool
 }
@@ -54,6 +58,8 @@ fn ResponseBody::new(
     chunks: [],
     index: 0,
     raw_done: false,
+    trailers: @mttp_core.Headers::empty(),
+    ended: false,
     closed: false,
     busy: false,
   }
@@ -105,9 +111,20 @@ impl @mttp_core.BodyStream for ResponseBody with fn read_some(self) {
       Some(bytes)
     }
     None => {
+      self.ended = true
       self.finish(self.raw_done && self.reusable)
       None
     }
+  }
+}
+
+///|
+/// The trailer section of a chunked response, once the reader got EOF.
+impl @mttp_core.BodyStream for ResponseBody with fn trailers(self) {
+  if self.ended {
+    self.trailers
+  } else {
+    @mttp_core.Headers::empty()
   }
 }
 
@@ -155,6 +172,9 @@ async fn ResponseBody::read_raw(self : ResponseBody) -> Bytes? {
         let decoded = self.chunked.feed(bytes)
         self.chunks = decoded.chunks
         self.raw_done = decoded.done
+        if decoded.done {
+          self.trailers = decoded.trailers
+        }
         self.wire.unread(bytes[decoded.consumed:])
       }
     // The close ends this body, so a close without the transport's own

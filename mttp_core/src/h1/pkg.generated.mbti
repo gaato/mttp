@@ -9,6 +9,8 @@ import {
 // Values
 pub fn encode_chunk(BytesView) -> Bytes
 
+pub fn encode_last_chunk(@mttp_core.Headers) -> Bytes raise ParseError
+
 pub fn parse_request_head(BytesView, limits? : Limits) -> ParsedRequest raise ParseError
 
 pub fn parse_response_head(BytesView, limits? : Limits) -> ParsedResponse raise ParseError

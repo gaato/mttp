@@ -124,6 +124,31 @@ pub fn request_fields(
 }
 
 ///|
+/// The fields of a trailer section to send, or why it cannot be sent:
+/// fields that fail validation, the connection-specific ones HTTP/2 and
+/// HTTP/3 forbid in any section, and those that would change framing or
+/// routing if a recipient merged them into the head (Content-Length, TE,
+/// Trailer; RFC 9110, section 6.5.1), as gaato/mttp_core's HTTP/1.1
+/// encoder refuses them.
+pub fn trailer_fields(
+  trailers : @mttp_core.Headers,
+) -> Result[Array[(String, String)], String] {
+  trailers.validate() catch {
+    @mttp_core.TransportError(detail~, ..) => return Err(detail)
+  }
+  let fields = []
+  for field in trailers.iter() {
+    let name = field.0.to_lower()
+    if connection_fields.contains(name) ||
+      name is ("content-length" | "te" | "trailer") {
+      return Err("\{name} cannot be a trailer field")
+    }
+    fields.push((name, field.1))
+  }
+  Ok(fields)
+}
+
+///|
 /// The response head in `fields`: `Ok(None)` for an interim (1xx) response,
 /// `Err` for one that is not a valid response. nghttp2 and nghttp3 already
 /// refused misplaced or unknown pseudo fields and connection-specific ones

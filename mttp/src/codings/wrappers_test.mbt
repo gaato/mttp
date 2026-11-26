@@ -478,3 +478,55 @@ test "compress streams without prefetch and its output is closed without reading
     assert_eq(feed.closes(), 1)
   })
 }
+
+///|
+/// A content coding covers a body's bytes, not its trailer fields (RFC 9110,
+/// sections 6.5 and 8.4): decoding and encoding pass the trailers on.
+test "Decompress and encode_body pass a body's trailers on" {
+  @driver.run_sync(() => {
+    let trailers = @mttp_core.Headers::of([("x-checksum", "9")])
+    let inner = fixture(
+      @mttp_core.Response::new(
+        200,
+        headers=@mttp_core.Headers::of([("content-encoding", "gzip")]),
+        body=@mttp_core.Body::with_trailers(encoded(b"hello", Gzip), trailers~),
+      ),
+    )
+    let response = @codings.Decompress::new(inner).send(
+      @mttp_core.Request::get("https://example.test/"),
+      @mttp_core.SendOptions::default(),
+    )
+    assert_eq(read_body(response.body), b"hello")
+    assert_eq(response.body.trailers().get("x-checksum"), Some("9"))
+    let body = @codings.encode_body(
+      @mttp_core.Body::with_trailers(b"hello", trailers~),
+      Gzip,
+    )
+    ignore(body.read_all(max=1024))
+    assert_eq(body.trailers().get("x-checksum"), Some("9"))
+  })
+}
+
+///|
+/// An encoded body has bytes to hand out after its source ended (gzip's
+/// footer): its trailers are its own end's, so none show before it
+/// returned EOF (Codex's review of #60).
+test "an encoded body shows its trailers only at its own end" {
+  @driver.run_sync(() => {
+    let body = @codings.encode_body(
+      @mttp_core.Body::with_trailers(
+        b"hello",
+        trailers=@mttp_core.Headers::of([("x-checksum", "9")]),
+      ),
+      Gzip,
+    )
+    guard body is Stream(cell) else { fail("not a stream") }
+    let stream = cell.take()
+    while stream.read_some() is Some(_) {
+      assert_eq(body.trailers().length(), 0)
+      assert_eq(stream.trailers().length(), 0)
+    }
+    assert_eq(stream.trailers().get("x-checksum"), Some("9"))
+    assert_eq(body.trailers().get("x-checksum"), Some("9"))
+  })
+}

@@ -26,6 +26,7 @@ test "internal stream adapters obey the shared BodyStream contract" {
         reader: @sim.Feed::bytes(driver, [b"a", b"bc"]),
         request: Empty,
         closed: false,
+        ended: false,
       },
       b"abc",
     )
@@ -36,8 +37,41 @@ test "internal stream adapters obey the shared BodyStream contract" {
         count: 0L,
         failure: Ref(None),
         closed: false,
+        ended: false,
       },
       b"abc",
+    )
+    // Over a source with trailers, each passes them on at its own end.
+    let trailers = @mttp_core.Headers::of([("x-checksum", "9")])
+    let trailed = () => {
+      guard @mttp_core.Body::with_trailers(b"abc", trailers~) is Stream(cell) else {
+        abort("not a stream")
+      }
+      cell.take() catch {
+        _ => abort("taken")
+      }
+    }
+    @sim.check_body_stream_contract(
+      () => ResponseOwner::{
+        reader: trailed(),
+        request: Empty,
+        closed: false,
+        ended: false,
+      },
+      b"abc",
+      trailers~,
+    )
+    @sim.check_body_stream_contract(
+      () => LimitedInput::{
+        reader: trailed(),
+        limit: 3,
+        count: 0L,
+        failure: Ref(None),
+        closed: false,
+        ended: false,
+      },
+      b"abc",
+      trailers~,
     )
     @sim.check_body_stream_contract(
       () => {

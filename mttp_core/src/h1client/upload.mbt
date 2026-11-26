@@ -67,9 +67,11 @@ async fn exchange(
       wire.phases.emit(Written)
       { head: timer.run(Head, () => final_head(wire, limits)), uploaded: true, }
     }
-    Stream(_, None) => {
+    Stream(stream, None) => {
       // An empty stream: the head, and the last chunk when chunked.
-      let last = if framing is Chunked { @h1.encode_chunk(b"") } else { b"" }
+      let last = last_chunk(stream, framing) catch {
+        ProducerFailed(error) => raise error
+      }
       timer.run(Write, () => wire.write(head + last))
       wire.phases.emit(Written)
       { head: timer.run(Head, () => final_head(wire, limits)), uploaded: true, }
@@ -84,6 +86,25 @@ async fn exchange(
         limits,
         coordination,
         expect_continue=false,
+      )
+  }
+}
+
+///|
+/// What ends a stream body that reached EOF: under chunked framing, the
+/// last chunk with the stream's trailers; nothing otherwise (a body with a
+/// length carries no trailers on HTTP/1.1). Trailers a trailer section
+/// cannot carry fail the upload as the stream's own failure, so the
+/// request does not end as whole.
+fn last_chunk(
+  stream : &@mttp_core.BodyStream,
+  framing : @h1.Framing,
+) -> Bytes raise ProducerFailed {
+  guard framing is Chunked else { return b"" }
+  @h1.encode_last_chunk(stream.trailers()) catch {
+    @h1.ParseError(detail~, ..) =>
+      raise ProducerFailed(
+        @mttp_core.TransportError(kind=Invalid, phase=Body, detail~),
       )
   }
 }
@@ -142,8 +163,7 @@ async fn upload(
           error => raise ProducerFailed(error)
         }
       }
-      let last = if framing is Chunked { @h1.encode_chunk(b"") } else { b"" }
-      wire.send(prefix + last, timer)
+      wire.send(prefix + last_chunk(stream, framing), timer)
     }
   }
   wire.phases.emit(Written)

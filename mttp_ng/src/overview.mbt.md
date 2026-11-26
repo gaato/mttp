@@ -145,7 +145,6 @@ Reset, so the client learns at once that it is gone.
 - HTTP/3 is not sent through proxies, which would take CONNECT-UDP
   (RFC 9298), and `http` URLs go to a proxy over HTTP/1.1. An `https`
   origin behind a proxy gets HTTP/2 through the proxy's tunnel.
-- Trailers are not exposed, on either side.
 - The HTTP/3 server has no limit of connections per client address, as
   gaato/mttp's TCP listener has none; `max_connections` bounds them all.
 

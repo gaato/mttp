@@ -2,8 +2,24 @@
 priv struct EncodedBody {
   read : async () -> Bytes? raise @mttp_core.TransportError
   close_ : () -> Unit
+  /// The body read beneath, whose trailers pass on unchanged: a content
+  /// coding covers the bytes, not the trailer fields.
+  origin : @mttp_core.Body
   encoder : ContentEncoder
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
+}
+
+///|
+impl @mttp_core.BodyStream for EncodedBody with fn trailers(self) {
+  if self.ended {
+    self.origin.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -22,6 +38,7 @@ impl @mttp_core.BodyStream for EncodedBody with fn read_some(self) {
       )
   }
   if chunk is None {
+    self.ended = true
     @mttp_core.BodyStream::close(self)
   }
   chunk
@@ -59,8 +76,10 @@ pub fn encode_body(
     @mttp_core.StreamBody::new(EncodedBody::{
       read,
       close_,
+      origin: body,
       encoder,
       closed: false,
+      ended: false,
     }),
   )
 }

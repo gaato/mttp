@@ -40,6 +40,10 @@ never does.
 - An `https` origin behind a proxy gets HTTP/2 through the proxy's tunnel
   (`@h1client.https_tunnel`); one that chooses http/1.1 there, and `http`
   URLs with a proxy, go over HTTP/1.1 through it, as before.
+- Trailer sections both ways over HTTP/2 and HTTP/3, clients and servers,
+  through gaato/mttp_core's `BodyStream::trailers`: received ones are the
+  body's once it was read, and a stream's are sent after its last byte; a
+  section HTTP/2 or HTTP/3 cannot carry resets the stream.
 - `build.js`, run under Node when a program that imports the module
   builds, finds the libraries with pkg-config and puts them on that
   program's link line.

@@ -112,6 +112,8 @@ pub fn Body::length(Self) -> Int64?
 pub fn Body::not_equal(Self, Self) -> Bool
 pub async fn Body::read_all(Self, max~ : Int32) -> Bytes raise TransportError
 pub fn Body::to_repr(Self) -> @debug.Repr
+pub fn Body::trailers(Self) -> Headers
+pub fn Body::with_trailers(Bytes, trailers~ : Headers) -> Self
 
 #non_exhaustive
 #derive(Eq, @debug.Debug)
@@ -354,6 +356,7 @@ pub(open) trait Backend {
 pub(open) trait BodyStream {
   async fn read_some(Self) -> Bytes? raise TransportError
   fn close(Self) -> Unit
+  fn trailers(Self) -> Headers = _
 }
 
 pub(open) trait UriPart {

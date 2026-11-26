@@ -341,10 +341,12 @@ pub async fn HttpCache::send(
         Collected::{
           read,
           close_,
+          origin: response.body,
           buffer: Buffer(capacity=0),
           limit: self.max_entry_bytes,
           over: false,
           closed: false,
+          ended: false,
           commit: body => self.offer(key, { ..base, body, }, generation),
         },
         length?=response.body.length(),
