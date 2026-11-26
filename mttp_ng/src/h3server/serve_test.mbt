@@ -36,6 +36,15 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
       } else {
         @mttp_core.Response::new(200, body=Bytes(b"after the handshake"))
       }
+    // As /too-early, each answer 600 ms in.
+    "/too-early-slow" => {
+      @async.sleep(600)
+      if request.attributes.get(@h3server.early_data) == Some(true) {
+        @mttp_core.Response::new(425)
+      } else {
+        @mttp_core.Response::new(200, body=Bytes(b"after the handshake"))
+      }
+    }
     // Whether the request came in early data.
     "/zero-rtt" =>
       @mttp_core.Response::new(

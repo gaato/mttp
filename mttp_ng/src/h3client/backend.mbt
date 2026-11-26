@@ -496,21 +496,27 @@ async fn H3Backend::attempt(
 
 ///|
 /// Sends a request that went in early data again once `connection`'s
-/// handshake completed; `error` when it does not.
+/// handshake completed, within the attempt it began in (`timer`): the wait
+/// and the second exchange take what is left of its deadline, not a new
+/// one (Codex's review of #61). `error` when the handshake does not
+/// complete.
 async fn H3Backend::again_after_handshake(
   self : H3Backend,
   connection : Connection,
   request : @mttp_core.Request,
   options : @mttp_core.SendOptions,
   error : @mttp_core.TransportError,
+  timer : @attempt.AttemptTimer,
 ) -> @mttp_core.Response? raise @mttp_core.TransportError {
-  connection.wait_for(() => connection.handshake) catch {
-    @mttp_core.TransportError(..) => raise error
-  }
+  timer.run(Head, () => {
+    connection.wait_for(() => connection.handshake) catch {
+      @mttp_core.TransportError(..) => raise error
+    }
+  })
   if !connection.handshake {
     raise error
   }
-  self.try_send(request, options)
+  self.send_within(request, options, Some(timer), early=false)
 }
 
 ///|
@@ -578,6 +584,22 @@ pub async fn H3Backend::try_send(
   request : @mttp_core.Request,
   options : @mttp_core.SendOptions,
 ) -> @mttp_core.Response? raise @mttp_core.TransportError {
+  self.send_within(request, options, None, early=true)
+}
+
+///|
+/// `try_send` under `timer` when given, in 0-RTT only with `early`: a
+/// request sent again after its early data was rejected keeps the attempt
+/// it began in, and goes after a handshake, never early again, so a
+/// server that answers it 425 on every resumed connection cannot keep it
+/// going round.
+async fn H3Backend::send_within(
+  self : H3Backend,
+  request : @mttp_core.Request,
+  options : @mttp_core.SendOptions,
+  timer : @attempt.AttemptTimer?,
+  early~ : Bool,
+) -> @mttp_core.Response? raise @mttp_core.TransportError {
   let body = @mux.RequestSource::new(request)
   defer body.finish()
   if self.closed {
@@ -606,12 +628,16 @@ pub async fn H3Backend::try_send(
     write: self.config.write_timeout_ms,
     read: self.config.read_timeout_ms,
   }
-  let timer = @attempt.AttemptTimer::new(
-    self.clock,
-    self.timer,
-    options.timeout_ms,
-    limits~,
-  )
+  let timer = match timer {
+    Some(timer) => timer
+    None =>
+      @attempt.AttemptTimer::new(
+        self.clock,
+        self.timer,
+        options.timeout_ms,
+        limits~,
+      )
+  }
   let fields = @mux.request_fields(request, target)
   let phases = @mux.Phases::new(request)
   defer phases.end()
@@ -619,9 +645,17 @@ pub async fn H3Backend::try_send(
     body.hand_over()
     return None
   }
+  // The reservation `connection` took goes back on every exit, the wait
+  // below included (Codex's review of #61).
+  let mut reserving = true
+  defer (if reserving {
+    connection.reserved -= 1
+    connection.notify()
+  })
   // Early data may be replayed: only a request that may be repeated goes
   // in it; any other waits for the handshake.
-  let repeatable = request.meth is (Get | Head | Options) &&
+  let repeatable = early &&
+    request.meth is (Get | Head | Options) &&
     request.body is (Empty | Bytes(_))
   if connection.quic.early() && !repeatable {
     timer.run(Dial, () => {
@@ -631,11 +665,6 @@ pub async fn H3Backend::try_send(
     })
   }
   let sent_early = connection.quic.early()
-  let mut reserving = true
-  defer (if reserving {
-    connection.reserved -= 1
-    connection.notify()
-  })
   let source = body.take()
   let first = match source {
     Some(source) => timer.run(Write, () => source.read_some())
@@ -664,7 +693,9 @@ pub async fn H3Backend::try_send(
     // Early data the server rejected: the request was not processed.
     @mttp_core.TransportError(kind=Refused, ..) as error if sent_early => {
       connection.notify()
-      return self.again_after_handshake(connection, request, options, error)
+      return self.again_after_handshake(
+        connection, request, options, error, timer,
+      )
     }
     error => raise error
   }
@@ -680,6 +711,7 @@ pub async fn H3Backend::try_send(
         phase=Head,
         detail="the server answered 425 Too Early",
       ),
+      timer,
     )
   }
   Some(response)

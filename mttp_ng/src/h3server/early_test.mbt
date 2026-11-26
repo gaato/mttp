@@ -145,3 +145,78 @@ async test "a ticket's early data is accepted once, and a replay is rejected" {
     assert_true(replay.rejected)
   })
 }
+
+///|
+/// The request sent again after a 425 stays within the attempt it began
+/// in: two 600 ms answers do not fit a 1000 ms deadline (Codex's review of
+/// #61). As first written it took a fresh deadline, and, each connection
+/// retiring at once here, went early again on the next resumed one, got
+/// 425 again, and never ended.
+async test "a request sent again after a 425 keeps its attempt's deadline" {
+  with_server(early_data=true, port => {
+    let b = @h3client.H3Backend::new(
+      trust=PemFile(testdata("root.pem")),
+      early_data=true,
+      max_connection_age_ms=1,
+    )
+    defer b.close()
+    // A ticket first.
+    ignore(
+      text(
+        b.send(
+          @mttp_core.Request::get("https://localhost:\{port}/zero-rtt"),
+          defaults,
+        ),
+      ),
+    )
+    @async.sleep(50)
+    let failed = try
+      b.send(
+        @mttp_core.Request::get("https://localhost:\{port}/too-early-slow"),
+        { ..defaults, timeout_ms: Some(1000), },
+      )
+    catch {
+      @mttp_core.TransportError(kind=Timeout(..), ..) => true
+      _ => false
+    } noraise {
+      response => {
+        response.close()
+        false
+      }
+    }
+    assert_true(failed, msg="the resend outlived its attempt's deadline")
+  })
+}
+
+///|
+/// A request sent again after a 425 goes after a handshake, never in early
+/// data again (RFC 8470, section 4.2): with every connection retiring at
+/// once, so that each send resumes anew, it is answered after its second
+/// send rather than 425 for ever.
+async test "a request sent again after a 425 does not go early again" {
+  with_server(early_data=true, port => {
+    let b = @h3client.H3Backend::new(
+      trust=PemFile(testdata("root.pem")),
+      early_data=true,
+      max_connection_age_ms=1,
+    )
+    defer b.close()
+    ignore(
+      text(
+        b.send(
+          @mttp_core.Request::get("https://localhost:\{port}/zero-rtt"),
+          defaults,
+        ),
+      ),
+    )
+    @async.sleep(50)
+    let response = @async.with_timeout(5000, () => {
+      b.send(
+        @mttp_core.Request::get("https://localhost:\{port}/too-early-slow"),
+        defaults,
+      )
+    })
+    assert_eq(response.status, 200)
+    assert_eq(text(response), "after the handshake")
+  })
+}
