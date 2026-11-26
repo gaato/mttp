@@ -396,6 +396,14 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_tls_pending(session_box *b) {
   return (int32_t)BIO_ctrl_pending(s->out);
 }
 
+// How many bytes of ciphertext fed to the session it has not read yet; for
+// tls_wbtest.mbt, which drives the one-record bound of a read.
+MOONBIT_FFI_EXPORT int32_t mttp_ng_tls_input_held(session_box *b) {
+  session *s = b->s;
+  if (!s || !s->ssl) return 0;
+  return (int32_t)BIO_ctrl_pending(s->in);
+}
+
 // Takes all the ciphertext waiting to be written beneath.
 MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_tls_take(session_box *b) {
   session *s = b->s;
