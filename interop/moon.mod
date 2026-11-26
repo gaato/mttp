@@ -15,7 +15,7 @@ preferred_target = "native"
 supported_targets = "native+js"
 
 import {
-  "gaato/mttp_core@0.3.2",
+  "gaato/mttp_core@0.3.3",
   "gaato/mttp@0.5.2",
   "moonbitlang/x@0.5.7",
 }
