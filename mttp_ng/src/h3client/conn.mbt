@@ -33,6 +33,16 @@ priv struct Connection {
   mut heard_at : Int64
   mut retired : Bool
   mut closed : Bool
+  /// Streams opened in 0-RTT, which the server may reject.
+  early_ids : Array[Int64]
+  /// Hears each session ticket the server sends (`QuicConn::resumption`).
+  mut on_ticket : (Bytes) -> Unit
+  /// A connection in 0-RTT took requests before its handshake: by then the
+  /// handshake must complete, or the connection fails as `declined`, so
+  /// that a server that stopped answering QUIC is left for TCP as within a
+  /// dial's budget (Codex's review of #61).
+  mut handshake_by : Int64?
+  mut declined : Bool
 }
 
 ///|
@@ -64,6 +74,10 @@ fn Connection::new(
     heard_at: now,
     retired: false,
     closed: false,
+    early_ids: [],
+    on_ticket: _ => (),
+    handshake_by: None,
+    declined: false,
   }
 }
 
@@ -149,7 +163,27 @@ fn Connection::has_room(self : Connection, limit : Int32) -> Bool {
 fn Connection::dispatch(self : Connection) -> Unit {
   for event in self.quic.events() {
     match event {
-      HandshakeDone => self.handshake = true
+      HandshakeDone => {
+        self.handshake = true
+        self.early_ids.clear()
+      }
+      // The streams opened in 0-RTT are gone, their requests unprocessed:
+      // `Refused`, which the backend sends again over 1-RTT. They leave
+      // the map now, since ngtcp2 gives their IDs to the next streams.
+      EarlyDataRejected => {
+        for id in self.early_ids {
+          if self.streams.get(id) is Some(s) {
+            s.closed = Some(Refused("the server rejected the early data"))
+            self.streams.remove(id)
+            self.active -= 1
+          }
+        }
+        self.early_ids.clear()
+      }
+      Ticket =>
+        if self.quic.resumption() is Some(resumption) {
+          (self.on_ticket)(resumption)
+        }
       Headers(stream~, fields~, end_stream~) =>
         if self.streams.get(stream) is Some(s) {
           if s.head_arrived(fields) {
@@ -213,7 +247,7 @@ fn Connection::dispatch(self : Connection) -> Unit {
             },
           ),
         )
-      Drained(..) => ()
+      Drained(..) | Early(..) => ()
       @h3.H3Event::.. => ()
     }
   }
@@ -290,7 +324,13 @@ async fn Connection::read_once(
     self.reading = false
     self.notify()
   }
-  let wait = self.quic.expiry_ms().unwrap_or(1000)
+  let mut wait = self.quic.expiry_ms().unwrap_or(1000)
+  if !self.handshake && self.handshake_by is Some(by) {
+    let left = (by - self.clock.now_unix_ms()).max(0L).min(1000L).to_int()
+    if left < wait {
+      wait = left
+    }
+  }
   let got : Ref[Bytes?] = Ref(None)
   let failure : Ref[String?] = Ref(None)
   let interrupted = Ref(false)
@@ -347,6 +387,19 @@ async fn Connection::read_once(
       }
   }
   self.dispatch()
+  if !self.handshake &&
+    self.handshake_by is Some(by) &&
+    self.clock.now_unix_ms() >= by {
+    self.declined = true
+    self.fail(
+      @mttp_core.TransportError(
+        kind=Connect,
+        phase=Dial,
+        detail="no QUIC handshake with the origin",
+      ),
+    )
+    return
+  }
   self.send_if_idle()
 }
 
@@ -396,6 +449,9 @@ impl @mux.ClientConn for Connection with fn open_stream(self, fields, body~) {
   let stream = @mux.ClientStream::new(id)
   self.streams[id] = stream
   self.active += 1
+  if self.quic.early() {
+    self.early_ids.push(id)
+  }
   stream
 }
 
@@ -438,7 +494,11 @@ impl @mux.ClientConn for Connection with fn consume(self, stream, len) {
 /// gives the windows back, and a stream still open is reset with
 /// H3_REQUEST_CANCELLED.
 impl @mux.ClientConn for Connection with fn release(self, stream) {
-  guard self.streams.get(stream.id) is Some(_) else { return }
+  // A stream the server rejected in 0-RTT left the map already, and its ID
+  // may be another's now.
+  guard self.streams.get(stream.id) is Some(s) && physical_equal(s, stream) else {
+    return
+  }
   self.streams.remove(stream.id)
   self.active -= 1
   if !self.closed {

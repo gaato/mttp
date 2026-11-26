@@ -12,6 +12,8 @@ import {
 // Values
 pub let connection_fields : Array[String]
 
+pub let early_data : @mttp_core.AttributeKey[Bool]
+
 pub async fn exchange(&ClientConn, &@rt.Coordination, Array[(String, String)], @mttp_core.Request, @mttp_core.SendOptions, @attempt.AttemptTimer, Phases, reused~ : Bool, &@mttp_core.BodyStream?, Bytes?, ExchangeLimits, protocol~ : String) -> @mttp_core.Response raise @mttp_core.TransportError
 
 pub fn invalid(String) -> @mttp_core.TransportError
@@ -102,11 +104,12 @@ pub(all) struct ServerStream {
   mut sent_end : Bool
   mut sent : Int32
   mut failure : @mttp_core.TransportError?
+  early : Bool
   mut trailers : @mttp_core.Headers
   // private fields
 }
 pub fn ServerStream::arrived(Self, Bytes, Int32) -> Bool
-pub fn ServerStream::new(Int64, ended~ : Bool) -> Self
+pub fn ServerStream::new(Int64, ended~ : Bool, early? : Bool) -> Self
 pub fn ServerStream::trailers_arrived(Self, Array[(String, String)], ended~ : Bool) -> Unit
 
 #derive(Eq, @debug.Debug)

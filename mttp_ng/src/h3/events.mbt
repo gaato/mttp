@@ -60,6 +60,15 @@ pub(all) enum H3Event {
   HandshakeDone
   /// The connection closed, with its error code, by the peer or not.
   ConnectionClosed(code~ : Int64, by_peer~ : Bool)
+  /// A server's: data of `stream` arrived in 0-RTT, before the handshake
+  /// completed, so its request may be a replay (RFC 8470). Comes before the
+  /// stream's `Headers`.
+  Early(stream~ : Int64)
+  /// A client's: the server rejected its early data. The streams opened
+  /// in 0-RTT are gone; their requests were not processed.
+  EarlyDataRejected
+  /// A client's: a session ticket arrived (`QuicConn::resumption`).
+  Ticket
 }
 
 ///|
@@ -166,6 +175,9 @@ fn decode_events(
         let code = cursor.long()
         events.push(ConnectionClosed(code~, by_peer=cursor.long() != 0L))
       }
+      16 => events.push(Early(stream=cursor.long()))
+      17 => events.push(EarlyDataRejected)
+      18 => events.push(Ticket)
       other => abort("h3_stub.c recorded an unknown event \{other}")
     }
   }

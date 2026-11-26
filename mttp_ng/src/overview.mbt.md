@@ -138,9 +138,19 @@ for three probe timeouts, in which a lost CONNECTION_CLOSE is sent again,
 and a packet for a connection the server no longer has gets a Stateless
 Reset, so the client learns at once that it is gone.
 
+0-RTT is off unless asked for. `serve(early_data=true)` (with `h3`) gives
+each HTTP/3 client a session ticket, and a client that resumes with it may
+send requests before the handshake completes. Such a request can be a
+replay, so only a safe method (GET, HEAD, OPTIONS, TRACE) reaches the
+handler, marked `@h3server.early_data`; any other is answered 425 Too
+Early. `backend(http3=true, early_data=true)` sends only safe requests with
+a body in memory in 0-RTT, and sends a request again after the handshake
+when the server rejects its early data or answers 425. Early data is
+HTTP/3's only; HTTP/2 over TLS sends none.
+
 ## What it does not do
 
-- No 0-RTT, no server push, and no WebSockets over HTTP/2 or HTTP/3: a
+- No server push and no WebSockets over HTTP/2 or HTTP/3: a
   request with `Upgrade` goes over HTTP/1.1.
 - HTTP/3 is not sent through proxies, which would take CONNECT-UDP
   (RFC 9298), and `http` URLs go to a proxy over HTTP/1.1. An `https`

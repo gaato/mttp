@@ -28,6 +28,33 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
         ]),
         body=Bytes(b"hello"),
       )
+    // A handler for which even a GET must not be repeated: 425 Too Early
+    // in early data (RFC 8470, section 5.2).
+    "/too-early" =>
+      if request.attributes.get(@h3server.early_data) == Some(true) {
+        @mttp_core.Response::new(425)
+      } else {
+        @mttp_core.Response::new(200, body=Bytes(b"after the handshake"))
+      }
+    // As /too-early, each answer 600 ms in.
+    "/too-early-slow" => {
+      @async.sleep(600)
+      if request.attributes.get(@h3server.early_data) == Some(true) {
+        @mttp_core.Response::new(425)
+      } else {
+        @mttp_core.Response::new(200, body=Bytes(b"after the handshake"))
+      }
+    }
+    // Whether the request came in early data.
+    "/zero-rtt" =>
+      @mttp_core.Response::new(
+        200,
+        body=Bytes(
+          @utf8.encode(
+            "early=\{request.attributes.get(@h3server.early_data).unwrap_or(false)}",
+          ),
+        ),
+      )
     // Echoes the body and its x-checksum trailer, and answers with a
     // grpc-status trailer, or one a trailer section cannot carry.
     "/trailers" => {
@@ -177,17 +204,20 @@ async fn with_server(
   run : async (Int32) -> Unit,
   limits~ : @h1server.ServerLimits = @h1server.ServerLimits::default(),
   settings~ : @h3.H3Settings = @h3.H3Settings::default(),
+  early_data~ : Bool = false,
+  addr~ : String = "127.0.0.1:0",
 ) -> Unit {
   let quic = @h3.ServerQuic::from_pem(
     chain=@fs.read_text(testdata("localhost.pem")),
     key=@fs.read_text(testdata("localhost.key")),
+    early_data~,
   )
   @async.with_timeout(30000, () => {
     @async.with_task_group(group => {
       let port : Ref[Int32?] = Ref(None)
       let listening = @cond_var.Cond()
       group.spawn_bg(() => {
-        @h3server.serve(answer, addr="127.0.0.1:0", quic~, limits~, settings~, on_listen=addr => {
+        @h3server.serve(answer, addr~, quic~, limits~, settings~, on_listen=addr => {
           port.val = Some(
             @string.parse_int(addr[addr.rev_find(":").unwrap() + 1:]) catch {
               _ => 0

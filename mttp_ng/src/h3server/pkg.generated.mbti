@@ -9,6 +9,8 @@ import {
 }
 
 // Values
+pub let early_data : @mttp_core.AttributeKey[Bool]
+
 pub async fn serve(async (@mttp_core.Request) -> @mttp_core.Response noraise, addr~ : String, quic~ : @h3.ServerQuic, limits? : @h1server.ServerLimits, settings? : @h3.H3Settings, auto_date? : Bool, on_listen? : (String) -> Unit, on_error? : (@mttp_core.TransportError) -> Unit) -> Unit raise @server.ListenError
 
 // Errors
