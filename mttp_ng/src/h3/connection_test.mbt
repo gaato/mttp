@@ -57,7 +57,7 @@ async fn pair(settings~ : @h3.H3Settings = @h3.H3Settings::default()) -> Pair {
 
 ///|
 /// Moves datagrams both ways, and handles expired timers, until neither side
-/// has anything to send for a while.
+/// has anything to send for a while nor a timer due within 50 ms.
 async fn Pair::settle(self : Pair) -> Unit {
   let mut quiet = 0
   for _ in 0..<2000 {
@@ -76,7 +76,15 @@ async fn Pair::settle(self : Pair) -> Unit {
     self.client_events.append(self.client.events())
     self.server_events.append(self.server.events())
     if to_server.is_empty() && to_client.is_empty() {
-      quiet += 1
+      // Quiet only when no timer is about to fire either: a delayed
+      // acknowledgement (up to 25 ms) is what lets data past the initial
+      // congestion window go, so a pair waiting on one has not settled.
+      let soon = [self.client.expiry_ms(), self.server.expiry_ms()].any(ms => {
+        ms is Some(ms) && ms < 50
+      })
+      if !soon {
+        quiet += 1
+      }
       if quiet > 3 {
         return
       }
