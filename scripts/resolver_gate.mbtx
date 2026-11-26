@@ -26,8 +26,9 @@ import {
 //
 // `--gate G` builds consumers only for the modules whose `gate` cell in
 // scripts/modules.tsv is G, since a consumer build links the module and
-// gaato/mttp_curl links the system's libcurl. Every module is still staged,
-// so a gate's modules resolve their workspace dependencies from the archives.
+// gaato/mttp_ng links the system's nghttp2 and the rest. Every module is
+// still staged, so a gate's modules resolve their workspace dependencies from
+// the archives.
 
 ///|
 suberror GateError {
@@ -173,7 +174,7 @@ async fn run(program : String, args : Array[String], cwd~ : String) -> String {
 
 ///|
 /// Copies the registry index and cache, as reflinks where the file system
-/// can. `--reflink` is GNU cp's; macOS's cp (the curl gate runs there too)
+/// can. `--reflink` is GNU cp's; macOS's cp (the ng gate runs there too)
 /// refuses it, and copies plainly instead.
 async fn copy_registry(
   source : String,

@@ -1,6 +1,6 @@
 // TLS sessions over an in-memory pair: handshakes, ALPN, trust, both kinds
 // of close and the Conn rules, with the test root and localhost certificate
-// of mttp_ng/testdata (scripts/gen_curl_test_certs.sh).
+// of mttp_ng/testdata (scripts/gen_ng_test_certs.sh).
 
 ///|
 async fn testdata(name : String) -> String {

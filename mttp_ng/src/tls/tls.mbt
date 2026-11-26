@@ -467,6 +467,11 @@ async fn TlsConn::flush_for_read(self : TlsConn) -> Unit noraise {
 }
 
 ///|
+/// Reads decrypted bytes, at most `max_len` and one TLS record. `None`
+/// once the peer has sent close_notify; a connection that ends without it
+/// raises `IncompleteClose`, so a body delimited by the close is not taken
+/// as whole. Raises `Closed` after `close`, and the session's failure (its
+/// alert sent to the peer as far as it goes) when TLS fails.
 pub impl @rt.Conn for TlsConn with fn read(self, max_len~) {
   if self.closed {
     raise closed_error()
@@ -515,6 +520,11 @@ pub impl @rt.Conn for TlsConn with fn read(self, max_len~) {
 }
 
 ///|
+/// Encrypts all of `bytes` and writes the records, with any output the
+/// session owes the peer first. Raises `Closed` after `close` or when the
+/// peer has shut the session down before any of `bytes` went out. A write
+/// cancelled or failed partway breaks the connection: every later write
+/// raises the same error.
 pub impl @rt.Conn for TlsConn with fn write(self, bytes) {
   if self.closed {
     raise closed_error()
@@ -542,6 +552,10 @@ pub impl @rt.Conn for TlsConn with fn write(self, bytes) {
 }
 
 ///|
+/// Closes the connection beneath without close_notify (`shutdown` sends
+/// it), wakes the writers waiting for another's write, which raise
+/// `Closed`, and frees the session.
+/// Closing again does nothing.
 pub impl @rt.Conn for TlsConn with fn close(self) {
   if self.closed {
     return

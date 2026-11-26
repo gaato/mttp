@@ -102,13 +102,12 @@ async fn instrument_tree(root : String) -> Unit {
 }
 
 ///|
-/// The modules a gate tests under ASan, beside mttp_core and mttp, which
-/// every gate needs: `full` adds gaato/mttp_curl (its libcurl stub and the
-/// thread it starts), `ng` gaato/mttp_ng (its nghttp2, nghttp3, ngtcp2 and
-/// OpenSSL stubs). Each needs its gate's system libraries installed.
+/// The modules a gate tests under ASan: mttp_core and mttp, which every
+/// gate needs, and for `ng` gaato/mttp_ng (its nghttp2, nghttp3, ngtcp2 and
+/// OpenSSL stubs), which needs that gate's system libraries installed.
 fn gate_modules(gate : String) -> Array[String] raise SanitizeError {
   match gate {
-    "full" => ["mttp_core", "mttp", "mttp_curl"]
+    "full" => ["mttp_core", "mttp"]
     "ng" => ["mttp_core", "mttp", "mttp_ng"]
     other => raise SanitizeError("no sanitizer gate \{other}: full or ng")
   }
@@ -138,9 +137,9 @@ async fn sanitize(root : String, modules : Array[String]) -> Unit {
     ),
   )
   ignore(command("tar", ["-xf", root + "/source.tar", "-C", source]))
-  // The gate's module links system libraries (libcurl, or nghttp2 and the
-  // rest), so this gate needs them installed, as its own gate does; their
-  // stubs are the C this gate most needs to see.
+  // gaato/mttp_ng links system libraries (nghttp2 and the rest), so its
+  // gate needs them installed, as the ng gate does; its stubs are the C
+  // this gate most needs to see.
   let members = modules.map(m => "\"\{m}\"").join(", ")
   @fs.write_text(source + "/moon.work", "members = [\{members}]\n")
   // ASan's slow allocation unwinder can consume the smoke test's entire
@@ -256,7 +255,7 @@ async fn main {
     )
     return
   }
-  // `--gate ng` tests gaato/mttp_ng; without it, gaato/mttp_curl.
+  // `--gate ng` adds gaato/mttp_ng.
   let args = @env.args()
   let gate = match args.search("--gate") {
     Some(i) if i + 1 < args.length() => args[i + 1]

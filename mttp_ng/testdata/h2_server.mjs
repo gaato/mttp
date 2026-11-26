@@ -1,4 +1,4 @@
-// The HTTP/2 server of gaato/mttp_ng's tests (a copy of gaato/mttp_curl's),
+// The HTTP/2 server of gaato/mttp_ng's tests,
 // on Node's node:http2: one cleartext listener spoken to with prior
 // knowledge (h2c), one TLS listener that offers h2 and http/1.1 by ALPN, and
 // an HTTP proxy, all on 127.0.0.1; and, for the HTTP/1.1 fallback of

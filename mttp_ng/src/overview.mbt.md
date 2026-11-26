@@ -40,8 +40,10 @@ It is tested on Linux with nghttp2 1.71.0, nghttp3 1.19.0, ngtcp2 1.26.0
 and OpenSSL 3.5.3, and on Debian 13 with its and trixie-backports'
 versions. Its HTTP/2 server passes h2spec 2.6.0 but for the cases
 `interop_ng/h2spec_known.tsv` in the repository lists, which are nghttp2's
-own handling of frames it no longer tracks or does not validate. Other Linux versions and macOS are not tested yet.
-Windows, wasm and js are not supported.
+own handling of frames it no longer tracks or does not validate. It is
+also tested on macOS with Homebrew's libraries, and its HTTP/2 packages
+alone on Ubuntu 24.04 with nghttp2 1.59 and OpenSSL 3.0. Windows, wasm and
+js are not supported.
 
 ## A client
 
@@ -142,3 +144,7 @@ client's) that the stop cut short, so that the client can tell.
 - The HTTP/3 server has no Retry and no limit per client address: clients
   that send Initials from forged addresses can hold its `max_connections`
   slots, each until `header_timeout_ms`.
+
+## License
+
+Apache-2.0. See [LICENSE](https://github.com/gaato/mttp/blob/main/mttp_ng/LICENSE).

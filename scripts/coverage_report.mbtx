@@ -22,8 +22,8 @@ import {
 //   moon run scripts/coverage_report.mbtx -- --gate G         # the modules of gate G
 //
 // `--gate G` measures only the modules whose `gate` cell in scripts/modules.tsv
-// is G: measuring links every measured module, and gaato/mttp_curl links the
-// system's libcurl, which only the curl gate's job installs.
+// is G: measuring links every measured module, and gaato/mttp_ng links
+// nghttp2, nghttp3, ngtcp2 and OpenSSL, which only the ng gate's jobs install.
 //
 // Exit status: 0 = every uncovered line is ledgered, 1 = unexplained coverage
 // gaps or over-budget files, 2 = setup/run failure.

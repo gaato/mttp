@@ -184,7 +184,7 @@ result: 200 ready
 | 接続の再利用 | `Client` はリクエストごとに接続を開く | Client ごとに接続をプールする |
 | 型付きの失敗 | エラーを送出する。404 は普通の応答 | HTTP とデコードの失敗は `reply.body` に入る。`TransportError` は段階と送信済みかを示す |
 | 型付きエンドポイントと OpenAPI | ない | 一つの定義からハンドラー・クライアント・OpenAPI 3.1 または 3.2。構造の互換性の差分 |
-| サーバー | native と wasm で HTTP/1.1。接続にヘッダーと本文を書く | native/wasm のエンジンは HTTP/1.1。JS の fetch/サーバーはホストが交渉した版。HTTP/2 のサーバーは core/tls の ALPN 待ち(クライアントは native で `gaato/mttp_curl` を使えば HTTP/2 と HTTP/3)。上限つきの `Request -> Response` ハンドラー、穏当な停止 |
+| サーバー | native と wasm で HTTP/1.1。接続にヘッダーと本文を書く | native/wasm のエンジンは HTTP/1.1。JS の fetch/サーバーはホストが交渉した版。native では `gaato/mttp_ng` で両方に HTTP/2 と HTTP/3 が加わる。上限つきの `Request -> Response` ハンドラー、穏当な停止 |
 | WebSocket | 別の `core/async/websocket`。native/wasm でクライアントとサーバー。拡張なし | クライアントとサーバー。native/wasm で選んで使う permessage-deflate。両方向で Autobahn。JS ホストのセッション |
 | サーバーのミドルウェア | 方針の層はない | RateLimit ヘッダーつきの `rate_limit`、`secure_headers`、署名つき Cookie のセッション、CORS |
 | 表現 | 生のヘッダーと本文。選択やファイルのハンドラーはない | Accept の交渉と 406。条件付きの 304/412。静的ファイルと、選んで使う Range の 206/416 |
@@ -201,11 +201,11 @@ js ではどちらのクライアントもホストの `fetch` で送り、展�
 |---|---|
 | [`gaato/mttp`](https://mooncakes.io/docs/gaato/mttp) | アプリやサーバーを作るとき。上の既定値でネットワークにリクエストを送り、ハンドラーを公開し、アプリが使う型・リクエスト属性・クライアント関数を再公開する。型付きエンドポイント・ルーター・OpenAPI 文書・multipart 本文・流量制限・テスト用スタブには、隣に `gaato/mttp_core` を足す。 |
 | [`gaato/mttp_core`](https://mooncakes.io/docs/gaato/mttp_core) | ある API の SDK のようなライブラリを書くとき。`Client` を受け取り、ネットワークはアプリに任せるので、wasm-gc を含むすべてのターゲットでビルドでき、テストもネットワークなしで動く。 |
-| [`gaato/mttp_curl`](https://mooncakes.io/docs/gaato/mttp_curl) | アプリの Client に native で HTTP/2 や HTTP/3 を話させたいとき。システムの libcurl を使うバックエンドで、`@mttp.client(backend=@mttp_curl.backend())` のように渡す。 |
+| [`gaato/mttp_ng`](https://mooncakes.io/docs/gaato/mttp_ng) | アプリに native で HTTP/2 や HTTP/3 を話させたいとき。クライアントは `@mttp.client(backend=@mttp_ng.backend())`、サーバーは `@mttp_ng.serve` で、システムの nghttp2・nghttp3・ngtcp2 を使う。 |
 | [`gaato/mttp_digest`](https://mooncakes.io/docs/gaato/mttp_digest) | サーバーが HTTP Digest 認証を求めるとき。 |
 | [`gaato/mttp_schemagen`](https://mooncakes.io/docs/gaato/mttp_schemagen) | 注釈を付けた MoonBit の型から JSON のコーデックとスキーマを生成したいとき。`moonx` で動かすコマンドラインの生成器で、生成したコードは `gaato/mttp_core` を使う。 |
 
-`gaato/mttp_core` は I/O を持たない部分すべてで、どのターゲットでもビルドできます。`gaato/mttp` はそれを `moonbitlang/core/async` でネットワークにつなぎます。`gaato/mttp_curl` は gaato/mttp の Client に、libcurl を使う2つ目のネットワークのバックエンドを与えます。`gaato/mttp_digest` はどちらにも Digest 認証を足し、`gaato/mttp_schemagen` はどちらのスキーマにもコーデックを書きます。この分け方は Scala の [sttp](https://sttp.softwaremill.com/) のモジュール群にならっています。
+`gaato/mttp_core` は I/O を持たない部分すべてで、どのターゲットでもビルドできます。`gaato/mttp` はそれを `moonbitlang/core/async` でネットワークにつなぎます。`gaato/mttp_ng` は gaato/mttp の Client とサーバーに、nghttp2・nghttp3・ngtcp2 を使って HTTP/2 と HTTP/3 を足します。`gaato/mttp_digest` はどちらにも Digest 認証を足し、`gaato/mttp_schemagen` はどちらのスキーマにもコーデックを書きます。この分け方は Scala の [sttp](https://sttp.softwaremill.com/) のモジュール群にならっています。
 
 探すとよいパッケージ(注記のない限り `gaato/mttp_core` の下):
 
@@ -226,7 +226,7 @@ js ではどちらのクライアントもホストの `fetch` で送り、展�
 
 ## どう確かめているか
 
-push とプルリクエストごとに、[`scripts/gates.sh full`](scripts/gates.sh) が、対応するすべてのターゲット、文書と台帳、そして本物の workerd 上の Workers の例を確かめます。libcurl をリンクする `gaato/mttp_curl` は、libcurl を入れたジョブで `scripts/gates.sh curl` が Linux と macOS の上で確かめます。毎日の canary が最新と nightly のツールチェーンで同じことを繰り返し、ツールチェーンを固定した別のジョブが相互運用・サニタイザー・ファジング・ベンチマークを回します。ミューテーションテストと証明は手動のゲートです。
+push とプルリクエストごとに、[`scripts/gates.sh full`](scripts/gates.sh) が、対応するすべてのターゲット、文書と台帳、そして本物の workerd 上の Workers の例を確かめます。nghttp2・nghttp3・ngtcp2・OpenSSL をリンクする `gaato/mttp_ng` は、それらを入れたジョブで `scripts/gates.sh ng` が Linux と macOS の上で確かめます。毎日の canary が最新と nightly のツールチェーンで同じことを繰り返し、ツールチェーンを固定した別のジョブが相互運用・サニタイザー・ファジング・ベンチマークを回します。ミューテーションテストと証明は手動のゲートです。
 
 - I/O を持たないモジュール、`gaato/mttp_core` と `gaato/mttp_digest` は、wasm-gc・wasm・js・native で同じテストを回します。[scripts/test_manifest.tsv](scripts/test_manifest.tsv) が各パッケージの各ターゲットでのテスト数を記録し、数が記録なしに変わったり、ターゲット間で違ったりするとゲートが落ちます。
 - [conformance](conformance) は、URL の解析を WHATWG URL のテストベクターで、フォームと Cookie を WPT と http-state のデータで、HTTP/1 のコーデックを llhttp のテストと WPT の応答解析の表で、四つのターゲットすべてで照合します。
@@ -244,7 +244,7 @@ push とプルリクエストごとに、[`scripts/gates.sh full`](scripts/gates
 
 ## 状態
 
-mttp が native と wasm で動かすエンジンは HTTP/1.1 を話します。JS ホストでは、ホストの fetch とサーバーが交渉した版を使います。native のクライアントは、`gaato/mttp_curl` を使えばシステムの libcurl で HTTP/2 と HTTP/3 を話せます。mttp 自前の HTTP/2 エンジンと、サーバーの HTTP/2 は、core/tls の ALPN を待っています。
+mttp が native と wasm で動かすエンジンは HTTP/1.1 を話します。JS ホストでは、ホストの fetch とサーバーが交渉した版を使います。native では、`gaato/mttp_ng` がシステムの nghttp2・nghttp3・ngtcp2 で HTTP/2 と HTTP/3 を、クライアントとサーバーの両方で話します。
 
 モジュールは 0.x で、マイナーリリース(0.1 → 0.2)は API を壊すことがありますが、パッチリリースは壊しません。何が変わり何を改名するかは、[mttp/CHANGELOG.md](mttp/CHANGELOG.md) のような各モジュールの変更履歴にあります。不具合と予定の作業は [Issues](https://github.com/gaato/mttp/issues) で追っています。
 

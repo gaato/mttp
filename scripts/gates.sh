@@ -3,7 +3,7 @@
 # which moonbit-version pins (CI uses the image of that version; canary.yml
 # runs these gates on the latest and nightly images). The modules and what
 # each may depend on are listed in scripts/modules.tsv, whose gate column
-# says which of `full`, `curl` and `ng` links and tests each module. Checks that
+# says which of `full` and `ng` links and tests each module. Checks that
 # only read text or type-check (fmt, info, interfaces, architecture, docs)
 # cover every module in both.
 #
@@ -49,11 +49,10 @@
 #                                           --record writes today's JSON in
 #                                           benchmarks/results. CI instead
 #                                           passes --output and --summary.
-#   scripts/gates.sh sanitize               Linux native tests of mttp_core,
-#                                           mttp and mttp_curl under ASan,
-#                                           using a disposable source/toolchain
-#                                           copy; needs libcurl. Daily in
-#                                           canary, outside full
+#   scripts/gates.sh sanitize               Linux native tests of mttp_core
+#                                           and mttp under ASan, using a
+#                                           disposable source/toolchain copy.
+#                                           Daily in canary, outside full
 #   scripts/gates.sh sanitize --gate ng     The same for gaato/mttp_ng (with
 #                                           mttp_core and mttp) and its C
 #                                           stubs; needs the ng gate's
@@ -83,14 +82,6 @@
 #                                           the self-test of this script, the
 #                                           resolver gate and workerd, for the
 #                                           modules of gate full
-#   scripts/gates.sh curl                   gaato/mttp_curl, which links the
-#                                           system's libcurl (with HTTP/2):
-#                                           its native tests, its coverage
-#                                           and its resolver consumer, which
-#                                           runs a program calling libcurl
-#                                           (scripts/resolver_smoke/). CI runs
-#                                           it as a job of its own, the one
-#                                           that installs libcurl
 #   scripts/gates.sh ng                     gaato/mttp_ng, which links the
 #                                           system's nghttp2, nghttp3, ngtcp2
 #                                           and OpenSSL 3.5 or later: its
@@ -112,15 +103,15 @@
 #                                           interop_ng/h2spec_known.tsv (needs
 #                                           h2spec, H2SPEC or on PATH, and the
 #                                           ng gate's libraries)
-#   scripts/gates.sh curl-live              gaato/mttp_curl's tests against
+#   scripts/gates.sh ng-live                gaato/mttp_ng's client against
 #                                           public HTTP/2 and HTTP/3 servers
-#                                           (needs the internet and a libcurl
-#                                           with HTTP/3)
+#                                           (needs the internet and the ng
+#                                           gate's libraries)
 #   scripts/gates.sh manifest --update      runs every package's tests on
 #                                           every target and rewrites
 #                                           scripts/test_manifest.tsv; every
-#                                           gate's modules, so it needs
-#                                           libcurl too
+#                                           gate's modules, so it needs the
+#                                           ng gate's libraries too
 #
 # This launcher is bash, unlike the .mbtx scripts beside it: it runs `moon`
 # itself, on every toolchain including nightly; it filters the experimental
@@ -238,20 +229,13 @@ static_gates() {
   step script interop/run.mbtx -- --self-test
   step script scripts/runtime_gates.mbtx -- interfaces
   step script scripts/runtime_gates.mbtx -- manifest --check
-  # Measuring links the modules; the curl and ng gates measure their own.
+  # Measuring links the modules; the ng gate measures its own.
   step script scripts/coverage_report.mbtx -- --gate full
 }
 
-# gaato/mttp_curl links the system's libcurl, so these run where it is
-# installed and nowhere else; a libcurl problem cannot fail the full gate.
-curl_gate() {
-  step script scripts/runtime_gates.mbtx -- tests --target native --gate curl
-  step script scripts/coverage_report.mbtx -- --gate curl
-  step script scripts/resolver_gate.mbtx -- --gate curl
-}
-
 # gaato/mttp_ng links nghttp2, nghttp3, ngtcp2 and OpenSSL, so these run
-# where they are installed and nowhere else, as the curl gate does.
+# where they are installed and nowhere else; a problem with those libraries
+# cannot fail the full gate.
 ng_gate() {
   step script scripts/runtime_gates.mbtx -- tests --target native --gate ng
   step script scripts/coverage_report.mbtx -- --gate ng
@@ -336,12 +320,6 @@ case "$mode" in
     step script scripts/resolver_gate.mbtx -- --gate full
     finish
     ;;
-  curl)
-    [ $# = 0 ] || usage
-    print_versions
-    curl_gate
-    finish
-    ;;
   ng)
     [ $# = 0 ] || usage
     print_versions
@@ -359,10 +337,10 @@ case "$mode" in
     step script scripts/h2spec.mbtx
     finish
     ;;
-  curl-live)
+  ng-live)
     [ $# = 0 ] || usage
-    step env MTTP_CURL_LIVE=1 MOON_CC="${MOON_CC:-cc}" \
-      moon test --deny-warn --target native mttp_curl/src/live_test.mbt
+    step env MTTP_NG_LIVE=1 MOON_CC="${MOON_CC:-cc}" \
+      moon test --deny-warn --target native mttp_ng/src/live_test.mbt
     finish
     ;;
   workerd)

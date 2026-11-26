@@ -1,16 +1,20 @@
-// Live exchanges with public servers, for scripts/gates.sh curl-live only:
-// they need the internet and, for HTTP/3, a libcurl built with it, so they
-// run when MTTP_CURL_LIVE is set and return at once otherwise.
+// Live exchanges with public servers, other implementations than the
+// module's own and Node's, for scripts/gates.sh ng-live only: they need the
+// internet, so they run when MTTP_NG_LIVE is set and return at once
+// otherwise.
 
 ///|
 fn live() -> Bool {
-  @env.get_env_var("MTTP_CURL_LIVE") is Some(_)
+  @env.get_env_var("MTTP_NG_LIVE") is Some(_)
 }
 
 ///|
 async test "live: HTTP/2 to www.cloudflare.com" {
   guard live() else { return }
-  let backend = @mttp_curl.CurlBackend::new()
+  let backend = @mttp_ng.backend(config={
+    ..@h1client.ClientConfig::default(),
+    proxy: @h1client.ProxyConfig::none(),
+  })
   defer backend.close()
   let response = backend.send(
     @mttp_core.Request::get("https://www.cloudflare.com/cdn-cgi/trace"),
@@ -23,20 +27,19 @@ async test "live: HTTP/2 to www.cloudflare.com" {
 }
 
 ///|
-async test "live: HTTP/3 to cloudflare-quic.com, a whole uncompressed page" {
+async test "live: HTTP/3 to cloudflare-quic.com, a whole page" {
   guard live() else { return }
-  guard @mttp_curl.CurlBackend::supports_http3() else {
-    fail(
-      "the linked libcurl has no HTTP/3: \{@mttp_curl.CurlBackend::libcurl_version()}",
-    )
-  }
-  let backend = @mttp_curl.CurlBackend::new(http3=true)
+  let backend = @mttp_ng.backend(http3=true, config={
+    ..@h1client.ClientConfig::default(),
+    proxy: @h1client.ProxyConfig::none(),
+  })
   defer backend.close()
   let response = backend.send(
     @mttp_core.Request::get("https://cloudflare-quic.com/"),
     @mttp_core.SendOptions::default(),
   )
   assert_eq(response.status, 200)
+  // Not h2: the QUIC handshake finished within its second.
   assert_eq(response.attributes.get(@mttp_core.protocol), Some("h3"))
   let body = @utf8.decode_lossy(response.body.read_all(max=4 << 20))
   assert_true(body.contains("</html>"))
@@ -46,16 +49,13 @@ async test "live: HTTP/3 to cloudflare-quic.com, a whole uncompressed page" {
 async test "live: PemFile trusts the file's roots only, not the system's" {
   guard live() else { return }
   // The tests' own root: no public site is under it.
-  let root = for dir in ["testdata", "src/testdata", "mttp_curl/src/testdata"] {
-    if @fs.exists("\{dir}/root.pem") {
-      break @fs.realpath("\{dir}/root.pem")
-    }
-  } nobreak {
-    fail("no testdata/root.pem below the working directory")
-  }
-  let backend = @mttp_curl.CurlBackend::new(
-    trust=PemFile(root),
-    proxy=@h1client.ProxyConfig::none(),
+  let backend = @mttp_ng.backend(
+    http3=true,
+    trust=PemFile(testdata("root.pem")),
+    config={
+      ..@h1client.ClientConfig::default(),
+      proxy: @h1client.ProxyConfig::none(),
+    },
   )
   defer backend.close()
   let failed = try {

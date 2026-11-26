@@ -29,29 +29,6 @@ jobs:
       - name: Validate all targets and ledgers
         run: scripts/gates.sh full
 
-  # gaato/mttp_curl on the same toolchains, over Debian's libcurl, which the
-  # images lack.
-  curl:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        toolchain: [latest, nightly]
-    container:
-      image: ghcr.io/gaato/moonbit:${{ matrix.toolchain }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: libcurl's headers and library
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends libcurl4-openssl-dev
-      - run: moon update
-      - name: gaato/mttp_curl's tests, coverage and resolver consumer
-        run: scripts/gates.sh curl
-
   # gaato/mttp_ng on the same toolchains, with its libraries installed as
   # ci.yml's ng job installs them.
   ng:
@@ -77,10 +54,11 @@ jobs:
       - name: gaato/mttp_ng's tests, coverage and resolver consumer
         run: scripts/gates.sh ng
 
-  # gaato/mttp_curl against public HTTP/2 and HTTP/3 servers, on the pinned
-  # toolchain; Debian's libcurl is built with HTTP/3. It needs the internet,
-  # so push CI does not run it.
-  curl-live:
+  # gaato/mttp_ng's client against public HTTP/2 and HTTP/3 servers (other
+  # implementations than its own and Node's), on the pinned toolchain, with
+  # its libraries installed as ci.yml's ng job installs them. It needs the
+  # internet, so push CI does not run it.
+  ng-live:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
@@ -89,13 +67,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: libcurl's headers and library
+      - name: nghttp2, nghttp3, ngtcp2 and OpenSSL's headers and libraries
         run: |
+          echo 'deb http://deb.debian.org/debian trixie-backports main' > /etc/apt/sources.list.d/backports.list
           apt-get update
-          apt-get install -y --no-install-recommends libcurl4-openssl-dev
+          apt-get install -y --no-install-recommends pkg-config libnghttp2-dev libssl-dev
+          apt-get install -y --no-install-recommends -t trixie-backports libngtcp2-dev libngtcp2-crypto-ossl-dev libnghttp3-dev
       - run: moon update
       - name: HTTP/2 and HTTP/3 to public servers
-        run: scripts/gates.sh curl-live
+        run: scripts/gates.sh ng-live
 
   # Keep sanitizer overhead out of push CI and use the pinned compiler so
   # findings in our C can be separated from toolchain-canary regressions.
@@ -114,11 +94,6 @@ jobs:
           docker rm "$id"
           echo "MOON_HOME=$RUNNER_TEMP/moon" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/moon/bin" >> "$GITHUB_PATH"
-      # gaato/mttp_curl's tests link the system's libcurl.
-      - name: libcurl's headers and library
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev
       - name: Run native tests with sanitizers
         env:
           MOON_CC: cc
