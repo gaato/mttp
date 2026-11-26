@@ -28,6 +28,9 @@ priv struct Served {
   ids : Array[Bytes]
   routes : Map[Bytes, Route]
   streams : Map[Int64, Entry]
+  /// Streams whose data came in 0-RTT and whose request has not arrived
+  /// yet; the request is then marked early (RFC 8470).
+  early : Map[Int64, Bool]
   /// Handlers running, cancelled ones still finishing included.
   mut handlers : Int32
   changes : @mux.Changes
@@ -237,6 +240,13 @@ priv struct Listener {
   mut going : Int32
   mut notice_at : Int64
 }
+
+///|
+/// Set on a request that came in 0-RTT early data, possibly a replay: only
+/// requests of a safe method get to a handler so; any other is answered
+/// 425 Too Early (RFC 8470). Early data comes only with a `ServerQuic`
+/// made with `early_data`.
+pub let early_data : @mttp_core.AttributeKey[Bool] = @mux.early_data
 
 ///|
 /// One round trip, as HTTP/2's server takes it: the time between the
@@ -641,6 +651,7 @@ async fn Listener::accept(
     ids: [dcid],
     routes: self.routes,
     streams: Map([]),
+    early: Map([]),
     handlers: 0,
     changes: self.changes,
     idle_since: self.clock.now_unix_ms(),
@@ -672,7 +683,9 @@ fn Listener::dispatch(
           None if conn.handlers >= self.settings.max_streams_bidi =>
             conn.quic.reset(stream, @h3.H3_REQUEST_REJECTED)
           None => {
-            let s = @mux.ServerStream::new(stream, ended=end_stream)
+            let early = conn.early.contains(stream)
+            conn.early.remove(stream)
+            let s = @mux.ServerStream::new(stream, ended=end_stream, early~)
             let entry = { stream: s, task: None, }
             conn.streams[stream] = entry
             conn.handlers += 1
@@ -727,7 +740,8 @@ fn Listener::dispatch(
         if conn.streams.get(stream) is Some(entry) {
           entry.stream.ended = true
         }
-      Closed(stream~, code~) =>
+      Closed(stream~, code~) => {
+        conn.early.remove(stream)
         if conn.streams.get(stream) is Some(entry) {
           entry.stream.closed = true
           // Closed before its response was all sent, by any reset,
@@ -738,6 +752,7 @@ fn Listener::dispatch(
             task.cancel()
           }
         }
+      }
       Sent(stream~, end_stream~) =>
         if conn.streams.get(stream) is Some(entry) {
           entry.stream.sent += 1
@@ -745,7 +760,16 @@ fn Listener::dispatch(
             entry.stream.sent_end = true
           }
         }
-      GoAway(..) | Drained(..) | TooLarge(..) | HandshakeDone => ()
+      Early(stream~) =>
+        if !conn.streams.contains(stream) {
+          conn.early[stream] = true
+        }
+      GoAway(..)
+      | Drained(..)
+      | TooLarge(..)
+      | HandshakeDone
+      | EarlyDataRejected
+      | Ticket => ()
       ConnectionClosed(..) =>
         for _, entry in conn.streams {
           if entry.task is Some(task) {

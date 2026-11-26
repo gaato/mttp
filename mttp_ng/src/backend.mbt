@@ -22,12 +22,14 @@
 /// first, unless a proxy is configured for them; one whose QUIC handshake
 /// does not finish in a second goes over TCP as above, and is not tried
 /// over QUIC again for five minutes. The time QUIC took comes off the
-/// request's deadline.
+/// request's deadline. With `early_data` too, a resumed QUIC connection
+/// sends safe requests in 0-RTT (`@h3client.H3Backend::new`).
 pub fn backend(
   trust~ : @trust.Trust = System,
   config? : @h1client.ClientConfig,
   max_connection_age_ms? : Int32,
   http3~ : Bool = false,
+  early_data~ : Bool = false,
 ) -> &@mttp_core.Backend {
   let config = config.unwrap_or_else(() => {
     ..@h1client.ClientConfig::default(),
@@ -38,7 +40,12 @@ pub fn backend(
     return @codings.Decompress::new(h2)
   }
   @codings.Decompress::new(Http3First::{
-    h3: @h3client.H3Backend::new(trust~, config~, max_connection_age_ms?),
+    h3: @h3client.H3Backend::new(
+      trust~,
+      config~,
+      max_connection_age_ms?,
+      early_data~,
+    ),
     h2,
     clock: @runtime.AsyncClock::new(),
   })

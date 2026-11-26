@@ -15,6 +15,10 @@ const BROKEN_MS : Int64 = 300000L
 const BROKEN_ORIGINS : Int32 = 256
 
 ///|
+/// The origins whose session tickets a backend keeps, the oldest dropped.
+const TICKET_ORIGINS : Int32 = 256
+
+///|
 /// An HTTP/3 client: QUIC over UDP with TLS 1.3 (ngtcp2 with OpenSSL), one
 /// connection per origin with every request to it on a stream of its own,
 /// and SendOptions' deadlines and bounds kept as gaato/mttp_core's HTTP/1
@@ -38,6 +42,11 @@ pub struct H3Backend {
   priv broken : Map[String, Int64]
   priv mut changed : &@rt.Signal
   priv mut closed : Bool
+  /// Requests may go in 0-RTT on a resumed connection.
+  priv early_data : Bool
+  /// Per origin, the latest session ticket and the address its connection
+  /// used: at most `TICKET_ORIGINS`, each taken by one dial.
+  priv tickets : Map[String, (Bytes, String)]
 }
 
 ///|
@@ -50,10 +59,22 @@ priv struct Origin {
 /// A backend under `trust`, with the phase limits, the body ceiling and the
 /// response head bound of `config` (its proxy and caps do not apply), over
 /// the given ports (gaato/mttp's runtime by default).
+///
+/// With `early_data`, the backend keeps each origin's latest session
+/// ticket, and the next connection to the origin resumes with it and takes
+/// requests at once, in 0-RTT (RFC 9001, section 4.6), to the address the
+/// ticket's connection used. Only a request that may be repeated goes so:
+/// a safe method (GET, HEAD, OPTIONS) with a body in memory, since an
+/// attacker who sees early data can replay it (RFC 8470); any other waits
+/// for the handshake. When the server rejects the early data, or answers
+/// such a request 425 Too Early, the request is sent again once the
+/// handshake completed, as RFC 8470, section 4.2 asks of a client; its
+/// phases are reported again then.
 pub fn H3Backend::new(
   trust~ : @trust.Trust = System,
   config~ : @h1client.ClientConfig = @h1client.ClientConfig::default(),
   max_connection_age_ms? : Int32,
+  early_data~ : Bool = false,
   clock? : &@rt.Clock,
   timer? : &@rt.Timer,
   coordination? : &@rt.Coordination,
@@ -90,6 +111,8 @@ pub fn H3Backend::new(
     broken: Map([]),
     changed: coordination.signal(),
     closed: false,
+    early_data,
+    tickets: Map([]),
   }
 }
 
@@ -288,6 +311,26 @@ async fn H3Backend::dial(
       detail="QUIC TLS: \{self.quic_error}",
     )
   }
+  // A ticket resumes at the address its connection used, in 0-RTT: it
+  // shows that QUIC worked there, which no race of families would add to.
+  if self.early_data && self.tickets.get(target.origin) is Some(ticket) {
+    self.tickets.remove(target.origin)
+    let (resumption, address) = ticket
+    let addr = try @socket.Addr::parse(address) catch {
+      _ => None
+    } noraise {
+      addr => Some(addr)
+    }
+    if addr is Some(addr) &&
+      self.attempt(quic, target, addr, HANDSHAKE_MS, resumption~)
+      is Some(connection) {
+      phases.emit(Dialed(addr=target.address))
+      if connection.handshake {
+        phases.emit(TlsDone)
+      }
+      return Some(connection)
+    }
+  }
   let port = target.port.to_uint16()
   let first = @socket.Addr::resolve(target.host, port~) catch {
     error =>
@@ -398,6 +441,7 @@ async fn H3Backend::attempt(
   target : @mux.Target,
   addr : @socket.Addr,
   ms : Int32,
+  resumption? : Bytes,
 ) -> Connection? noraise {
   let udp = @socket.UdpClient(addr) catch { _ => return None }
   let conn = @h3.QuicConn::client(
@@ -405,6 +449,7 @@ async fn H3Backend::attempt(
     host=target.host,
     remote_address=addr.to_string(),
     settings=self.settings,
+    resumption?,
   ) catch {
     _ => {
       udp.close()
@@ -418,8 +463,24 @@ async fn H3Backend::attempt(
     self.timer,
     self.clock,
   )
+  if self.early_data {
+    let address = addr.to_string()
+    connection.on_ticket = resumption => {
+      self.keep_ticket(target.origin, resumption, address)
+    }
+  }
   let mut ok = false
   defer (if !ok { connection.close() })
+  // A connection in 0-RTT takes requests before its handshake completes,
+  // which must still come within the dial's budget.
+  if conn.early() {
+    connection.handshake_by = Some(self.clock.now_unix_ms() + ms.to_int64())
+    connection.send_output() catch {
+      @mttp_core.TransportError(..) => return None
+    }
+    ok = true
+    return Some(connection)
+  }
   let finished = self.timer.within(ms, () => {
     connection.send_output() catch {
       @mttp_core.TransportError(..) => return
@@ -433,6 +494,49 @@ async fn H3Backend::attempt(
   }
   ok = true
   Some(connection)
+}
+
+///|
+/// Sends a request that went in early data again once `connection`'s
+/// handshake completed, within the attempt it began in (`timer`): the wait
+/// and the second exchange take what is left of its deadline, not a new
+/// one (Codex's review of #61). `error` when the handshake does not
+/// complete.
+async fn H3Backend::again_after_handshake(
+  self : H3Backend,
+  connection : Connection,
+  request : @mttp_core.Request,
+  options : @mttp_core.SendOptions,
+  error : @mttp_core.TransportError,
+  timer : @attempt.AttemptTimer,
+) -> @mttp_core.Response? raise @mttp_core.TransportError {
+  timer.run(Head, () => {
+    connection.wait_for(() => connection.handshake) catch {
+      @mttp_core.TransportError(..) => raise error
+    }
+  })
+  if !connection.handshake {
+    raise error
+  }
+  self.send_within(request, options, Some(timer), early=false)
+}
+
+///|
+/// Keeps `resumption` as `origin`'s ticket, replacing any before it.
+fn H3Backend::keep_ticket(
+  self : H3Backend,
+  origin : String,
+  resumption : Bytes,
+  address : String,
+) -> Unit {
+  self.tickets.remove(origin)
+  if self.tickets.length() >= TICKET_ORIGINS {
+    let oldest = self.tickets.keys().head()
+    if oldest is Some(key) {
+      self.tickets.remove(key)
+    }
+  }
+  self.tickets[origin] = (resumption, address)
 }
 
 ///|
@@ -482,6 +586,22 @@ pub async fn H3Backend::try_send(
   request : @mttp_core.Request,
   options : @mttp_core.SendOptions,
 ) -> @mttp_core.Response? raise @mttp_core.TransportError {
+  self.send_within(request, options, None, early=true)
+}
+
+///|
+/// `try_send` under `timer` when given, in 0-RTT only with `early`: a
+/// request sent again after its early data was rejected keeps the attempt
+/// it began in, and goes after a handshake, never early again, so a
+/// server that answers it 425 on every resumed connection cannot keep it
+/// going round.
+async fn H3Backend::send_within(
+  self : H3Backend,
+  request : @mttp_core.Request,
+  options : @mttp_core.SendOptions,
+  timer : @attempt.AttemptTimer?,
+  early~ : Bool,
+) -> @mttp_core.Response? raise @mttp_core.TransportError {
   let body = @mux.RequestSource::new(request)
   defer body.finish()
   if self.closed {
@@ -510,12 +630,16 @@ pub async fn H3Backend::try_send(
     write: self.config.write_timeout_ms,
     read: self.config.read_timeout_ms,
   }
-  let timer = @attempt.AttemptTimer::new(
-    self.clock,
-    self.timer,
-    options.timeout_ms,
-    limits~,
-  )
+  let timer = match timer {
+    Some(timer) => timer
+    None =>
+      @attempt.AttemptTimer::new(
+        self.clock,
+        self.timer,
+        options.timeout_ms,
+        limits~,
+      )
+  }
   let fields = @mux.request_fields(request, target)
   let phases = @mux.Phases::new(request)
   defer phases.end()
@@ -523,11 +647,26 @@ pub async fn H3Backend::try_send(
     body.hand_over()
     return None
   }
+  // The reservation `connection` took goes back on every exit, the wait
+  // below included (Codex's review of #61).
   let mut reserving = true
   defer (if reserving {
     connection.reserved -= 1
     connection.notify()
   })
+  // Early data may be replayed: only a request that may be repeated goes
+  // in it; any other waits for the handshake.
+  let repeatable = early &&
+    request.meth is (Get | Head | Options) &&
+    request.body is (Empty | Bytes(_))
+  if connection.quic.early() && !repeatable {
+    timer.run(Dial, () => {
+      connection.wait_for(() => connection.handshake) catch {
+        @mttp_core.TransportError(..) => ()
+      }
+    })
+  }
+  let sent_early = connection.quic.early()
   let source = body.take()
   let first = match source {
     Some(source) => timer.run(Write, () => source.read_some())
@@ -552,6 +691,38 @@ pub async fn H3Backend::try_send(
       queue_bytes: QUEUE_BYTES,
     },
     protocol="h3",
-  )
+  ) catch {
+    // No handshake within the dial's budget: QUIC is not answering there
+    // now, and the request, safe to repeat, goes to whatever backs this one
+    // (TCP), as after a dial that failed.
+    @mttp_core.TransportError(..) if sent_early && connection.declined => {
+      self.mark_broken(target.origin)
+      body.hand_over()
+      return None
+    }
+    // Early data the server rejected: the request was not processed.
+    @mttp_core.TransportError(kind=Refused, ..) as error if sent_early => {
+      connection.notify()
+      return self.again_after_handshake(
+        connection, request, options, error, timer,
+      )
+    }
+    error => raise error
+  }
+  // A request the server will not take in early data (RFC 8470, 4.2).
+  if sent_early && response.status == 425 {
+    response.close()
+    return self.again_after_handshake(
+      connection,
+      request,
+      options,
+      @mttp_core.TransportError(
+        kind=Refused,
+        phase=Head,
+        detail="the server answered 425 Too Early",
+      ),
+      timer,
+    )
+  }
   Some(response)
 }

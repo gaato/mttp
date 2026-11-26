@@ -13,22 +13,26 @@ priv struct Raw {
   statuses : Map[Int64, String]
   ended : Array[Int64]
   mut closed : (Bool, Int64)?
+  /// The server rejected the connection's early data.
+  mut rejected : Bool
 }
 
 ///|
-async fn Raw::open(port : Int32) -> Raw {
+async fn Raw::open(port : Int32, resumption? : Bytes) -> Raw {
   let server = @socket.Addr::parse("127.0.0.1:\{port}")
   {
     conn: @h3.QuicConn::client(
       @h3.ClientQuic::new(trust=PemFile(testdata("root.pem"))),
       host="localhost",
       remote_address=server.to_string(),
+      resumption?,
     ),
     server,
     udp: @socket.UdpClient(server),
     statuses: Map([]),
     ended: [],
     closed: None,
+    rejected: false,
   }
 }
 
@@ -51,6 +55,7 @@ fn Raw::take_events(self : Raw) -> Unit {
       Data(stream~, data) => self.conn.consume(stream, data.length())
       EndStream(stream~) => self.ended.push(stream)
       ConnectionClosed(by_peer~, code~) => self.closed = Some((by_peer, code))
+      EarlyDataRejected => self.rejected = true
       _ => ()
     }
   }

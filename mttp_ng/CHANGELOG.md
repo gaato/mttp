@@ -37,6 +37,15 @@ never does.
 - The HTTP/3 client tells the server with CONNECTION_CLOSE whenever it
   closes a connection, `close()` of the backend included, so the server's
   side ends at once rather than at its idle timeout.
+- 0-RTT over HTTP/3, off by default: `ServerQuic::from_pem(early_data?)`
+  (and `serve(early_data?)`) issues session tickets; a request in early
+  data reaches a handler only with a safe method, marked
+  `@h3server.early_data`, and any other is answered 425 Too Early.
+  `H3Backend::new(early_data?)` (and `backend(early_data?)`) resumes with
+  each origin's latest ticket and sends safe requests with a body in
+  memory in 0-RTT, again after the handshake when they are rejected or
+  answered 425. `h3`: `QuicConn::client(resumption?)`, `resumption`,
+  `early`, and the events `Early`, `EarlyDataRejected` and `Ticket`.
 - Trailer sections both ways over HTTP/2 and HTTP/3, clients and servers,
   through gaato/mttp_core's `BodyStream::trailers`: received ones are the
   body's once it was read, and a stream's are sent after its last byte; a

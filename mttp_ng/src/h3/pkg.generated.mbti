@@ -61,6 +61,9 @@ pub(all) enum H3Event {
   TooLarge(stream~ : Int64)
   HandshakeDone
   ConnectionClosed(code~ : Int64, by_peer~ : Bool)
+  Early(stream~ : Int64)
+  EarlyDataRejected
+  Ticket
 }
 pub fn H3Event::equal(Self, Self) -> Bool
 pub fn H3Event::not_equal(Self, Self) -> Bool
@@ -84,7 +87,7 @@ pub struct QuicConn {
   // private fields
 }
 pub fn QuicConn::addressed_datagrams(Self) -> Array[(String, Bytes)] raise H3Error
-pub fn QuicConn::client(ClientQuic, host~ : String, local_address? : String, remote_address~ : String, settings? : H3Settings) -> Self raise H3Error
+pub fn QuicConn::client(ClientQuic, host~ : String, local_address? : String, remote_address~ : String, settings? : H3Settings, resumption? : Bytes) -> Self raise H3Error
 pub fn QuicConn::close(Self, code? : Int64) -> Unit
 pub fn QuicConn::close_datagram(Self) -> Bytes?
 pub fn QuicConn::closed(Self) -> Bool
@@ -92,6 +95,7 @@ pub fn QuicConn::closed_by_peer(Self) -> Bool
 pub fn QuicConn::connection_ids(Self) -> Array[Bytes]
 pub fn QuicConn::consume(Self, Int64, Int32) -> Unit
 pub fn QuicConn::datagrams(Self) -> Array[Bytes] raise H3Error
+pub fn QuicConn::early(Self) -> Bool
 pub fn QuicConn::end_with_trailers(Self, Int64, Array[(String, String)]) -> Unit raise H3Error
 pub fn QuicConn::events(Self) -> Array[H3Event]
 pub fn QuicConn::expiry_ms(Self) -> Int32?
@@ -105,6 +109,7 @@ pub fn QuicConn::queued(Self, Int64) -> Int32?
 pub fn QuicConn::read(Self, Bytes, from? : String) -> Unit raise H3Error
 pub fn QuicConn::remote_address(Self) -> String
 pub fn QuicConn::reset(Self, Int64, Int64, read_only? : Bool) -> Unit
+pub fn QuicConn::resumption(Self) -> Bytes?
 pub fn QuicConn::server(ServerQuic, Bytes, local_address~ : String, remote_address~ : String, settings? : H3Settings, keys? : ServerKeys) -> Self raise H3Error
 pub fn QuicConn::shutdown(Self, notice~ : Bool) -> Unit raise H3Error
 pub fn QuicConn::streams_left(Self) -> Int64
@@ -120,7 +125,7 @@ pub fn ServerKeys::new() -> Self raise H3Error
 pub struct ServerQuic {
   // private fields
 }
-pub fn ServerQuic::from_pem(chain~ : String, key~ : String) -> Self raise H3Error
+pub fn ServerQuic::from_pem(chain~ : String, key~ : String, early_data? : Bool) -> Self raise H3Error
 
 // Type aliases
 
