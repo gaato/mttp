@@ -134,6 +134,11 @@ priv struct Prefetched {
 }
 
 ///|
+impl @mttp_core.BodyStream for Prefetched with fn trailers(self) {
+  self.reader.trailers()
+}
+
+///|
 impl @mttp_core.BodyStream for Prefetched with fn read_some(self) {
   if self.closed {
     return None
@@ -170,6 +175,11 @@ priv struct BackendBody {
   cap : Int32?
   mut read : Int32
   mut closed : Bool
+}
+
+///|
+impl @mttp_core.BodyStream for BackendBody with fn trailers(self) {
+  self.reader.trailers()
 }
 
 ///|

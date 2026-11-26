@@ -2,8 +2,16 @@
 priv struct DecodedBody {
   read : async () -> Bytes? raise @mttp_core.TransportError
   close_ : () -> Unit
+  /// The body read beneath, whose trailers pass on unchanged: a content
+  /// coding covers the bytes, not the trailer fields.
+  origin : @mttp_core.Body
   decoder : ContentDecoder
   mut closed : Bool
+}
+
+///|
+impl @mttp_core.BodyStream for DecodedBody with fn trailers(self) {
+  self.origin.trailers()
 }
 
 ///|
@@ -46,6 +54,9 @@ impl @mttp_core.BodyStream for DecodedBody with fn close(self) {
 priv struct CollectedBody {
   read : async () -> Bytes? raise @mttp_core.TransportError
   close_ : () -> Unit
+  /// The body read beneath, whose trailers pass on unchanged: a content
+  /// coding covers the bytes, not the trailer fields.
+  origin : @mttp_core.Body
   // The bytes read so far: chunks of 64 KiB or more as they came, smaller
   // ones gathered into blocks of 64 KiB, so neither a growing buffer nor a
   // body of one-byte chunks holds much more than the bytes themselves.
@@ -69,6 +80,11 @@ fn CollectedBody::flush_block(self : CollectedBody) -> Unit {
     self.collected.push(self.block.to_bytes())
     self.block = Buffer(capacity=collected_block_bytes)
   }
+}
+
+///|
+impl @mttp_core.BodyStream for CollectedBody with fn trailers(self) {
+  self.origin.trailers()
 }
 
 ///|
@@ -232,6 +248,7 @@ pub impl @mttp_core.Backend for Decompress with fn send(self, request, options) 
             @mttp_core.StreamBody::new(DecodedBody::{
               read,
               close_,
+              origin: response.body,
               decoder,
               closed: false,
             }),
@@ -258,6 +275,7 @@ pub impl @mttp_core.Backend for Decompress with fn send(self, request, options) 
           @mttp_core.StreamBody::new(CollectedBody::{
             read,
             close_,
+            origin: response.body,
             collected: [],
             collected_bytes: 0,
             block: Buffer(capacity=0),

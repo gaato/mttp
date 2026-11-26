@@ -1045,3 +1045,37 @@ test "authenticated mutation invalidates anonymous and other credential partitio
     assert_eq(status(fetch(d, cache, request~)), Some(Miss))
   }
 }
+
+///|
+/// A stored body is bytes, which carry no trailer fields: a response that
+/// had some passes them on and is not stored, so no hit serves it without
+/// them.
+test "a response with trailers passes them on and is not stored" {
+  let d = @driver.Driver::new()
+  let calls = Ref(0)
+  let cache = @httpcache.HttpCache::new(
+    @client.from_fn((_, _) => {
+      calls.val += 1
+      {
+        ..response(),
+        body: @mttp_core.Body::with_trailers(
+          b"body",
+          trailers=@mttp_core.Headers::of([("x-checksum", "9")]),
+        ),
+      }
+    }),
+    clock=@sim.FakeClock::new(),
+  )
+  for _ in 0..<2 {
+    d.run(() => {
+      let r = cache.send(
+        @mttp_core.Request::get("http://example.test/a"),
+        @mttp_core.SendOptions::default(),
+      )
+      defer r.close()
+      assert_eq(r.body.read_all(max=1024), b"body")
+      assert_eq(r.body.trailers().get("x-checksum"), Some("9"))
+    })
+  }
+  assert_eq(calls.val, 2)
+}

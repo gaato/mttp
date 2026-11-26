@@ -35,6 +35,8 @@ fn source(
 priv struct Collected {
   read : async () -> Bytes? raise @mttp_core.TransportError
   close_ : () -> Unit
+  /// The response's own body, whose trailers this one passes on.
+  origin : @mttp_core.Body
   mut buffer : Buffer
   limit : Int32
   mut over : Bool
@@ -63,12 +65,19 @@ impl @mttp_core.BodyStream for Collected with fn read_some(self) {
       // Close transport before a potentially suspending store operation.
       let bytes = self.buffer.to_bytes()
       @mttp_core.BodyStream::close(self)
-      if !self.over {
+      // A stored body is bytes, which carry no trailers: a response that
+      // had them is not stored, so that no hit serves it without them.
+      if !self.over && self.origin.trailers().length() == 0 {
         (self.commit)(bytes)
       }
     }
   }
   chunk
+}
+
+///|
+impl @mttp_core.BodyStream for Collected with fn trailers(self) {
+  self.origin.trailers()
 }
 
 ///|

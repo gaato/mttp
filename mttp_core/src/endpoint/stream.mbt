@@ -34,6 +34,11 @@ priv struct ResponseOwner {
 }
 
 ///|
+impl @mttp_core.BodyStream for ResponseOwner with fn trailers(self) {
+  self.reader.trailers()
+}
+
+///|
 impl @mttp_core.BodyStream for ResponseOwner with fn read_some(self) {
   if self.closed {
     return None
@@ -62,6 +67,11 @@ priv struct LimitedInput {
   mut count : Int64
   failure : Ref[@schema.DecodeFailure?]
   mut closed : Bool
+}
+
+///|
+impl @mttp_core.BodyStream for LimitedInput with fn trailers(self) {
+  self.reader.trailers()
 }
 
 ///|

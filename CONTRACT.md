@@ -57,7 +57,8 @@ suites. For the implementations in this repository,
 
 ## BodyStream
 
-`read_some() async -> Bytes? raise TransportError`; `close() -> Unit`.
+`read_some() async -> Bytes? raise TransportError`; `close() -> Unit`;
+`trailers() -> Headers`, empty by default.
 
 1. Chunks are nonempty. EOF is permanent; reads after close return EOF.
 2. Close is idempotent. The consumer closes on success, error and cancellation.
@@ -69,6 +70,21 @@ suites. For the implementations in this repository,
 5. `read_bounded` closes on every exit, rejects empty chunks, and refuses the
    first chunk that would exceed the limit using overflow-safe arithmetic.
 6. Concurrent reads on the same stream are outside this contract.
+7. `trailers()` gives the trailer section that came after the bytes (RFC
+   9110, section 6.5) once `read_some` returned EOF, and keeps giving it
+   after `close`; before EOF, and for a body without one, it is empty. A
+   sender reads it after EOF and sends it: HTTP/1.1 in the last chunk of a
+   chunked body only (a body with a declared length goes with
+   Content-Length, and its trailers are not sent), HTTP/2 and HTTP/3 as a
+   HEADERS frame after the body. A trailer section a sender cannot carry
+   (invalid fields; Content-Length, Transfer-Encoding, Host, Connection,
+   Trailer; and over HTTP/2 and HTTP/3 the other connection-specific
+   fields and TE) fails the message as the producer's failure does, so it
+   does not end as whole. A wrapper that passes a body through passes its
+   trailers on; trailers are never merged into the head. The JavaScript
+   fetch backend and Workers server have no trailers (fetch exposes none),
+   and `httpcache` does not store a response that had them, since a stored
+   body is bytes.
 
 ## Connections and coordination
 
@@ -409,6 +425,9 @@ alternative for an already available buffer. Head and chunk decoder errors
 are sticky. `consumed` excludes body or pipelined bytes after completion.
 Chunk payloads are emitted without buffering a declared chunk's entire size;
 size lines and trailer storage have independent byte and count limits.
+The decoded trailer section is the body's (`BodyStream` rule 7) on both
+engines; `encode_last_chunk` writes one, refusing the fields the decoder
+refuses.
 `parse_request_head` and `parse_response_head` return the read-only structs
 `ParsedRequest` and `ParsedResponse`.
 

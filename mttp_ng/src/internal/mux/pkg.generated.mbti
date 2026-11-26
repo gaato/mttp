@@ -22,6 +22,8 @@ pub fn response_head(Array[(String, String)]) -> Result[(Int32, @mttp_core.Heade
 
 pub fn target(@mttp_core.Request) -> Target raise @mttp_core.TransportError
 
+pub fn trailer_fields(@mttp_core.Headers) -> Result[Array[(String, String)], String]
+
 pub fn with_phase(@mttp_core.TransportError, @mttp_core.Phase) -> @mttp_core.TransportError
 
 // Errors
@@ -47,6 +49,7 @@ pub(all) struct ClientStream {
   mut sent_end : Bool
   mut too_large : Bool
   mut malformed : String?
+  mut trailers : @mttp_core.Headers
 }
 pub fn ClientStream::data_arrived(Self, Bytes) -> Unit
 pub fn ClientStream::head_arrived(Self, Array[(String, String)]) -> Bool
@@ -99,10 +102,12 @@ pub(all) struct ServerStream {
   mut sent_end : Bool
   mut sent : Int32
   mut failure : @mttp_core.TransportError?
+  mut trailers : @mttp_core.Headers
   // private fields
 }
 pub fn ServerStream::arrived(Self, Bytes, Int32) -> Bool
 pub fn ServerStream::new(Int64, ended~ : Bool) -> Self
+pub fn ServerStream::trailers_arrived(Self, Array[(String, String)], ended~ : Bool) -> Unit
 
 #derive(Eq, @debug.Debug)
 pub(all) enum StreamEnd {
@@ -127,6 +132,7 @@ pub struct Target {
 pub(open) trait ClientConn {
   fn open_stream(Self, Array[(String, String)], body~ : Bool) -> ClientStream raise @mttp_core.TransportError
   fn push(Self, ClientStream, Bytes, end~ : Bool) -> Bool
+  fn end_with_trailers(Self, ClientStream, Array[(String, String)]) -> Bool
   fn queued(Self, ClientStream) -> Int32
   fn consume(Self, ClientStream, Int32) -> Unit
   fn release(Self, ClientStream) -> Unit
@@ -141,6 +147,7 @@ pub(open) trait ServerConn {
   fn submit_response(Self, Int64, Array[(String, String)], body~ : Bool) -> Bool
   fn send_continue(Self, Int64) -> Bool
   fn push(Self, Int64, Bytes, end~ : Bool) -> Bool
+  fn end_with_trailers(Self, Int64, Array[(String, String)]) -> Bool
   fn queued(Self, Int64) -> Int32
   fn consume(Self, Int64, Int32) -> Unit
   fn abort(Self, Int64) -> Unit

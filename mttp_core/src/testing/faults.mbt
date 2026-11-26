@@ -30,6 +30,11 @@ priv struct FaultStream {
 }
 
 ///|
+impl @mttp_core.BodyStream for FaultStream with fn trailers(self) {
+  self.source.trailers()
+}
+
+///|
 impl @mttp_core.BodyStream for FaultStream with fn read_some(self) {
   if self.closed {
     return None

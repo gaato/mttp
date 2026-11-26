@@ -49,6 +49,26 @@ async fn answer(request : @mttp_core.Request) -> @mttp_core.Response noraise {
         ]),
         body=Bytes(b"hello"),
       )
+    // Echoes the body and its x-checksum trailer, and answers with a
+    // grpc-status trailer, or one a trailer section cannot carry.
+    "/trailers" => {
+      let body = request.body.read_all(max=8 << 20) catch {
+        _ => return @mttp_core.Response::new(400)
+      }
+      let sum = request.body.trailers().get("x-checksum").unwrap_or("none")
+      let trailers = if url.query == Some("bad") {
+        @mttp_core.Headers::of([("content-length", "1")])
+      } else {
+        @mttp_core.Headers::of([("grpc-status", "0")])
+      }
+      @mttp_core.Response::new(
+        200,
+        body=@mttp_core.Body::with_trailers(
+          @utf8.encode("\{@utf8.decode_lossy(body)} \{sum}"),
+          trailers~,
+        ),
+      )
+    }
     "/echo" => {
       let body = request.body.read_all(max=8 << 20) catch {
         error =>

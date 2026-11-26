@@ -79,6 +79,7 @@ pub fn H2Session::can_open(Self) -> Bool
 pub fn H2Session::client(settings? : H2Settings) -> Self raise H2Error
 pub fn H2Session::consume_connection(Self, Int32) -> Unit
 pub fn H2Session::consume_stream(Self, Int32, Int32) -> Unit
+pub fn H2Session::end_with_trailers(Self, Int32, Array[(String, String)]) -> Unit raise H2Error
 pub fn H2Session::events(Self) -> Array[H2Event]
 pub fn H2Session::free(Self) -> Unit
 pub fn H2Session::goaway(Self, ErrorCode) -> Unit raise H2Error

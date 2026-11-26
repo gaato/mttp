@@ -20,6 +20,8 @@ priv struct RequestBody {
   chunks : Array[Bytes]
   /// The whole body was read from the wire.
   mut done : Bool
+  /// The trailer section of a chunked body, once it ended.
+  mut trailers : @mttp_core.Headers
   /// The application closed its reader; the engine may still drain.
   mut closed : Bool
   /// `100 Continue` is still owed before the first read from the wire.
@@ -67,6 +69,7 @@ fn RequestBody::new(
     count: 0L,
     chunks: [],
     done,
+    trailers: @mttp_core.Headers::empty(),
     closed: false,
     expect: expect && !done,
     failure: None,
@@ -202,6 +205,7 @@ async fn RequestBody::next_raw(
           }
         }
         if decoded.done {
+          self.trailers = decoded.trailers
           self.finish()
         }
       }
@@ -261,4 +265,14 @@ impl @mttp_core.BodyStream for RequestBody with fn read_some(self) {
 /// before reusing the connection.
 impl @mttp_core.BodyStream for RequestBody with fn close(self) {
   self.closed = true
+}
+
+///|
+/// The trailer section of a chunked request body, once it was read.
+impl @mttp_core.BodyStream for RequestBody with fn trailers(self) {
+  if self.done && self.chunks.is_empty() {
+    self.trailers
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }

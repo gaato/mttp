@@ -23,6 +23,17 @@ never does.
   (`false` after a body delimited by the close, or one with a length, cut
   at shutdown, or a failed write), so that a TLS adapter sends close_notify
   only when no response was cut short.
+- Trailer fields (RFC 9110, section 6.5) ride on the body:
+  `BodyStream::trailers()` (a method with a default, so existing
+  implementations compile unchanged) gives the section that followed the
+  bytes once a stream reached EOF; `Body::trailers()` reads it after the
+  body was read, and `Body::with_trailers(bytes, trailers~)` makes a body
+  that sends some. `h1client` and `h1server` read a chunked body's
+  trailer section into it and send a stream's trailers in the last chunk
+  (`@h1.encode_last_chunk`), refusing the fields the decoder refuses; a
+  body with a declared length sends none. The router, endpoint and client
+  wrappers pass trailers on; `httpcache` does not store a response that
+  had them. CONTRACT.md, BodyStream rule 7.
 
 ### Changed
 

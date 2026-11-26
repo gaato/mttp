@@ -2,6 +2,7 @@
 async test "decoded body direct close is idempotent and makes EOF sticky" {
   let closes = Ref(0)
   let body = DecodedBody::{
+    origin: @mttp_core.Body::Empty,
     read: () => None,
     close_: () => closes.val += 1,
     decoder: ContentDecoder::new([Gzip]),

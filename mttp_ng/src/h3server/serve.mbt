@@ -74,6 +74,18 @@ impl @mux.ServerConn for Served with fn push(self, id, data, end~) {
 }
 
 ///|
+impl @mux.ServerConn for Served with fn end_with_trailers(self, id, fields) {
+  let ok = try {
+    self.quic.end_with_trailers(id, fields)
+    true
+  } catch {
+    _ => false
+  }
+  self.changes.notify()
+  ok
+}
+
+///|
 impl @mux.ServerConn for Served with fn queued(self, id) {
   self.quic.queued(id).unwrap_or(0)
 }
@@ -397,8 +409,8 @@ fn Listener::dispatch(
     match event {
       Headers(stream~, fields~, end_stream~) =>
         match conn.streams.get(stream) {
-          // Trailers: only their end counts.
-          Some(entry) => if end_stream { entry.stream.ended = true }
+          // A section after the head: the trailers.
+          Some(entry) => entry.stream.trailers_arrived(fields, ended=end_stream)
           // As HTTP/2's server: at the cap a new request is refused, so a
           // client that opens and resets streams cannot pile up tasks.
           None if conn.handlers >= self.settings.max_streams_bidi =>

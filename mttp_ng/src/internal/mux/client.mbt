@@ -45,6 +45,8 @@ pub(all) struct ClientStream {
   mut too_large : Bool
   /// The response head is not a valid response.
   mut malformed : String?
+  /// The trailer section that followed the response body.
+  mut trailers : @mttp_core.Headers
 }
 
 ///|
@@ -61,6 +63,7 @@ pub fn ClientStream::new(id : Int64) -> ClientStream {
     sent_end: false,
     too_large: false,
     malformed: None,
+    trailers: @mttp_core.Headers::empty(),
   }
 }
 
@@ -73,7 +76,9 @@ pub fn ClientStream::head_arrived(
   fields : Array[(String, String)],
 ) -> Bool {
   if self.head is Some(_) {
-    // Trailer fields are not passed on (nobody asks; CONTRACT.md).
+    // A section after the head is the trailers; nghttp2 and nghttp3 have
+    // refused pseudo fields in it.
+    self.trailers = @mttp_core.Headers::of(fields)
     return false
   }
   match response_head(fields) {
@@ -105,6 +110,9 @@ pub(open) trait ClientConn {
   fn open_stream(Self, Array[(String, String)], body~ : Bool) -> ClientStream raise @mttp_core.TransportError
   /// Queues body bytes; `false` when the stream takes no more.
   fn push(Self, ClientStream, Bytes, end~ : Bool) -> Bool
+  /// Ends the request body after what was pushed with a trailer section;
+  /// false as `push`.
+  fn end_with_trailers(Self, ClientStream, Array[(String, String)]) -> Bool
   /// Bytes of the stream's request body not yet sent.
   fn queued(Self, ClientStream) -> Int32
   /// Gives the stream's window back by `len` bytes the reader took.
@@ -326,10 +334,14 @@ pub async fn exchange(
   limits : ExchangeLimits,
   protocol~ : String,
 ) -> @mttp_core.Response raise @mttp_core.TransportError {
+  // A stream that ended at once may still have trailers to send.
+  let empty_with_trailers = first is None &&
+    source is Some(s) &&
+    s.trailers().length() > 0
   let has_body = match (first, source) {
     (Some(bytes), None) => bytes.length() > 0
     (Some(_), Some(_)) => true
-    _ => false
+    _ => empty_with_trailers
   }
   let stream = conn.open_stream(fields, body=has_body)
   phases.emit(Pooled(reused~))
@@ -340,6 +352,7 @@ pub async fn exchange(
     (Some(bytes), None) if has_body =>
       ignore(conn.push(stream, bytes, end=true))
     (Some(piece), Some(_)) => ignore(conn.push(stream, piece, end=false))
+    (None, Some(s)) if empty_with_trailers => ignore(end_body(conn, stream, s))
     _ => ()
   }
   let upload_done = Ref(!(source is Some(_) && first is Some(_)))
@@ -400,7 +413,7 @@ pub async fn exchange(
         match timer.run(Write, () => source.read_some()) {
           Some(bytes) => if !conn.push(stream, bytes, end=false) { return }
           None => {
-            if !conn.push(stream, b"", end=true) {
+            if !end_body(conn, stream, source) {
               return
             }
             upload_done.val = true
@@ -422,6 +435,30 @@ pub async fn exchange(
 }
 
 ///|
+/// Ends the request body after its last byte: with the source's trailers,
+/// when it has some. Trailers that cannot be sent fail the upload, which
+/// resets the stream, rather than end the request as whole.
+fn end_body(
+  conn : &ClientConn,
+  stream : ClientStream,
+  source : &@mttp_core.BodyStream,
+) -> Bool raise @mttp_core.TransportError {
+  let trailers = source.trailers()
+  if trailers.length() == 0 {
+    return conn.push(stream, b"", end=true)
+  }
+  match trailer_fields(trailers) {
+    Ok(fields) => conn.end_with_trailers(stream, fields)
+    Err(detail) =>
+      raise @mttp_core.TransportError(
+        kind=Invalid,
+        phase=Write,
+        detail="the request's trailers cannot be sent: \{detail}",
+      )
+  }
+}
+
+///|
 /// The response whose head has arrived on `stream`.
 fn response(
   conn : &ClientConn,
@@ -440,7 +477,13 @@ fn response(
   let bodiless = request.meth is Head || status == 204 || status == 304
   if bodiless || (stream.ended && stream.buffered == 0) {
     conn.release(stream)
-    return { ..@mttp_core.Response::new(status, headers~), attributes, }
+    // Trailers that came with the head, and no body between.
+    let body = if stream.trailers.length() > 0 {
+      @mttp_core.Body::with_trailers(b"", trailers=stream.trailers)
+    } else {
+      Empty
+    }
+    return { ..@mttp_core.Response::new(status, headers~, body~), attributes, }
   }
   // A declared length bounds the body before any of it is read.
   let declared = match headers.get("content-length") {
@@ -460,6 +503,7 @@ fn response(
       None
     },
     finished: false,
+    complete: false,
   }
   {
     ..@mttp_core.Response::new(
@@ -481,6 +525,8 @@ priv struct ResponseBody {
   budget : @attempt.BodyBudget
   declared : Int64?
   mut finished : Bool
+  /// The body was read to its end.
+  mut complete : Bool
 }
 
 ///|
@@ -518,6 +564,7 @@ impl @mttp_core.BodyStream for ResponseBody with fn read_some(self) {
       (self.declared is None || self.declared == Some(self.budget.count()))
     )
   if complete {
+    self.complete = true
     self.close_stream()
     return None
   }
@@ -537,6 +584,15 @@ impl @mttp_core.BodyStream for ResponseBody with fn read_some(self) {
 fn ResponseBody::close_stream(self : ResponseBody) -> Unit {
   self.finished = true
   self.conn.release(self.stream)
+}
+
+///|
+impl @mttp_core.BodyStream for ResponseBody with fn trailers(self) {
+  if self.complete {
+    self.stream.trailers
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|

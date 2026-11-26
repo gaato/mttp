@@ -82,6 +82,7 @@ pub fn QuicConn::close(Self, code? : Int64) -> Unit
 pub fn QuicConn::closed(Self) -> Bool
 pub fn QuicConn::consume(Self, Int64, Int32) -> Unit
 pub fn QuicConn::datagrams(Self) -> Array[Bytes] raise H3Error
+pub fn QuicConn::end_with_trailers(Self, Int64, Array[(String, String)]) -> Unit raise H3Error
 pub fn QuicConn::events(Self) -> Array[H3Event]
 pub fn QuicConn::expiry_ms(Self) -> Int32?
 pub fn QuicConn::free(Self) -> Unit

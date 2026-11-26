@@ -417,6 +417,20 @@ impl @mux.ClientConn for Connection with fn push(self, stream, data, end~) {
 }
 
 ///|
+impl @mux.ClientConn for Connection with fn end_with_trailers(
+  self,
+  stream,
+  fields,
+) {
+  try {
+    self.session.end_with_trailers(stream.id.to_int(), fields)
+    true
+  } catch {
+    _ => false
+  }
+}
+
+///|
 impl @mux.ClientConn for Connection with fn queued(self, stream) {
   self.session.queued(stream.id.to_int()).unwrap_or(0)
 }

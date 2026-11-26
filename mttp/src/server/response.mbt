@@ -9,6 +9,11 @@ priv struct ResponseLease {
 }
 
 ///|
+impl @mttp_core.BodyStream for ResponseLease with fn trailers(self) {
+  @mttp_core.Body::Stream(self.body).trailers()
+}
+
+///|
 impl @mttp_core.BodyStream for ResponseLease with fn read_some(self) {
   if self.closed {
     return None

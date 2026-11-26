@@ -113,6 +113,18 @@ impl @mux.ServerConn for Served with fn push(self, id, data, end~) {
 }
 
 ///|
+impl @mux.ServerConn for Served with fn end_with_trailers(self, id, fields) {
+  let ok = try {
+    self.session.end_with_trailers(id.to_int(), fields)
+    true
+  } catch {
+    _ => false
+  }
+  self.wake()
+  ok
+}
+
+///|
 impl @mux.ServerConn for Served with fn queued(self, id) {
   self.session.queued(id.to_int()).unwrap_or(0)
 }
@@ -477,9 +489,9 @@ fn Served::dispatch(
           })
           entry.task = Some(task)
         }
-      Headers(stream~, kind=Trailers, end_stream~, ..) =>
-        if end_stream && self.streams.get(stream) is Some(entry) {
-          entry.stream.ended = true
+      Headers(stream~, kind=Trailers, fields~, end_stream~) =>
+        if self.streams.get(stream) is Some(entry) {
+          entry.stream.trailers_arrived(fields, ended=end_stream)
         }
       Data(stream~, data) => {
         self.session.consume_connection(data.length())

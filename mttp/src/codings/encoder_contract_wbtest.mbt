@@ -42,6 +42,7 @@ impl @codec_bytes.Encode for QuietEncoder with fn memory_usage(_) {
 async test "encoded body direct close is idempotent and makes EOF sticky" {
   let closes = Ref(0)
   let body = EncodedBody::{
+    origin: @mttp_core.Body::Empty,
     read: () => None,
     close_: () => closes.val += 1,
     encoder: ContentEncoder::new(Gzip),

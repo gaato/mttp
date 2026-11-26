@@ -134,7 +134,6 @@ client's) that the stop cut short, so that the client can tell.
   request with `Upgrade` goes over HTTP/1.1.
 - HTTP/2 and HTTP/3 are not sent through proxies. While a proxy is
   configured for a scheme, its requests go over HTTP/1.1 through it.
-- Trailers are not exposed, on either side.
 - A QUIC client that changes its address loses its connection: the server
   routes datagrams by the client's address and disables migration.
 - `close()` of a client backend does not send QUIC's CONNECTION_CLOSE,

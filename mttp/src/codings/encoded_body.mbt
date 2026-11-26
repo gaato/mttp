@@ -2,8 +2,16 @@
 priv struct EncodedBody {
   read : async () -> Bytes? raise @mttp_core.TransportError
   close_ : () -> Unit
+  /// The body read beneath, whose trailers pass on unchanged: a content
+  /// coding covers the bytes, not the trailer fields.
+  origin : @mttp_core.Body
   encoder : ContentEncoder
   mut closed : Bool
+}
+
+///|
+impl @mttp_core.BodyStream for EncodedBody with fn trailers(self) {
+  self.origin.trailers()
 }
 
 ///|
@@ -59,6 +67,7 @@ pub fn encode_body(
     @mttp_core.StreamBody::new(EncodedBody::{
       read,
       close_,
+      origin: body,
       encoder,
       closed: false,
     }),
