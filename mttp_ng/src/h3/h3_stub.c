@@ -400,6 +400,11 @@ typedef struct outq {
   size_t queued; // bytes not yet handed to nghttp3
   int ended;
   int drained;
+  // The trailer section that ends the body (a copy of its field blob), or
+  // NULL: submitted when the body reaches its end, which then leaves the
+  // stream open for it (RFC 9114, section 4.1).
+  uint8_t *trailers;
+  size_t trailers_len;
   struct outq *next;
 } outq;
 
@@ -411,6 +416,7 @@ static void outq_free(outq *q) {
     free(c);
     c = next;
   }
+  free(q->trailers);
   free(q);
 }
 
@@ -851,40 +857,6 @@ static int h3_end_headers_cb(nghttp3_conn *h3, int64_t stream, int fin,
   return 0;
 }
 
-static int h3_trailer_cb(nghttp3_conn *h3, int64_t stream, int32_t token,
-                         nghttp3_rcbuf *name, nghttp3_rcbuf *value,
-                         uint8_t flags, void *user, void *stream_user) {
-  // Trailer fields are not passed on (nobody asks; CONTRACT.md).
-  (void)h3;
-  (void)stream;
-  (void)token;
-  (void)name;
-  (void)value;
-  (void)flags;
-  (void)user;
-  (void)stream_user;
-  return 0;
-}
-
-static int h3_noop_headers_cb(nghttp3_conn *h3, int64_t stream, void *user,
-                              void *stream_user) {
-  (void)h3;
-  (void)stream;
-  (void)user;
-  (void)stream_user;
-  return 0;
-}
-
-static int h3_end_trailers_cb(nghttp3_conn *h3, int64_t stream, int fin,
-                              void *user, void *stream_user) {
-  (void)h3;
-  (void)fin;
-  (void)stream_user;
-  (void)stream;
-  (void)user;
-  return 0;
-}
-
 static int h3_end_stream_cb(nghttp3_conn *h3, int64_t stream, void *user,
                             void *stream_user) {
   (void)h3;
@@ -921,6 +893,26 @@ static int h3_shutdown_cb(nghttp3_conn *h3, int64_t id, void *user) {
   return 0;
 }
 
+static nghttp3_nv *fields_of(const uint8_t *blob, size_t bloblen,
+                             size_t *count);
+
+// The end of `o`'s body: EOF, and with trailers the HEADERS frame that ends
+// the stream instead. 0, or an nghttp3 error.
+static int body_end(qconn *q, outq *o, uint32_t *pflags) {
+  *pflags |= NGHTTP3_DATA_FLAG_EOF;
+  if (!o->trailers) return 0;
+  size_t count;
+  nghttp3_nv *nva = fields_of(o->trailers, o->trailers_len, &count);
+  if (!nva) return NGHTTP3_ERR_CALLBACK_FAILURE;
+  int rv = nghttp3_conn_submit_trailers(q->h3, o->stream, nva, count);
+  free(nva);
+  free(o->trailers);
+  o->trailers = NULL;
+  if (rv != 0) return NGHTTP3_ERR_CALLBACK_FAILURE;
+  *pflags |= NGHTTP3_DATA_FLAG_NO_END_STREAM;
+  return 0;
+}
+
 static nghttp3_ssize h3_read_data_cb(nghttp3_conn *h3, int64_t stream,
                                      nghttp3_vec *vec, size_t veccnt,
                                      uint32_t *pflags, void *user,
@@ -949,12 +941,15 @@ static nghttp3_ssize h3_read_data_cb(nghttp3_conn *h3, int64_t stream,
   }
   if (n == 0 && o->queued == 0) {
     if (o->ended) {
-      *pflags |= NGHTTP3_DATA_FLAG_EOF;
-      return 0;
+      int rv = body_end(q, o, pflags);
+      return rv != 0 ? rv : 0;
     }
     return NGHTTP3_ERR_WOULDBLOCK;
   }
-  if (o->queued == 0 && o->ended) *pflags |= NGHTTP3_DATA_FLAG_EOF;
+  if (o->queued == 0 && o->ended) {
+    int rv = body_end(q, o, pflags);
+    if (rv != 0) return rv;
+  }
   return (nghttp3_ssize)n;
 }
 
@@ -969,9 +964,11 @@ static int setup_h3(qconn *q) {
   cb.begin_headers = h3_begin_headers_cb;
   cb.recv_header = h3_recv_header_cb;
   cb.end_headers = h3_end_headers_cb;
-  cb.begin_trailers = h3_noop_headers_cb;
-  cb.recv_trailer = h3_trailer_cb;
-  cb.end_trailers = h3_end_trailers_cb;
+  // A trailer section is recorded as another header section, under the
+  // same bound; the stream's reader knows it by the head before it.
+  cb.begin_trailers = h3_begin_headers_cb;
+  cb.recv_trailer = h3_recv_header_cb;
+  cb.end_trailers = h3_end_headers_cb;
   cb.stop_sending = h3_stop_sending_cb;
   cb.end_stream = h3_end_stream_cb;
   cb.reset_stream = h3_reset_stream_cb;
@@ -1786,9 +1783,11 @@ MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_idle_ms(qconn_box *b) {
 
 // --- requests and responses --------------------------------------------------
 
-static nghttp3_nv *fields(moonbit_bytes_t blob, size_t *count) {
+// The fields point into the blob.
+static nghttp3_nv *fields_of(const uint8_t *blob, size_t bloblen,
+                             size_t *count) {
   const uint8_t *p = blob;
-  const uint8_t *end = blob + Moonbit_array_length(blob);
+  const uint8_t *end = blob + bloblen;
 #define READ_I32(v)                                                            \
   do {                                                                         \
     if (end - p < 4) goto bad;                                                 \
@@ -1823,6 +1822,10 @@ bad:
   *count = 0;
   return NULL;
 #undef READ_I32
+}
+
+static nghttp3_nv *fields(moonbit_bytes_t blob, size_t *count) {
+  return fields_of(blob, (size_t)Moonbit_array_length(blob), count);
 }
 
 static outq *queue_new(qconn *q, int64_t stream) {
@@ -1930,6 +1933,27 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_push(qconn_box *b, int64_t stream,
     o->queued += (size_t)len;
   }
   if (end) o->ended = 1;
+  o->drained = 0;
+  nghttp3_conn_resume_stream(q->h3, stream);
+  return 0;
+}
+
+// Ends `stream`'s body after what was pushed with the trailer section in
+// the field blob `blob`: 0, or -1 when the stream has no queue or its body
+// already ended.
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_end_with_trailers(qconn_box *b,
+                                                        int64_t stream,
+                                                        moonbit_bytes_t blob) {
+  qconn *q = b->q;
+  if (!q || !q->h3 || q->closed) return -1;
+  outq *o = queue_of(q, stream);
+  if (!o || o->ended) return -1;
+  size_t len = (size_t)Moonbit_array_length(blob);
+  o->trailers = malloc(len ? len : 1);
+  if (!o->trailers) return -1;
+  memcpy(o->trailers, blob, len);
+  o->trailers_len = len;
+  o->ended = 1;
   o->drained = 0;
   nghttp3_conn_resume_stream(q->h3, stream);
   return 0;

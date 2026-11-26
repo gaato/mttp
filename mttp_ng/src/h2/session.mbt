@@ -81,6 +81,14 @@ extern "C" fn raw_push(
 ) -> Int32 = "mttp_ng_h2_push"
 
 ///|
+#borrow(raw, fields)
+extern "C" fn raw_end_with_trailers(
+  raw : Raw,
+  stream : Int32,
+  fields : Bytes,
+) -> Int32 = "mttp_ng_h2_end_with_trailers"
+
+///|
 #borrow(raw)
 extern "C" fn raw_queued(raw : Raw, stream : Int32) -> Int32 = "mttp_ng_h2_queued"
 
@@ -380,6 +388,20 @@ pub fn H2Session::push(
   end~ : Bool,
 ) -> Unit raise H2Error {
   if raw_push(self.raw, stream, data, 0, data.length(), end) != 0 {
+    raise H2Error(code=-903, detail="stream \{stream} takes no more body")
+  }
+}
+
+///|
+/// Ends `stream`'s body after what was pushed with `trailers`, a HEADERS
+/// frame that ends the stream once the body went (RFC 9113, section 8.1).
+/// Raises as `push` does, and for fields that cannot be encoded.
+pub fn H2Session::end_with_trailers(
+  self : H2Session,
+  stream : Int32,
+  trailers : Array[(String, String)],
+) -> Unit raise H2Error {
+  if raw_end_with_trailers(self.raw, stream, encode_fields(trailers)) != 0 {
     raise H2Error(code=-903, detail="stream \{stream} takes no more body")
   }
 }

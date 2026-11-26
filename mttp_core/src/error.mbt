@@ -75,10 +75,22 @@ pub fn TransportError::message(self : TransportError) -> String {
 }
 
 ///|
-/// A stream with nonempty chunks, sticky EOF and idempotent close.
+/// A stream with nonempty chunks, sticky EOF and idempotent close, and the
+/// trailer fields that followed its bytes.
 pub(open) trait BodyStream {
   /// Returns the next nonempty chunk or permanent EOF.
   async fn read_some(Self) -> Bytes? raise TransportError
   /// Releases resources; subsequent reads return EOF.
   fn close(Self) -> Unit
+  /// The trailer fields that came after the body's bytes (RFC 9110, section
+  /// 6.5), once `read_some` returned EOF; they stay after `close`. Empty
+  /// before EOF, for a body that had none, and by default. A stream a
+  /// sender reads gives the trailers to send after its last byte; a
+  /// wrapper that passes a body through passes these on.
+  fn trailers(Self) -> Headers = _
+}
+
+///|
+impl BodyStream with fn trailers(_) {
+  Headers::empty()
 }

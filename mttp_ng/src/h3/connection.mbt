@@ -193,6 +193,14 @@ extern "C" fn raw_push(
 ) -> Int32 = "mttp_ng_h3_push"
 
 ///|
+#borrow(raw, fields)
+extern "C" fn raw_end_with_trailers(
+  raw : Raw,
+  stream : Int64,
+  fields : Bytes,
+) -> Int32 = "mttp_ng_h3_end_with_trailers"
+
+///|
 #borrow(raw)
 extern "C" fn raw_queued(raw : Raw, stream : Int64) -> Int64 = "mttp_ng_h3_queued"
 
@@ -813,6 +821,20 @@ pub fn QuicConn::push(
   end~ : Bool,
 ) -> Unit raise H3Error {
   if raw_push(self.raw, stream, data, end) != 0 {
+    raise H3Error(code=0, detail="stream \{stream} takes no more body")
+  }
+}
+
+///|
+/// Ends `stream`'s body after what was pushed with `trailers`, a HEADERS
+/// frame that ends the stream once the body went (RFC 9114, section 4.1).
+/// Raises as `push` does.
+pub fn QuicConn::end_with_trailers(
+  self : QuicConn,
+  stream : Int64,
+  trailers : Array[(String, String)],
+) -> Unit raise H3Error {
+  if raw_end_with_trailers(self.raw, stream, encode_fields(trailers)) != 0 {
     raise H3Error(code=0, detail="stream \{stream} takes no more body")
   }
 }

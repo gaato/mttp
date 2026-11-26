@@ -453,3 +453,31 @@ async test "behind a proxy, https goes over HTTP/1.1 through its tunnel" {
     }
   })
 }
+
+///|
+/// node:http2 reads the request's trailer section and sends its own after
+/// the body (RFC 9113, section 8.1); over TLS that is HTTP/2, over the
+/// HTTP/1.1 fallback the chunked coding's.
+async test "trailers go both ways with node:http2, and over the HTTP/1.1 fallback" {
+  with_server(server => {
+    let b = backend()
+    defer b.close()
+    for base in [server.tls, server.tls11] {
+      let request = {
+        ..@mttp_core.Request::post("\{base}/trailers"),
+        body: @mttp_core.Body::with_trailers(
+          b"abc",
+          trailers=@mttp_core.Headers::of([("x-checksum", "9")]),
+        ),
+      }
+      let response = b.send(request, defaults)
+      assert_eq(response.status, 200)
+      assert_eq(text(response), "abc 9", msg=base)
+      assert_eq(
+        response.body.trailers().get("grpc-status"),
+        Some("0"),
+        msg=base,
+      )
+    }
+  })
+}

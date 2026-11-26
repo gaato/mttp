@@ -227,3 +227,27 @@ test "read_all enforces its bound for every body variant and closes streams" {
   }
   assert_eq(crossing.closes, 1)
 }
+
+///|
+/// A stream shorter than its declared length fails at its end: it did not
+/// end as whole, so it has no trailers, though its source had some.
+test "a stream that fails at its end has no trailers" {
+  let source = @mttp_core.Body::with_trailers(
+    b"abc",
+    trailers=@mttp_core.Headers::of([("x-checksum", "9")]),
+  )
+  guard source is Stream(inner) else { fail("not a stream") }
+  let body = @mttp_core.Body::Stream(
+    @mttp_core.StreamBody::new(inner.take(), length=10L),
+  )
+  let failed = @driver.run_sync(() => {
+    try body.read_all(max=1024) catch {
+      @mttp_core.TransportError(kind=Protocol, ..) => true
+      _ => false
+    } noraise {
+      _ => false
+    }
+  })
+  assert_true(failed)
+  assert_eq(body.trailers().length(), 0)
+}

@@ -42,10 +42,12 @@ impl @codec_bytes.Encode for QuietEncoder with fn memory_usage(_) {
 async test "encoded body direct close is idempotent and makes EOF sticky" {
   let closes = Ref(0)
   let body = EncodedBody::{
+    origin: @mttp_core.Body::Empty,
     read: () => None,
     close_: () => closes.val += 1,
     encoder: ContentEncoder::new(Gzip),
     closed: false,
+    ended: false,
   }
   @mttp_core.BodyStream::close(body)
   @mttp_core.BodyStream::close(body)
@@ -84,4 +86,28 @@ test "encoder adapter accepts silent progress and retains a codec failure" {
       assert_true(encoder.pull() is Done)
     }
   }
+}
+
+///|
+/// The encoder has bytes to hand out after its source ended (gzip's
+/// footer, at the least): the source's trailers are the encoded body's
+/// only once it returned EOF itself (Codex's review of #60).
+async test "an encoded body shows its source's trailers only at its own end" {
+  let origin = @mttp_core.Body::with_trailers(
+    b"hello",
+    trailers=@mttp_core.Headers::of([("x-checksum", "9")]),
+  )
+  let (read, close_) = body_source(origin)
+  let body = EncodedBody::{
+    origin,
+    read,
+    close_,
+    encoder: ContentEncoder::new(Gzip),
+    closed: false,
+    ended: false,
+  }
+  while @mttp_core.BodyStream::read_some(body) is Some(_) {
+    assert_eq(@mttp_core.BodyStream::trailers(body).length(), 0)
+  }
+  assert_eq(@mttp_core.BodyStream::trailers(body).get("x-checksum"), Some("9"))
 }

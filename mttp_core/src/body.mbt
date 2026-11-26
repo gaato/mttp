@@ -57,6 +57,76 @@ pub fn Body::as_bytes(self : Body) -> Bytes? {
 }
 
 ///|
+/// The trailer fields that came after the body (RFC 9110, section 6.5), once
+/// a stream was read to its end: what a backend received after a response
+/// body, or a server after a request body. Empty for bytes, before the end,
+/// and when there were none. HTTP/1.1 carries trailers only after a chunked
+/// body; HTTP/2 and HTTP/3 after any.
+///
+/// ```mbt check
+/// test {
+///   let body = @mttp_core.Body::with_trailers(
+///     b"payload",
+///     trailers=@mttp_core.Headers::of([("grpc-status", "0")]),
+///   )
+///   assert_eq(body.trailers().get("grpc-status"), None)
+///   assert_eq(@driver.run_sync(() => body.read_all(max=1024)), b"payload")
+///   assert_eq(body.trailers().get("grpc-status"), Some("0"))
+/// }
+/// ```
+pub fn Body::trailers(self : Body) -> Headers {
+  match self {
+    // The reader's, which gives them only once it reached its own end:
+    // a stream that failed there (shorter than its declared length) has
+    // none.
+    Stream(stream) =>
+      match stream.reader {
+        Some(reader) => reader.trailers()
+        None => Headers::empty()
+      }
+    Empty | Bytes(_) => Headers::empty()
+  }
+}
+
+///|
+/// A body of `bytes` followed by `trailers`, for a sender: a stream without
+/// a declared length, so that HTTP/1.1 sends it chunked, the one framing
+/// that carries trailers (a stream with a declared length goes with
+/// `Content-Length`, and its trailers are not sent). The stream is read
+/// once, as any.
+pub fn Body::with_trailers(bytes : Bytes, trailers~ : Headers) -> Body {
+  Stream(StreamBody::new(Trailed::{ bytes: Some(bytes), trailers, }))
+}
+
+///|
+/// The source of `Body::with_trailers`, read only through the stream `take`
+/// hands out, which gives the trailers at its own end.
+priv struct Trailed {
+  mut bytes : Bytes?
+  trailers : Headers
+}
+
+///|
+impl BodyStream for Trailed with fn read_some(self) {
+  let bytes = self.bytes
+  self.bytes = None
+  match bytes {
+    Some(chunk) if chunk.length() > 0 => Some(chunk)
+    _ => None
+  }
+}
+
+///|
+impl BodyStream for Trailed with fn close(self) {
+  self.bytes = None
+}
+
+///|
+impl BodyStream for Trailed with fn trailers(self) {
+  self.trailers
+}
+
+///|
 /// Whether a sender may send this body (again): always for bytes, and for a
 /// stream only while no transport has taken it.
 pub fn Body::is_replayable(self : Body) -> Bool {
@@ -125,12 +195,14 @@ pub struct StreamBody {
   priv source : &BodyStream
   priv length : Int64?
   priv mut taken : Bool
+  /// The stream `take` handed out, whose trailers are the body's.
+  priv mut reader : &BodyStream?
 }
 
 ///|
 /// Wraps `source`, declared to produce exactly `length` bytes when given.
 pub fn StreamBody::new(source : &BodyStream, length? : Int64) -> StreamBody {
-  { source, length, taken: false, }
+  { source, length, taken: false, reader: None, }
 }
 
 ///|
@@ -170,12 +242,15 @@ pub fn StreamBody::take(self : StreamBody) -> &BodyStream raise TransportError {
     )
   }
   self.taken = true
-  TakenStream::{
+  let reader = TakenStream::{
     source: self.source,
     length: self.length,
     read: 0L,
     closed: false,
+    ended: false,
   }
+  self.reader = Some(reader)
+  reader
 }
 
 ///|
@@ -211,6 +286,8 @@ priv struct TakenStream {
   length : Int64?
   mut read : Int64
   mut closed : Bool
+  /// It returned EOF, past the length check.
+  mut ended : Bool
 }
 
 ///|
@@ -232,9 +309,19 @@ impl BodyStream for TakenStream with fn read_some(self) {
   if chunk is Some(bytes) {
     self.read += bytes.length().to_int64()
   } else {
+    self.ended = true
     BodyStream::close(self)
   }
   chunk
+}
+
+///|
+impl BodyStream for TakenStream with fn trailers(self) {
+  if self.ended {
+    self.source.trailers()
+  } else {
+    Headers::empty()
+  }
 }
 
 ///|

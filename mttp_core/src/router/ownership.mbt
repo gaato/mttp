@@ -20,6 +20,7 @@ async fn with_owned_request(
       reader,
       request: request.body,
       closed: false,
+      ended: false,
     }
     transferred = true
     return {
@@ -35,6 +36,19 @@ priv struct ResponseOwner {
   reader : &@mttp_core.BodyStream
   request : @mttp_core.Body
   mut closed : Bool
+  /// It returned EOF itself: its source's end may come before its own
+  /// (bytes still to hand out) or be refused there, and trailers are the
+  /// wrapper's only at its own end.
+  mut ended : Bool
+}
+
+///|
+impl @mttp_core.BodyStream for ResponseOwner with fn trailers(self) {
+  if self.ended {
+    self.reader.trailers()
+  } else {
+    @mttp_core.Headers::empty()
+  }
 }
 
 ///|
@@ -45,6 +59,7 @@ impl @mttp_core.BodyStream for ResponseOwner with fn read_some(self) {
   errdefer @mttp_core.BodyStream::close(self)
   let chunk = self.reader.read_some()
   if chunk is None {
+    self.ended = true
     @mttp_core.BodyStream::close(self)
   }
   chunk

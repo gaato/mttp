@@ -15,6 +15,9 @@ never does.
   `Accepted` (the connection, its peer, the ports, the stopping probe, a
   busy/idle report and background jobs). `serve` is `serve_conns` with its
   HTTP/1 session and behaves as before; gaato/mttp_ng serves HTTP/2 on it.
+- `@codings`' decoded and encoded bodies, and the server's response lease,
+  pass a body's trailer fields on (gaato/mttp_core's
+  `BodyStream::trailers`): a content coding covers the bytes only.
 
 ## [0.5.2] - 2026-11-21
 

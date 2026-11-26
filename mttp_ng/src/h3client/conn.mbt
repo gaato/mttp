@@ -466,6 +466,20 @@ impl @mux.ClientConn for Connection with fn push(self, stream, data, end~) {
 }
 
 ///|
+impl @mux.ClientConn for Connection with fn end_with_trailers(
+  self,
+  stream,
+  fields,
+) {
+  try {
+    self.quic.end_with_trailers(stream.id, fields)
+    true
+  } catch {
+    _ => false
+  }
+}
+
+///|
 impl @mux.ClientConn for Connection with fn queued(self, stream) {
   self.quic.queued(stream.id).unwrap_or(0)
 }

@@ -143,3 +143,22 @@ test "fault stream rejects empty chunks and closes on cancellation" {
   })
   assert_eq(source.closes(), 1)
 }
+
+///|
+test "fail_after passes a source's trailers on when it ends first" {
+  @driver.run_sync(() => {
+    let body = @mttp_core.Body::with_trailers(
+      b"abc",
+      trailers=@mttp_core.Headers::of([("x-checksum", "9")]),
+    )
+    guard body is Stream(cell) else { fail("not a stream") }
+    let stream = @testing.fail_after(
+      cell.take(),
+      100,
+      @mttp_core.TransportError(kind=Network, phase=Body, detail="cut"),
+    )
+    assert_eq(stream.read_some(), Some(b"abc"))
+    assert_eq(stream.read_some(), None)
+    assert_eq(stream.trailers().get("x-checksum"), Some("9"))
+  })
+}

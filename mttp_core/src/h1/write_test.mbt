@@ -302,3 +302,23 @@ test "a written request without a body declares an empty one only when the metho
     )
   }
 }
+
+///|
+test "encode_last_chunk refuses invalid fields and framing ones" {
+  for
+    trailers in [
+      [("x-sum", "a\r\nb")],
+      [("content-length", "1")],
+      [("trailer", "x-sum")],
+    ] {
+    let refused = try
+      @h1.encode_last_chunk(@mttp_core.Headers::of(trailers))
+    catch {
+      @h1.ParseError(kind=Malformed, ..) => true
+      _ => false
+    } noraise {
+      _ => false
+    }
+    assert_true(refused)
+  }
+}

@@ -154,7 +154,6 @@ HTTP/3's only; HTTP/2 over TLS sends none.
   request with `Upgrade` goes over HTTP/1.1.
 - HTTP/2 and HTTP/3 are not sent through proxies. While a proxy is
   configured for a scheme, its requests go over HTTP/1.1 through it.
-- Trailers are not exposed, on either side.
 - The HTTP/3 server has no limit of connections per client address, as
   gaato/mttp's TCP listener has none; `max_connections` bounds them all.
 
