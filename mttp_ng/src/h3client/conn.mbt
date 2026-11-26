@@ -37,6 +37,12 @@ priv struct Connection {
   early_ids : Array[Int64]
   /// Hears each session ticket the server sends (`QuicConn::resumption`).
   mut on_ticket : (Bytes) -> Unit
+  /// A connection in 0-RTT took requests before its handshake: by then the
+  /// handshake must complete, or the connection fails as `declined`, so
+  /// that a server that stopped answering QUIC is left for TCP as within a
+  /// dial's budget (Codex's review of #61).
+  mut handshake_by : Int64?
+  mut declined : Bool
 }
 
 ///|
@@ -70,6 +76,8 @@ fn Connection::new(
     closed: false,
     early_ids: [],
     on_ticket: _ => (),
+    handshake_by: None,
+    declined: false,
   }
 }
 
@@ -316,7 +324,13 @@ async fn Connection::read_once(
     self.reading = false
     self.notify()
   }
-  let wait = self.quic.expiry_ms().unwrap_or(1000)
+  let mut wait = self.quic.expiry_ms().unwrap_or(1000)
+  if !self.handshake && self.handshake_by is Some(by) {
+    let left = (by - self.clock.now_unix_ms()).max(0L).min(1000L).to_int()
+    if left < wait {
+      wait = left
+    }
+  }
   let got : Ref[Bytes?] = Ref(None)
   let failure : Ref[String?] = Ref(None)
   let interrupted = Ref(false)
@@ -373,6 +387,19 @@ async fn Connection::read_once(
       }
   }
   self.dispatch()
+  if !self.handshake &&
+    self.handshake_by is Some(by) &&
+    self.clock.now_unix_ms() >= by {
+    self.declined = true
+    self.fail(
+      @mttp_core.TransportError(
+        kind=Connect,
+        phase=Dial,
+        detail="no QUIC handshake with the origin",
+      ),
+    )
+    return
+  }
   self.send_if_idle()
 }
 

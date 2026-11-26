@@ -247,6 +247,6 @@ gaato/mttp_ng	gaato/mttp_ng/h2client	native	22
 gaato/mttp_ng	gaato/mttp_ng/h2server	native	21
 gaato/mttp_ng	gaato/mttp_ng/h3	native	13
 gaato/mttp_ng	gaato/mttp_ng/h3client	native	9
-gaato/mttp_ng	gaato/mttp_ng/h3server	native	34
+gaato/mttp_ng	gaato/mttp_ng/h3server	native	35
 gaato/mttp_ng	gaato/mttp_ng/internal/mux	native	3
 gaato/mttp_ng	gaato/mttp_ng/tls	native	9

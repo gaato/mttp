@@ -220,3 +220,42 @@ async test "a request sent again after a 425 does not go early again" {
     assert_eq(text(response), "after the handshake")
   })
 }
+
+///|
+/// An origin whose ticket the backend holds stops answering QUIC (here a
+/// socket on its port that drops every datagram): the request sent in
+/// 0-RTT gets no handshake within the dial's budget, and `try_send` leaves
+/// it to whatever backs this backend, as after a dial that failed. Sent
+/// before its handshake, as first written, it waited for an answer that
+/// never came, and `backend(http3=true)` never fell back to TCP (Codex's
+/// review of #61).
+async test "a resumed connection that gets no handshake leaves the request for TCP" {
+  let b = @h3client.H3Backend::new(
+    trust=PemFile(testdata("root.pem")),
+    early_data=true,
+    max_connection_age_ms=1,
+  )
+  defer b.close()
+  let port = Ref(0)
+  with_server(early_data=true, p => {
+    port.val = p
+    ignore(
+      text(
+        b.send(
+          @mttp_core.Request::get("https://localhost:\{p}/zero-rtt"),
+          defaults,
+        ),
+      ),
+    )
+    @async.sleep(50)
+  })
+  let silent = @socket.UdpServer(@socket.Addr::parse("127.0.0.1:\{port.val}"))
+  defer silent.close()
+  let declined = @async.with_timeout(5000, () => {
+    b.try_send(
+      @mttp_core.Request::get("https://localhost:\{port.val}/zero-rtt"),
+      defaults,
+    )
+  })
+  assert_true(declined is None)
+}

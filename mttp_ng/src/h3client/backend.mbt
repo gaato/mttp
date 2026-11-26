@@ -471,8 +471,10 @@ async fn H3Backend::attempt(
   }
   let mut ok = false
   defer (if !ok { connection.close() })
-  // A connection in 0-RTT takes requests before its handshake completes.
+  // A connection in 0-RTT takes requests before its handshake completes,
+  // which must still come within the dial's budget.
   if conn.early() {
+    connection.handshake_by = Some(self.clock.now_unix_ms() + ms.to_int64())
     connection.send_output() catch {
       @mttp_core.TransportError(..) => return None
     }
@@ -690,6 +692,14 @@ async fn H3Backend::send_within(
     },
     protocol="h3",
   ) catch {
+    // No handshake within the dial's budget: QUIC is not answering there
+    // now, and the request, safe to repeat, goes to whatever backs this one
+    // (TCP), as after a dial that failed.
+    @mttp_core.TransportError(..) if sent_early && connection.declined => {
+      self.mark_broken(target.origin)
+      body.hand_over()
+      return None
+    }
     // Early data the server rejected: the request was not processed.
     @mttp_core.TransportError(kind=Refused, ..) as error if sent_early => {
       connection.notify()
