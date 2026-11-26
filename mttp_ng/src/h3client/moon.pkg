@@ -8,6 +8,7 @@ import {
   "gaato/mttp_ng/h3",
   "gaato/mttp_ng/internal/mux",
   "moonbitlang/core/async/socket",
+  "moonbitlang/core/async/types",
 }
 
 import {
@@ -31,5 +32,6 @@ options(
     "moonbitlang/core/async/cond_var",
     "moonbitlang/core/async/fs",
     "moonbitlang/core/async/socket",
+    "moonbitlang/core/async/types",
   ],
 )

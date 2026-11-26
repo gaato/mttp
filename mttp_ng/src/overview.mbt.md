@@ -128,6 +128,16 @@ clients are told to go away first (GOAWAY). A TLS connection ends with
 close_notify, except after a body delimited by the close (an HTTP/1.0
 client's) that the stop cut short, so that the client can tell.
 
+The HTTP/3 server finds a datagram's connection by its connection ID, so a
+client may change its address (or its NAT rebind it) and keep the
+connection. Once a quarter of `limits.max_connections` are connections
+whose handshake has not completed, a new client is first sent a Retry and
+gets a connection only by answering it from its address, so Initials from
+forged addresses cannot fill the server. A closed connection's IDs are kept
+for three probe timeouts, in which a lost CONNECTION_CLOSE is sent again,
+and a packet for a connection the server no longer has gets a Stateless
+Reset, so the client learns at once that it is gone.
+
 ## What it does not do
 
 - No 0-RTT, no server push, and no WebSockets over HTTP/2 or HTTP/3: a
@@ -135,15 +145,8 @@ client's) that the stop cut short, so that the client can tell.
 - HTTP/2 and HTTP/3 are not sent through proxies. While a proxy is
   configured for a scheme, its requests go over HTTP/1.1 through it.
 - Trailers are not exposed, on either side.
-- A QUIC client that changes its address loses its connection: the server
-  routes datagrams by the client's address and disables migration.
-- `close()` of a client backend does not send QUIC's CONNECTION_CLOSE,
-  since it cannot wait for a send; the server's idle timeout ends those
-  connections on its side. A connection the backend drops by itself (idle
-  too long, too old, or after the server's GOAWAY) is closed with one.
-- The HTTP/3 server has no Retry and no limit per client address: clients
-  that send Initials from forged addresses can hold its `max_connections`
-  slots, each until `header_timeout_ms`.
+- The HTTP/3 server has no limit of connections per client address, as
+  gaato/mttp's TCP listener has none; `max_connections` bounds them all.
 
 ## License
 

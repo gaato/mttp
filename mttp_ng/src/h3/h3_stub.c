@@ -62,6 +62,11 @@
 #define EV_CLOSE 15     // the connection closed: error code, whether by the peer
 
 #define MAX_DATAGRAM 1452
+// The length of the connection IDs a server issues, so that a short header
+// packet's DCID can be read before its connection is known.
+#define SERVER_CIDLEN 17
+// How long a Retry token is good for.
+#define RETRY_TOKEN_TIMEOUT (10 * NGTCP2_SECONDS)
 #define DATAGRAMS_PER_WRITE 64
 #define ERROR_CAPACITY 512
 
@@ -171,12 +176,21 @@ static void context_fail(context *c, const char *fallback) {
 }
 
 static int initialised = 0;
-static uint8_t reset_secret[32];
+
+// A server's keys (`ServerKeys`, one per listener): 32 bytes for stateless
+// reset tokens, then 32 for Retry tokens. They are a listener's, not the
+// process's: a listener that does not route another's connections would
+// answer a packet for one of them with the reset token that connection's
+// client accepts, an oracle that ends any connection whose ID it learns
+// (RFC 9000, section 21.11; Codex's review of #59). A listener that
+// restarts cannot reset its old connections or take its old tokens, which
+// only costs their clients a timeout or a new Retry.
+#define KEY_BYTES 32
+#define SERVER_KEYS_BYTES (2 * KEY_BYTES)
 
 static int ensure_init(void) {
   if (initialised) return 0;
   if (ngtcp2_crypto_ossl_init() != 0) return -1;
-  if (RAND_bytes(reset_secret, sizeof reset_secret) != 1) return -1;
   initialised = 1;
   return 0;
 }
@@ -375,13 +389,22 @@ typedef struct {
   struct sockaddr_storage local, remote;
   ngtcp2_path path;
   buffer events;
-  buffer out; // datagrams to send, each after its length in two bytes
+  // Datagrams to send, each after its length in two bytes and its
+  // destination (`put_datagram`).
+  buffer out;
+  // The CONNECTION_CLOSE this end sent, sent again in the closing period.
+  uint8_t *close_pkt;
+  size_t close_len;
+  int by_peer; // the peer closed the connection (its draining period)
   outq *queues;
   ngtcp2_ccerr ccerr;
   int closed;   // nothing more to read or write
   int handshake;
   size_t low;
   size_t max_header_bytes;
+  // The key of this end's stateless reset tokens: its listener's for a
+  // server, a random one for a client (no reset is ever sent for it).
+  uint8_t reset_key[KEY_BYTES];
   struct header_count *headers; // header sections being received
   uint64_t max_streams_bidi;
   char error[ERROR_CAPACITY];
@@ -413,6 +436,7 @@ static void qconn_free(qconn *q) {
   }
   free(q->events.data);
   free(q->out.data);
+  free(q->close_pkt);
   free(q);
 }
 
@@ -475,6 +499,24 @@ static socklen_t addr_len(const struct sockaddr_storage *a) {
                                   : sizeof(struct sockaddr_in);
 }
 
+// `addr` as `parse_addr` reads it, into `out` (at least 64 bytes); its
+// length, 0 for a family other than IPv4 and IPv6.
+static size_t format_addr(const ngtcp2_addr *addr, char *out) {
+  char host[INET6_ADDRSTRLEN];
+  const struct sockaddr *sa = (const struct sockaddr *)addr->addr;
+  if (sa->sa_family == AF_INET6) {
+    const struct sockaddr_in6 *a = (const struct sockaddr_in6 *)sa;
+    if (!inet_ntop(AF_INET6, &a->sin6_addr, host, sizeof host)) return 0;
+    return (size_t)snprintf(out, 64, "[%s]:%u", host, ntohs(a->sin6_port));
+  }
+  if (sa->sa_family == AF_INET) {
+    const struct sockaddr_in *a = (const struct sockaddr_in *)sa;
+    if (!inet_ntop(AF_INET, &a->sin_addr, host, sizeof host)) return 0;
+    return (size_t)snprintf(out, 64, "%s:%u", host, ntohs(a->sin_port));
+  }
+  return 0;
+}
+
 static char *c_string(moonbit_bytes_t b) {
   int32_t n = Moonbit_array_length(b);
   char *s = malloc((size_t)n + 1);
@@ -494,11 +536,11 @@ static void rand_cb(uint8_t *dest, size_t destlen, const ngtcp2_rand_ctx *ctx) {
 static int new_cid_cb(ngtcp2_conn *conn, ngtcp2_cid *cid, uint8_t *token,
                       size_t cidlen, void *user) {
   (void)conn;
-  (void)user;
+  qconn *q = user;
   if (RAND_bytes(cid->data, (int)cidlen) != 1) return NGTCP2_ERR_CALLBACK_FAILURE;
   cid->datalen = cidlen;
-  if (ngtcp2_crypto_generate_stateless_reset_token(
-          token, reset_secret, sizeof reset_secret, cid) != 0)
+  if (ngtcp2_crypto_generate_stateless_reset_token(token, q->reset_key,
+                                                   KEY_BYTES, cid) != 0)
     return NGTCP2_ERR_CALLBACK_FAILURE;
   return 0;
 }
@@ -956,8 +998,9 @@ static void fill_params(ngtcp2_transport_params *params, const config *c,
   // close are given back.
   params->initial_max_streams_uni = 16;
   params->max_idle_timeout = (uint64_t)c->idle_timeout_ms * NGTCP2_MILLISECONDS;
-  // One path per connection: the server routes datagrams by address.
-  params->disable_active_migration = 1;
+  // A client's connected UDP socket has one path; a server routes datagrams
+  // by connection ID, so its clients may move.
+  params->disable_active_migration = server ? 0 : 1;
 }
 
 static qconn *qconn_new(int server, const int64_t *values) {
@@ -967,6 +1010,10 @@ static qconn *qconn_new(int server, const int64_t *values) {
   q->low = values[4] > 0 ? (size_t)values[4] : 16384;
   q->max_header_bytes = values[3] > 0 ? (size_t)values[3] : 0;
   q->max_streams_bidi = (uint64_t)values[0];
+  if (RAND_bytes(q->reset_key, KEY_BYTES) != 1) {
+    free(q);
+    return NULL;
+  }
   ngtcp2_ccerr_default(&q->ccerr);
   q->ref.get_conn = get_conn;
   q->ref.user_data = q;
@@ -1108,9 +1155,15 @@ MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_version_negotiation(
 // to `local`; a failed box when the packet does not start a connection.
 MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_server_new(
     context_box *cb, moonbit_bytes_t data, moonbit_bytes_t local_b,
-    moonbit_bytes_t remote_b, int64_t *values) {
+    moonbit_bytes_t remote_b, int64_t *values, moonbit_bytes_t keys) {
   qconn *q = qconn_new(1, values);
   if (!q) return box(NULL);
+  if (Moonbit_array_length(keys) != SERVER_KEYS_BYTES) {
+    snprintf(q->error, ERROR_CAPACITY, "server keys of the wrong length");
+    return box(q);
+  }
+  memcpy(q->reset_key, keys, KEY_BYTES);
+  const uint8_t *retry_key = keys + KEY_BYTES;
   config c = {values[0], values[1], values[2], values[3], values[4], values[5]};
   char *local = c_string(local_b), *remote = c_string(remote_b);
   ngtcp2_pkt_hd hd;
@@ -1119,6 +1172,19 @@ MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_server_new(
            ngtcp2_accept(&hd, data, (size_t)Moonbit_array_length(data)) == 0;
   if (!ok) {
     snprintf(q->error, ERROR_CAPACITY, "not a client Initial packet");
+    goto done;
+  }
+  // A Retry token (`mttp_ng_h3_answer_initial` sent the Retry) proves the
+  // client's address and names the DCID of its first Initial; any other
+  // token is none this server issued, and is ignored.
+  ngtcp2_cid odcid = hd.dcid;
+  int retried = hd.tokenlen > 0 && hd.token[0] == NGTCP2_CRYPTO_TOKEN_MAGIC_RETRY;
+  if (retried &&
+      ngtcp2_crypto_verify_retry_token(
+          &odcid, hd.token, hd.tokenlen, retry_key, KEY_BYTES,
+          hd.version, (ngtcp2_sockaddr *)&q->remote, addr_len(&q->remote),
+          &hd.dcid, RETRY_TOKEN_TIMEOUT, now_ns()) != 0) {
+    snprintf(q->error, ERROR_CAPACITY, "an invalid Retry token");
     goto done;
   }
   ERR_clear_error();
@@ -1135,7 +1201,7 @@ MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_server_new(
     goto done;
   }
   ngtcp2_cid scid;
-  scid.datalen = 17;
+  scid.datalen = SERVER_CIDLEN;
   RAND_bytes(scid.data, (int)scid.datalen);
   ngtcp2_callbacks callbacks;
   fill_callbacks(&callbacks, 1);
@@ -1143,15 +1209,33 @@ MOONBIT_FFI_EXPORT qconn_box *mttp_ng_h3_server_new(
   ngtcp2_settings_default(&settings);
   settings.initial_ts = now_ns();
   settings.max_tx_udp_payload_size = MAX_DATAGRAM;
-  // No token: this server issues none (no Retry, no NEW_TOKEN), so a
-  // token in an Initial is not one it can validate, and ngtcp2 takes a
-  // token passed here as the client's address validated, lifting the
-  // three-times limit on what is sent to an unproven address (RFC 9000,
-  // section 8).
+  // ngtcp2 takes a token passed here as the client's address validated,
+  // lifting the three-times limit on what is sent to an unproven address
+  // (RFC 9000, section 8), so only a verified Retry token is passed; this
+  // server issues no NEW_TOKEN.
+  if (retried) {
+    settings.token = hd.token;
+    settings.tokenlen = hd.tokenlen;
+    settings.token_type = NGTCP2_TOKEN_TYPE_RETRY;
+  }
   ngtcp2_transport_params params;
   fill_params(&params, &c, 1);
-  params.original_dcid = hd.dcid;
+  params.original_dcid = odcid;
   params.original_dcid_present = 1;
+  if (retried) {
+    params.retry_scid = hd.dcid;
+    params.retry_scid_present = 1;
+  }
+  // The reset token of the first connection ID (those issued later carry
+  // theirs in NEW_CONNECTION_ID, `new_cid_cb`): without it a client cannot
+  // tell this server's Stateless Reset for that ID from noise.
+  if (ngtcp2_crypto_generate_stateless_reset_token(
+          params.stateless_reset_token, q->reset_key, KEY_BYTES,
+          &scid) != 0) {
+    snprintf(q->error, ERROR_CAPACITY, "cannot make a stateless reset token");
+    goto done;
+  }
+  params.stateless_reset_token_present = 1;
   int rv = ngtcp2_conn_server_new(&q->conn, &hd.scid, &scid, &q->path,
                                   hd.version, &callbacks, &settings, &params,
                                   NULL, q);
@@ -1192,11 +1276,53 @@ static const ngtcp2_ccerr *peer_ccerr(ngtcp2_conn *conn) {
 #endif
 }
 
+// The getters ngtcp2 1.23 made const and renamed (the old ones are
+// deprecated there); Debian 13's backport is 1.22.
+static ngtcp2_duration conn_pto(ngtcp2_conn *conn) {
+#if NGTCP2_VERSION_NUM >= 0x011700
+  return ngtcp2_conn_get_pto2(conn);
+#else
+  return ngtcp2_conn_get_pto(conn);
+#endif
+}
+
+static const ngtcp2_path *conn_path(ngtcp2_conn *conn) {
+#if NGTCP2_VERSION_NUM >= 0x011700
+  return ngtcp2_conn_get_path2(conn);
+#else
+  return ngtcp2_conn_get_path(conn);
+#endif
+}
+
+static size_t conn_scids(ngtcp2_conn *conn, ngtcp2_cid *dest) {
+#if NGTCP2_VERSION_NUM >= 0x011700
+  return ngtcp2_conn_get_scid2(conn, dest);
+#else
+  return ngtcp2_conn_get_scid(conn, dest);
+#endif
+}
+
+// Appends a datagram of `n` bytes for `remote` to the output: its length in
+// two bytes, its destination's text in one byte and the text, then the
+// datagram. A client's connected socket sends where it is connected; a
+// server sends each to its own destination, which changes when the client
+// migrates (or its NAT rebinds) and differs while a new path is validated.
+static void put_datagram(qconn *q, const ngtcp2_addr *remote, const uint8_t *buf,
+                         size_t n) {
+  char text[64];
+  size_t textlen = format_addr(remote, text);
+  uint8_t head[3] = {(uint8_t)(n >> 8), (uint8_t)n, (uint8_t)textlen};
+  buffer_put(&q->out, head, 3);
+  buffer_put(&q->out, text, textlen);
+  buffer_put(&q->out, buf, n);
+}
+
 // Records the close: with the peer's code when the peer closed, with this
 // end's otherwise.
 static void note_close(qconn *q, int by_peer) {
   if (q->closed) return;
   q->closed = 1;
+  q->by_peer = by_peer;
   uint64_t code = by_peer && q->conn ? peer_ccerr(q->conn)->error_code
                                      : q->ccerr.error_code;
   put_u8(&q->events, EV_CLOSE);
@@ -1218,9 +1344,15 @@ static void write_close(qconn *q) {
   ngtcp2_ssize n = ngtcp2_conn_write_connection_close(
       q->conn, &ps.path, NULL, buf, sizeof buf, &q->ccerr, now_ns());
   if (n > 0) {
-    uint8_t len[2] = {(uint8_t)(n >> 8), (uint8_t)n};
-    buffer_put(&q->out, len, 2);
-    buffer_put(&q->out, buf, (size_t)n);
+    put_datagram(q, &conn_path(q->conn)->remote, buf, (size_t)n);
+    // Kept for the closing period, in which a server sends it again
+    // (RFC 9000, section 10.2.1).
+    free(q->close_pkt);
+    q->close_pkt = malloc((size_t)n);
+    if (q->close_pkt) {
+      memcpy(q->close_pkt, buf, (size_t)n);
+      q->close_len = (size_t)n;
+    }
   }
   note_close(q, 0);
 }
@@ -1235,14 +1367,30 @@ static void fail_lib(qconn *q, int rv) {
   snprintf(q->error, ERROR_CAPACITY, "%s", ngtcp2_strerror(rv));
 }
 
-// Processes one datagram: 0, or an ngtcp2 error, after which the connection
-// closed (the CONNECTION_CLOSE to send is in the output).
-MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_read(qconn_box *b, moonbit_bytes_t data) {
+// Processes one datagram from `from_b` (the connection's first remote
+// address when empty): 0, or an ngtcp2 error, after which the connection
+// closed (the CONNECTION_CLOSE to send is in the output). A datagram from
+// another address is the client's migration or its NAT's rebinding, which
+// ngtcp2 validates before it sends there more than its limit allows.
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_read(qconn_box *b, moonbit_bytes_t data,
+                                           moonbit_bytes_t from_b) {
   qconn *q = b->q;
   if (!q || !q->conn || q->closed) return NGTCP2_ERR_INVALID_STATE;
+  ngtcp2_path path = q->path;
+  struct sockaddr_storage from;
+  int32_t fromlen = Moonbit_array_length(from_b);
+  if (fromlen > 0) {
+    char text[128];
+    if (fromlen >= (int32_t)sizeof text) return NGTCP2_ERR_INVALID_ARGUMENT;
+    memcpy(text, from_b, (size_t)fromlen);
+    text[fromlen] = 0;
+    if (parse_addr(text, &from) != 0) return NGTCP2_ERR_INVALID_ARGUMENT;
+    path.remote.addr = (ngtcp2_sockaddr *)&from;
+    path.remote.addrlen = addr_len(&from);
+  }
   ngtcp2_pkt_info pi = {0};
   ERR_clear_error();
-  int rv = ngtcp2_conn_read_pkt(q->conn, &q->path, &pi, data,
+  int rv = ngtcp2_conn_read_pkt(q->conn, &path, &pi, data,
                                 (size_t)Moonbit_array_length(data), now_ns());
   if (rv == 0) return 0;
   if (rv == NGTCP2_ERR_DRAINING) {
@@ -1334,9 +1482,7 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_write(qconn_box *b) {
       put_i64(&q->events, fin && (uint64_t)ndatalen == offered);
     }
     if (n == 0) break;
-    uint8_t len[2] = {(uint8_t)(n >> 8), (uint8_t)n};
-    buffer_put(&q->out, len, 2);
-    buffer_put(&q->out, buf, (size_t)n);
+    put_datagram(q, &ps.path.remote, buf, (size_t)n);
     count++;
   }
   ngtcp2_conn_update_pkt_tx_time(q->conn, ts);
@@ -1410,7 +1556,7 @@ MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_streams_left(qconn_box *b) {
 MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_idle_ms(qconn_box *b) {
   qconn *q = b->q;
   if (!q || !q->conn || q->closed) return 0;
-  ngtcp2_duration timeout = ngtcp2_conn_get_pto(q->conn) * 3;
+  ngtcp2_duration timeout = conn_pto(q->conn) * 3;
   const ngtcp2_transport_params *params =
       ngtcp2_conn_get_remote_transport_params(q->conn);
   uint64_t idle = params && params->max_idle_timeout
@@ -1621,6 +1767,187 @@ MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_shutdown(qconn_box *b, int32_t notice) {
 }
 
 // The application error code of the connection's close, for events.
+// --- a server's packets for no connection ----------------------------------
+
+static moonbit_bytes_t copy_out(const uint8_t *data, size_t len) {
+  moonbit_bytes_t out = moonbit_make_bytes((int32_t)len, 0);
+  if (len > 0) memcpy(out, data, len);
+  return out;
+}
+
+// The Destination Connection ID of the first packet in `data`, reading a
+// short header's as SERVER_CIDLEN long; empty when there is none to read.
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_dcid(moonbit_bytes_t data) {
+  ngtcp2_version_cid vc;
+  int rv = ngtcp2_pkt_decode_version_cid(
+      &vc, data, (size_t)Moonbit_array_length(data), SERVER_CIDLEN);
+  if ((rv != 0 && rv != NGTCP2_ERR_VERSION_NEGOTIATION) || vc.dcidlen == 0)
+    return moonbit_make_bytes(0, 0);
+  return copy_out(vc.dcid, vc.dcidlen);
+}
+
+// A Stateless Reset (RFC 9000, section 10.3) for the short header packet
+// `data`, whose DCID is no connection's: the client learns at once that the
+// connection is gone (this server forgot it, or restarted) instead of
+// waiting out its idle timeout. One byte shorter than `data` up to 43
+// bytes, so that two endpoints cannot answer each other's resets for ever;
+// empty for a long header packet, or one too short to answer.
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_stateless_reset(
+    moonbit_bytes_t data, moonbit_bytes_t keys) {
+  size_t len = (size_t)Moonbit_array_length(data);
+  if (Moonbit_array_length(keys) != SERVER_KEYS_BYTES ||
+      len < 1 + SERVER_CIDLEN || (data[0] & 0x80))
+    return moonbit_make_bytes(0, 0);
+  // The random bytes include the first, so a reset is at least 21 bytes.
+  size_t total = len <= 43 ? len - 1 : 43;
+  if (total < NGTCP2_MIN_STATELESS_RESET_RANDLEN + NGTCP2_STATELESS_RESET_TOKENLEN)
+    return moonbit_make_bytes(0, 0);
+  size_t randlen = total - NGTCP2_STATELESS_RESET_TOKENLEN;
+  ngtcp2_cid cid;
+  ngtcp2_cid_init(&cid, data + 1, SERVER_CIDLEN);
+  uint8_t token[NGTCP2_STATELESS_RESET_TOKENLEN];
+  if (ngtcp2_crypto_generate_stateless_reset_token(
+          token, keys, KEY_BYTES, &cid) != 0)
+    return moonbit_make_bytes(0, 0);
+  uint8_t random[64];
+  if (RAND_bytes(random, (int)randlen) != 1) return moonbit_make_bytes(0, 0);
+  uint8_t buf[64];
+#if NGTCP2_VERSION_NUM >= 0x011600
+  ngtcp2_stateless_reset_token t;
+  memcpy(t.data, token, sizeof token);
+  ngtcp2_ssize n =
+      ngtcp2_pkt_write_stateless_reset2(buf, sizeof buf, &t, random, randlen);
+#else
+  ngtcp2_ssize n =
+      ngtcp2_pkt_write_stateless_reset(buf, sizeof buf, token, random, randlen);
+#endif
+  if (n <= 0) return moonbit_make_bytes(0, 0);
+  return copy_out(buf, (size_t)n);
+}
+
+// What a server answers the client Initial `data` from `remote_b` with
+// instead of a connection: a Retry when `validate` and the Initial carries
+// no valid Retry token, so that the client proves it receives at its
+// address before the server keeps state for it (RFC 9000, section 8.1.2);
+// and CONNECTION_CLOSE with INVALID_TOKEN when it carries a Retry token that
+// is not valid (expired, or for another address), as section 8.1.3 says.
+// Both are smaller than the Initial. Empty: start the connection.
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_answer_initial(
+    moonbit_bytes_t data, moonbit_bytes_t remote_b, int32_t validate,
+    moonbit_bytes_t keys) {
+  ngtcp2_pkt_hd hd;
+  struct sockaddr_storage remote;
+  if (Moonbit_array_length(keys) != SERVER_KEYS_BYTES)
+    return moonbit_make_bytes(0, 0);
+  const uint8_t *retry_key = keys + KEY_BYTES;
+  char *text = c_string(remote_b);
+  int ok = ensure_init() == 0 && text && parse_addr(text, &remote) == 0 &&
+           ngtcp2_accept(&hd, data, (size_t)Moonbit_array_length(data)) == 0;
+  free(text);
+  if (!ok) return moonbit_make_bytes(0, 0);
+  uint8_t buf[MAX_DATAGRAM];
+  ngtcp2_ssize n;
+  if (hd.tokenlen > 0 && hd.token[0] == NGTCP2_CRYPTO_TOKEN_MAGIC_RETRY) {
+    ngtcp2_cid odcid;
+    if (ngtcp2_crypto_verify_retry_token(
+            &odcid, hd.token, hd.tokenlen, retry_key, KEY_BYTES,
+            hd.version, (ngtcp2_sockaddr *)&remote, addr_len(&remote),
+            &hd.dcid, RETRY_TOKEN_TIMEOUT, now_ns()) == 0)
+      return moonbit_make_bytes(0, 0);
+    n = ngtcp2_crypto_write_connection_close(buf, sizeof buf, hd.version,
+                                             &hd.scid, &hd.dcid,
+                                             NGTCP2_INVALID_TOKEN, NULL, 0);
+  } else if (validate) {
+    ngtcp2_cid scid;
+    scid.datalen = SERVER_CIDLEN;
+    if (RAND_bytes(scid.data, (int)scid.datalen) != 1)
+      return moonbit_make_bytes(0, 0);
+    uint8_t token[NGTCP2_CRYPTO_MAX_RETRY_TOKENLEN];
+    ngtcp2_ssize tokenlen = ngtcp2_crypto_generate_retry_token(
+        token, retry_key, KEY_BYTES, hd.version,
+        (ngtcp2_sockaddr *)&remote, addr_len(&remote), &scid, &hd.dcid,
+        now_ns());
+    if (tokenlen < 0) return moonbit_make_bytes(0, 0);
+    n = ngtcp2_crypto_write_retry(buf, sizeof buf, hd.version, &hd.scid, &scid,
+                                  &hd.dcid, token, (size_t)tokenlen);
+  } else {
+    return moonbit_make_bytes(0, 0);
+  }
+  if (n <= 0) return moonbit_make_bytes(0, 0);
+  return copy_out(buf, (size_t)n);
+}
+
+// --- a connection's identity and end ---------------------------------------
+
+// The connection IDs this end issued and has not retired, each after its
+// length in one byte: the DCIDs the peer's packets carry, besides the one
+// of its first Initial.
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_scids(qconn_box *b) {
+  qconn *q = b->q;
+  buffer out = {0};
+  if (q && q->conn) {
+    size_t n = conn_scids(q->conn, NULL);
+    ngtcp2_cid *cids = n ? calloc(n, sizeof *cids) : NULL;
+    if (cids) {
+      n = conn_scids(q->conn, cids);
+      for (size_t i = 0; i < n; ++i) {
+        put_u8(&out, (uint8_t)cids[i].datalen);
+        buffer_put(&out, cids[i].data, cids[i].datalen);
+      }
+      free(cids);
+    }
+  }
+  moonbit_bytes_t result = take_buffer(&out);
+  free(out.data);
+  return result;
+}
+
+// The connection's remote address now, as `parse_addr` reads it.
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_remote(qconn_box *b) {
+  qconn *q = b->q;
+  if (!q || !q->conn) return moonbit_make_bytes(0, 0);
+  char text[64];
+  size_t n = format_addr(&conn_path(q->conn)->remote, text);
+  return copy_out((const uint8_t *)text, n);
+}
+
+// The CONNECTION_CLOSE this end sent, empty when it sent none (the peer
+// closed, or the connection timed out).
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_close_datagram(qconn_box *b) {
+  qconn *q = b->q;
+  if (!q || !q->close_pkt) return moonbit_make_bytes(0, 0);
+  return copy_out(q->close_pkt, q->close_len);
+}
+
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_closed_by_peer(qconn_box *b) {
+  return b->q && b->q->closed && b->q->by_peer;
+}
+
+// The connection's probe timeout in milliseconds, at least 1.
+MOONBIT_FFI_EXPORT int64_t mttp_ng_h3_pto_ms(qconn_box *b) {
+  qconn *q = b->q;
+  if (!q || !q->conn) return 1;
+  int64_t ms = (int64_t)(conn_pto(q->conn) / NGTCP2_MILLISECONDS);
+  return ms > 0 ? ms : 1;
+}
+
+// Sends `data` on the connected socket `fd` without waiting, for a client
+// that closes a connection synchronously: 0, or -1 when the socket could
+// not take it at once (then it is dropped, as the network may drop it).
+MOONBIT_FFI_EXPORT int32_t mttp_ng_h3_send_now(int32_t fd, moonbit_bytes_t data) {
+  return send(fd, data, (size_t)Moonbit_array_length(data), MSG_DONTWAIT) < 0
+             ? -1
+             : 0;
+}
+
+// Fresh random keys for one listener (`ServerKeys::new`); empty when the
+// system's random source fails.
+MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_new_keys(void) {
+  uint8_t keys[SERVER_KEYS_BYTES];
+  if (RAND_bytes(keys, sizeof keys) != 1) return moonbit_make_bytes(0, 0);
+  return copy_out(keys, sizeof keys);
+}
+
 MOONBIT_FFI_EXPORT moonbit_bytes_t mttp_ng_h3_strerror(int32_t code) {
   return to_bytes(code > -200 ? ngtcp2_strerror(code) : nghttp3_strerror(code));
 }

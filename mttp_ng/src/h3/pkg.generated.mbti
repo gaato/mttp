@@ -19,11 +19,17 @@ pub const H3_REQUEST_CANCELLED : Int64 = 0x10c
 
 pub const H3_REQUEST_REJECTED : Int64 = 0x10b
 
+pub fn answer_initial(Bytes, remote_address~ : String, validate~ : Bool, keys~ : ServerKeys) -> Bytes?
+
 pub fn crypto_init() -> Int32
+
+pub fn destination_cid(Bytes) -> Bytes?
 
 pub fn nghttp3_version() -> Int32
 
 pub fn ngtcp2_version() -> Int32
+
+pub fn stateless_reset(Bytes, keys~ : ServerKeys) -> Bytes?
 
 pub fn version_negotiation(Bytes) -> Bytes?
 
@@ -77,9 +83,13 @@ pub fn H3Settings::to_repr(Self) -> @debug.Repr
 pub struct QuicConn {
   // private fields
 }
+pub fn QuicConn::addressed_datagrams(Self) -> Array[(String, Bytes)] raise H3Error
 pub fn QuicConn::client(ClientQuic, host~ : String, local_address? : String, remote_address~ : String, settings? : H3Settings) -> Self raise H3Error
 pub fn QuicConn::close(Self, code? : Int64) -> Unit
+pub fn QuicConn::close_datagram(Self) -> Bytes?
 pub fn QuicConn::closed(Self) -> Bool
+pub fn QuicConn::closed_by_peer(Self) -> Bool
+pub fn QuicConn::connection_ids(Self) -> Array[Bytes]
 pub fn QuicConn::consume(Self, Int64, Int32) -> Unit
 pub fn QuicConn::datagrams(Self) -> Array[Bytes] raise H3Error
 pub fn QuicConn::events(Self) -> Array[H3Event]
@@ -88,16 +98,23 @@ pub fn QuicConn::free(Self) -> Unit
 pub fn QuicConn::handshake_done(Self) -> Bool
 pub fn QuicConn::idle_ms(Self) -> Int64
 pub fn QuicConn::on_expiry(Self) -> Unit raise H3Error
+pub fn QuicConn::pto_ms(Self) -> Int64
 pub fn QuicConn::push(Self, Int64, Bytes, end~ : Bool) -> Unit raise H3Error
 pub fn QuicConn::queued(Self, Int64) -> Int32?
-pub fn QuicConn::read(Self, Bytes) -> Unit raise H3Error
+pub fn QuicConn::read(Self, Bytes, from? : String) -> Unit raise H3Error
+pub fn QuicConn::remote_address(Self) -> String
 pub fn QuicConn::reset(Self, Int64, Int64, read_only? : Bool) -> Unit
-pub fn QuicConn::server(ServerQuic, Bytes, local_address~ : String, remote_address~ : String, settings? : H3Settings) -> Self raise H3Error
+pub fn QuicConn::server(ServerQuic, Bytes, local_address~ : String, remote_address~ : String, settings? : H3Settings, keys? : ServerKeys) -> Self raise H3Error
 pub fn QuicConn::shutdown(Self, notice~ : Bool) -> Unit raise H3Error
 pub fn QuicConn::streams_left(Self) -> Int64
 pub fn QuicConn::submit_info(Self, Int64, Array[(String, String)]) -> Unit raise H3Error
 pub fn QuicConn::submit_request(Self, Array[(String, String)], body~ : Bool) -> Int64 raise H3Error
 pub fn QuicConn::submit_response(Self, Int64, Array[(String, String)], body~ : Bool) -> Unit raise H3Error
+
+pub struct ServerKeys {
+  // private fields
+}
+pub fn ServerKeys::new() -> Self raise H3Error
 
 pub struct ServerQuic {
   // private fields

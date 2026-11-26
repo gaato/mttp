@@ -35,14 +35,18 @@ extern "C" fn client_new(
 ) -> Raw = "mttp_ng_h3_client_new"
 
 ///|
-#borrow(context, data, local_address, remote_address, values)
+#borrow(context, data, local_address, remote_address, values, keys)
 extern "C" fn server_new(
   context : Context,
   data : Bytes,
   local_address : Bytes,
   remote_address : Bytes,
   values : FixedArray[Int64],
+  keys : Bytes,
 ) -> Raw = "mttp_ng_h3_server_new"
+
+///|
+extern "C" fn raw_new_keys() -> Bytes = "mttp_ng_h3_new_keys"
 
 ///|
 #borrow(raw)
@@ -57,8 +61,8 @@ extern "C" fn raw_error(raw : Raw) -> Bytes = "mttp_ng_h3_error"
 extern "C" fn raw_free(raw : Raw) -> Unit = "mttp_ng_h3_free"
 
 ///|
-#borrow(raw, data)
-extern "C" fn raw_read(raw : Raw, data : Bytes) -> Int32 = "mttp_ng_h3_read"
+#borrow(raw, data, from)
+extern "C" fn raw_read(raw : Raw, data : Bytes, from : Bytes) -> Int32 = "mttp_ng_h3_read"
 
 ///|
 #borrow(raw)
@@ -103,6 +107,43 @@ extern "C" fn raw_streams_left(raw : Raw) -> Int64 = "mttp_ng_h3_streams_left"
 ///|
 #borrow(datagram)
 extern "C" fn raw_version_negotiation(datagram : Bytes) -> Bytes = "mttp_ng_h3_version_negotiation"
+
+///|
+#borrow(datagram)
+extern "C" fn raw_dcid(datagram : Bytes) -> Bytes = "mttp_ng_h3_dcid"
+
+///|
+#borrow(datagram, keys)
+extern "C" fn raw_stateless_reset(datagram : Bytes, keys : Bytes) -> Bytes = "mttp_ng_h3_stateless_reset"
+
+///|
+#borrow(datagram, remote, keys)
+extern "C" fn raw_answer_initial(
+  datagram : Bytes,
+  remote : Bytes,
+  validate : Bool,
+  keys : Bytes,
+) -> Bytes = "mttp_ng_h3_answer_initial"
+
+///|
+#borrow(raw)
+extern "C" fn raw_scids(raw : Raw) -> Bytes = "mttp_ng_h3_scids"
+
+///|
+#borrow(raw)
+extern "C" fn raw_remote(raw : Raw) -> Bytes = "mttp_ng_h3_remote"
+
+///|
+#borrow(raw)
+extern "C" fn raw_close_datagram(raw : Raw) -> Bytes = "mttp_ng_h3_close_datagram"
+
+///|
+#borrow(raw)
+extern "C" fn raw_closed_by_peer(raw : Raw) -> Bool = "mttp_ng_h3_closed_by_peer"
+
+///|
+#borrow(raw)
+extern "C" fn raw_pto_ms(raw : Raw) -> Int64 = "mttp_ng_h3_pto_ms"
 
 ///|
 #borrow(raw, fields)
@@ -337,15 +378,44 @@ pub fn QuicConn::client(
 }
 
 ///|
+/// The keys of one server listener: of its stateless reset tokens and its
+/// Retry tokens. Every connection, reset and Retry of a listener uses the
+/// listener's, and no other listener's: a listener that does not route
+/// another's connections would answer a packet for one of them with the
+/// reset token its client accepts, an oracle that ends any connection
+/// whose ID it learns (RFC 9000, section 21.11).
+pub struct ServerKeys {
+  priv bytes : Bytes
+}
+
+///|
+/// Fresh random keys, for a new listener. Raises when the system's random
+/// source fails.
+pub fn ServerKeys::new() -> ServerKeys raise H3Error {
+  let bytes = raw_new_keys()
+  if bytes.length() == 0 {
+    raise H3Error(code=0, detail="no random bytes for the server's keys")
+  }
+  { bytes, }
+}
+
+///|
 /// A server connection for a client's first Initial datagram, which is
-/// then to be `read`. Raises when the datagram does not start a connection.
+/// then to be `read`, under its listener's `keys` (by default fresh ones,
+/// for a connection served alone). Raises when the datagram does not start
+/// a connection, or carries a Retry token these keys did not make.
 pub fn QuicConn::server(
   quic : ServerQuic,
   initial : Bytes,
   local_address~ : String,
   remote_address~ : String,
   settings~ : H3Settings = H3Settings::default(),
+  keys? : ServerKeys,
 ) -> QuicConn raise H3Error {
+  let keys = match keys {
+    Some(keys) => keys
+    None => ServerKeys::new()
+  }
   opened(
     server_new(
       quic.context,
@@ -353,6 +423,7 @@ pub fn QuicConn::server(
       @utf8.encode(local_address),
       @utf8.encode(remote_address),
       values(settings),
+      keys.bytes,
     ),
   )
 }
@@ -371,10 +442,22 @@ fn QuicConn::failure(self : QuicConn, code : Int32) -> H3Error {
 }
 
 ///|
-/// Processes one received datagram. A failure closes the connection: its
+/// Processes one received datagram, which came `from` an address
+/// (`host:port`, IPv6 in brackets; by default the connection's first remote
+/// address). A server's datagram from another address is its client's
+/// migration or a NAT's rebinding, which QUIC validates before sending
+/// there more than its limit allows. A failure closes the connection: its
 /// CONNECTION_CLOSE waits in `datagrams`, and `closed` turns true.
-pub fn QuicConn::read(self : QuicConn, datagram : Bytes) -> Unit raise H3Error {
-  let code = raw_read(self.raw, datagram)
+pub fn QuicConn::read(
+  self : QuicConn,
+  datagram : Bytes,
+  from? : String,
+) -> Unit raise H3Error {
+  let from = match from {
+    Some(address) => @utf8.encode(address)
+    None => b""
+  }
+  let code = raw_read(self.raw, datagram, from)
   if code != 0 {
     raise self.failure(code)
   }
@@ -382,22 +465,88 @@ pub fn QuicConn::read(self : QuicConn, datagram : Bytes) -> Unit raise H3Error {
 
 ///|
 /// Serializes what the connection has to send now, and returns the
-/// datagrams; empty when it has nothing to say (or must wait, as
-/// congestion control or pacing says).
-pub fn QuicConn::datagrams(self : QuicConn) -> Array[Bytes] raise H3Error {
+/// datagrams, each with the address it goes to (`host:port`, IPv6 in
+/// brackets): a server's differ while its client's new path is validated.
+/// Empty when it has nothing to say (or must wait, as congestion control or
+/// pacing says).
+pub fn QuicConn::addressed_datagrams(
+  self : QuicConn,
+) -> Array[(String, Bytes)] raise H3Error {
   let code = raw_write(self.raw)
   let out = raw_output(self.raw)
   let datagrams = []
   let mut at = 0
-  while at + 2 <= out.length() {
+  while at + 3 <= out.length() {
     let len = (out[at].to_int() << 8) | out[at + 1].to_int()
-    datagrams.push(out[at + 2:at + 2 + len].to_owned())
-    at += 2 + len
+    let textlen = out[at + 2].to_int()
+    let start = at + 3 + textlen
+    let address = @utf8.decode_lossy(out[at + 3:start])
+    datagrams.push((address, out[start:start + len].to_owned()))
+    at = start + len
   }
   if code != 0 && datagrams.is_empty() {
     raise self.failure(code)
   }
   datagrams
+}
+
+///|
+/// Serializes what the connection has to send now, and returns the
+/// datagrams, for a connected socket (`addressed_datagrams` says where each
+/// goes); empty when it has nothing to say (or must wait, as congestion
+/// control or pacing says).
+pub fn QuicConn::datagrams(self : QuicConn) -> Array[Bytes] raise H3Error {
+  self.addressed_datagrams().map(pair => pair.1)
+}
+
+///|
+/// The connection IDs this end issued and has not retired: what the
+/// peer's packets carry as their Destination Connection ID, besides the
+/// one of its first Initial. A server routes datagrams by them.
+pub fn QuicConn::connection_ids(self : QuicConn) -> Array[Bytes] {
+  let blob = raw_scids(self.raw)
+  let ids = []
+  let mut at = 0
+  while at < blob.length() {
+    let len = blob[at].to_int()
+    ids.push(blob[at + 1:at + 1 + len].to_owned())
+    at += 1 + len
+  }
+  ids
+}
+
+///|
+/// The peer's address now (`host:port`, IPv6 in brackets): a server's
+/// client may have moved since its first datagram.
+pub fn QuicConn::remote_address(self : QuicConn) -> String {
+  @utf8.decode_lossy(raw_remote(self.raw))
+}
+
+///|
+/// The CONNECTION_CLOSE datagram this end sent, for a server to send again
+/// in the closing period (RFC 9000, section 10.2.1); `None` when the peer
+/// closed the connection or it timed out.
+pub fn QuicConn::close_datagram(self : QuicConn) -> Bytes? {
+  let datagram = raw_close_datagram(self.raw)
+  if datagram.length() == 0 {
+    None
+  } else {
+    Some(datagram)
+  }
+}
+
+///|
+/// Whether the connection closed because the peer closed it (its
+/// CONNECTION_CLOSE arrived): the draining period's case.
+pub fn QuicConn::closed_by_peer(self : QuicConn) -> Bool {
+  raw_closed_by_peer(self.raw)
+}
+
+///|
+/// The connection's probe timeout in milliseconds (at least 1), which
+/// measures its closing and draining periods (three of them).
+pub fn QuicConn::pto_ms(self : QuicConn) -> Int64 {
+  raw_pto_ms(self.raw)
 }
 
 ///|
@@ -463,12 +612,65 @@ pub fn QuicConn::streams_left(self : QuicConn) -> Int64 {
 /// sections 6.1 and 14.1). `None` for anything else, which
 /// `QuicConn::server` then decides on.
 pub fn version_negotiation(datagram : Bytes) -> Bytes? {
-  let packet = raw_version_negotiation(datagram)
-  if packet.length() == 0 {
+  nonempty(raw_version_negotiation(datagram))
+}
+
+///|
+fn nonempty(bytes : Bytes) -> Bytes? {
+  if bytes.length() == 0 {
     None
   } else {
-    Some(packet)
+    Some(bytes)
   }
+}
+
+///|
+/// For a server: the Destination Connection ID of the first packet in
+/// `datagram`, reading a short header's as long as the IDs a server of this
+/// module issues; `None` when there is none to read. A server finds the
+/// datagram's connection by it.
+pub fn destination_cid(datagram : Bytes) -> Bytes? {
+  nonempty(raw_dcid(datagram))
+}
+
+///|
+/// For a server: the Stateless Reset (RFC 9000, section 10.3) that answers
+/// `datagram`, a short header packet for a connection the server does not
+/// have (it forgot it, or restarted), so that the client learns at once
+/// that the connection is gone. Smaller than `datagram` (one byte smaller
+/// up to 43 bytes), so two endpoints cannot answer each other's resets for
+/// ever; `None` for a long header packet or one under 22 bytes. Its token
+/// is the one `keys` gave the connection ID, so a listener answers with its
+/// own keys only.
+pub fn stateless_reset(datagram : Bytes, keys~ : ServerKeys) -> Bytes? {
+  nonempty(raw_stateless_reset(datagram, keys.bytes))
+}
+
+///|
+/// For a server: what to answer a client's Initial `datagram` from
+/// `remote_address` with instead of starting a connection. With
+/// `validate`, a Retry, unless the Initial carries a valid Retry token, so
+/// that the client proves it receives at its address before the server
+/// keeps any state for it (RFC 9000, section 8.1.2); and, whatever
+/// `validate`, CONNECTION_CLOSE with INVALID_TOKEN for a Retry token that
+/// is not valid (expired, or for another address; section 8.1.3). Both
+/// are smaller than the Initial. `None`: start the connection with
+/// `QuicConn::server`, which takes a valid Retry token as the address
+/// validated. The token is made and checked with the listener's `keys`.
+pub fn answer_initial(
+  datagram : Bytes,
+  remote_address~ : String,
+  validate~ : Bool,
+  keys~ : ServerKeys,
+) -> Bytes? {
+  nonempty(
+    raw_answer_initial(
+      datagram,
+      @utf8.encode(remote_address),
+      validate,
+      keys.bytes,
+    ),
+  )
 }
 
 ///|

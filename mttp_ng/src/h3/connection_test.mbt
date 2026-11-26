@@ -57,7 +57,7 @@ async fn pair(settings~ : @h3.H3Settings = @h3.H3Settings::default()) -> Pair {
 
 ///|
 /// Moves datagrams both ways, and handles expired timers, until neither side
-/// has anything to send for a while.
+/// has anything to send for a while nor a timer due within 50 ms.
 async fn Pair::settle(self : Pair) -> Unit {
   let mut quiet = 0
   for _ in 0..<2000 {
@@ -76,7 +76,15 @@ async fn Pair::settle(self : Pair) -> Unit {
     self.client_events.append(self.client.events())
     self.server_events.append(self.server.events())
     if to_server.is_empty() && to_client.is_empty() {
-      quiet += 1
+      // Quiet only when no timer is about to fire either: a delayed
+      // acknowledgement (up to 25 ms) is what lets data past the initial
+      // congestion window go, so a pair waiting on one has not settled.
+      let soon = [self.client.expiry_ms(), self.server.expiry_ms()].any(ms => {
+        ms is Some(ms) && ms < 50
+      })
+      if !soon {
+        quiet += 1
+      }
       if quiet > 3 {
         return
       }
@@ -350,4 +358,141 @@ async test "Sent reports a stream's end only with the write that took it" {
     assert_eq(sent.last(), Some(true))
     assert_eq(body_of(p.server_events, stream).length(), 20000)
   })
+}
+
+///|
+/// RFC 9000, section 8.1: a server that sends a Retry starts a connection
+/// only for the Initial that returns its token from the address it was
+/// sent to; a token from another address, or a made-up one, is answered
+/// with CONNECTION_CLOSE, and the connection then completes over the token.
+async test "a Retry's token starts the connection only from the address it was sent to" {
+  let client = @h3.QuicConn::client(
+    @h3.ClientQuic::new(trust=PemFile(testdata("root.pem"))),
+    host="localhost",
+    local_address=CLIENT_ADDR,
+    remote_address=SERVER_ADDR,
+  )
+  let keys = @h3.ServerKeys::new()
+  let first = client.datagrams()
+  // Without `validate`, an Initial without a token needs no answer.
+  assert_eq(
+    @h3.answer_initial(
+      first[0],
+      remote_address=CLIENT_ADDR,
+      validate=false,
+      keys~,
+    ),
+    None,
+  )
+  guard @h3.answer_initial(
+      first[0],
+      remote_address=CLIENT_ADDR,
+      validate=true,
+      keys~,
+    )
+    is Some(retry) else {
+    fail("no Retry")
+  }
+  // A Retry is a long header packet of type 3, and smaller than the
+  // Initial it answers.
+  assert_eq(retry[0].to_int() & 0xf0, 0xf0)
+  assert_true(retry.length() < first[0].length())
+  client.read(retry)
+  let second = client.datagrams()
+  assert_true(second.length() > 0)
+  // The token is good for the address it was sent to only.
+  guard @h3.answer_initial(
+      second[0],
+      remote_address="127.0.0.1:50001",
+      validate=true,
+      keys~,
+    )
+    is Some(close) else {
+    fail("a token from another address was taken")
+  }
+  assert_true(close.length() < second[0].length())
+  assert_eq(
+    @h3.answer_initial(
+      second[0],
+      remote_address=CLIENT_ADDR,
+      validate=true,
+      keys~,
+    ),
+    None,
+  )
+  let quic = @h3.ServerQuic::from_pem(
+    chain=@fs.read_text(testdata("localhost.pem")),
+    key=@fs.read_text(testdata("localhost.key")),
+  )
+  // Without the token's original DCID and the Retry's SCID in its
+  // transport parameters, the client would refuse the handshake.
+  let server = @h3.QuicConn::server(
+    quic,
+    second[0],
+    local_address=SERVER_ADDR,
+    remote_address=CLIENT_ADDR,
+    keys~,
+  )
+  for datagram in second {
+    server.read(datagram)
+  }
+  let p = { client, server, client_events: [], server_events: [], }
+  p.settle()
+  assert_true(client.handshake_done())
+  assert_true(server.handshake_done())
+  assert_false(client.closed())
+}
+
+///|
+/// RFC 9000, section 10.3: a Stateless Reset is smaller than the packet it
+/// answers (one byte up to 43, so two endpoints cannot answer each other's
+/// for ever), at least 21 bytes, and answers short header packets only.
+test "a Stateless Reset is smaller than what it answers, and only for short headers" {
+  let keys = @h3.ServerKeys::new() catch { e => fail("\{e}") }
+  let short = n => Bytes::makei(n, i => if i == 0 { b'\x40' } else { b'\x07' })
+  assert_eq(@h3.stateless_reset(short(21), keys~), None)
+  assert_eq(
+    @h3.stateless_reset(short(22), keys~).map(b => b.length()),
+    Some(21),
+  )
+  assert_eq(
+    @h3.stateless_reset(short(43), keys~).map(b => b.length()),
+    Some(42),
+  )
+  assert_eq(
+    @h3.stateless_reset(short(44), keys~).map(b => b.length()),
+    Some(43),
+  )
+  assert_eq(
+    @h3.stateless_reset(short(1200), keys~).map(b => b.length()),
+    Some(43),
+  )
+  // A reset looks like a short header packet.
+  assert_eq(
+    @h3.stateless_reset(short(100), keys~).map(b => b[0].to_int() & 0xc0),
+    Some(0x40),
+  )
+  let long = Bytes::makei(1200, i => if i == 0 { b'\xc0' } else { b'\x07' })
+  assert_eq(@h3.stateless_reset(long, keys~), None)
+  // The ID a short header's reset is for is read at this server's length.
+  assert_eq(
+    @h3.destination_cid(short(30)),
+    Some(Bytes::makei(17, _ => b'\x07')),
+  )
+}
+
+///|
+/// RFC 9000, section 21.11: a reset token is the listener's own; another
+/// listener's keys give a connection ID another token, so a listener that
+/// does not route a connection cannot hand out the token that ends it.
+test "two listeners' keys give a connection ID different reset tokens" {
+  let a = @h3.ServerKeys::new() catch { e => fail("\{e}") }
+  let b = @h3.ServerKeys::new() catch { e => fail("\{e}") }
+  let packet = Bytes::makei(60, i => if i == 0 { b'\x40' } else { b'\x07' })
+  let token = (keys : @h3.ServerKeys) => {
+    let reset = @h3.stateless_reset(packet, keys~).unwrap()
+    reset[reset.length() - 16:].to_owned()
+  }
+  assert_eq(token(a), token(a))
+  assert_true(token(a) != token(b))
 }
